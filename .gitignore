@@ -1,0 +1,14 @@
+node_modules/
+/build/
+/.svelte-kit/
+/dist/
+
+.env
+.env.*
+!.env.example
+
+.DS_Store
+Thumbs.db
+
+.claude/
+CLAUDE.md
