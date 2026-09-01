@@ -95,11 +95,32 @@ class DraftStore {
 		this.schedule[platform] = { ...this.scheduleFor(platform), ...value };
 	}
 
-	/** True once every selected platform has a date and a time. */
+	/**
+	 * Platforms whose slot is already in the past. Compared against the actual
+	 * instant, not the date, so earlier today counts.
+	 */
+	get pastPlatforms(): PlatformId[] {
+		const now = Date.now();
+		return this.activePlatforms.filter((id) => {
+			const entry = this.scheduleFor(id);
+			const at = new Date(`${entry.date}T${entry.time || '00:00'}`).getTime();
+			return Number.isFinite(at) && at < now;
+		});
+	}
+
+	/**
+	 * True once every selected platform resolves to a date and a time.
+	 *
+	 * Reads through `scheduleFor`, not the `schedule` map: an untouched platform
+	 * has no entry there and falls back to its suggestion, which is what the
+	 * confirmation screen and `createJob` already publish. Reading the raw map
+	 * meant nothing counted as scheduled until the user nudged a control, which
+	 * left Continue permanently disabled.
+	 */
 	get scheduleComplete(): boolean {
 		return this.activePlatforms.every((id) => {
-			const entry = this.schedule[id];
-			return Boolean(entry?.date && entry?.time);
+			const entry = this.scheduleFor(id);
+			return Boolean(entry.date && entry.time);
 		});
 	}
 

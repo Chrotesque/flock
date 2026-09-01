@@ -151,3 +151,10 @@ export const DEFAULT_SCHEDULING: PlatformScheduling = {
 	defaultTime: '09:00',
 	profiles: []
 };
+
+/** A named snippet of text, insertable into a title or description. */
+export interface TextTemplate {
+	id: string;
+	name: string;
+	content: string;
+}

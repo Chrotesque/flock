@@ -9,7 +9,11 @@
 	import { adapt } from '$lib/filters';
 	import { draft } from '$lib/stores/draft.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
-	import type { PlatformId } from '$lib/types';
+	import { templates } from '$lib/stores/templates.svelte';
+	import { portal } from '$lib/portal';
+	import type { PlatformId, TextTemplate } from '$lib/types';
+
+	templates.load();
 
 	let modalOpen = $state(false);
 	let modalPlatform = $state<PlatformId | null>(null);
@@ -18,6 +22,112 @@
 		modalPlatform = platform;
 		modalOpen = true;
 	}
+
+	/* ---- template insertion ----
+	 *
+	 * A template lands wherever the caret last was, which means remembering the
+	 * field and offsets before the click moves focus to the button.
+	 */
+
+	type Field = 'title' | 'description';
+
+	let titleEl = $state<HTMLInputElement | null>(null);
+	let descEl = $state<HTMLTextAreaElement | null>(null);
+	let lastField = $state<Field>('description');
+	let caret = { start: 0, end: 0 };
+
+	function elementFor(field: Field) {
+		return field === 'title' ? titleEl : descEl;
+	}
+
+	function remember(field: Field) {
+		const el = elementFor(field);
+		if (!el) return;
+		lastField = field;
+		caret = { start: el.selectionStart ?? 0, end: el.selectionEnd ?? 0 };
+	}
+
+	/**
+	 * Writes the element as well as the store. These are controlled inputs, so
+	 * Svelte only touches the DOM when the bound value actually changes — and an
+	 * expansion can land on the exact string already bound (retyping the same
+	 * `{name}` over the text it produced last time). The field would then keep
+	 * showing the raw braces forever.
+	 */
+	function setField(field: Field, value: string) {
+		if (field === 'title') draft.title = value;
+		else draft.description = value;
+		const el = elementFor(field);
+		if (el && el.value !== value) el.value = value;
+	}
+
+	function place(field: Field, at: number) {
+		const el = elementFor(field);
+		if (!el) return;
+		// After the DOM has taken the new value, or the caret jumps to the end.
+		requestAnimationFrame(() => {
+			el.focus();
+			el.setSelectionRange(at, at);
+			caret = { start: at, end: at };
+		});
+	}
+
+	function insert(template: TextTemplate) {
+		const field = lastField;
+		const value = field === 'title' ? draft.title : draft.description;
+		const next = value.slice(0, caret.start) + template.content + value.slice(caret.end);
+		setField(field, next);
+		place(field, caret.start + template.content.length);
+	}
+
+	/**
+	 * Swaps the first `{name}` that matches a template as it is typed. Unknown
+	 * names are left alone, so braces stay usable as ordinary text.
+	 */
+	function onFieldInput(field: Field, event: Event) {
+		const el = event.currentTarget as HTMLInputElement | HTMLTextAreaElement;
+		const value = el.value;
+		setField(field, value);
+		remember(field);
+
+		for (const match of value.matchAll(/\{([^{}]+)\}/g)) {
+			const template = templates.byName(match[1]);
+			if (!template || match.index === undefined) continue;
+			const next =
+				value.slice(0, match.index) + template.content + value.slice(match.index + match[0].length);
+			setField(field, next);
+			place(field, match.index + template.content.length);
+			return;
+		}
+	}
+
+	/* ---- template preview on hover ---- */
+
+	let hovered = $state<TextTemplate | null>(null);
+	let popX = $state(0);
+	let popY = $state(0);
+	let hoverTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function previewOn(event: MouseEvent, template: TextTemplate) {
+		const el = event.currentTarget as HTMLElement;
+		if (hoverTimer) clearTimeout(hoverTimer);
+		hoverTimer = setTimeout(() => {
+			const rect = el.getBoundingClientRect();
+			popX = rect.left + rect.width / 2;
+			popY = rect.top - 8;
+			hovered = template;
+		}, 300);
+	}
+
+	function previewOff() {
+		if (hoverTimer) clearTimeout(hoverTimer);
+		hoverTimer = null;
+		hovered = null;
+	}
+
+	$effect(() => () => {
+		if (hoverTimer) clearTimeout(hoverTimer);
+	});
 
 	// One adaptation pass per platform, so the rail can show at a glance how
 	// much each platform's text differs from what was typed. Only platforms
@@ -50,7 +160,13 @@
 			<input
 				id="title"
 				class="input"
-				bind:value={draft.title}
+				bind:this={titleEl}
+				value={draft.title}
+				oninput={(e) => onFieldInput('title', e)}
+				onfocus={() => remember('title')}
+				onclick={() => remember('title')}
+				onkeyup={() => remember('title')}
+				onselect={() => remember('title')}
 				placeholder="One title — each platform adapts it"
 				autocomplete="off"
 			/>
@@ -64,7 +180,13 @@
 			<textarea
 				id="description"
 				class="textarea"
-				bind:value={draft.description}
+				bind:this={descEl}
+				value={draft.description}
+				oninput={(e) => onFieldInput('description', e)}
+				onfocus={() => remember('description')}
+				onclick={() => remember('description')}
+				onkeyup={() => remember('description')}
+				onselect={() => remember('description')}
 				placeholder="One description. Platform-specific quirks are handled by the adaptation rules in Settings."
 			></textarea>
 		</div>
@@ -73,6 +195,41 @@
 			<span class="label">Video file</span>
 			<VideoPicker bind:file={draft.file} bind:duration={draft.duration} />
 		</div>
+	</section>
+
+	<section class="templates card">
+		<header class="tplhead">
+			<span class="label">Templates</span>
+			<span class="tplnote">
+				Click to drop one in at the cursor, or type its name in braces.
+			</span>
+		</header>
+
+		{#if templates.loading}
+			<p class="tplempty">Loading…</p>
+		{:else if templates.items.length === 0}
+			<p class="tplempty">
+				None yet — add reusable text in <a href="{base}/settings">Settings</a>.
+			</p>
+		{:else}
+			<div class="chips">
+				{#each templates.items as template (template.id)}
+					<button
+						class="chip"
+						onclick={() => insert(template)}
+						onmouseenter={(e) => previewOn(e, template)}
+						onmouseleave={previewOff}
+						onfocus={(e) => previewOn(e as unknown as MouseEvent, template)}
+						onblur={previewOff}
+					>
+						{template.name.trim() || 'Unnamed'}
+					</button>
+				{/each}
+			</div>
+			<p class="target">
+				Inserts into the <strong>{lastField === 'title' ? 'title' : 'description'}</strong>.
+			</p>
+		{/if}
 	</section>
 
 	<aside class="rail card">
@@ -134,6 +291,13 @@
 	</aside>
 </div>
 
+{#if hovered}
+	<div class="preview" style="left: {popX}px; top: {popY}px" role="tooltip" use:portal>
+		<p class="previewname">{hovered.name.trim() || 'Unnamed'}</p>
+		<p class="previewbody">{hovered.content || '(empty)'}</p>
+	</div>
+{/if}
+
 <PlatformModal bind:open={modalOpen} platform={modalPlatform} />
 
 <style>
@@ -144,7 +308,107 @@
 		align-items: start;
 	}
 
+	.templates {
+		grid-column: 1;
+		grid-row: 2;
+		padding: 16px 18px;
+	}
+
+	.tplhead {
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+		flex-wrap: wrap;
+	}
+
+	.tplhead .label {
+		margin-bottom: 0;
+	}
+
+	.tplnote {
+		font-size: 11.5px;
+		color: var(--text-faint);
+	}
+
+	.tplempty {
+		margin: 10px 0 0;
+		font-size: 12.5px;
+		color: var(--text-faint);
+	}
+
+	.tplempty a {
+		color: var(--pink-soft);
+	}
+
+	.chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: 12px;
+	}
+
+	.chip {
+		padding: 6px 12px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--bg-elev);
+		color: var(--text-dim);
+		font-size: 12px;
+		font-weight: 570;
+		transition: background 0.14s, color 0.14s, border-color 0.14s;
+	}
+
+	.chip:hover {
+		border-color: var(--pink);
+		background: var(--accent-grad-soft);
+		color: var(--text);
+	}
+
+	.target {
+		margin: 10px 0 0;
+		font-size: 11px;
+		color: var(--text-faint);
+	}
+
+	.target strong {
+		color: var(--pink-soft);
+		font-weight: 600;
+	}
+
+	.preview {
+		position: fixed;
+		z-index: 40;
+		width: 300px;
+		transform: translate(-50%, -100%);
+		padding: 11px 13px;
+		border-radius: var(--radius);
+		background: var(--surface-3);
+		border: 1px solid var(--border-strong);
+		box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
+		pointer-events: none;
+	}
+
+	.previewname {
+		margin: 0 0 5px;
+		font-size: 11px;
+		font-weight: 650;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.previewbody {
+		margin: 0;
+		font-size: 12.5px;
+		line-height: 1.5;
+		white-space: pre-wrap;
+		max-height: 190px;
+		overflow: hidden;
+	}
+
 	.main {
+		grid-column: 1;
+		grid-row: 1;
 		padding: 22px;
 		display: grid;
 		gap: 20px;
@@ -162,6 +426,8 @@
 	}
 
 	.rail {
+		grid-column: 2;
+		grid-row: 1 / span 2;
 		padding: 18px 16px;
 		position: sticky;
 		top: 0;
@@ -303,6 +569,12 @@
 	@media (max-width: 1040px) {
 		.stage {
 			grid-template-columns: 1fr;
+		}
+		.main,
+		.templates,
+		.rail {
+			grid-column: auto;
+			grid-row: auto;
 		}
 		.rail {
 			position: static;

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PlatformIcon from './PlatformIcon.svelte';
 	import { PLATFORMS } from '$lib/platforms';
+	import { portal } from '$lib/portal';
 	import type { PlatformId } from '$lib/types';
 
 	// The card that appears in a week grid cell. Shared by the upload wizard's
@@ -32,22 +33,6 @@
 	} = $props();
 
 	const HOVER_DELAY = 1000;
-
-	/**
-	 * Moves the tooltip to <body>. `position: fixed` resolves against the nearest
-	 * ancestor with a transform, and both the drag slot and the tile itself
-	 * translate on hover — precisely when the tooltip is up — which pinned it to
-	 * the card instead of the viewport. Scoped styles survive the move because
-	 * Svelte scopes by class, not by tree position.
-	 */
-	function portal(node: HTMLElement) {
-		document.body.appendChild(node);
-		return {
-			destroy() {
-				node.remove();
-			}
-		};
-	}
 
 	let tile = $state<HTMLDivElement | null>(null);
 	let showTip = $state(false);

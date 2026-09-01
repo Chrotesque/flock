@@ -105,6 +105,18 @@
 		};
 	}
 
+	/**
+	 * Width the scrollbar steals from the grid. The header is not inside the
+	 * scroll container, so without reserving the same space its columns come out
+	 * wider than the columns beneath them. Zero on overlay-scrollbar platforms.
+	 */
+	let gutter = $state(0);
+
+	function measureGutter() {
+		const el = scroller;
+		if (el) gutter = el.offsetWidth - el.clientWidth;
+	}
+
 	let above = $state<T[]>([]);
 	let below = $state<T[]>([]);
 	let ticking = false;
@@ -158,6 +170,7 @@
 		requestAnimationFrame(() => {
 			ticking = false;
 			measure();
+			measureGutter();
 		});
 	}
 
@@ -207,6 +220,7 @@
 		void items;
 		void weekStart;
 		measure();
+		measureGutter();
 	});
 
 	// Opens on the earliest scheduled hour rather than midnight. Depends on the
@@ -275,7 +289,7 @@
 </header>
 
 <div class="calendar card">
-	<div class="head">
+	<div class="head" style="padding-right: {gutter}px">
 		<div class="corner"></div>
 		{#each days as day (day.iso)}
 			<div class="dayhead" class:today={day.iso === today}>
@@ -507,14 +521,18 @@
 	.timelabel {
 		border-right: 1px solid var(--border);
 		border-bottom: 1px solid var(--border);
-		padding: 5px 8px 0 0;
-		text-align: right;
+		display: flex;
+		align-items: flex-start;
+		justify-content: center;
+		padding-top: 5px;
 	}
 
 	.timelabel span {
 		font-family: var(--mono);
-		font-size: 10.5px;
-		color: var(--text-faint);
+		font-size: 13px;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: -0.01em;
+		color: var(--text-dim);
 	}
 
 	.cell {

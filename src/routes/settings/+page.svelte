@@ -5,9 +5,11 @@
 	import FilterEditor from '$lib/components/FilterEditor.svelte';
 	import GeneralSettings from '$lib/components/GeneralSettings.svelte';
 	import ProfileEditor from '$lib/components/ProfileEditor.svelte';
+	import TemplateEditor from '$lib/components/TemplateEditor.svelte';
 	import { PLATFORMS } from '$lib/platforms';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
+	import { templates } from '$lib/stores/templates.svelte';
 	import type {
 		FilterRule,
 		OptionValues,
@@ -18,14 +20,17 @@
 
 	settings.load();
 	general.load();
+	templates.load();
 
-	type Section = 'general' | PlatformId;
+	type Section = 'general' | 'templates' | PlatformId;
 
 	let active = $state<Section>('general');
 	let tab = $state<'defaults' | 'filters' | 'profiles'>('defaults');
 
 	// Narrowed once here rather than guarded at every use site below.
-	let platform = $derived<PlatformId | null>(active === 'general' ? null : active);
+	let platform = $derived<PlatformId | null>(
+		active === 'general' || active === 'templates' ? null : active
+	);
 	let entry = $derived(platform ? settings.get(platform) : undefined);
 	let def = $derived(platform ? PLATFORMS[platform] : null);
 
@@ -118,6 +123,33 @@
 							</span>
 						</button>
 					</li>
+					<li class:active={active === 'templates'}>
+						<button class="pick" onclick={() => (active = 'templates')}>
+							<span class="ic">
+								<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+									<path
+										d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"
+										stroke="currentColor"
+										stroke-width="1.6"
+										stroke-linejoin="round"
+									/>
+									<path
+										d="M14.5 4v4.5H19M8.5 13h7M8.5 16.5h4.5"
+										stroke="currentColor"
+										stroke-width="1.5"
+										stroke-linecap="round"
+									/>
+								</svg>
+							</span>
+							<span class="who">
+								<span class="name">Templates</span>
+								<span class="sub">
+									{templates.items.length}
+									{templates.items.length === 1 ? 'template' : 'templates'}
+								</span>
+							</span>
+						</button>
+					</li>
 				</ul>
 
 				<h3 class="second">Platforms</h3>
@@ -193,7 +225,38 @@
 			</aside>
 
 			<section class="card panel">
-				{#if !platform || !def}
+				{#if active === 'templates'}
+					<header class="panelhead">
+						<div class="ident">
+							<span class="ic big">
+								<svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+									<path
+										d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"
+										stroke="currentColor"
+										stroke-width="1.6"
+										stroke-linejoin="round"
+									/>
+									<path
+										d="M14.5 4v4.5H19M8.5 13h7M8.5 16.5h4.5"
+										stroke="currentColor"
+										stroke-width="1.5"
+										stroke-linecap="round"
+									/>
+								</svg>
+							</span>
+							<div>
+								<h2>Templates</h2>
+								<p>Reusable text you can drop into a title or description.</p>
+							</div>
+						</div>
+					</header>
+
+					{#if templates.loading}
+						<p class="banner">Loading…</p>
+					{:else}
+						<TemplateEditor />
+					{/if}
+				{:else if !platform || !def}
 					<header class="panelhead">
 						<div class="ident">
 							<span class="ic big">

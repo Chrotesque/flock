@@ -10,6 +10,7 @@
 	import { buildPlan } from '$lib/plan';
 	import { createJob } from '$lib/repo';
 	import { formatBytes } from '$lib/format';
+	import { PLATFORMS } from '$lib/platforms';
 
 	settings.load();
 	general.load();
@@ -49,7 +50,11 @@
 	}
 
 	let canContinue = $derived(
-		draft.step === 0 ? draft.canLeaveDetails : draft.step === 1 ? draft.scheduleComplete : true
+		draft.step === 0
+			? draft.canLeaveDetails
+			: draft.step === 1
+				? draft.scheduleComplete && draft.pastPlatforms.length === 0
+				: true
 	);
 
 	async function confirm() {
@@ -141,29 +146,33 @@
 			</div>
 		</header>
 
-		{#if settings.error}
-			<p class="banner error">Could not reach PocketBase — {settings.error}</p>
-		{/if}
-
-		{#if settings.loading}
-			<p class="banner">Loading platform settings…</p>
-		{:else if draft.step === 0}
-			<StepDetails />
-		{:else if draft.step === 1}
-			<StepSchedule />
-		{:else}
-			<StepConfirm rows={plan} />
-		{/if}
-
-		<footer class="actions">
+		<nav class="actions">
 			{#if draft.step > 0}
-				<button class="btn" onclick={back} disabled={phase === 'uploading'}>Back</button>
+				<button class="btn" onclick={back} disabled={phase === 'uploading'}>
+					<svg viewBox="0 0 24 24" width="15" height="15" fill="none">
+						<path
+							d="M19 12H6m5 5-5-5 5-5"
+							stroke="currentColor"
+							stroke-width="1.9"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					</svg>
+					Back
+				</button>
 			{/if}
 
 			<div class="spacer"></div>
 
 			{#if phase === 'error'}
 				<span class="failure">{failure}</span>
+			{/if}
+
+			{#if draft.step === 1 && draft.pastPlatforms.length > 0}
+				<span class="blocked">
+					{draft.pastPlatforms.map((id) => PLATFORMS[id].label).join(', ')}
+					{draft.pastPlatforms.length === 1 ? 'is' : 'are'} scheduled in the past.
+				</span>
 			{/if}
 
 			{#if draft.step < 2}
@@ -195,7 +204,22 @@
 					{/if}
 				</button>
 			{/if}
-		</footer>
+		</nav>
+
+		{#if settings.error}
+			<p class="banner error">Could not reach PocketBase — {settings.error}</p>
+		{/if}
+
+		{#if settings.loading}
+			<p class="banner">Loading platform settings…</p>
+		{:else if draft.step === 0}
+			<StepDetails />
+		{:else if draft.step === 1}
+			<StepSchedule />
+		{:else}
+			<StepConfirm rows={plan} />
+		{/if}
+
 
 		{#if phase === 'uploading'}
 			<div class="uploading card">
@@ -258,7 +282,15 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		margin-top: 22px;
+		margin-bottom: 20px;
+		padding-bottom: 18px;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.blocked {
+		font-size: 12px;
+		color: var(--warn);
+		text-align: right;
 	}
 
 	.spacer {
