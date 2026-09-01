@@ -65,8 +65,8 @@
 		<div class="foot">
 			<a class="brand" href="{base}/">
 				<span class="mark">
-					<img src="{base}/flock.png" alt="" width="68" height="68" />
 					<strong>flock</strong>
+					<img src="{base}/flock.png" alt="" width="68" height="68" />
 				</span>
 				<em>multi-platform publishing</em>
 			</a>
