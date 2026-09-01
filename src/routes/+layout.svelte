@@ -12,16 +12,16 @@
 
 	const links = [
 		{
-			href: '/',
-			label: 'Upload',
-			hint: 'Compose and schedule',
-			icon: 'M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3'
-		},
-		{
 			href: '/analytics',
 			label: 'Analytics',
 			hint: 'Reach and performance',
 			icon: 'M4 20V10m5 10V5m5 15v-7m5 7V8'
+		},
+		{
+			href: '/',
+			label: 'Upload',
+			hint: 'Compose and schedule',
+			icon: 'M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3'
 		},
 		{
 			href: '/calendar',
