@@ -64,11 +64,11 @@
 
 		<div class="foot">
 			<a class="brand" href="{base}/">
-				<img src="{base}/flock.png" alt="" width="88" height="88" />
-				<span>
+				<span class="mark">
+					<img src="{base}/flock.png" alt="" width="68" height="68" />
 					<strong>flock</strong>
-					<em>multi-platform publishing</em>
 				</span>
+				<em>multi-platform publishing</em>
 			</a>
 			<p class="version">v{VERSION}</p>
 		</div>
@@ -112,7 +112,7 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 9px;
+		gap: 7px;
 		padding: 6px 8px;
 		text-align: center;
 		text-decoration: none;
@@ -121,13 +121,21 @@
 	}
 
 	.brand img {
-		border-radius: 20px;
+		border-radius: 16px;
 		flex: none;
 	}
 
-	.brand span {
-		display: grid;
-		gap: 1px;
+	/* Mark and name share one line, sitting on the same bottom edge rather than
+	   being centred against each other.
+	   `baseline` rather than `flex-end` on purpose: a flex row takes a replaced
+	   element's baseline to be its bottom margin edge, so this puts the name's
+	   baseline exactly on the logo's bottom edge. flex-end would align the boxes
+	   instead, leaving "flock" — which has no descenders — floating a few pixels
+	   high. */
+	.mark {
+		display: flex;
+		align-items: baseline;
+		gap: 11px;
 	}
 
 	.brand strong {
@@ -135,7 +143,7 @@
 		font-size: 22px;
 		font-weight: 700;
 		letter-spacing: -0.025em;
-		line-height: 1.15;
+		line-height: 1;
 		background: var(--accent-grad);
 		-webkit-background-clip: text;
 		background-clip: text;
