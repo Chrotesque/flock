@@ -1,4 +1,5 @@
 import { getSetting, setSetting } from '../repo';
+import { logAction } from '../log';
 import type { TextTemplate } from '../types';
 
 export const TEMPLATES_KEY = 'templates';
@@ -43,8 +44,10 @@ class TemplateStore {
 	async saveNow() {
 		this.saving = true;
 		try {
-			await setSetting(TEMPLATES_KEY, { items: $state.snapshot(this.items) });
+			const written = $state.snapshot(this.items);
+			await setSetting(TEMPLATES_KEY, { items: written });
 			this.error = null;
+			logAction('settings', 'Edited templates', written.map((t) => t.name).join(', '));
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
 		} finally {
@@ -67,6 +70,7 @@ class TemplateStore {
 		const entry: TextTemplate = { id: crypto.randomUUID(), name: '', content: '' };
 		this.items = [...this.items, entry];
 		this.queueSave();
+		logAction('settings', 'Added a template');
 		return entry.id;
 	}
 
@@ -76,8 +80,10 @@ class TemplateStore {
 	}
 
 	remove(id: string) {
+		const gone = this.items.find((t) => t.id === id);
 		this.items = this.items.filter((t) => t.id !== id);
 		this.queueSave();
+		logAction('settings', 'Deleted a template', gone?.name.trim() || 'unnamed');
 	}
 }
 

@@ -1,6 +1,7 @@
 import { pb, PB_URL } from './pb';
 import { PLATFORMS, PLATFORM_IDS, isPlatformId } from './platforms';
 import { DEFAULT_SCHEDULING } from './types';
+import { logAction } from './log';
 import type {
 	OptionValues,
 	PlatformId,
@@ -215,6 +216,14 @@ export async function createJob(
 		});
 	}
 
+	logAction(
+		'upload',
+		`Uploaded "${input.title || 'untitled'}"`,
+		`${input.file.name} → ${input.targets.length} platform(s): ${input.targets
+			.map((t) => t.platform)
+			.join(', ')}`
+	);
+
 	return job;
 }
 
@@ -234,6 +243,7 @@ export async function listTargets(jobId?: string): Promise<UploadTarget[]> {
 export async function deleteJob(id: string): Promise<void> {
 	// upload_targets cascade-delete with the job.
 	await pb.collection('upload_jobs').delete(id);
+	logAction('upload', 'Deleted a stored upload', id);
 }
 
 /**
@@ -242,5 +252,11 @@ export async function deleteJob(id: string): Promise<void> {
  * the upload is confirmed.
  */
 export async function rescheduleTarget(id: string, scheduledAt: string): Promise<void> {
+	const before = await pb.collection('upload_targets').getOne(id);
 	await pb.collection('upload_targets').update(id, { scheduled_at: scheduledAt });
+	logAction(
+		'calendar',
+		`Rescheduled ${before.platform}`,
+		`${new Date(before.scheduled_at).toLocaleString()} → ${new Date(scheduledAt).toLocaleString()}`
+	);
 }

@@ -1,4 +1,5 @@
 import { getSetting, setSetting } from '../repo';
+import { logAction } from '../log';
 import type { GeneralSettings, NasDestination } from '../types';
 
 export const GENERAL_KEY = 'general';
@@ -56,8 +57,14 @@ class GeneralStore {
 	async saveNow() {
 		this.saving = true;
 		try {
-			await setSetting(GENERAL_KEY, $state.snapshot(this.value));
+			const written = $state.snapshot(this.value);
+			await setSetting(GENERAL_KEY, written);
 			this.error = null;
+			logAction(
+				'settings',
+				'Updated storage settings',
+				`${written.destinations.length} destination(s)`
+			);
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
 		} finally {
@@ -89,6 +96,8 @@ class GeneralStore {
 	}
 
 	removeDestination(id: string) {
+		const gone = this.value.destinations.find((d) => d.id === id);
+		logAction('settings', 'Removed a NAS destination', gone?.label || gone?.path || 'unnamed');
 		this.value.destinations = this.value.destinations.filter((d) => d.id !== id);
 		if (this.value.defaultDestinationId === id) {
 			this.value.defaultDestinationId = this.value.destinations[0]?.id ?? null;

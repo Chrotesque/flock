@@ -158,3 +158,14 @@ export interface TextTemplate {
 	name: string;
 	content: string;
 }
+
+export type LogCategory = 'upload' | 'calendar' | 'settings';
+
+export interface LogEntry {
+	id: string;
+	category: LogCategory;
+	action: string;
+	detail: string;
+	device: string;
+	created: string;
+}

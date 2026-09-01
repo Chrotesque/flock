@@ -1,5 +1,6 @@
 import { loadPlatformSettings, savePlatformSettings } from '../repo';
 import { PLATFORMS } from '../platforms';
+import { logAction } from '../log';
 import { DEFAULT_SCHEDULING } from '../types';
 import type {
 	FilterRule,
@@ -86,8 +87,17 @@ class SettingsStore {
 		if (!entry) return;
 		this.saving = true;
 		try {
-			await savePlatformSettings($state.snapshot(entry) as PlatformSettings);
+			// Log from the snapshot, not the live entry: the read happens after the
+			// network round-trip, by which time another edit may have landed, and
+			// the log would then describe a state this write never contained.
+			const written = $state.snapshot(entry) as PlatformSettings;
+			await savePlatformSettings(written);
 			this.error = null;
+			logAction(
+				'settings',
+				`Updated ${PLATFORMS[platform].label} settings`,
+				`${written.enabled ? 'enabled' : 'disabled'}, ${written.filters.length} rule(s), ${written.scheduling.mode} timing`
+			);
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
 		} finally {

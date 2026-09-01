@@ -1,5 +1,20 @@
 <script lang="ts">
 	import { general } from '$lib/stores/general.svelte';
+	import { deviceName, setDeviceName, logAction } from '$lib/log';
+
+	// Kept in localStorage, not PocketBase: it names *this browser*, and every
+	// machine that opens flock needs its own answer.
+	let device = $state(deviceName());
+
+	function onDevice(value: string) {
+		device = value;
+		setDeviceName(value);
+	}
+
+	function commitDevice() {
+		device = deviceName();
+		logAction('settings', 'Renamed this device', device);
+	}
 
 	// App-wide settings. Anything that is not tied to one platform lands here,
 	// which for now means only where finished videos go on the NAS — release
@@ -83,6 +98,25 @@
 		{/if}
 	</section>
 
+	<section>
+		<div class="subhead">
+			<div>
+				<h4>This device</h4>
+				<p>
+					The name this browser records in the Log. Browsers cannot read the machine's hostname, so
+					it is set here and stored on this device only — name each machine once.
+				</p>
+			</div>
+		</div>
+
+		<input
+			class="input device"
+			value={device}
+			placeholder="e.g. Studio PC"
+			oninput={(e) => onDevice(e.currentTarget.value)}
+			onblur={commitDevice}
+		/>
+	</section>
 </div>
 
 <style>
@@ -228,6 +262,12 @@
 		font-size: 11.5px;
 		color: var(--text-faint);
 		line-height: 1.5;
+	}
+
+	.device {
+		max-width: 320px;
+		padding: 8px 11px;
+		font-size: 12.5px;
 	}
 
 	@media (max-width: 720px) {

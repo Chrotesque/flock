@@ -104,6 +104,29 @@ const collections = [
 		]
 	},
 	{
+		name: 'activity_log',
+		type: 'base',
+		...RULES,
+		fields: [
+			{
+				type: 'select',
+				name: 'category',
+				maxSelect: 1,
+				values: ['upload', 'calendar', 'settings']
+			},
+			{ type: 'text', name: 'action', required: true, max: 200 },
+			{ type: 'text', name: 'detail', max: 2000 },
+			// Browsers cannot read the OS hostname, so this is the name the user
+			// gave this browser (stored per-device in localStorage).
+			{ type: 'text', name: 'device', max: 120 },
+			...stamps
+		],
+		indexes: [
+			'CREATE INDEX `idx_activity_log_created` ON `activity_log` (`created`)',
+			'CREATE INDEX `idx_activity_log_category` ON `activity_log` (`category`)'
+		]
+	},
+	{
 		name: 'app_settings',
 		type: 'base',
 		...RULES,

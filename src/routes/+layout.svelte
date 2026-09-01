@@ -26,11 +26,20 @@
 			hint: 'Everything scheduled',
 			icon: 'M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-9ZM4 10h16M8.5 4v3.5M15.5 4v3.5'
 		},
+	];
+
+	const utilities = [
 		{
 			href: '/settings',
 			label: 'Settings',
 			hint: 'Platforms and adaptations',
 			icon: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8-3.5a8 8 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a8 8 0 0 0-2-1.2L15 3H9l-.5 2.6a8 8 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a8 8 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a8 8 0 0 0 2 1.2L9 21h6l.5-2.6a8 8 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6A8 8 0 0 0 20 12Z'
+		},
+		{
+			href: '/log',
+			label: 'Log',
+			hint: 'Everything that changed',
+			icon: 'M5.5 4h13a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm3 4.5h7m-7 3.5h7m-7 3.5h4.5'
 		}
 	];
 
@@ -44,6 +53,26 @@
 	<aside>
 		<nav>
 			{#each links as link (link.href)}
+				<a href="{base}{link.href}" class="navlink" class:active={isActive(link.href)}>
+					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+						<path
+							d={link.icon}
+							stroke="currentColor"
+							stroke-width="1.7"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					</svg>
+					<span class="text">
+						{link.label}
+						<em>{link.hint}</em>
+					</span>
+				</a>
+			{/each}
+		</nav>
+
+		<nav class="utility">
+			{#each utilities as link (link.href)}
 				<a href="{base}{link.href}" class="navlink" class:active={isActive(link.href)}>
 					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
 						<path
@@ -91,7 +120,10 @@
 	aside {
 		display: flex;
 		flex-direction: column;
-		gap: 26px;
+		/* No gap: the three groups space themselves — .utility pushes down with
+		   an auto margin and .foot sets its own clearance — so a container gap
+		   would silently add to it. */
+		gap: 0;
 		padding: 20px 14px;
 		border-right: 1px solid var(--border);
 		background: rgba(16, 14, 26, 0.6);
@@ -101,7 +133,7 @@
 	/* Brand and version sit together at the bottom; this block is what pushes
 	   them there, so the nav can start flush at the top. */
 	.foot {
-		margin-top: auto;
+		margin-top: 30px;
 		display: grid;
 		gap: 14px;
 	}
@@ -160,6 +192,12 @@
 	nav {
 		display: grid;
 		gap: 3px;
+	}
+
+	/* Settings and Log sit at the bottom of the rail; the auto margin pushes
+	   them down, and .foot's own 30px keeps them clear of the brand. */
+	.utility {
+		margin-top: auto;
 	}
 
 	.navlink {
@@ -267,6 +305,11 @@
 			display: flex;
 			align-items: center;
 			gap: 12px;
+		}
+		.utility {
+			margin-top: 0;
+			grid-auto-flow: column;
+			gap: 2px;
 		}
 		main {
 			padding: 22px 18px 50px;
