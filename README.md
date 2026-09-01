@@ -62,13 +62,20 @@ PocketBase itself.
 
 ## Using it
 
+**Name the browser first.** Nothing can be uploaded or changed until you do — the
+Log records which machine made every change, and it cannot do that for an unnamed
+browser. flock asks on first open. The name is unique across your machines and
+cannot be changed afterwards, so pick one you will recognise later. Each browser
+needs its own; the name is stored locally, so opening flock from a different
+address counts as a different browser.
+
 **Upload** is a three-step flow. Enter a title, a description and a video file, and
 tick the platforms you want. Clicking a platform opens its options and a preview of
 its adapted title and description. Continue to a week calendar showing a card per
 platform: drag a card to another day or hour to move that release, or use the exact
 date and time fields underneath. The final
-screen lists what each platform gets and when; confirming takes two clicks, and the
-upload to the NAS starts there.
+screen shows a still of the video with what each platform gets and when; confirming
+takes two clicks, and the copy to the NAS starts there.
 
 **Calendar** shows every release ever scheduled on a week grid. Things already
 released — or whose slot has passed — are greyed out, and there is a toggle to hide
@@ -76,13 +83,20 @@ them. It opens read-only; press *Edit* twice within two seconds to unlock it, th
 drag an upcoming release to another day or hour. Released and past-due posts stay
 locked either way.
 
+**Log** lists every change — uploads, calendar moves and settings — with the date,
+time and the machine that made it. Filter by category, search, or click a device
+tag to see only that machine. It cannot be edited or cleared.
+
 **Analytics** is empty for now. Below the placeholder it lists what is currently
 stored on the NAS, which is where you check that an upload actually landed.
 
-**Settings** has two parts. *Storage and defaults* holds the NAS folders a finished
-video is copied into; the filled circle marks the default.
+**Settings** has three parts. *Storage and defaults* holds the NAS folders a
+finished video is copied into (the filled circle marks the default) and shows this
+browser's device name. *Templates* holds reusable blocks of text: on the upload
+screen they appear under the details, and typing a template's name in braces —
+`{outro}` — swaps it in as you write.
 
-Below it, each platform has its display order, its release timing, its default
+Below those, each platform has its display order, its release timing, its default
 publish options, and its adaptation rules. Release timing is either one fixed time
 for that platform, or *Profiles* — named patterns like "Horror", each with an
 optional time and an optional set of weekdays. Choosing Profiles adds a Profiles
@@ -97,7 +111,8 @@ defaults and rules are kept.
 ## Where things live
 
 Videos and schedules live in PocketBase on the NAS, in the collections
-`upload_jobs`, `upload_targets`, `platform_settings` and `app_settings`. The chosen
-destination is recorded on each upload, so changing the destination list later never
-moves something already queued. Nothing is stored in the browser, and nothing is
-written until you confirm an upload.
+`upload_jobs`, `upload_targets`, `platform_settings`, `app_settings`,
+`activity_log` and `devices`. The chosen destination is recorded on each upload, so
+changing the destination list later never redirects something already queued —
+and the file is copied there, never moved. Nothing is written until you confirm an
+upload; the only thing kept in the browser is this device's name.
