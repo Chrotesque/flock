@@ -6,6 +6,15 @@ import type { TextTemplate } from '../types';
 export const TEMPLATES_KEY = 'templates';
 
 /**
+ * The form a template is referenced by in text: lower case, with runs of
+ * whitespace collapsed to a single dash. A template named "test 123" is used as
+ * `{test-123}`, since a brace token reads better without spaces in it.
+ */
+export function tokenOf(name: string): string {
+	return name.trim().toLowerCase().replace(/\s+/g, '-');
+}
+
+/**
  * Reusable blocks of text, kept under their own `app_settings` key rather than
  * inside the general blob — they are a list that grows, not a handful of
  * settings, and the compose screen loads them on their own.
@@ -101,13 +110,14 @@ class TemplateStore {
 	}
 
 	/**
-	 * Names are forced lower case on entry, but this still folds case so that
-	 * `{Socials}` typed mid-sentence finds `socials`.
+	 * Resolves a brace token to its template. Both sides go through `tokenOf`,
+	 * so `{test-123}`, `{test 123}` and `{TEST-123}` all find "test 123" —
+	 * liberal on the way in, canonical on the way out.
 	 */
 	byName(name: string): TextTemplate | undefined {
-		const wanted = name.trim().toLowerCase();
+		const wanted = tokenOf(name);
 		if (!wanted) return undefined;
-		return this.items.find((t) => t.name.trim().toLowerCase() === wanted);
+		return this.items.find((t) => tokenOf(t.name) === wanted);
 	}
 
 	/** Returns the new template's id so the caller can expand it. */

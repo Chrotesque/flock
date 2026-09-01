@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { templates } from '$lib/stores/templates.svelte';
+	import { templates, tokenOf } from '$lib/stores/templates.svelte';
 
 	// One template open at a time: the bodies are multi-line, and a list of them
 	// all expanded buries the names you are scanning for.
@@ -151,7 +151,7 @@
 
 						{#if template.name.trim()}
 							<p class="hint">
-								Insert by typing <code>{'{'}{template.name.trim()}{'}'}</code>
+								Insert by typing <code>{'{'}{tokenOf(template.name)}{'}'}</code>
 							</p>
 						{:else}
 							<p class="hint warn">Give it a name to use the brace shortcut.</p>

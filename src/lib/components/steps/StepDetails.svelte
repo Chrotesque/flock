@@ -9,7 +9,7 @@
 	import { adapt } from '$lib/filters';
 	import { draft } from '$lib/stores/draft.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
-	import { templates } from '$lib/stores/templates.svelte';
+	import { templates, tokenOf } from '$lib/stores/templates.svelte';
 	import { portal } from '$lib/portal';
 	import type { PlatformId, TextTemplate } from '$lib/types';
 
@@ -293,7 +293,12 @@
 
 {#if hovered}
 	<div class="preview" style="left: {popX}px; top: {popY}px" role="tooltip" use:portal>
-		<p class="previewname">{hovered.name.trim() || 'Unnamed'}</p>
+		<p class="previewname">
+			{hovered.name.trim() || 'Unnamed'}
+			{#if hovered.name.trim()}
+				<span class="previewtoken">{'{'}{tokenOf(hovered.name)}{'}'}</span>
+			{/if}
+		</p>
 		<p class="previewbody">{hovered.content || '(empty)'}</p>
 	</div>
 {/if}
@@ -389,12 +394,24 @@
 	}
 
 	.previewname {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 10px;
 		margin: 0 0 5px;
 		font-size: 11px;
 		font-weight: 650;
 		letter-spacing: 0.05em;
 		text-transform: uppercase;
 		color: var(--text-faint);
+	}
+
+	.previewtoken {
+		font-family: var(--mono);
+		font-size: 10.5px;
+		letter-spacing: 0;
+		text-transform: none;
+		color: var(--pink-soft);
 	}
 
 	.previewbody {
