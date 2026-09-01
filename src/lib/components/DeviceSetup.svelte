@@ -53,13 +53,7 @@
 	}
 
 	let label = $derived(
-		busy
-			? 'Claiming…'
-			: stage === 0
-				? 'Set permanently'
-				: stage < CONFIRMATIONS
-					? `Cannot be undone — confirm (${stage}/${CONFIRMATIONS})`
-					: `Confirm again (${stage}/${CONFIRMATIONS})`
+		busy ? 'Claiming…' : stage === 0 ? 'Set permanently' : `Confirm? (${stage}/${CONFIRMATIONS})`
 	);
 
 	$effect(() => () => {
