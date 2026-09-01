@@ -48,29 +48,30 @@
 
 <div class="wrap">
 	<section class="card summary">
+		{#if posterUrl}
+			<!-- svelte-ignore a11y_media_has_caption -->
+			<video
+				class="poster"
+				src={posterUrl}
+				muted
+				playsinline
+				preload="metadata"
+				onloadeddata={showFirstFrame}
+			></video>
+		{:else}
+			<div class="poster empty">
+				<svg viewBox="0 0 24 24" width="28" height="28" fill="none" aria-hidden="true">
+					<path
+						d="M4 6.5A2.5 2.5 0 0 1 6.5 4h7A2.5 2.5 0 0 1 16 6.5v11A2.5 2.5 0 0 1 13.5 20h-7A2.5 2.5 0 0 1 4 17.5v-11ZM16 9.5l4-2.2v9.4l-4-2.2"
+						stroke="currentColor"
+						stroke-width="1.7"
+						stroke-linejoin="round"
+					/>
+				</svg>
+			</div>
+		{/if}
+
 		<div class="file">
-			{#if posterUrl}
-				<!-- svelte-ignore a11y_media_has_caption -->
-				<video
-					class="poster"
-					src={posterUrl}
-					muted
-					playsinline
-					preload="metadata"
-					onloadeddata={showFirstFrame}
-				></video>
-			{:else}
-				<span class="ic">
-					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
-						<path
-							d="M4 6.5A2.5 2.5 0 0 1 6.5 4h7A2.5 2.5 0 0 1 16 6.5v11A2.5 2.5 0 0 1 13.5 20h-7A2.5 2.5 0 0 1 4 17.5v-11ZM16 9.5l4-2.2v9.4l-4-2.2"
-							stroke="currentColor"
-							stroke-width="1.7"
-							stroke-linejoin="round"
-						/>
-					</svg>
-				</span>
-			{/if}
 			<div class="filemeta">
 				<p class="name">{draft.file?.name ?? 'No file'}</p>
 				<p class="sub">
@@ -207,20 +208,33 @@
 	}
 
 	.summary {
-		padding: 14px 16px;
+		padding: 16px;
+		display: grid;
+		justify-items: center;
+		gap: 14px;
 	}
 
+	/* A fixed 16:9 stage rather than the video's own ratio: a portrait clip would
+	   otherwise be taller than the screen at this width. `contain` letterboxes
+	   instead of cropping, so the frame shown is the whole frame. */
 	.poster {
-		flex: none;
-		width: 148px;
-		height: 84px;
-		object-fit: cover;
-		border-radius: 10px;
+		width: 80%;
+		aspect-ratio: 16 / 9;
+		object-fit: contain;
+		border-radius: 12px;
 		background: #000;
 		border: 1px solid var(--border-strong);
 	}
 
+	.poster.empty {
+		display: grid;
+		place-items: center;
+		background: var(--bg-elev);
+		color: var(--text-faint);
+	}
+
 	.file {
+		width: 100%;
 		display: flex;
 		align-items: center;
 		gap: 12px;
