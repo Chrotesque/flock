@@ -104,12 +104,18 @@
 							</svg>
 						</button>
 
-						<input
-							class="input name"
-							placeholder="name (e.g. outro)"
-							value={template.name}
-							oninput={(e) => onName(template.id, e.currentTarget)}
-						/>
+						{#if open}
+							<input
+								class="input name"
+								placeholder="name (e.g. outro)"
+								value={template.name}
+								oninput={(e) => onName(template.id, e.currentTarget)}
+							/>
+						{:else}
+							<button class="namebtn" onclick={() => toggle(template.id)}>
+								{template.name.trim() || 'unnamed'}
+							</button>
+						{/if}
 
 						<button
 							class="del"
@@ -150,10 +156,6 @@
 						{:else}
 							<p class="hint warn">Give it a name to use the brace shortcut.</p>
 						{/if}
-					{:else}
-						<p class="collapsed">
-							{template.content.trim().split('\n')[0] || 'Empty'}
-						</p>
 					{/if}
 				</li>
 			{/each}
@@ -264,19 +266,33 @@
 		font-weight: 560;
 	}
 
-	.body {
-		min-height: 92px;
-		font-size: 12.5px;
-	}
-
-	.collapsed {
-		margin: 0;
-		padding-left: 32px;
-		font-size: 11.5px;
-		color: var(--text-faint);
+	/* Collapsed, the name is a label that opens the row — editing it is only
+	   possible once open, so a stray click cannot rename a template. Padding
+	   matches the input so the row does not jump height when it expands. */
+	.namebtn {
+		flex: 1;
+		min-width: 0;
+		padding: 8px 11px;
+		text-align: left;
+		font-size: 13px;
+		font-weight: 560;
+		color: var(--text);
+		border-radius: var(--radius);
+		border: 1px solid transparent;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		transition: background 0.14s, color 0.14s;
+	}
+
+	.namebtn:hover {
+		background: var(--surface-2);
+		color: var(--pink-soft);
+	}
+
+	.body {
+		min-height: 92px;
+		font-size: 12.5px;
 	}
 
 	.del {
