@@ -12,3 +12,6 @@ Thumbs.db
 
 .claude/
 CLAUDE.md
+
+# PocketBase superuser credentials - never commit
+scripts/.pb-creds.json

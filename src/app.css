@@ -1,0 +1,259 @@
+/* flock design tokens — pulled from the app icon: a pink→magenta bird over
+   purple→pink bars on near-black. Pink/purple is reserved for *state*
+   (selected, active, focused); platform brand colours live in platforms.ts. */
+
+:root {
+	--bg: #0a0912;
+	--bg-elev: #100e1a;
+	--surface: #16131f;
+	--surface-2: #1e1a2b;
+	--surface-3: #272138;
+	--border: #2c2540;
+	--border-strong: #3b3155;
+
+	--text: #ece9f5;
+	--text-dim: #a79fbe;
+	--text-faint: #6f6787;
+
+	--pink: #ff4d9e;
+	--pink-hot: #ff2e8a;
+	--pink-soft: #ff8fc2;
+	--magenta: #d946a8;
+	--purple: #a855f7;
+	--violet: #7c3aed;
+
+	--accent: var(--pink);
+	--accent-grad: linear-gradient(135deg, #a855f7 0%, #ff4d9e 100%);
+	--accent-grad-soft: linear-gradient(135deg, rgba(168, 85, 247, 0.18) 0%, rgba(255, 77, 158, 0.18) 100%);
+
+	--ok: #34d399;
+	--warn: #fbbf24;
+	--danger: #f87171;
+
+	--radius: 12px;
+	--radius-sm: 8px;
+	--radius-lg: 18px;
+
+	--shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+	--glow: 0 0 0 1px rgba(255, 77, 158, 0.35), 0 6px 24px rgba(255, 77, 158, 0.18);
+
+	--font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+	--mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
+
+	--nav-w: 232px;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+}
+
+body {
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font);
+	font-size: 14px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+}
+
+/* A soft aurora behind everything, echoing the icon's glow. */
+body::before {
+	content: '';
+	position: fixed;
+	inset: 0;
+	pointer-events: none;
+	z-index: 0;
+	background:
+		radial-gradient(70ch 50ch at 12% -8%, rgba(168, 85, 247, 0.13), transparent 65%),
+		radial-gradient(60ch 45ch at 92% 108%, rgba(255, 77, 158, 0.11), transparent 62%);
+}
+
+h1,
+h2,
+h3,
+h4 {
+	margin: 0;
+	font-weight: 620;
+	letter-spacing: -0.015em;
+}
+
+button,
+input,
+textarea,
+select {
+	font: inherit;
+	color: inherit;
+}
+
+button {
+	cursor: pointer;
+	border: none;
+	background: none;
+}
+
+button:disabled {
+	cursor: not-allowed;
+	opacity: 0.45;
+}
+
+:focus-visible {
+	outline: 2px solid var(--pink);
+	outline-offset: 2px;
+}
+
+::selection {
+	background: rgba(255, 77, 158, 0.3);
+}
+
+/* ---- shared primitives ---- */
+
+.card {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow);
+}
+
+.label {
+	display: block;
+	font-size: 11px;
+	font-weight: 650;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	margin-bottom: 8px;
+}
+
+.input,
+.textarea,
+.select {
+	width: 100%;
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 11px 13px;
+	transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.input:focus,
+.textarea:focus,
+.select:focus {
+	outline: none;
+	border-color: var(--pink);
+	box-shadow: 0 0 0 3px rgba(255, 77, 158, 0.14);
+}
+
+.input::placeholder,
+.textarea::placeholder {
+	color: var(--text-faint);
+}
+
+.textarea {
+	resize: vertical;
+	min-height: 140px;
+	line-height: 1.6;
+}
+
+.select {
+	appearance: none;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' stroke='%23a79fbe' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 13px center;
+	padding-right: 34px;
+	cursor: pointer;
+}
+
+.select option {
+	background: var(--surface-2);
+}
+
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 10px 18px;
+	border-radius: var(--radius);
+	border: 1px solid var(--border-strong);
+	background: var(--surface-2);
+	color: var(--text);
+	font-weight: 560;
+	transition: background 0.15s, border-color 0.15s, transform 0.06s;
+}
+
+.btn:hover:not(:disabled) {
+	background: var(--surface-3);
+	border-color: var(--pink);
+}
+
+.btn:active:not(:disabled) {
+	transform: translateY(1px);
+}
+
+.btn-primary {
+	background: var(--accent-grad);
+	border-color: transparent;
+	color: #fff;
+	font-weight: 620;
+}
+
+.btn-primary:hover:not(:disabled) {
+	background: var(--accent-grad);
+	filter: brightness(1.1);
+	box-shadow: var(--glow);
+}
+
+.btn-ghost {
+	background: transparent;
+	border-color: transparent;
+	color: var(--text-dim);
+}
+
+.btn-ghost:hover:not(:disabled) {
+	background: var(--surface-2);
+	border-color: transparent;
+	color: var(--text);
+}
+
+.pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 9px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 600;
+	background: var(--surface-3);
+	color: var(--text-dim);
+}
+
+.mono {
+	font-family: var(--mono);
+	font-size: 12px;
+}
+
+.scroll::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+.scroll::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.scroll::-webkit-scrollbar-thumb {
+	background: var(--surface-3);
+	border-radius: 999px;
+	border: 3px solid var(--bg);
+}
+
+.scroll::-webkit-scrollbar-thumb:hover {
+	background: var(--border-strong);
+}

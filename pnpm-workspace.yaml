@@ -1,0 +1,4 @@
+# pnpm gates packages that run install/build scripts. esbuild (pulled in by
+# vitest) needs its postinstall to link its native binary, so allow it.
+allowBuilds:
+  esbuild: true
