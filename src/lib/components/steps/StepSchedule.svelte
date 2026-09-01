@@ -51,7 +51,7 @@
 	<WeekCalendar
 		items={rows}
 		bind:weekStart
-		draggable
+		candrag={() => true}
 		ondropitem={onDropItem}
 		card={cardFor}
 		toolbar={tip}

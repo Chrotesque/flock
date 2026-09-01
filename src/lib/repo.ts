@@ -235,3 +235,12 @@ export async function deleteJob(id: string): Promise<void> {
 	// upload_targets cascade-delete with the job.
 	await pb.collection('upload_jobs').delete(id);
 }
+
+/**
+ * Moves one already-committed release to a new instant. Used by the Calendar's
+ * edit mode; the wizard never calls this, since nothing is written there until
+ * the upload is confirmed.
+ */
+export async function rescheduleTarget(id: string, scheduledAt: string): Promise<void> {
+	await pb.collection('upload_targets').update(id, { scheduled_at: scheduledAt });
+}

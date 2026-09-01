@@ -12,14 +12,19 @@
 		weekStart = $bindable(startOfWeek(new Date())),
 		card,
 		toolbar,
-		draggable = false,
+		candrag,
 		ondropitem
 	}: {
 		items: T[];
 		weekStart?: Date;
 		card: Snippet<[T]>;
 		toolbar?: Snippet;
-		draggable?: boolean;
+		/**
+		 * Per item, so a grid can be partly editable — the Calendar allows
+		 * upcoming releases to be moved while released ones stay put. Omitted
+		 * means nothing is draggable.
+		 */
+		candrag?: (item: T) => boolean;
 		/** Fires with the dragged item's id and the cell it was dropped on. */
 		ondropitem?: (id: string, date: string, hour: number) => void;
 	} = $props();
@@ -160,7 +165,7 @@
 						ondrop={(e) => onDrop(e, day.iso, hour)}
 					>
 						{#each cardsAt(day.iso, hour) as item (item.id)}
-							{#if draggable}
+							{#if candrag?.(item)}
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<div
 									class="slot grab"

@@ -21,6 +21,12 @@
 			icon: 'M4 20V10m5 10V5m5 15v-7m5 7V8'
 		},
 		{
+			href: '/calendar',
+			label: 'Calendar',
+			hint: 'Everything scheduled',
+			icon: 'M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-9ZM4 10h16M8.5 4v3.5M15.5 4v3.5'
+		},
+		{
 			href: '/settings',
 			label: 'Settings',
 			hint: 'Platforms and adaptations',

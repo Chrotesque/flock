@@ -72,7 +72,9 @@ upload to the NAS starts there.
 
 **Calendar** shows every release ever scheduled on a week grid. Things already
 released — or whose slot has passed — are greyed out, and there is a toggle to hide
-them.
+them. It opens read-only; press *Edit* twice within two seconds to unlock it, then
+drag an upcoming release to another day or hour. Released and past-due posts stay
+locked either way.
 
 **Analytics** is empty for now. Below the placeholder it lists what is currently
 stored on the NAS, which is where you check that an upload actually landed.
