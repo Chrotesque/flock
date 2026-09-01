@@ -103,6 +103,28 @@
 	let below = $state<T[]>([]);
 	let ticking = false;
 
+	/**
+	 * Off-screen items bucketed by which day column they belong to, so an arrow
+	 * sits over its own day rather than in the middle of the grid. Several items
+	 * can share a column, so each bucket renders as one slot.
+	 */
+	function byDay(list: T[]): { index: number; items: T[] }[] {
+		const buckets = new Map<number, T[]>();
+		for (const item of list) {
+			const index = days.findIndex((day) => day.iso === item.date);
+			if (index < 0) continue;
+			const bucket = buckets.get(index);
+			if (bucket) bucket.push(item);
+			else buckets.set(index, [item]);
+		}
+		return [...buckets.entries()]
+			.map(([index, items]) => ({ index, items }))
+			.sort((a, b) => a.index - b.index);
+	}
+
+	let aboveByDay = $derived(byDay(above));
+	let belowByDay = $derived(byDay(below));
+
 	function measure() {
 		const el = scroller;
 		if (!el) return;
@@ -317,18 +339,26 @@
 			</div>
 		</div>
 
-		{#if offscreen && above.length > 0}
+		{#if offscreen && aboveByDay.length > 0}
 			<div class="rail up">
-				{#each above as item (item.id)}
-					{@render offscreen(item, 'up', () => centerOn(item))}
+				{#each aboveByDay as group (group.index)}
+					<div class="railslot" style="grid-column: {group.index + 1}">
+						{#each group.items as item (item.id)}
+							{@render offscreen(item, 'up', () => centerOn(item))}
+						{/each}
+					</div>
 				{/each}
 			</div>
 		{/if}
 
-		{#if offscreen && below.length > 0}
+		{#if offscreen && belowByDay.length > 0}
 			<div class="rail down">
-				{#each below as item (item.id)}
-					{@render offscreen(item, 'down', () => centerOn(item))}
+				{#each belowByDay as group (group.index)}
+					<div class="railslot" style="grid-column: {group.index + 1}">
+						{#each group.items as item (item.id)}
+							{@render offscreen(item, 'down', () => centerOn(item))}
+						{/each}
+					</div>
 				{/each}
 			</div>
 		{/if}
@@ -513,16 +543,27 @@
 
 	/* Floating over the grid's own edges, so an off-screen card is reachable
 	   without hunting for it. */
+	/* Mirrors the grid's seven day columns exactly, so an arrow lands over the
+	   day its card is on. */
 	.rail {
 		position: absolute;
 		left: 62px;
 		right: 0;
-		display: flex;
-		justify-content: center;
-		gap: 6px;
-		padding: 7px 10px;
+		display: grid;
+		grid-template-columns: repeat(7, minmax(0, 1fr));
+		align-items: start;
+		padding: 7px 0;
 		pointer-events: none;
 		z-index: 3;
+	}
+
+	.railslot {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 4px;
+		padding: 0 3px;
+		min-width: 0;
 	}
 
 	.rail.up {
