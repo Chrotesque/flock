@@ -14,8 +14,9 @@
 			<div>
 				<h4>NAS destinations</h4>
 				<p>
-					Folders a finished video can be moved into. The default is recorded on each upload, so
-					changing this list later never relocates something already queued.
+					Folders a finished video is copied into — the original is left where it is. The default is
+					recorded on each upload, so changing this list later never redirects something already
+					queued.
 				</p>
 			</div>
 			<button class="btn sm" onclick={() => general.addDestination()}>Add destination</button>
@@ -78,7 +79,7 @@
 			</ul>
 
 			<p class="hint">
-				The filled circle marks the default. Nothing moves files yet — the destination is stored on
+				The filled circle marks the default. Nothing copies files yet — the destination is stored on
 				the upload for the publishing worker to act on once it exists.
 			</p>
 		{/if}

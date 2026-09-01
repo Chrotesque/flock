@@ -96,7 +96,7 @@
 				/>
 			</svg>
 			<p class="lead">Drop a video here, or click to browse</p>
-			<p class="sub">Stays on this machine until you confirm — then it goes to the NAS.</p>
+			<p class="sub">Stays on this machine until you confirm — then a copy goes to the NAS.</p>
 		</div>
 	{/if}
 </div>

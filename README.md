@@ -80,7 +80,7 @@ locked either way.
 stored on the NAS, which is where you check that an upload actually landed.
 
 **Settings** has two parts. *Storage and defaults* holds the NAS folders a finished
-video can be moved into; the filled circle marks the default.
+video is copied into; the filled circle marks the default.
 
 Below it, each platform has its display order, its release timing, its default
 publish options, and its adaptation rules. Release timing is either one fixed time

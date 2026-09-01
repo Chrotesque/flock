@@ -13,6 +13,30 @@
 
 	let destination = $derived(general.defaultDestination);
 
+	// A still of the video itself, so the last screen before upload shows what is
+	// actually being sent rather than just its file name.
+	let posterUrl = $state('');
+
+	$effect(() => {
+		const file = draft.file;
+		if (!file) {
+			posterUrl = '';
+			return;
+		}
+		const url = URL.createObjectURL(file);
+		posterUrl = url;
+		return () => URL.revokeObjectURL(url);
+	});
+
+	/**
+	 * `preload="metadata"` alone leaves some browsers on a blank first paint.
+	 * Nudging past zero forces a frame to be decoded and shown.
+	 */
+	function showFirstFrame(event: Event) {
+		const video = event.currentTarget as HTMLVideoElement;
+		if (video.currentTime === 0) video.currentTime = 0.1;
+	}
+
 	let detailFor = $state<PlanRow | null>(null);
 	let detailOpen = $state(false);
 
@@ -25,16 +49,28 @@
 <div class="wrap">
 	<section class="card summary">
 		<div class="file">
-			<span class="ic">
-				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
-					<path
-						d="M4 6.5A2.5 2.5 0 0 1 6.5 4h7A2.5 2.5 0 0 1 16 6.5v11A2.5 2.5 0 0 1 13.5 20h-7A2.5 2.5 0 0 1 4 17.5v-11ZM16 9.5l4-2.2v9.4l-4-2.2"
-						stroke="currentColor"
-						stroke-width="1.7"
-						stroke-linejoin="round"
-					/>
-				</svg>
-			</span>
+			{#if posterUrl}
+				<!-- svelte-ignore a11y_media_has_caption -->
+				<video
+					class="poster"
+					src={posterUrl}
+					muted
+					playsinline
+					preload="metadata"
+					onloadeddata={showFirstFrame}
+				></video>
+			{:else}
+				<span class="ic">
+					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+						<path
+							d="M4 6.5A2.5 2.5 0 0 1 6.5 4h7A2.5 2.5 0 0 1 16 6.5v11A2.5 2.5 0 0 1 13.5 20h-7A2.5 2.5 0 0 1 4 17.5v-11ZM16 9.5l4-2.2v9.4l-4-2.2"
+							stroke="currentColor"
+							stroke-width="1.7"
+							stroke-linejoin="round"
+						/>
+					</svg>
+				</span>
+			{/if}
 			<div class="filemeta">
 				<p class="name">{draft.file?.name ?? 'No file'}</p>
 				<p class="sub">
@@ -43,7 +79,7 @@
 						{#if draft.duration}<span class="dot">·</span>{formatDuration(draft.duration)}{/if}
 						<span class="dot">·</span>
 						{#if destination}
-							goes to <span class="dest">{destination.label || destination.path || 'unnamed'}</span>
+							will be copied to <span class="dest">{destination.label || destination.path || 'unnamed'}</span>
 						{:else}
 							uploads to the NAS on confirm
 						{/if}
@@ -172,6 +208,16 @@
 
 	.summary {
 		padding: 14px 16px;
+	}
+
+	.poster {
+		flex: none;
+		width: 148px;
+		height: 84px;
+		object-fit: cover;
+		border-radius: 10px;
+		background: #000;
+		border: 1px solid var(--border-strong);
 	}
 
 	.file {

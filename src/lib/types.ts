@@ -107,7 +107,7 @@ export interface Draft {
 	schedule: Partial<Record<PlatformId, { date: string; time: string }>>;
 }
 
-/** A folder on the NAS a finished video can be moved into. */
+/** A folder on the NAS a finished video is copied into. The original stays put. */
 export interface NasDestination {
 	id: string;
 	label: string;
