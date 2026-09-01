@@ -64,7 +64,7 @@
 
 		<div class="foot">
 			<a class="brand" href="{base}/">
-				<img src="{base}/flock.png" alt="" width="34" height="34" />
+				<img src="{base}/flock.png" alt="" width="56" height="56" />
 				<span>
 					<strong>flock</strong>
 					<em>multi-platform publishing</em>
@@ -103,29 +103,39 @@
 	.foot {
 		margin-top: auto;
 		display: grid;
-		gap: 8px;
+		gap: 14px;
 	}
 
+	/* Stacked and centred: the mark sits above the name, the name above the
+	   tagline, all sharing the version's centre line. */
 	.brand {
 		display: flex;
+		flex-direction: column;
 		align-items: center;
-		gap: 11px;
+		gap: 9px;
 		padding: 6px 8px;
+		text-align: center;
 		text-decoration: none;
 		color: inherit;
 		border-radius: var(--radius);
 	}
 
 	.brand img {
-		border-radius: 9px;
+		border-radius: 14px;
 		flex: none;
+	}
+
+	.brand span {
+		display: grid;
+		gap: 1px;
 	}
 
 	.brand strong {
 		display: block;
-		font-size: 16px;
-		font-weight: 680;
-		letter-spacing: -0.02em;
+		font-size: 19px;
+		font-weight: 700;
+		letter-spacing: -0.025em;
+		line-height: 1.15;
 		background: var(--accent-grad);
 		-webkit-background-clip: text;
 		background-clip: text;
@@ -135,7 +145,7 @@
 	.brand em {
 		display: block;
 		font-style: normal;
-		font-size: 10.5px;
+		font-size: 11px;
 		color: var(--text-faint);
 	}
 
@@ -230,7 +240,10 @@
 			display: none;
 		}
 		.brand {
+			flex-direction: row;
+			gap: 9px;
 			padding: 0;
+			text-align: left;
 		}
 		.foot {
 			order: -1;
