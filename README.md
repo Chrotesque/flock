@@ -60,6 +60,17 @@ pnpm dev
 `pnpm build` produces a static site in `build/`, intended to be served by
 PocketBase itself.
 
+To publish it:
+
+```bash
+pnpm deploy
+```
+
+That builds and mirrors `build/` into flock's PocketBase at
+`\nasppdata\pocketbase_flock\pb_public`, which needs write access to that
+share. `pnpm deploy:dry` shows what would change without touching anything.
+PocketBase serves the files straight from disk, so there is no restart.
+
 ## Using it
 
 **Name the browser first.** Nothing can be uploaded or changed until you do — the
