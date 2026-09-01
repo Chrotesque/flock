@@ -52,6 +52,7 @@
 		items={rows}
 		bind:weekStart
 		candrag={() => true}
+		dense
 		ondropitem={onDropItem}
 		card={cardFor}
 		marker={dayMarker}
@@ -122,6 +123,7 @@
 		time={row.time}
 		title={row.title}
 		description={row.description}
+		compact
 	/>
 {/snippet}
 
@@ -164,7 +166,7 @@
 {/snippet}
 
 {#snippet tip()}
-	<p class="tip">Drag a card to another day or hour.</p>
+	<p class="tip">Drag an icon to another day or hour. Hover one to read it.</p>
 {/snippet}
 
 <style>

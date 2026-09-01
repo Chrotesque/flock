@@ -14,6 +14,7 @@
 		toolbar,
 		marker,
 		offscreen,
+		dense = false,
 		candrag,
 		ondropitem
 	}: {
@@ -28,6 +29,11 @@
 		 * direction it lies in and a callback that scrolls it into the middle.
 		 */
 		offscreen?: Snippet<[T, 'up' | 'down', () => void]>;
+		/**
+		 * Cards flow across a cell rather than stacking. For icon-sized cards —
+		 * stacking four of them would treble the row height for no gain.
+		 */
+		dense?: boolean;
 		/**
 		 * Per item, so a grid can be partly editable — the Calendar allows
 		 * upcoming releases to be moved while released ones stay put. Omitted
@@ -298,6 +304,7 @@
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
 							class="cell"
+							class:dense
 							class:today={day.iso === today}
 							class:over={over === key(day.iso, hour)}
 							ondragover={(e) => {
@@ -518,6 +525,12 @@
 		gap: 4px;
 		align-content: start;
 		transition: background 0.12s;
+	}
+
+	.cell.dense {
+		display: flex;
+		flex-wrap: wrap;
+		align-content: start;
 	}
 
 	.cell.today {
