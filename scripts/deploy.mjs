@@ -71,7 +71,9 @@ const args = [source, dest, '/MIR', '/NFL', '/NDL', '/NJH', '/NP', '/R:2', '/W:2
 if (dry) args.push('/L');
 
 console.log(`\n${dry ? 'Previewing' : 'Syncing'}  ${source}\n      ->  ${dest}\n`);
-const sync = spawnSync('robocopy', args, { stdio: 'inherit', shell: true });
+// No shell: with `shell: true` Node concatenates the arguments unescaped, which
+// both trips a deprecation warning and mangles any path containing a space.
+const sync = spawnSync('robocopy', args, { stdio: 'inherit' });
 
 // robocopy uses exit codes as a bit field; anything under 8 is success.
 if ((sync.status ?? 16) >= 8) fail(`robocopy failed with code ${sync.status}.`);
