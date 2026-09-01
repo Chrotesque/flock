@@ -1,5 +1,6 @@
 import { getSetting, setSetting } from '../repo';
 import { logAction } from '../log';
+import { settle, LOG_SETTLE_MS } from '../settle';
 import type { GeneralSettings, NasDestination } from '../types';
 
 export const GENERAL_KEY = 'general';
@@ -24,6 +25,11 @@ class GeneralStore {
 	#timer: ReturnType<typeof setTimeout> | null = null;
 	#loaded = false;
 
+	// The log describes what changed, so it needs the last state it reported on
+	// to compare against — not the state of the previous save.
+	#logged: GeneralSettings | null = null;
+	#logSettle = settle(LOG_SETTLE_MS);
+
 	async load(force = false) {
 		if (this.#loaded && !force) return;
 		this.loading = true;
@@ -38,6 +44,7 @@ class GeneralStore {
 				defaultDestinationId: stored.defaultDestinationId ?? null
 			};
 			this.#loaded = true;
+			this.#logged = $state.snapshot(this.value);
 			this.error = null;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
@@ -54,17 +61,65 @@ class GeneralStore {
 		}, 400);
 	}
 
+	/** Queues a diff of everything that changed since the last log entry. */
+	#queueLog() {
+		this.#logSettle.schedule(() => this.#logDiff());
+	}
+
+	#logDiff() {
+		const before = this.#logged;
+		const after = $state.snapshot(this.value) as GeneralSettings;
+		this.#logged = after;
+		if (!before) return;
+
+		const was = new Map(before.destinations.map((d) => [d.id, d]));
+		const now = new Map(after.destinations.map((d) => [d.id, d]));
+		const name = (d?: NasDestination) => d?.label.trim() || d?.path.trim() || 'unnamed';
+
+		for (const [id, dest] of now) {
+			const old = was.get(id);
+
+			// A row starts life blank, so it only counts as "added" once it has
+			// something to identify it by.
+			if (!old || (!old.label.trim() && !old.path.trim())) {
+				if (dest.label.trim() || dest.path.trim()) {
+					logAction('settings', `Added NAS destination ${name(dest)}`, dest.path);
+				}
+				continue;
+			}
+
+			if (old.label !== dest.label) {
+				logAction('settings', `Renamed NAS destination ${name(old)} to ${name(dest)}`);
+			}
+			if (old.path !== dest.path) {
+				logAction(
+					'settings',
+					`Changed path of ${name(dest)}`,
+					`${old.path || '(empty)'} → ${dest.path || '(empty)'}`
+				);
+			}
+		}
+
+		for (const [id, dest] of was) {
+			if (!now.has(id)) {
+				logAction('settings', `Removed NAS destination ${name(dest)}`, dest.path);
+			}
+		}
+
+		if (before.defaultDestinationId !== after.defaultDestinationId) {
+			logAction(
+				'settings',
+				`Changed default location from ${name(was.get(before.defaultDestinationId ?? ''))} to ${name(now.get(after.defaultDestinationId ?? ''))}`
+			);
+		}
+	}
+
 	async saveNow() {
 		this.saving = true;
 		try {
 			const written = $state.snapshot(this.value);
 			await setSetting(GENERAL_KEY, written);
 			this.error = null;
-			logAction(
-				'settings',
-				'Updated storage settings',
-				`${written.destinations.length} destination(s)`
-			);
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
 		} finally {
@@ -86,6 +141,7 @@ class GeneralStore {
 		// destinations with nothing selected.
 		if (!this.value.defaultDestinationId) this.value.defaultDestinationId = entry.id;
 		this.queueSave();
+		this.#queueLog();
 	}
 
 	updateDestination(id: string, patch: Partial<NasDestination>) {
@@ -93,21 +149,22 @@ class GeneralStore {
 			d.id === id ? { ...d, ...patch } : d
 		);
 		this.queueSave();
+		this.#queueLog();
 	}
 
 	removeDestination(id: string) {
-		const gone = this.value.destinations.find((d) => d.id === id);
-		logAction('settings', 'Removed a NAS destination', gone?.label || gone?.path || 'unnamed');
 		this.value.destinations = this.value.destinations.filter((d) => d.id !== id);
 		if (this.value.defaultDestinationId === id) {
 			this.value.defaultDestinationId = this.value.destinations[0]?.id ?? null;
 		}
 		this.queueSave();
+		this.#queueLog();
 	}
 
 	setDefaultDestination(id: string) {
 		this.value.defaultDestinationId = id;
 		this.queueSave();
+		this.#queueLog();
 	}
 }
 

@@ -1,6 +1,7 @@
 import { loadPlatformSettings, savePlatformSettings } from '../repo';
 import { PLATFORMS } from '../platforms';
 import { logAction } from '../log';
+import { settle, LOG_SETTLE_MS } from '../settle';
 import { DEFAULT_SCHEDULING } from '../types';
 import type {
 	FilterRule,
@@ -24,12 +25,18 @@ class SettingsStore {
 	#timers = new Map<PlatformId, ReturnType<typeof setTimeout>>();
 	#loaded = false;
 
+	#logged = new Map<PlatformId, PlatformSettings>();
+	#logSettle = settle(LOG_SETTLE_MS);
+
 	async load(force = false) {
 		if (this.#loaded && !force) return;
 		this.loading = true;
 		this.error = null;
 		try {
 			this.list = await loadPlatformSettings();
+			for (const entry of this.list) {
+				this.#logged.set(entry.platform, $state.snapshot(entry) as PlatformSettings);
+			}
 			this.#loaded = true;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
@@ -69,8 +76,57 @@ class SettingsStore {
 		return this.get(platform)?.scheduling ?? { ...DEFAULT_SCHEDULING, profiles: [] };
 	}
 
+	#queueLog(platform: PlatformId) {
+		this.#logSettle.schedule(() => this.#logDiff(platform));
+	}
+
+	/** Names the setting that moved, rather than restating the whole platform. */
+	#logDiff(platform: PlatformId) {
+		const entry = this.get(platform);
+		if (!entry) return;
+		const before = this.#logged.get(platform);
+		const after = $state.snapshot(entry) as PlatformSettings;
+		this.#logged.set(platform, after);
+		if (!before) return;
+
+		const label = PLATFORMS[platform].label;
+
+		if (before.enabled !== after.enabled) {
+			logAction('settings', `${after.enabled ? 'Enabled' : 'Disabled'} ${label}`);
+		}
+		if (before.sort_order !== after.sort_order) {
+			logAction('settings', `Reordered ${label}`, `position ${before.sort_order + 1} → ${after.sort_order + 1}`);
+		}
+		if (before.filters.length !== after.filters.length) {
+			logAction(
+				'settings',
+				`${after.filters.length > before.filters.length ? 'Added' : 'Removed'} a ${label} adaptation rule`,
+				`${before.filters.length} → ${after.filters.length} rule(s)`
+			);
+		} else if (JSON.stringify(before.filters) !== JSON.stringify(after.filters)) {
+			logAction('settings', `Edited ${label} adaptation rules`);
+		}
+		if (before.scheduling.mode !== after.scheduling.mode) {
+			logAction('settings', `Set ${label} timing to ${after.scheduling.mode}`);
+		} else if (before.scheduling.defaultTime !== after.scheduling.defaultTime) {
+			logAction(
+				'settings',
+				`Changed ${label} release time`,
+				`${before.scheduling.defaultTime} → ${after.scheduling.defaultTime}`
+			);
+		} else if (
+			JSON.stringify(before.scheduling.profiles) !== JSON.stringify(after.scheduling.profiles)
+		) {
+			logAction('settings', `Edited ${label} scheduling profiles`);
+		}
+		if (JSON.stringify(before.defaults) !== JSON.stringify(after.defaults)) {
+			logAction('settings', `Changed ${label} publish defaults`);
+		}
+	}
+
 	/** Queues a write ~400ms after the last edit to that platform. */
 	queueSave(platform: PlatformId) {
+		this.#queueLog(platform);
 		const existing = this.#timers.get(platform);
 		if (existing) clearTimeout(existing);
 		this.#timers.set(
@@ -87,17 +143,8 @@ class SettingsStore {
 		if (!entry) return;
 		this.saving = true;
 		try {
-			// Log from the snapshot, not the live entry: the read happens after the
-			// network round-trip, by which time another edit may have landed, and
-			// the log would then describe a state this write never contained.
-			const written = $state.snapshot(entry) as PlatformSettings;
-			await savePlatformSettings(written);
+			await savePlatformSettings($state.snapshot(entry) as PlatformSettings);
 			this.error = null;
-			logAction(
-				'settings',
-				`Updated ${PLATFORMS[platform].label} settings`,
-				`${written.enabled ? 'enabled' : 'disabled'}, ${written.filters.length} rule(s), ${written.scheduling.mode} timing`
-			);
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
 		} finally {

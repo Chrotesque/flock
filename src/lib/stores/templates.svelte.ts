@@ -1,5 +1,6 @@
 import { getSetting, setSetting } from '../repo';
 import { logAction } from '../log';
+import { settle, LOG_SETTLE_MS } from '../settle';
 import type { TextTemplate } from '../types';
 
 export const TEMPLATES_KEY = 'templates';
@@ -18,6 +19,9 @@ class TemplateStore {
 	#timer: ReturnType<typeof setTimeout> | null = null;
 	#loaded = false;
 
+	#logged: TextTemplate[] | null = null;
+	#logSettle = settle(LOG_SETTLE_MS);
+
 	async load(force = false) {
 		if (this.#loaded && !force) return;
 		this.loading = true;
@@ -25,6 +29,7 @@ class TemplateStore {
 			const stored = await getSetting<{ items?: TextTemplate[] }>(TEMPLATES_KEY, {});
 			this.items = Array.isArray(stored.items) ? stored.items : [];
 			this.#loaded = true;
+			this.#logged = $state.snapshot(this.items) as TextTemplate[];
 			this.error = null;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
@@ -44,14 +49,47 @@ class TemplateStore {
 	async saveNow() {
 		this.saving = true;
 		try {
-			const written = $state.snapshot(this.items);
-			await setSetting(TEMPLATES_KEY, { items: written });
+			await setSetting(TEMPLATES_KEY, { items: $state.snapshot(this.items) });
 			this.error = null;
-			logAction('settings', 'Edited templates', written.map((t) => t.name).join(', '));
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
 		} finally {
 			this.saving = false;
+		}
+	}
+
+	#queueLog() {
+		this.#logSettle.schedule(() => this.#logDiff());
+	}
+
+	/** Reports what actually changed, rather than that something did. */
+	#logDiff() {
+		const before = this.#logged;
+		const after = $state.snapshot(this.items) as TextTemplate[];
+		this.#logged = after;
+		if (!before) return;
+
+		const was = new Map(before.map((t) => [t.id, t]));
+		const now = new Map(after.map((t) => [t.id, t]));
+		const name = (t?: TextTemplate) => t?.name.trim() || 'unnamed';
+
+		for (const [id, tpl] of now) {
+			const old = was.get(id);
+			// A template starts blank, so it only counts as added once named.
+			if (!old || !old.name.trim()) {
+				if (tpl.name.trim()) logAction('settings', `Added template ${name(tpl)}`);
+				continue;
+			}
+			if (old.name !== tpl.name) {
+				logAction('settings', `Renamed template ${name(old)} to ${name(tpl)}`);
+			}
+			if (old.content !== tpl.content) {
+				logAction('settings', `Edited template ${name(tpl)}`, `${tpl.content.length} characters`);
+			}
+		}
+
+		for (const [id, tpl] of was) {
+			if (!now.has(id)) logAction('settings', `Deleted template ${name(tpl)}`);
 		}
 	}
 
@@ -70,20 +108,20 @@ class TemplateStore {
 		const entry: TextTemplate = { id: crypto.randomUUID(), name: '', content: '' };
 		this.items = [...this.items, entry];
 		this.queueSave();
-		logAction('settings', 'Added a template');
+		this.#queueLog();
 		return entry.id;
 	}
 
 	update(id: string, patch: Partial<TextTemplate>) {
 		this.items = this.items.map((t) => (t.id === id ? { ...t, ...patch } : t));
 		this.queueSave();
+		this.#queueLog();
 	}
 
 	remove(id: string) {
-		const gone = this.items.find((t) => t.id === id);
 		this.items = this.items.filter((t) => t.id !== id);
 		this.queueSave();
-		logAction('settings', 'Deleted a template', gone?.name.trim() || 'unnamed');
+		this.#queueLog();
 	}
 }
 
