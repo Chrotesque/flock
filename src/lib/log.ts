@@ -41,25 +41,61 @@ export function isDeviceNamed(): boolean {
 }
 
 /**
- * Names this browser, once and for good.
+ * Claims a name for this browser, once and for good.
  *
  * Permanent by design: the log attributes past actions to this name, and
  * letting it change later would silently rewrite what every existing entry
- * means. Enforced here rather than only in the UI. Returns false if the name
- * was rejected.
+ * means.
+ *
+ * The name is registered in the `devices` collection first. Its unique index is
+ * what enforces uniqueness — checking for a clash and then writing would let two
+ * machines claim the same name in the gap.
  */
-export function setDeviceName(name: string): boolean {
-	if (typeof localStorage === 'undefined') return false;
-	if (isDeviceNamed()) return false;
+export async function claimDeviceName(
+	name: string
+): Promise<{ ok: true } | { ok: false; reason: string }> {
 	const trimmed = name.trim();
-	if (!trimmed) return false;
+	if (!trimmed) return { ok: false, reason: 'Enter a name for this device.' };
+	if (isDeviceNamed()) return { ok: false, reason: 'This browser already has a name.' };
+
+	const key = trimmed.toLowerCase();
+
+	try {
+		await pb.collection('devices').create({ name: trimmed, key });
+	} catch (err) {
+		// The SDK reports every rejection as "Failed to create record", so ask
+		// what actually happened rather than pattern-matching that string. The
+		// unique index still does the enforcing — this only picks the message.
+		const taken = await pb
+			.collection('devices')
+			.getFirstListItem(pb.filter('key={:key}', { key }))
+			.catch(() => null);
+
+		if (taken) {
+			return { ok: false, reason: `"${trimmed}" is already used by another machine.` };
+		}
+		const message = err instanceof Error ? err.message : String(err);
+		return { ok: false, reason: `Could not register the name — ${message}` };
+	}
+
 	try {
 		localStorage.setItem(DEVICE_KEY, trimmed);
-		return true;
 	} catch {
-		// Private windows and blocked site data throw; the log falls back to the
-		// guessed name.
-		return false;
+		return { ok: false, reason: 'This browser refused to store the name (private window?).' };
+	}
+	return { ok: true };
+}
+
+/**
+ * Throws unless this browser has been named.
+ *
+ * Called at the top of every write, so the rule survives the UI: disabling an
+ * overlay or re-enabling a button in devtools still cannot get a change past
+ * this, because the block is in the code that talks to PocketBase.
+ */
+export function assertDeviceNamed(): void {
+	if (!isDeviceNamed()) {
+		throw new Error('Name this device in Settings before making changes.');
 	}
 }
 

@@ -1,62 +1,6 @@
 <script lang="ts">
 	import { general } from '$lib/stores/general.svelte';
-	import { deviceName, setDeviceName, isDeviceNamed, logAction } from '$lib/log';
-
-	// Kept in localStorage, not PocketBase: it names *this browser*, and every
-	// machine that opens flock needs its own answer.
-	//
-	// Naming is one-way. Past log entries are attributed to this name, so
-	// allowing a rename would quietly change what they mean. The button takes
-	// three presses — one to ask, two to confirm — each within 2s.
-	let named = $state(isDeviceNamed());
-	let device = $state(deviceName());
-	let draft = $state('');
-	let stage = $state(0);
-	let stageTimer: ReturnType<typeof setTimeout> | null = null;
-
-	const CONFIRMATIONS = 2;
-
-	function resetStage() {
-		stage = 0;
-		if (stageTimer) clearTimeout(stageTimer);
-		stageTimer = null;
-	}
-
-	function onDraft(value: string) {
-		draft = value;
-		// Editing the name invalidates any confirmation already given.
-		resetStage();
-	}
-
-	function onConfirm() {
-		if (!draft.trim()) return;
-
-		if (stage < CONFIRMATIONS) {
-			stage += 1;
-			if (stageTimer) clearTimeout(stageTimer);
-			stageTimer = setTimeout(resetStage, 2000);
-			return;
-		}
-
-		resetStage();
-		if (!setDeviceName(draft)) return;
-		named = true;
-		device = deviceName();
-		draft = '';
-		logAction('settings', 'Named this device', device);
-	}
-
-	let confirmLabel = $derived(
-		stage === 0
-			? 'Set permanently'
-			: stage < CONFIRMATIONS
-				? `Cannot be undone — confirm (${stage}/${CONFIRMATIONS})`
-				: `Confirm again (${stage}/${CONFIRMATIONS})`
-	);
-
-	$effect(() => () => {
-		if (stageTimer) clearTimeout(stageTimer);
-	});
+	import DeviceSetup from './DeviceSetup.svelte';
 
 	// App-wide settings. Anything that is not tied to one platform lands here,
 	// which for now means only where finished videos go on the NAS — release
@@ -152,41 +96,7 @@
 			</div>
 		</div>
 
-		{#if named}
-			<div class="named">
-				<svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
-					<path
-						d="M7 10.5V8a5 5 0 0 1 10 0v2.5M6 10.5h12a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-7.5a1 1 0 0 1 1-1Z"
-						stroke="currentColor"
-						stroke-width="1.6"
-						stroke-linejoin="round"
-					/>
-				</svg>
-				<span class="devicename">{device}</span>
-				<span class="lockhint">Set — this cannot be changed.</span>
-			</div>
-		{:else}
-			<div class="setrow">
-				<input
-					class="input device"
-					value={draft}
-					placeholder="e.g. Studio PC"
-					oninput={(e) => onDraft(e.currentTarget.value)}
-				/>
-				<button
-					class="btn sm confirm"
-					class:arming={stage > 0}
-					onclick={onConfirm}
-					onblur={resetStage}
-					disabled={!draft.trim()}
-				>
-					{confirmLabel}
-				</button>
-			</div>
-			<p class="hint">
-				Until it is set, the Log records this browser as <strong>{device}</strong>.
-			</p>
-		{/if}
+		<DeviceSetup />
 	</section>
 </div>
 
@@ -333,53 +243,6 @@
 		font-size: 11.5px;
 		color: var(--text-faint);
 		line-height: 1.5;
-	}
-
-	.setrow {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		flex-wrap: wrap;
-	}
-
-	.device {
-		max-width: 260px;
-		padding: 8px 11px;
-		font-size: 12.5px;
-	}
-
-	.confirm.arming {
-		background: var(--pink-hot);
-		border-color: transparent;
-		color: var(--bg);
-		font-weight: 700;
-		box-shadow: 0 0 0 3px rgba(255, 46, 138, 0.25);
-	}
-
-	.named {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 10px 13px;
-		border-radius: var(--radius);
-		background: var(--bg-elev);
-		border: 1px solid var(--border);
-		color: var(--text-faint);
-	}
-
-	.devicename {
-		font-size: 13px;
-		font-weight: 620;
-		color: var(--text);
-	}
-
-	.lockhint {
-		font-size: 11.5px;
-	}
-
-	.hint strong {
-		color: var(--text-dim);
-		font-weight: 600;
 	}
 
 	@media (max-width: 720px) {

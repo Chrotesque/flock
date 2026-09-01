@@ -104,6 +104,21 @@ const collections = [
 		]
 	},
 	{
+		// Claimed device names. A browser writes one row here when it is named;
+		// the unique index on `key` is what actually prevents two machines
+		// sharing a name, since a check-then-write would race.
+		name: 'devices',
+		type: 'base',
+		...RULES,
+		fields: [
+			{ type: 'text', name: 'name', required: true, max: 120 },
+			// Lower-cased form, so "Studio PC" and "studio pc" collide.
+			{ type: 'text', name: 'key', required: true, max: 120 },
+			...stamps
+		],
+		indexes: ['CREATE UNIQUE INDEX `idx_devices_key` ON `devices` (`key`)']
+	},
+	{
 		name: 'activity_log',
 		type: 'base',
 		...RULES,

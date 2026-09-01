@@ -10,6 +10,7 @@
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { templates } from '$lib/stores/templates.svelte';
+	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import type {
 		FilterRule,
 		OptionValues,
@@ -79,332 +80,334 @@
 </script>
 
 <div class="page">
-	<header class="head">
-		<div>
-			<h1>Settings</h1>
-			<p>Display order, per-platform defaults, and the adaptation rules.</p>
-		</div>
-		{#if settings.saving}
-			<span class="pill saving">Saving…</span>
+<DeviceGate what="Settings">
+		<header class="head">
+			<div>
+				<h1>Settings</h1>
+				<p>Display order, per-platform defaults, and the adaptation rules.</p>
+			</div>
+			{#if settings.saving}
+				<span class="pill saving">Saving…</span>
+			{/if}
+		</header>
+
+		{#if settings.error}
+			<p class="banner error">Could not reach PocketBase — {settings.error}</p>
 		{/if}
-	</header>
 
-	{#if settings.error}
-		<p class="banner error">Could not reach PocketBase — {settings.error}</p>
-	{/if}
+		{#if settings.loading}
+			<p class="banner">Loading…</p>
+		{:else}
+			<div class="split">
+				<aside class="card list">
+					<h3>General</h3>
+					<p class="note">Settings that are not tied to one platform.</p>
 
-	{#if settings.loading}
-		<p class="banner">Loading…</p>
-	{:else}
-		<div class="split">
-			<aside class="card list">
-				<h3>General</h3>
-				<p class="note">Settings that are not tied to one platform.</p>
-
-				<ul class="plain">
-					<li class:active={active === 'general'}>
-						<button class="pick" onclick={() => (active = 'general')}>
-							<span class="ic">
-								<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
-									<path
-										d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3l1.8 2H17.5A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z"
-										stroke="currentColor"
-										stroke-width="1.6"
-										stroke-linejoin="round"
-									/>
-								</svg>
-							</span>
-							<span class="who">
-								<span class="name">Storage and defaults</span>
-								<span class="sub">
-									{general.value.destinations.length}
-									{general.value.destinations.length === 1 ? 'destination' : 'destinations'}
+					<ul class="plain">
+						<li class:active={active === 'general'}>
+							<button class="pick" onclick={() => (active = 'general')}>
+								<span class="ic">
+									<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+										<path
+											d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3l1.8 2H17.5A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z"
+											stroke="currentColor"
+											stroke-width="1.6"
+											stroke-linejoin="round"
+										/>
+									</svg>
 								</span>
-							</span>
-						</button>
-					</li>
-					<li class:active={active === 'templates'}>
-						<button class="pick" onclick={() => (active = 'templates')}>
-							<span class="ic">
-								<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
-									<path
-										d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"
-										stroke="currentColor"
-										stroke-width="1.6"
-										stroke-linejoin="round"
-									/>
-									<path
-										d="M14.5 4v4.5H19M8.5 13h7M8.5 16.5h4.5"
-										stroke="currentColor"
-										stroke-width="1.5"
-										stroke-linecap="round"
-									/>
-								</svg>
-							</span>
-							<span class="who">
-								<span class="name">Templates</span>
-								<span class="sub">
-									{templates.items.length}
-									{templates.items.length === 1 ? 'template' : 'templates'}
-								</span>
-							</span>
-						</button>
-					</li>
-				</ul>
-
-				<h3 class="second">Platforms</h3>
-				<p class="note">
-					This order is used everywhere — the compose rail, the schedule list and the confirmation
-					screen.
-				</p>
-
-				<ul>
-					{#each settings.ordered as item, index (item.platform)}
-						<li class:active={active === item.platform} class:off={!item.enabled}>
-							<button class="pick" onclick={() => (active = item.platform)}>
-								<span class="ic"><PlatformIcon platform={item.platform} size={18} /></span>
 								<span class="who">
-									<span class="name">{PLATFORMS[item.platform].label}</span>
+									<span class="name">Storage and defaults</span>
 									<span class="sub">
-										{item.filters.length}
-										{item.filters.length === 1 ? 'rule' : 'rules'}
+										{general.value.destinations.length}
+										{general.value.destinations.length === 1 ? 'destination' : 'destinations'}
 									</span>
 								</span>
 							</button>
-
-							<div class="order">
-								<button
-									onclick={() => settings.move(item.platform, -1)}
-									disabled={index === 0}
-									aria-label="Move {PLATFORMS[item.platform].label} up"
-								>
-									<svg viewBox="0 0 12 12" width="10" height="10"
-										><path
-											d="M2.5 7.5 6 4l3.5 3.5"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="1.7"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-										/></svg
-									>
-								</button>
-								<button
-									onclick={() => settings.move(item.platform, 1)}
-									disabled={index === settings.ordered.length - 1}
-									aria-label="Move {PLATFORMS[item.platform].label} down"
-								>
-									<svg viewBox="0 0 12 12" width="10" height="10"
-										><path
-											d="M2.5 4.5 6 8l3.5-3.5"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="1.7"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-										/></svg
-									>
-								</button>
-							</div>
-
-							<Checkbox
-								checked={item.enabled}
-								onchange={(next) => {
-									item.enabled = next;
-									settings.queueSave(item.platform);
-								}}
-							/>
 						</li>
-					{/each}
-				</ul>
-
-				<p class="note foot">
-					Unticking a platform removes it from new uploads entirely — it stops being listed on the
-					compose screen. Its defaults and rules are kept.
-				</p>
-			</aside>
-
-			<section class="card panel">
-				{#if active === 'templates'}
-					<header class="panelhead">
-						<div class="ident">
-							<span class="ic big">
-								<svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
-									<path
-										d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"
-										stroke="currentColor"
-										stroke-width="1.6"
-										stroke-linejoin="round"
-									/>
-									<path
-										d="M14.5 4v4.5H19M8.5 13h7M8.5 16.5h4.5"
-										stroke="currentColor"
-										stroke-width="1.5"
-										stroke-linecap="round"
-									/>
-								</svg>
-							</span>
-							<div>
-								<h2>Templates</h2>
-								<p>Reusable text you can drop into a title or description.</p>
-							</div>
-						</div>
-					</header>
-
-					{#if templates.loading}
-						<p class="banner">Loading…</p>
-					{:else}
-						<TemplateEditor />
-					{/if}
-				{:else if !platform || !def}
-					<header class="panelhead">
-						<div class="ident">
-							<span class="ic big">
-								<svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
-									<path
-										d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3l1.8 2H17.5A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z"
-										stroke="currentColor"
-										stroke-width="1.6"
-										stroke-linejoin="round"
-									/>
-								</svg>
-							</span>
-							<div>
-								<h2>Storage and defaults</h2>
-								<p>Where finished videos go, and what a new upload starts from.</p>
-							</div>
-						</div>
-					</header>
-
-					{#if general.loading}
-						<p class="banner">Loading…</p>
-					{:else}
-						<GeneralSettings />
-					{/if}
-				{:else}
-					<header class="panelhead">
-						<div class="ident">
-							<span class="ic big"><PlatformIcon {platform} size={22} /></span>
-							<div>
-								<h2>{def.label}</h2>
-								<p>
-									{def.fieldNote} Title limit {def.titleLimit.toLocaleString()}, description limit
-									{def.descriptionLimit.toLocaleString()}.
-								</p>
-							</div>
-						</div>
-					</header>
-
-				<div class="tabs">
-						<button class:active={tab === 'defaults'} onclick={() => (tab = 'defaults')}>
-							Defaults
-						</button>
-						<button class:active={tab === 'filters'} onclick={() => (tab = 'filters')}>
-							Adaptations
-							{#if entry && entry.filters.length > 0}
-								<span class="dot">{entry.filters.length}</span>
-							{/if}
-						</button>
-						{#if entry && entry.scheduling.mode === 'profiles'}
-							<button class:active={tab === 'profiles'} onclick={() => (tab = 'profiles')}>
-								Profiles
-								{#if entry.scheduling.profiles.length > 0}
-									<span class="dot">{entry.scheduling.profiles.length}</span>
-								{/if}
+						<li class:active={active === 'templates'}>
+							<button class="pick" onclick={() => (active = 'templates')}>
+								<span class="ic">
+									<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+										<path
+											d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"
+											stroke="currentColor"
+											stroke-width="1.6"
+											stroke-linejoin="round"
+										/>
+										<path
+											d="M14.5 4v4.5H19M8.5 13h7M8.5 16.5h4.5"
+											stroke="currentColor"
+											stroke-width="1.5"
+											stroke-linecap="round"
+										/>
+									</svg>
+								</span>
+								<span class="who">
+									<span class="name">Templates</span>
+									<span class="sub">
+										{templates.items.length}
+										{templates.items.length === 1 ? 'template' : 'templates'}
+									</span>
+								</span>
 							</button>
-						{/if}
-					</div>
+						</li>
+					</ul>
 
-					{#if entry}
-						{#if tab === 'defaults'}
-							<div class="defaults">
-								<section class="timing">
-									<div class="subhead">
-										<div>
-											<h4>Release timing</h4>
-											<p>What a new upload starts from when it reaches the schedule step.</p>
-										</div>
-									</div>
+					<h3 class="second">Platforms</h3>
+					<p class="note">
+						This order is used everywhere — the compose rail, the schedule list and the confirmation
+						screen.
+					</p>
 
-									<div class="modes" role="radiogroup" aria-label="Release timing">
-										<button
-											class="mode"
-											class:on={entry.scheduling.mode === 'time'}
-											role="radio"
-											aria-checked={entry.scheduling.mode === 'time'}
-											onclick={() => setSchedulingMode('time')}
+					<ul>
+						{#each settings.ordered as item, index (item.platform)}
+							<li class:active={active === item.platform} class:off={!item.enabled}>
+								<button class="pick" onclick={() => (active = item.platform)}>
+									<span class="ic"><PlatformIcon platform={item.platform} size={18} /></span>
+									<span class="who">
+										<span class="name">{PLATFORMS[item.platform].label}</span>
+										<span class="sub">
+											{item.filters.length}
+											{item.filters.length === 1 ? 'rule' : 'rules'}
+										</span>
+									</span>
+								</button>
+
+								<div class="order">
+									<button
+										onclick={() => settings.move(item.platform, -1)}
+										disabled={index === 0}
+										aria-label="Move {PLATFORMS[item.platform].label} up"
+									>
+										<svg viewBox="0 0 12 12" width="10" height="10"
+											><path
+												d="M2.5 7.5 6 4l3.5 3.5"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="1.7"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+											/></svg
 										>
-											<span class="pip"></span>
-											<span class="modebody">
-												<span class="modename">Default time</span>
-												<span class="modehint">One fixed time for every upload.</span>
-											</span>
-										</button>
-
-										{#if entry.scheduling.mode === 'time'}
-											<input
-												class="input time"
-												type="time"
-												value={entry.scheduling.defaultTime}
-												onchange={(e) => setDefaultTime(e.currentTarget.value)}
-											/>
-										{/if}
-
-										<button
-											class="mode"
-											class:on={entry.scheduling.mode === 'profiles'}
-											role="radio"
-											aria-checked={entry.scheduling.mode === 'profiles'}
-											onclick={() => setSchedulingMode('profiles')}
+									</button>
+									<button
+										onclick={() => settings.move(item.platform, 1)}
+										disabled={index === settings.ordered.length - 1}
+										aria-label="Move {PLATFORMS[item.platform].label} down"
+									>
+										<svg viewBox="0 0 12 12" width="10" height="10"
+											><path
+												d="M2.5 4.5 6 8l3.5-3.5"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="1.7"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+											/></svg
 										>
-											<span class="pip"></span>
-											<span class="modebody">
-												<span class="modename">Profiles</span>
-												<span class="modehint"
-													>Named patterns, picked per upload. Adds a Profiles tab.</span
-												>
-											</span>
-										</button>
-									</div>
-								</section>
-
-								<div class="subhead">
-									<div>
-										<h4>Default publish options</h4>
-										<p>
-											Pre-filled on every new upload. Changing them on an upload only affects that
-											upload.
-										</p>
-									</div>
-									<button class="btn sm" onclick={resetDefaults}>Reset</button>
+									</button>
 								</div>
 
-								<OptionEditor
-									fields={def.fields}
-									values={entry.defaults}
-									onchange={() => onDefaultsChanged(entry.defaults)}
+								<Checkbox
+									checked={item.enabled}
+									onchange={(next) => {
+										item.enabled = next;
+										settings.queueSave(item.platform);
+									}}
 								/>
+							</li>
+						{/each}
+					</ul>
 
-								<p class="footnote">
-									Every option above is a placeholder invented to give the interface something real
-									to show. Once the {def.label} API is connected, expect this whole set to be
-									replaced.
-								</p>
+					<p class="note foot">
+						Unticking a platform removes it from new uploads entirely — it stops being listed on the
+						compose screen. Its defaults and rules are kept.
+					</p>
+				</aside>
+
+				<section class="card panel">
+					{#if active === 'templates'}
+						<header class="panelhead">
+							<div class="ident">
+								<span class="ic big">
+									<svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+										<path
+											d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"
+											stroke="currentColor"
+											stroke-width="1.6"
+											stroke-linejoin="round"
+										/>
+										<path
+											d="M14.5 4v4.5H19M8.5 13h7M8.5 16.5h4.5"
+											stroke="currentColor"
+											stroke-width="1.5"
+											stroke-linecap="round"
+										/>
+									</svg>
+								</span>
+								<div>
+									<h2>Templates</h2>
+									<p>Reusable text you can drop into a title or description.</p>
+								</div>
 							</div>
-						{:else if tab === 'profiles'}
-							<ProfileEditor
-								profiles={entry.scheduling.profiles}
-								label={def.label}
-								onchange={onProfilesChanged}
-							/>
+						</header>
+
+						{#if templates.loading}
+							<p class="banner">Loading…</p>
 						{:else}
-							<FilterEditor rules={entry.filters} label={def.label} onchange={onFiltersChanged} />
+							<TemplateEditor />
+						{/if}
+					{:else if !platform || !def}
+						<header class="panelhead">
+							<div class="ident">
+								<span class="ic big">
+									<svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+										<path
+											d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3l1.8 2H17.5A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z"
+											stroke="currentColor"
+											stroke-width="1.6"
+											stroke-linejoin="round"
+										/>
+									</svg>
+								</span>
+								<div>
+									<h2>Storage and defaults</h2>
+									<p>Where finished videos go, and what a new upload starts from.</p>
+								</div>
+							</div>
+						</header>
+
+						{#if general.loading}
+							<p class="banner">Loading…</p>
+						{:else}
+							<GeneralSettings />
+						{/if}
+					{:else}
+						<header class="panelhead">
+							<div class="ident">
+								<span class="ic big"><PlatformIcon {platform} size={22} /></span>
+								<div>
+									<h2>{def.label}</h2>
+									<p>
+										{def.fieldNote} Title limit {def.titleLimit.toLocaleString()}, description limit
+										{def.descriptionLimit.toLocaleString()}.
+									</p>
+								</div>
+							</div>
+						</header>
+
+					<div class="tabs">
+							<button class:active={tab === 'defaults'} onclick={() => (tab = 'defaults')}>
+								Defaults
+							</button>
+							<button class:active={tab === 'filters'} onclick={() => (tab = 'filters')}>
+								Adaptations
+								{#if entry && entry.filters.length > 0}
+									<span class="dot">{entry.filters.length}</span>
+								{/if}
+							</button>
+							{#if entry && entry.scheduling.mode === 'profiles'}
+								<button class:active={tab === 'profiles'} onclick={() => (tab = 'profiles')}>
+									Profiles
+									{#if entry.scheduling.profiles.length > 0}
+										<span class="dot">{entry.scheduling.profiles.length}</span>
+									{/if}
+								</button>
+							{/if}
+						</div>
+
+						{#if entry}
+							{#if tab === 'defaults'}
+								<div class="defaults">
+									<section class="timing">
+										<div class="subhead">
+											<div>
+												<h4>Release timing</h4>
+												<p>What a new upload starts from when it reaches the schedule step.</p>
+											</div>
+										</div>
+
+										<div class="modes" role="radiogroup" aria-label="Release timing">
+											<button
+												class="mode"
+												class:on={entry.scheduling.mode === 'time'}
+												role="radio"
+												aria-checked={entry.scheduling.mode === 'time'}
+												onclick={() => setSchedulingMode('time')}
+											>
+												<span class="pip"></span>
+												<span class="modebody">
+													<span class="modename">Default time</span>
+													<span class="modehint">One fixed time for every upload.</span>
+												</span>
+											</button>
+
+											{#if entry.scheduling.mode === 'time'}
+												<input
+													class="input time"
+													type="time"
+													value={entry.scheduling.defaultTime}
+													onchange={(e) => setDefaultTime(e.currentTarget.value)}
+												/>
+											{/if}
+
+											<button
+												class="mode"
+												class:on={entry.scheduling.mode === 'profiles'}
+												role="radio"
+												aria-checked={entry.scheduling.mode === 'profiles'}
+												onclick={() => setSchedulingMode('profiles')}
+											>
+												<span class="pip"></span>
+												<span class="modebody">
+													<span class="modename">Profiles</span>
+													<span class="modehint"
+														>Named patterns, picked per upload. Adds a Profiles tab.</span
+													>
+												</span>
+											</button>
+										</div>
+									</section>
+
+									<div class="subhead">
+										<div>
+											<h4>Default publish options</h4>
+											<p>
+												Pre-filled on every new upload. Changing them on an upload only affects that
+												upload.
+											</p>
+										</div>
+										<button class="btn sm" onclick={resetDefaults}>Reset</button>
+									</div>
+
+									<OptionEditor
+										fields={def.fields}
+										values={entry.defaults}
+										onchange={() => onDefaultsChanged(entry.defaults)}
+									/>
+
+									<p class="footnote">
+										Every option above is a placeholder invented to give the interface something real
+										to show. Once the {def.label} API is connected, expect this whole set to be
+										replaced.
+									</p>
+								</div>
+							{:else if tab === 'profiles'}
+								<ProfileEditor
+									profiles={entry.scheduling.profiles}
+									label={def.label}
+									onchange={onProfilesChanged}
+								/>
+							{:else}
+								<FilterEditor rules={entry.filters} label={def.label} onchange={onFiltersChanged} />
+							{/if}
 						{/if}
 					{/if}
-				{/if}
-			</section>
-		</div>
-	{/if}
+				</section>
+			</div>
+		{/if}
+</DeviceGate>
 </div>
 
 <style>

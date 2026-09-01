@@ -5,6 +5,7 @@
 	import { listTargets, rescheduleTarget, toInstant } from '$lib/repo';
 	import { isPlatformId } from '$lib/platforms';
 	import { startOfWeek, isoDate, makeTime, minuteOf } from '$lib/format';
+	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import type { PlatformId, UploadTarget } from '$lib/types';
 
 	// Everything ever scheduled, from PocketBase — not just the upload in
@@ -151,62 +152,64 @@
 </script>
 
 <div class="page">
-	<header class="head">
-		<div>
-			<h1>Calendar</h1>
-			<p>Everything scheduled, across every upload.</p>
-		</div>
-		<div class="actions">
-			<button class="btn sm" onclick={load} disabled={loading}>Refresh</button>
-			<button
-				class="btn sm edit"
-				class:armed
-				class:on={editing}
-				onclick={onEditClick}
-				onblur={disarm}
-			>
-				{#if editing}
-					STOP
-				{:else if armed}
-					Edit?
-				{:else}
-					Edit
-				{/if}
-			</button>
-		</div>
-	</header>
+<DeviceGate what="The calendar">
+		<header class="head">
+			<div>
+				<h1>Calendar</h1>
+				<p>Everything scheduled, across every upload.</p>
+			</div>
+			<div class="actions">
+				<button class="btn sm" onclick={load} disabled={loading}>Refresh</button>
+				<button
+					class="btn sm edit"
+					class:armed
+					class:on={editing}
+					onclick={onEditClick}
+					onblur={disarm}
+				>
+					{#if editing}
+						STOP
+					{:else if armed}
+						Edit?
+					{:else}
+						Edit
+					{/if}
+				</button>
+			</div>
+		</header>
 
-	{#if error}
-		<p class="banner error">Could not reach PocketBase — {error}</p>
-	{:else if loading && entries.length === 0}
-		<p class="banner">Loading…</p>
-	{:else}
-		{#if editing}
-			<p class="banner editing">
-				<strong>EDITING SCHEDULE</strong> — Drag an upcoming release to another day or hour.
-				Released and past-due posts are locked.
-			</p>
+		{#if error}
+			<p class="banner error">Could not reach PocketBase — {error}</p>
+		{:else if loading && entries.length === 0}
+			<p class="banner">Loading…</p>
+		{:else}
+			{#if editing}
+				<p class="banner editing">
+					<strong>EDITING SCHEDULE</strong> — Drag an upcoming release to another day or hour.
+					Released and past-due posts are locked.
+				</p>
+			{/if}
+
+			{#if moveError}
+				<p class="banner error">Could not move that release — {moveError}</p>
+			{/if}
+
+			<WeekCalendar
+				items={visible}
+				bind:weekStart
+				card={cardFor}
+				toolbar={legend}
+				candrag={canMove}
+				ondropitem={editing ? onDropItem : undefined}
+			/>
+
+			{#if entries.length === 0}
+				<p class="banner empty">
+					Nothing scheduled yet. Confirm an upload and its releases appear here.
+				</p>
+			{/if}
 		{/if}
-
-		{#if moveError}
-			<p class="banner error">Could not move that release — {moveError}</p>
-		{/if}
-
-		<WeekCalendar
-			items={visible}
-			bind:weekStart
-			card={cardFor}
-			toolbar={legend}
-			candrag={canMove}
-			ondropitem={editing ? onDropItem : undefined}
-		/>
-
-		{#if entries.length === 0}
-			<p class="banner empty">
-				Nothing scheduled yet. Confirm an upload and its releases appear here.
-			</p>
-		{/if}
-	{/if}
+</DeviceGate>
 </div>
 
 {#snippet cardFor(entry: Entry)}

@@ -10,6 +10,7 @@
 	import { buildPlan } from '$lib/plan';
 	import { createJob } from '$lib/repo';
 	import { formatBytes } from '$lib/format';
+	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { PLATFORMS } from '$lib/platforms';
 
 	settings.load();
@@ -103,135 +104,137 @@
 </script>
 
 <div class="page">
-	{#if phase === 'done'}
-		<section class="card result">
-			<div class="tick">
-				<svg viewBox="0 0 24 24" width="26" height="26" fill="none">
-					<path
-						d="M4 12.5 9.5 18 20 6.5"
-						stroke="currentColor"
-						stroke-width="2.4"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					/>
-				</svg>
-			</div>
-			<h2>On the NAS</h2>
-			<p>
-				The video is stored and {plan.length}
-				{plan.length === 1 ? 'release is' : 'releases are'} queued. You can close this machine down —
-				publishing happens from the NAS at each scheduled time.
-			</p>
-			<ul class="queued">
-				{#each plan as row (row.platform)}
-					<li>
-						<PlatformIcon platform={row.platform} size={16} />
-						<span>{row.relative}</span>
-					</li>
-				{/each}
-			</ul>
-			<p class="caveat">
-				Queued only — no platform API is connected yet, so nothing will actually be published.
-			</p>
-			<button class="btn btn-primary" onclick={startOver}>New upload</button>
-		</section>
-	{:else}
-		<header class="head">
-			<div class="titling">
-				<h1>{HEADINGS[draft.step].title}</h1>
-				<p>{HEADINGS[draft.step].sub}</p>
-			</div>
-			<div class="progress">
-				<Stepper step={draft.step} onjump={(index) => goto(index as Step)} />
-			</div>
-		</header>
-
-		<nav class="actions">
-			{#if draft.step > 0}
-				<button class="btn" onclick={back} disabled={phase === 'uploading'}>
-					<svg viewBox="0 0 24 24" width="15" height="15" fill="none">
+<DeviceGate what="Uploading">
+		{#if phase === 'done'}
+			<section class="card result">
+				<div class="tick">
+					<svg viewBox="0 0 24 24" width="26" height="26" fill="none">
 						<path
-							d="M19 12H6m5 5-5-5 5-5"
+							d="M4 12.5 9.5 18 20 6.5"
 							stroke="currentColor"
-							stroke-width="1.9"
+							stroke-width="2.4"
 							stroke-linecap="round"
 							stroke-linejoin="round"
 						/>
 					</svg>
-					Back
-				</button>
-			{/if}
-
-			<div class="spacer"></div>
-
-			{#if phase === 'error'}
-				<span class="failure">{failure}</span>
-			{/if}
-
-			{#if draft.step === 1 && draft.pastPlatforms.length > 0}
-				<span class="blocked">
-					{draft.pastPlatforms.map((id) => PLATFORMS[id].label).join(', ')}
-					{draft.pastPlatforms.length === 1 ? 'is' : 'are'} scheduled in the past.
-				</span>
-			{/if}
-
-			{#if draft.step < 2}
-				<button class="btn btn-primary" onclick={next} disabled={!canContinue}>
-					Continue
-					<svg viewBox="0 0 24 24" width="15" height="15" fill="none">
-						<path
-							d="M5 12h13m-5-5 5 5-5 5"
-							stroke="currentColor"
-							stroke-width="1.9"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-						/>
-					</svg>
-				</button>
-			{:else}
-				<button
-					class="btn btn-primary confirm"
-					class:armed
-					onclick={confirm}
-					disabled={phase === 'uploading' || plan.length === 0}
-				>
-					{#if phase === 'uploading'}
-						Uploading… {Math.round(progress * 100)}%
-					{:else if armed}
-						Click again to confirm
-					{:else}
-						Upload and schedule
-					{/if}
-				</button>
-			{/if}
-		</nav>
-
-		{#if settings.error}
-			<p class="banner error">Could not reach PocketBase — {settings.error}</p>
-		{/if}
-
-		{#if settings.loading}
-			<p class="banner">Loading platform settings…</p>
-		{:else if draft.step === 0}
-			<StepDetails />
-		{:else if draft.step === 1}
-			<StepSchedule />
-		{:else}
-			<StepConfirm rows={plan} />
-		{/if}
-
-
-		{#if phase === 'uploading'}
-			<div class="uploading card">
-				<div class="bar"><span style="width: {progress * 100}%"></span></div>
+				</div>
+				<h2>On the NAS</h2>
 				<p>
-					Sending <strong>{draft.file?.name}</strong>
-					{#if draft.file}({formatBytes(draft.file.size)}){/if} to the NAS — keep this tab open until
-					it finishes.
+					The video is stored and {plan.length}
+					{plan.length === 1 ? 'release is' : 'releases are'} queued. You can close this machine down —
+					publishing happens from the NAS at each scheduled time.
 				</p>
-			</div>
+				<ul class="queued">
+					{#each plan as row (row.platform)}
+						<li>
+							<PlatformIcon platform={row.platform} size={16} />
+							<span>{row.relative}</span>
+						</li>
+					{/each}
+				</ul>
+				<p class="caveat">
+					Queued only — no platform API is connected yet, so nothing will actually be published.
+				</p>
+				<button class="btn btn-primary" onclick={startOver}>New upload</button>
+			</section>
+		{:else}
+			<header class="head">
+				<div class="titling">
+					<h1>{HEADINGS[draft.step].title}</h1>
+					<p>{HEADINGS[draft.step].sub}</p>
+				</div>
+				<div class="progress">
+					<Stepper step={draft.step} onjump={(index) => goto(index as Step)} />
+				</div>
+			</header>
+
+			<nav class="actions">
+				{#if draft.step > 0}
+					<button class="btn" onclick={back} disabled={phase === 'uploading'}>
+						<svg viewBox="0 0 24 24" width="15" height="15" fill="none">
+							<path
+								d="M19 12H6m5 5-5-5 5-5"
+								stroke="currentColor"
+								stroke-width="1.9"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+						Back
+					</button>
+				{/if}
+
+				<div class="spacer"></div>
+
+				{#if phase === 'error'}
+					<span class="failure">{failure}</span>
+				{/if}
+
+				{#if draft.step === 1 && draft.pastPlatforms.length > 0}
+					<span class="blocked">
+						{draft.pastPlatforms.map((id) => PLATFORMS[id].label).join(', ')}
+						{draft.pastPlatforms.length === 1 ? 'is' : 'are'} scheduled in the past.
+					</span>
+				{/if}
+
+				{#if draft.step < 2}
+					<button class="btn btn-primary" onclick={next} disabled={!canContinue}>
+						Continue
+						<svg viewBox="0 0 24 24" width="15" height="15" fill="none">
+							<path
+								d="M5 12h13m-5-5 5 5-5 5"
+								stroke="currentColor"
+								stroke-width="1.9"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+					</button>
+				{:else}
+					<button
+						class="btn btn-primary confirm"
+						class:armed
+						onclick={confirm}
+						disabled={phase === 'uploading' || plan.length === 0}
+					>
+						{#if phase === 'uploading'}
+							Uploading… {Math.round(progress * 100)}%
+						{:else if armed}
+							Click again to confirm
+						{:else}
+							Upload and schedule
+						{/if}
+					</button>
+				{/if}
+			</nav>
+
+			{#if settings.error}
+				<p class="banner error">Could not reach PocketBase — {settings.error}</p>
+			{/if}
+
+			{#if settings.loading}
+				<p class="banner">Loading platform settings…</p>
+			{:else if draft.step === 0}
+				<StepDetails />
+			{:else if draft.step === 1}
+				<StepSchedule />
+			{:else}
+				<StepConfirm rows={plan} />
+			{/if}
+
+
+			{#if phase === 'uploading'}
+				<div class="uploading card">
+					<div class="bar"><span style="width: {progress * 100}%"></span></div>
+					<p>
+						Sending <strong>{draft.file?.name}</strong>
+						{#if draft.file}({formatBytes(draft.file.size)}){/if} to the NAS — keep this tab open until
+						it finishes.
+					</p>
+				</div>
+			{/if}
 		{/if}
-	{/if}
+</DeviceGate>
 </div>
 
 <style>

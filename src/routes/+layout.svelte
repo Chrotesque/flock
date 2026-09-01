@@ -3,6 +3,9 @@
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
 	import { VERSION } from '$lib/version';
+	import { device } from '$lib/stores/device.svelte';
+
+	let needsDevice = $derived(!device.named);
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -71,7 +74,14 @@
 			{/each}
 		</nav>
 
-		<nav class="utility">
+		{#if needsDevice}
+			<a class="alert" href="{base}/settings" title="This device has no name yet">
+				<span class="bang">!</span>
+				<span class="alerttext">Name this device</span>
+			</a>
+		{/if}
+
+		<nav class="utility" class:pushed={!needsDevice}>
 			{#each utilities as link (link.href)}
 				<a href="{base}{link.href}" class="navlink" class:active={isActive(link.href)}>
 					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
@@ -194,10 +204,55 @@
 		gap: 3px;
 	}
 
-	/* Settings and Log sit at the bottom of the rail; the auto margin pushes
-	   them down, and .foot's own 30px keeps them clear of the brand. */
-	.utility {
+	/* Settings and Log sit at the bottom of the rail; .foot's own 30px keeps
+	   them clear of the brand.
+	   The push comes from whichever element owns the free space: normally
+	   .utility's auto margin, but when the alert is present its own pair of
+	   autos absorbs everything instead. Three competing autos would split the
+	   gap in thirds and leave the alert sitting high. */
+	.utility.pushed {
 		margin-top: auto;
+	}
+
+	/* Centred in the empty stretch between the two nav groups: an auto margin on
+	   both sides splits the free space evenly, and .utility's own auto margin
+	   still holds the bottom group down. */
+	.alert {
+		margin: auto 0;
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		padding: 9px 11px;
+		border-radius: var(--radius);
+		text-decoration: none;
+		background: rgba(251, 191, 36, 0.1);
+		border: 1px solid rgba(251, 191, 36, 0.35);
+		color: var(--warn);
+		transition: background 0.15s, border-color 0.15s;
+	}
+
+	.alert:hover {
+		background: rgba(251, 191, 36, 0.18);
+		border-color: var(--warn);
+	}
+
+	.bang {
+		flex: none;
+		width: 20px;
+		height: 20px;
+		display: grid;
+		place-items: center;
+		border-radius: 6px;
+		background: var(--warn);
+		color: var(--bg);
+		font-size: 13px;
+		font-weight: 800;
+		line-height: 1;
+	}
+
+	.alerttext {
+		font-size: 12px;
+		font-weight: 600;
 	}
 
 	.navlink {
@@ -310,6 +365,9 @@
 			margin-top: 0;
 			grid-auto-flow: column;
 			gap: 2px;
+		}
+		.alert {
+			margin: 0;
 		}
 		main {
 			padding: 22px 18px 50px;

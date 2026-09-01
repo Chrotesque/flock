@@ -1,7 +1,7 @@
 import { pb, PB_URL } from './pb';
 import { PLATFORMS, PLATFORM_IDS, isPlatformId } from './platforms';
 import { DEFAULT_SCHEDULING } from './types';
-import { logAction } from './log';
+import { logAction, assertDeviceNamed } from './log';
 import type {
 	OptionValues,
 	PlatformId,
@@ -86,6 +86,7 @@ export async function loadPlatformSettings(): Promise<PlatformSettings[]> {
 }
 
 export async function savePlatformSettings(settings: PlatformSettings): Promise<void> {
+	assertDeviceNamed();
 	if (!settings.id) throw new Error(`platform_settings row for ${settings.platform} has no id`);
 	await pb.collection('platform_settings').update(settings.id, {
 		enabled: settings.enabled,
@@ -110,6 +111,7 @@ export async function getSetting<T>(key: string, fallback: T): Promise<T> {
 }
 
 export async function setSetting(key: string, value: unknown): Promise<void> {
+	assertDeviceNamed();
 	try {
 		const row = await pb.collection('app_settings').getFirstListItem(`key="${key}"`);
 		await pb.collection('app_settings').update(row.id, { value });
@@ -191,6 +193,7 @@ export async function createJob(
 	input: CreateJobInput,
 	onProgress: (fraction: number) => void
 ): Promise<UploadJob> {
+	assertDeviceNamed();
 	const form = new FormData();
 	form.set('title', input.title);
 	form.set('description', input.description);
@@ -241,6 +244,7 @@ export async function listTargets(jobId?: string): Promise<UploadTarget[]> {
 }
 
 export async function deleteJob(id: string): Promise<void> {
+	assertDeviceNamed();
 	// upload_targets cascade-delete with the job.
 	await pb.collection('upload_jobs').delete(id);
 	logAction('upload', 'Deleted a stored upload', id);
@@ -252,6 +256,7 @@ export async function deleteJob(id: string): Promise<void> {
  * the upload is confirmed.
  */
 export async function rescheduleTarget(id: string, scheduledAt: string): Promise<void> {
+	assertDeviceNamed();
 	const before = await pb.collection('upload_targets').getOne(id);
 	await pb.collection('upload_targets').update(id, { scheduled_at: scheduledAt });
 	logAction(
