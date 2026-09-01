@@ -67,7 +67,7 @@ pnpm deploy
 ```
 
 That builds and mirrors `build/` into flock's PocketBase at
-`\nasppdata\pocketbase_flock\pb_public`, which needs write access to that
+`\\nas\appdata\pocketbase_flock\pb_public`, which needs write access to that
 share. `pnpm deploy:dry` shows what would change without touching anything.
 PocketBase serves the files straight from disk, so there is no restart.
 
