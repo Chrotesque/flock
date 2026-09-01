@@ -64,10 +64,15 @@ PocketBase itself.
 
 **Upload** is a three-step flow. Enter a title, a description and a video file, and
 tick the platforms you want. Clicking a platform opens its options and a preview of
-its adapted title and description. Continue to pick a release day and time per
-platform — click a platform on the right, then a day in the calendar. The final
+its adapted title and description. Continue to a week calendar showing a card per
+platform: drag a card to another day or hour to move that release, or use the exact
+date and time fields underneath. The final
 screen lists what each platform gets and when; confirming takes two clicks, and the
 upload to the NAS starts there.
+
+**Calendar** shows every release ever scheduled on a week grid. Things already
+released — or whose slot has passed — are greyed out, and there is a toggle to hide
+them.
 
 **Analytics** is empty for now. Below the placeholder it lists what is currently
 stored on the NAS, which is where you check that an upload actually landed.

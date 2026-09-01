@@ -99,3 +99,43 @@ export function nextDayMatching(from: Date, days: number[]): Date {
 	}
 	return new Date(from);
 }
+
+/** The Monday on or before `date`, at midnight local time. */
+export function startOfWeek(date: Date): Date {
+	const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+	// getDay() is Sunday-first; the calendar grid is Monday-first.
+	d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+	return d;
+}
+
+export function addDays(date: Date, days: number): Date {
+	const d = new Date(date);
+	d.setDate(d.getDate() + days);
+	return d;
+}
+
+/** "09:00" -> 9. Anything unparseable reads as midnight. */
+export function hourOf(time: string): number {
+	const hour = Number.parseInt(time?.split(':')[0] ?? '', 10);
+	return Number.isFinite(hour) ? hour : 0;
+}
+
+export function minuteOf(time: string): number {
+	const minute = Number.parseInt(time?.split(':')[1] ?? '', 10);
+	return Number.isFinite(minute) ? minute : 0;
+}
+
+export function makeTime(hour: number, minute: number): string {
+	const pad = (n: number) => String(n).padStart(2, '0');
+	return `${pad(hour)}:${pad(minute)}`;
+}
+
+/** "Sep 2026", or "Feb – Mar 2026" when the week straddles two months. */
+export function weekLabel(start: Date, end: Date): string {
+	const a = MONTH_NAMES[start.getMonth()].slice(0, 3);
+	const b = MONTH_NAMES[end.getMonth()].slice(0, 3);
+	if (start.getFullYear() !== end.getFullYear()) {
+		return `${a} ${start.getFullYear()} – ${b} ${end.getFullYear()}`;
+	}
+	return a === b ? `${a} ${start.getFullYear()}` : `${a} – ${b} ${start.getFullYear()}`;
+}
