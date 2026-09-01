@@ -164,7 +164,14 @@
 										<span class="detail">{entry.detail}</span>
 									{/if}
 								</span>
-								<span class="device">{entry.device || 'unknown'}</span>
+								<button
+									class="device"
+									class:on={query.trim().toLowerCase() === entry.device.toLowerCase()}
+									onclick={() => (query = entry.device)}
+									title="Search for {entry.device || 'unknown'}"
+								>
+									{entry.device || 'unknown'}
+								</button>
 							</li>
 						{/each}
 					</ul>
@@ -416,14 +423,33 @@
 		overflow-wrap: anywhere;
 	}
 
+	/* A tag, like the category badge — clicking it searches for that machine. */
 	.device {
 		justify-self: end;
-		text-align: right;
-		font-size: 11.5px;
-		color: var(--text-faint);
+		max-width: 100%;
+		padding: 2px 9px;
+		border-radius: 999px;
+		background: var(--surface-3);
+		border: 1px solid var(--border);
+		font-size: 10.5px;
+		font-weight: 650;
+		letter-spacing: 0.03em;
+		color: var(--text-dim);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		transition: background 0.14s, color 0.14s, border-color 0.14s;
+	}
+
+	.device:hover {
+		border-color: var(--pink);
+		color: var(--text);
+	}
+
+	.device.on {
+		background: var(--accent-grad);
+		border-color: transparent;
+		color: #fff;
 	}
 
 	.foot {
@@ -447,7 +473,6 @@
 		}
 		.device {
 			justify-self: start;
-			text-align: left;
 		}
 	}
 </style>
