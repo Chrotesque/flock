@@ -64,7 +64,7 @@
 
 		<div class="foot">
 			<a class="brand" href="{base}/">
-				<img src="{base}/flock.png" alt="" width="56" height="56" />
+				<img src="{base}/flock.png" alt="" width="88" height="88" />
 				<span>
 					<strong>flock</strong>
 					<em>multi-platform publishing</em>
@@ -121,7 +121,7 @@
 	}
 
 	.brand img {
-		border-radius: 14px;
+		border-radius: 20px;
 		flex: none;
 	}
 
@@ -132,7 +132,7 @@
 
 	.brand strong {
 		display: block;
-		font-size: 19px;
+		font-size: 22px;
 		font-weight: 700;
 		letter-spacing: -0.025em;
 		line-height: 1.15;
@@ -145,8 +145,8 @@
 	.brand em {
 		display: block;
 		font-style: normal;
-		font-size: 11px;
-		color: var(--text-faint);
+		font-size: 13px;
+		color: var(--text-dim);
 	}
 
 	nav {
@@ -244,6 +244,14 @@
 			gap: 9px;
 			padding: 0;
 			text-align: left;
+		}
+		.brand img {
+			width: 34px;
+			height: 34px;
+			border-radius: 9px;
+		}
+		.brand strong {
+			font-size: 17px;
 		}
 		.foot {
 			order: -1;
