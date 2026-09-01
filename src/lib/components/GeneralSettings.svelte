@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { general } from '$lib/stores/general.svelte';
-	import DeviceSetup from './DeviceSetup.svelte';
+	import DeviceInfo from './DeviceInfo.svelte';
 
 	// App-wide settings. Anything that is not tied to one platform lands here,
 	// which for now means only where finished videos go on the NAS — release
@@ -90,13 +90,14 @@
 				<h4>This device</h4>
 				<p>
 					The name this browser records in the Log. Browsers cannot read the machine's hostname, so
-					it is set here and stored on this device only. It cannot be changed afterwards — the Log
-					already attributes past entries to it.
+					it is chosen once when flock first opens and stored on this device only. Names are unique
+					across every machine, and cannot be changed afterwards — the Log already attributes past
+					entries to this one.
 				</p>
 			</div>
 		</div>
 
-		<DeviceSetup />
+		<DeviceInfo />
 	</section>
 </div>
 

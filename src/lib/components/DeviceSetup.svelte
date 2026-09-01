@@ -8,8 +8,6 @@
 	// three presses — one to ask, two to confirm — each within 2s.
 	const CONFIRMATIONS = 2;
 
-	let named = $derived(deviceState.named);
-	let device = $state(deviceName());
 	let draft = $state('');
 	let stage = $state(0);
 	let busy = $state(false);
@@ -50,9 +48,8 @@
 		}
 
 		deviceState.refresh();
-		device = deviceName();
 		draft = '';
-		logAction('settings', 'Named this device', device);
+		logAction('settings', 'Named this device', deviceName());
 	}
 
 	let label = $derived(
@@ -70,48 +67,32 @@
 	});
 </script>
 
-{#if named}
-	<div class="named">
-		<svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
-			<path
-				d="M7 10.5V8a5 5 0 0 1 10 0v2.5M6 10.5h12a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-7.5a1 1 0 0 1 1-1Z"
-				stroke="currentColor"
-				stroke-width="1.6"
-				stroke-linejoin="round"
-			/>
-		</svg>
-		<span class="devicename">{device}</span>
-		<span class="lockhint">Set — this cannot be changed.</span>
-	</div>
-{:else}
-	<div class="setrow">
-		<input
-			class="input device"
-			value={draft}
-			placeholder="e.g. Studio PC"
-			disabled={busy}
-			oninput={(e) => onDraft(e.currentTarget.value)}
-		/>
-		<button
-			class="btn sm confirm"
-			class:arming={stage > 0}
-			onclick={onConfirm}
-			onblur={resetStage}
-			disabled={!draft.trim() || busy}
-		>
-			{label}
-		</button>
-	</div>
+<div class="setrow">
+	<input
+		class="input device"
+		value={draft}
+		placeholder="e.g. Studio PC"
+		disabled={busy}
+		oninput={(e) => onDraft(e.currentTarget.value)}
+	/>
+	<button
+		class="btn sm confirm"
+		class:arming={stage > 0}
+		onclick={onConfirm}
+		onblur={resetStage}
+		disabled={!draft.trim() || busy}
+	>
+		{label}
+	</button>
+</div>
 
-	{#if error}
-		<p class="err">{error}</p>
-	{/if}
-
-	<p class="hint">
-		Names are unique across every machine, and cannot be changed once set. Until then the log would
-		record this browser as <strong>{device}</strong>.
-	</p>
+{#if error}
+	<p class="err">{error}</p>
 {/if}
+
+<p class="hint">
+	Names are unique across every machine, and cannot be changed once set.
+</p>
 
 <style>
 	.setrow {
@@ -141,27 +122,6 @@
 		box-shadow: 0 0 0 3px rgba(255, 46, 138, 0.25);
 	}
 
-	.named {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 10px 13px;
-		border-radius: var(--radius);
-		background: var(--bg-elev);
-		border: 1px solid var(--border);
-		color: var(--text-faint);
-	}
-
-	.devicename {
-		font-size: 13px;
-		font-weight: 620;
-		color: var(--text);
-	}
-
-	.lockhint {
-		font-size: 11.5px;
-	}
-
 	.err {
 		margin: 10px 0 0;
 		padding: 9px 11px;
@@ -177,10 +137,5 @@
 		font-size: 11.5px;
 		color: var(--text-faint);
 		line-height: 1.5;
-	}
-
-	.hint strong {
-		color: var(--text-dim);
-		font-weight: 600;
 	}
 </style>
