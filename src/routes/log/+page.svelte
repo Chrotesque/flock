@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { listLog, clearLog, deviceName } from '$lib/log';
+	import { listLog, deviceName } from '$lib/log';
 	import type { LogCategory, LogEntry } from '$lib/types';
 
 	const CATEGORIES: { id: LogCategory | 'all'; label: string }[] = [
@@ -91,38 +91,6 @@
 		});
 	}
 
-	/* Clearing wipes history, so it takes two presses like the other gates. */
-	let armed = $state(false);
-	let armTimer: ReturnType<typeof setTimeout> | null = null;
-	let clearing = $state(false);
-
-	function disarm() {
-		armed = false;
-		if (armTimer) clearTimeout(armTimer);
-		armTimer = null;
-	}
-
-	async function onClear() {
-		if (!armed) {
-			armed = true;
-			armTimer = setTimeout(disarm, 2000);
-			return;
-		}
-		disarm();
-		clearing = true;
-		try {
-			await clearLog();
-			await load();
-		} catch (err) {
-			error = err instanceof Error ? err.message : String(err);
-		} finally {
-			clearing = false;
-		}
-	}
-
-	$effect(() => () => {
-		if (armTimer) clearTimeout(armTimer);
-	});
 </script>
 
 <div class="page">
@@ -131,18 +99,7 @@
 			<h1>Log</h1>
 			<p>Every change made through flock, and which machine made it.</p>
 		</div>
-		<div class="actions">
-			<button class="btn sm" onclick={load} disabled={loading}>Refresh</button>
-			<button class="btn sm clear" class:armed onclick={onClear} onblur={disarm} disabled={clearing}>
-				{#if clearing}
-					Clearing…
-				{:else if armed}
-					Clear all?
-				{:else}
-					Clear
-				{/if}
-			</button>
-		</div>
+		<button class="btn sm" onclick={load} disabled={loading}>Refresh</button>
 	</header>
 
 	<div class="controls">
@@ -184,7 +141,7 @@
 	{:else if entries.length === 0}
 		<p class="banner">
 			Nothing logged yet. Actions are recorded from this point on — uploads, calendar moves and
-			settings changes.
+			settings changes. The log cannot be cleared.
 		</p>
 	{:else if visible.length === 0}
 		<p class="banner">No entries match that filter.</p>
@@ -217,7 +174,7 @@
 
 		<p class="foot">
 			Showing {visible.length} of {entries.length}. This browser logs as
-			<strong>{deviceName()}</strong> — rename it under Settings → Storage and defaults.
+			<strong>{deviceName()}</strong>. Entries cannot be edited or removed.
 		</p>
 	{/if}
 </div>
@@ -246,23 +203,10 @@
 		color: var(--text-dim);
 	}
 
-	.actions {
-		display: flex;
-		gap: 8px;
-	}
-
 	.sm {
 		flex: none;
 		padding: 6px 12px;
 		font-size: 12px;
-	}
-
-	.clear.armed {
-		background: var(--pink-hot);
-		border-color: transparent;
-		color: var(--bg);
-		font-weight: 700;
-		box-shadow: 0 0 0 3px rgba(255, 46, 138, 0.25);
 	}
 
 	.controls {
