@@ -1,6 +1,13 @@
 import { loadPlatformSettings, savePlatformSettings } from '../repo';
 import { PLATFORMS } from '../platforms';
-import type { FilterRule, OptionValues, PlatformId, PlatformSettings } from '../types';
+import { DEFAULT_SCHEDULING } from '../types';
+import type {
+	FilterRule,
+	OptionValues,
+	PlatformId,
+	PlatformScheduling,
+	PlatformSettings
+} from '../types';
 
 /**
  * Platform settings, loaded once and shared by the compose screen and the
@@ -55,6 +62,10 @@ class SettingsStore {
 
 	filtersFor(platform: PlatformId): FilterRule[] {
 		return this.get(platform)?.filters ?? [];
+	}
+
+	schedulingFor(platform: PlatformId): PlatformScheduling {
+		return this.get(platform)?.scheduling ?? { ...DEFAULT_SCHEDULING, profiles: [] };
 	}
 
 	/** Queues a write ~400ms after the last edit to that platform. */

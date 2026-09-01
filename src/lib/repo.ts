@@ -1,8 +1,10 @@
 import { pb, PB_URL } from './pb';
 import { PLATFORMS, PLATFORM_IDS, isPlatformId } from './platforms';
+import { DEFAULT_SCHEDULING } from './types';
 import type {
 	OptionValues,
 	PlatformId,
+	PlatformScheduling,
 	PlatformSettings,
 	UploadJob,
 	UploadTarget
@@ -11,6 +13,20 @@ import type {
 /* ------------------------------------------------------------------ */
 /* platform settings                                                    */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Scheduling config is merged over the defaults rather than replaced, so a row
+ * written before this feature existed comes back with a usable mode and time
+ * instead of undefined.
+ */
+function mergeScheduling(stored: unknown): PlatformScheduling {
+	const value = (stored ?? {}) as Partial<PlatformScheduling>;
+	return {
+		mode: value.mode === 'profiles' ? 'profiles' : 'time',
+		defaultTime: value.defaultTime || DEFAULT_SCHEDULING.defaultTime,
+		profiles: Array.isArray(value.profiles) ? value.profiles : []
+	};
+}
 
 /**
  * Loads every platform's settings, creating any row that does not exist yet
@@ -40,7 +56,8 @@ export async function loadPlatformSettings(): Promise<PlatformSettings[]> {
 				// A default added to the registry after the row was written would
 				// otherwise be missing entirely.
 				defaults: { ...PLATFORMS[id].defaults, ...(existing.defaults ?? {}) },
-				filters: Array.isArray(existing.filters) ? existing.filters : []
+				filters: Array.isArray(existing.filters) ? existing.filters : [],
+				scheduling: mergeScheduling(existing.scheduling)
 			});
 			continue;
 		}
@@ -50,7 +67,8 @@ export async function loadPlatformSettings(): Promise<PlatformSettings[]> {
 			enabled: true,
 			sort_order: index,
 			defaults: PLATFORMS[id].defaults,
-			filters: []
+			filters: [],
+			scheduling: DEFAULT_SCHEDULING
 		});
 		result.push({
 			id: created.id,
@@ -58,7 +76,8 @@ export async function loadPlatformSettings(): Promise<PlatformSettings[]> {
 			enabled: true,
 			sort_order: index,
 			defaults: { ...PLATFORMS[id].defaults },
-			filters: []
+			filters: [],
+			scheduling: { ...DEFAULT_SCHEDULING, profiles: [] }
 		});
 	}
 
@@ -71,7 +90,8 @@ export async function savePlatformSettings(settings: PlatformSettings): Promise<
 		enabled: settings.enabled,
 		sort_order: settings.sort_order,
 		defaults: settings.defaults,
-		filters: settings.filters
+		filters: settings.filters,
+		scheduling: settings.scheduling
 	});
 }
 

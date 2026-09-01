@@ -57,6 +57,7 @@ export interface PlatformSettings {
 	sort_order: number;
 	defaults: OptionValues;
 	filters: FilterRule[];
+	scheduling: PlatformScheduling;
 }
 
 export type JobStatus = 'draft' | 'uploading' | 'stored' | 'publishing' | 'done' | 'failed';
@@ -116,6 +117,37 @@ export interface NasDestination {
 export interface GeneralSettings {
 	destinations: NasDestination[];
 	defaultDestinationId: string | null;
-	/** Seeds the time on every newly scheduled platform, as "HH:mm". */
-	defaultReleaseTime: string;
 }
+
+/**
+ * A named release pattern for one platform — "Horror goes out Friday at 21:00".
+ * Both halves are independently switchable: a profile may set only a time, only
+ * a set of days, or both.
+ */
+export interface SchedulingProfile {
+	id: string;
+	name: string;
+	useTime: boolean;
+	/** "HH:mm". */
+	time: string;
+	useDays: boolean;
+	/** Day numbers as returned by Date.getDay() — 0 is Sunday. */
+	days: number[];
+}
+
+export interface PlatformScheduling {
+	/**
+	 * 'time' — one fixed release time for the platform.
+	 * 'profiles' — named patterns, picked per upload.
+	 */
+	mode: 'time' | 'profiles';
+	/** Used in 'time' mode, as "HH:mm". */
+	defaultTime: string;
+	profiles: SchedulingProfile[];
+}
+
+export const DEFAULT_SCHEDULING: PlatformScheduling = {
+	mode: 'time',
+	defaultTime: '09:00',
+	profiles: []
+};

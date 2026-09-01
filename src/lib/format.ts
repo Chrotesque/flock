@@ -75,3 +75,27 @@ export function relativeTo(date: string, time: string, now = new Date()): string
 	if (days === -1) return 'yesterday';
 	return days > 0 ? `in ${days} days` : `${Math.abs(days)} days ago`;
 }
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Monday-first order, matching the calendar grid, as Date.getDay() numbers. */
+export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+export function dayLabel(day: number): string {
+	return DAY_LABELS[day] ?? '';
+}
+
+/**
+ * The first date on or after `from` whose weekday is in `days`.
+ * Returns `from` unchanged when `days` is empty, so an enabled-but-empty day
+ * set never sends the search into its 14-day bail-out.
+ */
+export function nextDayMatching(from: Date, days: number[]): Date {
+	if (days.length === 0) return new Date(from);
+	const walker = new Date(from);
+	for (let i = 0; i < 14; i++) {
+		if (days.includes(walker.getDay())) return walker;
+		walker.setDate(walker.getDate() + 1);
+	}
+	return new Date(from);
+}

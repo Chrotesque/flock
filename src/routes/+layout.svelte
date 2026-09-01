@@ -2,6 +2,7 @@
 	import '../app.css';
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
+	import { VERSION } from '$lib/version';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -62,6 +63,8 @@
 				</a>
 			{/each}
 		</nav>
+
+		<p class="version">v{VERSION}</p>
 	</aside>
 
 	<main class="scroll">
@@ -167,6 +170,16 @@
 		margin-top: 1px;
 	}
 
+	/* Pinned to the bottom of the sidebar, centred across it. */
+	.version {
+		margin: auto 0 0;
+		text-align: center;
+		font-size: 11px;
+		font-family: var(--mono);
+		color: var(--text-faint);
+		letter-spacing: 0.02em;
+	}
+
 	main {
 		overflow-y: auto;
 		padding: 30px 34px 60px;
@@ -193,6 +206,9 @@
 		}
 		.text em {
 			display: none;
+		}
+		.version {
+			margin: 0 0 0 auto;
 		}
 		main {
 			padding: 22px 18px 50px;

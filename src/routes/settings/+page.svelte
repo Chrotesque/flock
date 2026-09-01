@@ -4,12 +4,17 @@
 	import OptionEditor from '$lib/components/OptionEditor.svelte';
 	import FilterEditor from '$lib/components/FilterEditor.svelte';
 	import GeneralSettings from '$lib/components/GeneralSettings.svelte';
+	import ProfileEditor from '$lib/components/ProfileEditor.svelte';
 	import { PLATFORMS } from '$lib/platforms';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
-	import { VERSION } from '$lib/version';
-	import { PB_URL } from '$lib/pb';
-	import type { FilterRule, OptionValues, PlatformId } from '$lib/types';
+	import type {
+		FilterRule,
+		OptionValues,
+		PlatformId,
+		PlatformScheduling,
+		SchedulingProfile
+	} from '$lib/types';
 
 	settings.load();
 	general.load();
@@ -17,7 +22,7 @@
 	type Section = 'general' | PlatformId;
 
 	let active = $state<Section>('general');
-	let tab = $state<'defaults' | 'filters'>('defaults');
+	let tab = $state<'defaults' | 'filters' | 'profiles'>('defaults');
 
 	// Narrowed once here rather than guarded at every use site below.
 	let platform = $derived<PlatformId | null>(active === 'general' ? null : active);
@@ -35,6 +40,31 @@
 		entry.filters = next;
 		settings.queueSave(platform);
 	}
+
+	function setSchedulingMode(mode: PlatformScheduling['mode']) {
+		if (!entry || !platform) return;
+		entry.scheduling.mode = mode;
+		settings.queueSave(platform);
+	}
+
+	function setDefaultTime(time: string) {
+		if (!entry || !platform) return;
+		entry.scheduling.defaultTime = time || '09:00';
+		settings.queueSave(platform);
+	}
+
+	function onProfilesChanged(next: SchedulingProfile[]) {
+		if (!entry || !platform) return;
+		entry.scheduling.profiles = next;
+		settings.queueSave(platform);
+	}
+
+	// The Profiles tab only exists in profiles mode, and each platform has its
+	// own mode — so switching away from it, or to a platform that does not have
+	// it, has to put the panel back on a tab that is actually rendered.
+	$effect(() => {
+		if (tab === 'profiles' && entry?.scheduling.mode !== 'profiles') tab = 'defaults';
+	});
 
 	function resetDefaults() {
 		if (!entry || !platform) return;
@@ -202,60 +232,115 @@
 						</div>
 					</header>
 
-					<div class="tabs">
-					<button class:active={tab === 'defaults'} onclick={() => (tab = 'defaults')}>
-						Defaults
-					</button>
-					<button class:active={tab === 'filters'} onclick={() => (tab = 'filters')}>
-						Adaptations
-						{#if entry && entry.filters.length > 0}
-							<span class="dot">{entry.filters.length}</span>
+				<div class="tabs">
+						<button class:active={tab === 'defaults'} onclick={() => (tab = 'defaults')}>
+							Defaults
+						</button>
+						<button class:active={tab === 'filters'} onclick={() => (tab = 'filters')}>
+							Adaptations
+							{#if entry && entry.filters.length > 0}
+								<span class="dot">{entry.filters.length}</span>
+							{/if}
+						</button>
+						{#if entry && entry.scheduling.mode === 'profiles'}
+							<button class:active={tab === 'profiles'} onclick={() => (tab = 'profiles')}>
+								Profiles
+								{#if entry.scheduling.profiles.length > 0}
+									<span class="dot">{entry.scheduling.profiles.length}</span>
+								{/if}
+							</button>
 						{/if}
-					</button>
-				</div>
+					</div>
 
-				{#if entry}
-					{#if tab === 'defaults'}
-						<div class="defaults">
-							<div class="subhead">
-								<div>
-									<h4>Default publish options</h4>
-									<p>
-										Pre-filled on every new upload. Changing them on an upload only affects that
-										upload.
-									</p>
+					{#if entry}
+						{#if tab === 'defaults'}
+							<div class="defaults">
+								<section class="timing">
+									<div class="subhead">
+										<div>
+											<h4>Release timing</h4>
+											<p>What a new upload starts from when it reaches the schedule step.</p>
+										</div>
+									</div>
+
+									<div class="modes" role="radiogroup" aria-label="Release timing">
+										<button
+											class="mode"
+											class:on={entry.scheduling.mode === 'time'}
+											role="radio"
+											aria-checked={entry.scheduling.mode === 'time'}
+											onclick={() => setSchedulingMode('time')}
+										>
+											<span class="pip"></span>
+											<span class="modebody">
+												<span class="modename">Default time</span>
+												<span class="modehint">One fixed time for every upload.</span>
+											</span>
+										</button>
+
+										{#if entry.scheduling.mode === 'time'}
+											<input
+												class="input time"
+												type="time"
+												value={entry.scheduling.defaultTime}
+												onchange={(e) => setDefaultTime(e.currentTarget.value)}
+											/>
+										{/if}
+
+										<button
+											class="mode"
+											class:on={entry.scheduling.mode === 'profiles'}
+											role="radio"
+											aria-checked={entry.scheduling.mode === 'profiles'}
+											onclick={() => setSchedulingMode('profiles')}
+										>
+											<span class="pip"></span>
+											<span class="modebody">
+												<span class="modename">Profiles</span>
+												<span class="modehint"
+													>Named patterns, picked per upload. Adds a Profiles tab.</span
+												>
+											</span>
+										</button>
+									</div>
+								</section>
+
+								<div class="subhead">
+									<div>
+										<h4>Default publish options</h4>
+										<p>
+											Pre-filled on every new upload. Changing them on an upload only affects that
+											upload.
+										</p>
+									</div>
+									<button class="btn sm" onclick={resetDefaults}>Reset</button>
 								</div>
-								<button class="btn sm" onclick={resetDefaults}>Reset</button>
+
+								<OptionEditor
+									fields={def.fields}
+									values={entry.defaults}
+									onchange={() => onDefaultsChanged(entry.defaults)}
+								/>
+
+								<p class="footnote">
+									Every option above is a placeholder invented to give the interface something real
+									to show. Once the {def.label} API is connected, expect this whole set to be
+									replaced.
+								</p>
 							</div>
-
-							<OptionEditor
-								fields={def.fields}
-								values={entry.defaults}
-								onchange={() => onDefaultsChanged(entry.defaults)}
+						{:else if tab === 'profiles'}
+							<ProfileEditor
+								profiles={entry.scheduling.profiles}
+								label={def.label}
+								onchange={onProfilesChanged}
 							/>
-
-							<p class="footnote">
-								Every option above is a placeholder invented to give the interface something real to
-								show. Once the {def.label} API is connected, expect this whole set to be replaced.
-							</p>
-						</div>
-					{:else}
-						<FilterEditor
-							rules={entry.filters}
-							label={def.label}
-							onchange={onFiltersChanged}
-						/>
+						{:else}
+							<FilterEditor rules={entry.filters} label={def.label} onchange={onFiltersChanged} />
 						{/if}
 					{/if}
 				{/if}
 			</section>
 		</div>
-
-		<footer class="version">
-			<span>flock {VERSION}</span>
-			<span class="sep">·</span>
-			<span class="mono">{PB_URL}</span>
-		</footer>
 	{/if}
 </div>
 
@@ -502,6 +587,85 @@
 		place-items: center;
 	}
 
+	.timing {
+		padding-bottom: 20px;
+		margin-bottom: 20px;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.modes {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 10px;
+	}
+
+	.mode {
+		display: flex;
+		align-items: flex-start;
+		gap: 9px;
+		padding: 10px 13px;
+		border-radius: var(--radius);
+		border: 1px solid var(--border);
+		background: var(--bg-elev);
+		text-align: left;
+		transition: border-color 0.15s, background 0.15s;
+	}
+
+	.mode:hover {
+		border-color: var(--border-strong);
+	}
+
+	.mode.on {
+		border-color: rgba(255, 77, 158, 0.45);
+		background: var(--accent-grad-soft);
+	}
+
+	.pip {
+		flex: none;
+		width: 16px;
+		height: 16px;
+		margin-top: 1px;
+		border-radius: 50%;
+		border: 1.5px solid var(--border-strong);
+		display: grid;
+		place-items: center;
+		transition: border-color 0.15s;
+	}
+
+	.mode.on .pip {
+		border-color: var(--pink);
+	}
+
+	.mode.on .pip::after {
+		content: '';
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--accent-grad);
+	}
+
+	.modename {
+		display: block;
+		font-size: 12.5px;
+		font-weight: 570;
+	}
+
+	.modehint {
+		display: block;
+		font-size: 11px;
+		color: var(--text-faint);
+		margin-top: 1px;
+		max-width: 30ch;
+	}
+
+	.modes .time {
+		width: 110px;
+		padding: 8px 10px;
+		font-size: 12.5px;
+		text-align: center;
+	}
+
 	.subhead {
 		display: flex;
 		align-items: flex-start;
@@ -535,21 +699,6 @@
 		font-size: 11.5px;
 		color: var(--text-faint);
 		line-height: 1.55;
-	}
-
-	.version {
-		margin-top: 26px;
-		padding-top: 16px;
-		border-top: 1px solid var(--border);
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		font-size: 11.5px;
-		color: var(--text-faint);
-	}
-
-	.sep {
-		opacity: 0.5;
 	}
 
 	@media (max-width: 940px) {

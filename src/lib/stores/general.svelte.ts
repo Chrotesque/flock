@@ -5,8 +5,7 @@ export const GENERAL_KEY = 'general';
 
 export const DEFAULT_GENERAL: GeneralSettings = {
 	destinations: [],
-	defaultDestinationId: null,
-	defaultReleaseTime: '09:00'
+	defaultDestinationId: null
 };
 
 /**
@@ -29,12 +28,13 @@ class GeneralStore {
 		this.loading = true;
 		try {
 			const stored = await getSetting<Partial<GeneralSettings>>(GENERAL_KEY, {});
-			// Merged rather than replaced, so a key added to DEFAULT_GENERAL after
-			// the row was written does not come back undefined.
+			// Rebuilt field by field rather than spread, so a key added to
+			// DEFAULT_GENERAL later cannot come back undefined and a key since
+			// removed (defaultReleaseTime, now per-platform) is not carried
+			// forward and written back on the next save.
 			this.value = {
-				...DEFAULT_GENERAL,
-				...stored,
-				destinations: Array.isArray(stored.destinations) ? stored.destinations : []
+				destinations: Array.isArray(stored.destinations) ? stored.destinations : [],
+				defaultDestinationId: stored.defaultDestinationId ?? null
 			};
 			this.#loaded = true;
 			this.error = null;
@@ -98,11 +98,6 @@ class GeneralStore {
 
 	setDefaultDestination(id: string) {
 		this.value.defaultDestinationId = id;
-		this.queueSave();
-	}
-
-	setReleaseTime(time: string) {
-		this.value.defaultReleaseTime = time || '09:00';
 		this.queueSave();
 	}
 }

@@ -37,6 +37,8 @@ const collections = [
 			{ type: 'json', name: 'defaults', maxSize: 200000 },
 			// [{ id, find, replace, target, mode, enabled }]
 			{ type: 'json', name: 'filters', maxSize: 200000 },
+			// { mode, defaultTime, profiles: [{ id, name, useTime, time, useDays, days }] }
+			{ type: 'json', name: 'scheduling', maxSize: 200000 },
 			...stamps
 		],
 		indexes: [

@@ -1,8 +1,8 @@
 import { PLATFORM_IDS } from '../platforms';
-import { isoDate } from '../format';
+import { isoDate, nextDayMatching } from '../format';
 import { settings } from './settings.svelte';
-import { general } from './general.svelte';
-import type { OptionValues, PlatformId } from '../types';
+import { DEFAULT_SCHEDULING } from '../types';
+import type { OptionValues, PlatformId, SchedulingProfile } from '../types';
 
 export type Step = 0 | 1 | 2;
 export const STEP_LABELS = ['Details', 'Schedule', 'Confirm'] as const;
@@ -11,11 +11,11 @@ function allSelected(value: boolean): Record<PlatformId, boolean> {
 	return Object.fromEntries(PLATFORM_IDS.map((id) => [id, value])) as Record<PlatformId, boolean>;
 }
 
-function defaultDate(): string {
-	// Tomorrow, so a schedule is never accidentally in the past.
+/** Tomorrow, so a schedule is never accidentally in the past. */
+function tomorrow(): Date {
 	const d = new Date();
 	d.setDate(d.getDate() + 1);
-	return isoDate(d);
+	return d;
 }
 
 /**
@@ -50,10 +50,45 @@ class DraftStore {
 			.map((entry) => entry.platform);
 	}
 
+	/** The profile chosen for a platform on this upload, in profiles mode. */
+	profile = $state<Partial<Record<PlatformId, string>>>({});
+
+	profileFor(platform: PlatformId): SchedulingProfile | null {
+		const config = settings.schedulingFor(platform);
+		if (config.mode !== 'profiles' || config.profiles.length === 0) return null;
+		const chosen = config.profiles.find((p) => p.id === this.profile[platform]);
+		return chosen ?? config.profiles[0];
+	}
+
+	/**
+	 * What a platform's schedule starts at before the user touches it: its own
+	 * default time, or the time and next matching day from the profile picked
+	 * for this upload.
+	 */
+	suggestedScheduleFor(platform: PlatformId): { date: string; time: string } {
+		const config = settings.schedulingFor(platform);
+		const profile = this.profileFor(platform);
+
+		const time =
+			profile && profile.useTime ? profile.time : config.defaultTime || DEFAULT_SCHEDULING.defaultTime;
+
+		const from = tomorrow();
+		const date =
+			profile && profile.useDays && profile.days.length > 0
+				? isoDate(nextDayMatching(from, profile.days))
+				: isoDate(from);
+
+		return { date, time };
+	}
+
 	scheduleFor(platform: PlatformId): { date: string; time: string } {
-		return (
-			this.schedule[platform] ?? { date: defaultDate(), time: general.value.defaultReleaseTime }
-		);
+		return this.schedule[platform] ?? this.suggestedScheduleFor(platform);
+	}
+
+	/** Switches profile and re-applies its day/time over whatever was there. */
+	applyProfile(platform: PlatformId, profileId: string) {
+		this.profile[platform] = profileId;
+		this.schedule[platform] = this.suggestedScheduleFor(platform);
 	}
 
 	setSchedule(platform: PlatformId, value: Partial<{ date: string; time: string }>) {
@@ -81,8 +116,8 @@ class DraftStore {
 		this.selected = allSelected(true);
 		this.overrides = {};
 		this.schedule = {};
+		this.profile = {};
 	}
 }
 
 export const draft = new DraftStore();
-export { defaultDate };

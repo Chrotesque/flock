@@ -73,12 +73,19 @@ upload to the NAS starts there.
 stored on the NAS, which is where you check that an upload actually landed.
 
 **Settings** has two parts. *Storage and defaults* holds the NAS folders a finished
-video can be moved into (the filled circle marks the default) and the time a newly
-scheduled release starts at. Below it, each platform has its display order, its
-default publish options, and its adaptation rules; rules run top to bottom and
-chain, so order matters, and there is a box at the bottom to try them against
-sample text. Unticking a platform there removes it from new uploads entirely — it
-stops being listed on the compose screen, though its defaults and rules are kept.
+video can be moved into; the filled circle marks the default.
+
+Below it, each platform has its display order, its release timing, its default
+publish options, and its adaptation rules. Release timing is either one fixed time
+for that platform, or *Profiles* — named patterns like "Horror", each with an
+optional time and an optional set of weekdays. Choosing Profiles adds a Profiles
+tab to that platform, and the profiles you define there appear as buttons on the
+schedule step: pick one and it fills in the next matching day and the time.
+
+Adaptation rules run top to bottom and chain, so order matters; there is a box at
+the bottom to try them against sample text. Unticking a platform removes it from
+new uploads entirely — it stops being listed on the compose screen, though its
+defaults and rules are kept.
 
 ## Where things live
 

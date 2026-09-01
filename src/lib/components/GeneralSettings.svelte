@@ -2,8 +2,8 @@
 	import { general } from '$lib/stores/general.svelte';
 
 	// App-wide settings. Anything that is not tied to one platform lands here,
-	// which for now means where finished videos go on the NAS and the time a
-	// newly scheduled release defaults to.
+	// which for now means only where finished videos go on the NAS — release
+	// timing moved to the individual platforms.
 	let value = $derived(general.value);
 </script>
 
@@ -83,25 +83,6 @@
 		{/if}
 	</section>
 
-	<section>
-		<div class="subhead">
-			<div>
-				<h4>Scheduling</h4>
-				<p>Applied to each platform when a new upload reaches the schedule step.</p>
-			</div>
-		</div>
-
-		<div class="row">
-			<label class="label" for="release-time">Default release time</label>
-			<input
-				id="release-time"
-				class="input time"
-				type="time"
-				value={value.defaultReleaseTime}
-				onchange={(e) => general.setReleaseTime(e.currentTarget.value)}
-			/>
-		</div>
-	</section>
 </div>
 
 <style>
@@ -247,23 +228,6 @@
 		font-size: 11.5px;
 		color: var(--text-faint);
 		line-height: 1.5;
-	}
-
-	.row {
-		display: flex;
-		align-items: center;
-		gap: 14px;
-	}
-
-	.row .label {
-		margin-bottom: 0;
-	}
-
-	.time {
-		width: 130px;
-		padding: 8px 11px;
-		font-size: 12.5px;
-		text-align: center;
 	}
 
 	@media (max-width: 720px) {

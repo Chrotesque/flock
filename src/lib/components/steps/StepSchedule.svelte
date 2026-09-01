@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PlatformIcon from '../PlatformIcon.svelte';
 	import { PLATFORMS } from '$lib/platforms';
+	import { settings } from '$lib/stores/settings.svelte';
 	import { draft } from '$lib/stores/draft.svelte';
 	import { isoDate, MONTH_NAMES, formatSchedule } from '$lib/format';
 	import type { PlatformId } from '$lib/types';
@@ -24,6 +25,12 @@
 			if (!draft.schedule[id]) draft.setSchedule(id, draft.scheduleFor(id));
 		}
 	});
+
+	/** Profiles offered for a platform, empty unless it is in profiles mode. */
+	function profilesFor(id: PlatformId) {
+		const config = settings.schedulingFor(id);
+		return config.mode === 'profiles' ? config.profiles : [];
+	}
 
 	const today = isoDate(new Date());
 
@@ -163,6 +170,21 @@
 							<span class="when">{formatSchedule(entry.date, entry.time)}</span>
 						</span>
 					</button>
+					{#if profilesFor(id).length > 0}
+						{@const active = draft.profileFor(id)}
+						<div class="profiles">
+							{#each profilesFor(id) as profile (profile.id)}
+								<button
+									class="chip"
+									class:on={active?.id === profile.id}
+									onclick={() => draft.applyProfile(id, profile.id)}
+								>
+									{profile.name || 'Unnamed'}
+								</button>
+							{/each}
+						</div>
+					{/if}
+
 					<div class="inputs">
 						<input
 							class="input sm"
@@ -379,6 +401,35 @@
 		display: block;
 		font-size: 11px;
 		color: var(--text-faint);
+	}
+
+	.profiles {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 5px;
+		margin-bottom: 8px;
+	}
+
+	.chip {
+		padding: 4px 10px;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		background: var(--surface-2);
+		color: var(--text-dim);
+		font-size: 11px;
+		font-weight: 570;
+		transition: background 0.14s, color 0.14s, border-color 0.14s;
+	}
+
+	.chip:hover {
+		border-color: var(--pink-soft);
+		color: var(--text);
+	}
+
+	.chip.on {
+		background: var(--accent-grad);
+		border-color: transparent;
+		color: #fff;
 	}
 
 	.inputs {
