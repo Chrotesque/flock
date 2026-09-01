@@ -74,8 +74,16 @@ export function setDeviceName(name: string): boolean {
 export function logAction(category: LogCategory, action: string, detail = ''): void {
 	void pb
 		.collection('activity_log')
-		.create({ category, action, detail, device: deviceName() })
+		.create({ category, action, detail: trim(detail, DETAIL_MAX), device: deviceName() })
 		.catch(() => {});
+}
+
+/** `activity_log.detail` is capped at 2000 characters in the schema. */
+const DETAIL_MAX = 1900;
+
+function trim(text: string, max: number): string {
+	if (text.length <= max) return text;
+	return `${text.slice(0, max)}… (${text.length} characters)`;
 }
 
 /**

@@ -77,7 +77,11 @@ class TemplateStore {
 			const old = was.get(id);
 			// A template starts blank, so it only counts as added once named.
 			if (!old || !old.name.trim()) {
-				if (tpl.name.trim()) logAction('settings', `Added template ${name(tpl)}`);
+				// The content rides along so the log records what the template said,
+				// not merely that one appeared.
+				if (tpl.name.trim()) {
+					logAction('settings', `Added template ${name(tpl)}`, tpl.content || '(empty)');
+				}
 				continue;
 			}
 			if (old.name !== tpl.name) {
@@ -89,7 +93,10 @@ class TemplateStore {
 		}
 
 		for (const [id, tpl] of was) {
-			if (!now.has(id)) logAction('settings', `Deleted template ${name(tpl)}`);
+			// Deletion is the only record of what the template held, so keep it.
+			if (!now.has(id)) {
+				logAction('settings', `Deleted template ${name(tpl)}`, tpl.content || '(empty)');
+			}
 		}
 	}
 
