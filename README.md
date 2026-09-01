@@ -69,7 +69,7 @@ cannot be changed afterwards, so pick one you will recognise later. Each browser
 needs its own; the name is stored locally, so opening flock from a different
 address counts as a different browser.
 
-**Upload** is a three-step flow. Enter a title, a description and a video file, and
+**Upload** is a three-step flow. flock opens on Analytics; Upload lives at `/upload`. Enter a title, a description and a video file, and
 tick the platforms you want. Clicking a platform opens its options and a preview of
 its adapted title and description. Continue to a week calendar showing a card per
 platform: drag a card to another day or hour to move that release, or use the exact
