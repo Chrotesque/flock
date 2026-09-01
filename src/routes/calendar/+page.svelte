@@ -166,9 +166,9 @@
 				onblur={disarm}
 			>
 				{#if editing}
-					Done editing
+					STOP
 				{:else if armed}
-					Click again
+					Edit?
 				{:else}
 					Edit
 				{/if}
@@ -183,7 +183,8 @@
 	{:else}
 		{#if editing}
 			<p class="banner editing">
-				Drag an upcoming release to another day or hour. Released and past-due posts are locked.
+				<strong>EDITING SCHEDULE</strong> — Drag an upcoming release to another day or hour.
+				Released and past-due posts are locked.
 			</p>
 		{/if}
 
@@ -280,8 +281,15 @@
 
 	.banner.editing {
 		margin-bottom: 12px;
-		border-color: rgba(255, 77, 158, 0.35);
-		color: var(--pink-soft);
+		background: var(--pink);
+		border-color: var(--pink);
+		color: var(--bg);
+		font-weight: 500;
+	}
+
+	.banner.editing strong {
+		font-weight: 800;
+		letter-spacing: 0.04em;
 	}
 
 	.banner {

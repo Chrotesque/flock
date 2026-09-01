@@ -54,6 +54,8 @@
 		candrag={() => true}
 		ondropitem={onDropItem}
 		card={cardFor}
+		marker={dayMarker}
+		offscreen={jumpTo_}
 		toolbar={tip}
 	/>
 
@@ -123,6 +125,44 @@
 	/>
 {/snippet}
 
+{#snippet dayMarker(row: PlanRow & { id: string })}
+	<span class="daymark {row.platform}" title={PLATFORMS[row.platform].label}>
+		<PlatformIcon platform={row.platform} size={13} />
+	</span>
+{/snippet}
+
+{#snippet jumpTo_(row: PlanRow & { id: string }, direction: 'up' | 'down', center: () => void)}
+	<button
+		class="jumpto {row.platform}"
+		onclick={center}
+		aria-label="Scroll to {PLATFORMS[row.platform].label} at {row.time}"
+		title="{PLATFORMS[row.platform].label} · {row.time}"
+	>
+		<PlatformIcon platform={row.platform} size={13} />
+		<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+			{#if direction === 'up'}
+				<path
+					d="M6 9.5V2.5M2.8 5.7 6 2.5l3.2 3.2"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.7"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				/>
+			{:else}
+				<path
+					d="M6 2.5v7M2.8 6.3 6 9.5l3.2-3.2"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.7"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				/>
+			{/if}
+		</svg>
+	</button>
+{/snippet}
+
 {#snippet tip()}
 	<p class="tip">Drag a card to another day or hour.</p>
 {/snippet}
@@ -137,6 +177,54 @@
 		margin: 0;
 		font-size: 11.5px;
 		color: var(--text-faint);
+	}
+
+	.daymark {
+		display: grid;
+		place-items: center;
+		width: 20px;
+		height: 20px;
+		border-radius: 6px;
+		background: var(--surface-3);
+		border: 1px solid var(--border);
+	}
+
+	/* Tinted with the platform's own colour so the arrow says *which* card is
+	   off screen, not merely that one is. */
+	.jumpto {
+		pointer-events: auto;
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 4px 8px;
+		border-radius: 999px;
+		background: var(--surface-3);
+		border: 1px solid var(--brandline);
+		box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
+		color: var(--brandline);
+		transition: background 0.14s, transform 0.08s;
+	}
+
+	.jumpto:hover {
+		background: var(--surface-2);
+		transform: translateY(-1px);
+	}
+
+	.jumpto:active {
+		transform: translateY(0);
+	}
+
+	.youtube {
+		--brandline: #e8484a;
+	}
+	.instagram {
+		--brandline: #d6558f;
+	}
+	.tiktok {
+		--brandline: #3de0dc;
+	}
+	.facebook {
+		--brandline: #3b82f6;
 	}
 
 	.offweek {

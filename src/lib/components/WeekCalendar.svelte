@@ -5,13 +5,15 @@
 	// The week time-grid, shared by the upload wizard's schedule step and the
 	// standalone Calendar so the two cannot drift apart visually.
 	//
-	// Placement and drag plumbing live here; what a card *looks* like is the
-	// caller's `card` snippet (in practice always PostCard).
+	// Placement, drag plumbing and off-screen tracking live here; what a card
+	// *looks* like is the caller's `card` snippet (in practice always PostCard).
 	let {
 		items,
 		weekStart = $bindable(startOfWeek(new Date())),
 		card,
 		toolbar,
+		marker,
+		offscreen,
 		candrag,
 		ondropitem
 	}: {
@@ -19,6 +21,13 @@
 		weekStart?: Date;
 		card: Snippet<[T]>;
 		toolbar?: Snippet;
+		/** Rendered in a day's column header, once per item scheduled that day. */
+		marker?: Snippet<[T]>;
+		/**
+		 * Rendered for an item whose card is scrolled out of view, with the
+		 * direction it lies in and a callback that scrolls it into the middle.
+		 */
+		offscreen?: Snippet<[T, 'up' | 'down', () => void]>;
 		/**
 		 * Per item, so a grid can be partly editable — the Calendar allows
 		 * upcoming releases to be moved while released ones stay put. Omitted
@@ -50,6 +59,12 @@
 		return items.filter((item) => item.date === iso && hourOf(item.time) === hour);
 	}
 
+	function cardsOn(iso: string): T[] {
+		return items.filter((item) => item.date === iso);
+	}
+
+	/* ---- drag and drop ---- */
+
 	let dragging = $state<string | null>(null);
 	let over = $state<string | null>(null);
 
@@ -65,10 +80,106 @@
 		if (id) ondropitem?.(id, iso, hour);
 	}
 
-	export function goTo(iso: string) {
-		const [y, m, d] = iso.split('-').map(Number);
-		weekStart = startOfWeek(new Date(y, m - 1, d));
+	/* ---- off-screen tracking ----
+	 *
+	 * Row heights grow when several cards share a slot, so a card's position
+	 * cannot be derived from its hour. The card elements register themselves and
+	 * are measured against the scroll viewport instead.
+	 */
+
+	const nodes = new Map<string, HTMLElement>();
+
+	function register(node: HTMLElement, id: string) {
+		nodes.set(id, node);
+		measure();
+		return {
+			destroy() {
+				nodes.delete(id);
+			}
+		};
 	}
+
+	let above = $state<T[]>([]);
+	let below = $state<T[]>([]);
+	let ticking = false;
+
+	function measure() {
+		const el = scroller;
+		if (!el) return;
+		const box = el.getBoundingClientRect();
+		const up: T[] = [];
+		const down: T[] = [];
+
+		for (const item of items) {
+			const node = nodes.get(item.id);
+			if (!node) continue;
+			const rect = node.getBoundingClientRect();
+			// Fully past the edge, not merely clipped — a card half in view does
+			// not need an arrow pointing at it.
+			if (rect.bottom <= box.top + 2) up.push(item);
+			else if (rect.top >= box.bottom - 2) down.push(item);
+		}
+
+		above = up;
+		below = down;
+	}
+
+	function onScroll() {
+		if (ticking) return;
+		ticking = true;
+		requestAnimationFrame(() => {
+			ticking = false;
+			measure();
+		});
+	}
+
+	/** Scrolls an item's card to the vertical middle of the grid. */
+	function centerOn(item: T) {
+		const el = scroller;
+		const node = nodes.get(item.id);
+		if (!el || !node) return;
+
+		const box = el.getBoundingClientRect();
+		const rect = node.getBoundingClientRect();
+		const max = el.scrollHeight - el.clientHeight;
+		const target = Math.max(
+			0,
+			Math.min(max, el.scrollTop + (rect.top - box.top) - (el.clientHeight - rect.height) / 2)
+		);
+
+		const reduced =
+			typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+		if (reduced) {
+			el.scrollTop = target;
+			measure();
+			return;
+		}
+
+		// Animated by hand rather than with scrollTo({ behavior: 'smooth' }):
+		// that is a silent no-op in some engines and automation contexts, and a
+		// jump button that sometimes does nothing is worse than one that never
+		// animates.
+		const from = el.scrollTop;
+		const distance = target - from;
+		if (Math.abs(distance) < 1) return;
+
+		const started = performance.now();
+		const step = (now: number) => {
+			const t = Math.min(1, (now - started) / 320);
+			el.scrollTop = from + distance * (1 - Math.pow(1 - t, 3));
+			if (t < 1) requestAnimationFrame(step);
+			else measure();
+		};
+		requestAnimationFrame(step);
+	}
+
+	// Re-measure whenever the set of cards changes; the effect runs after the DOM
+	// is updated, so the freshly rendered nodes are already registered.
+	$effect(() => {
+		void items;
+		void weekStart;
+		measure();
+	});
 
 	// Opens on the earliest scheduled hour rather than midnight. Depends on the
 	// element alone — reading `items` as a dependency re-ran this on every
@@ -80,9 +191,12 @@
 			const hours = items.map((item) => hourOf(item.time));
 			const earliest = hours.length ? Math.min(...hours) : 8;
 			el.scrollTop = Math.max(0, (earliest - 1) * ROW_PX);
+			measure();
 		});
 	});
 </script>
+
+<svelte:window on:resize={onScroll} />
 
 <header class="bar">
 	<div class="nav">
@@ -137,59 +251,87 @@
 		<div class="corner"></div>
 		{#each days as day (day.iso)}
 			<div class="dayhead" class:today={day.iso === today}>
-				<span class="dow">{dayLabel(day.day)}</span>
-				<span class="dom">{String(day.date.getDate()).padStart(2, '0')}</span>
+				<div class="daymeta">
+					<span class="dow">{dayLabel(day.day)}</span>
+					<span class="dom">{String(day.date.getDate()).padStart(2, '0')}</span>
+				</div>
+				{#if marker}
+					<div class="markers">
+						{#each cardsOn(day.iso) as item (item.id)}
+							{@render marker(item)}
+						{/each}
+					</div>
+				{/if}
 			</div>
 		{/each}
 	</div>
 
-	<div class="scroller scroll" bind:this={scroller}>
-		<div class="grid" style="--row: {ROW_PX}px">
-			{#each HOURS as hour (hour)}
-				<div class="timelabel"><span>{String(hour).padStart(2, '0')}:00</span></div>
+	<div class="scrollwrap">
+		<div class="scroller scroll" bind:this={scroller} onscroll={onScroll}>
+			<div class="grid" style="--row: {ROW_PX}px">
+				{#each HOURS as hour (hour)}
+					<div class="timelabel"><span>{String(hour).padStart(2, '0')}:00</span></div>
 
-				{#each days as day (day.iso)}
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div
-						class="cell"
-						class:today={day.iso === today}
-						class:over={over === key(day.iso, hour)}
-						ondragover={(e) => {
-							if (!ondropitem) return;
-							e.preventDefault();
-							over = key(day.iso, hour);
-						}}
-						ondragleave={() => {
-							if (over === key(day.iso, hour)) over = null;
-						}}
-						ondrop={(e) => onDrop(e, day.iso, hour)}
-					>
-						{#each cardsAt(day.iso, hour) as item (item.id)}
-							{#if candrag?.(item)}
-								<!-- svelte-ignore a11y_no_static_element_interactions -->
-								<div
-									class="slot grab"
-									draggable="true"
-									ondragstart={(e) => {
-										dragging = item.id;
-										e.dataTransfer?.setData('text/plain', item.id);
-										if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-									}}
-									ondragend={() => {
-										dragging = null;
-										over = null;
-									}}
-								>
-									{@render card(item)}
-								</div>
-							{:else}
-								<div class="slot">{@render card(item)}</div>
-							{/if}
-						{/each}
-					</div>
+					{#each days as day (day.iso)}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+							class="cell"
+							class:today={day.iso === today}
+							class:over={over === key(day.iso, hour)}
+							ondragover={(e) => {
+								if (!ondropitem) return;
+								e.preventDefault();
+								over = key(day.iso, hour);
+							}}
+							ondragleave={() => {
+								if (over === key(day.iso, hour)) over = null;
+							}}
+							ondrop={(e) => onDrop(e, day.iso, hour)}
+						>
+							{#each cardsAt(day.iso, hour) as item (item.id)}
+								{#if candrag?.(item)}
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
+									<div
+										class="slot grab"
+										draggable="true"
+										use:register={item.id}
+										ondragstart={(e) => {
+											dragging = item.id;
+											e.dataTransfer?.setData('text/plain', item.id);
+											if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+										}}
+										ondragend={() => {
+											dragging = null;
+											over = null;
+										}}
+									>
+										{@render card(item)}
+									</div>
+								{:else}
+									<div class="slot" use:register={item.id}>{@render card(item)}</div>
+								{/if}
+							{/each}
+						</div>
+					{/each}
 				{/each}
-			{/each}
+			</div>
 		</div>
+
+		{#if offscreen && above.length > 0}
+			<div class="rail up">
+				{#each above as item (item.id)}
+					{@render offscreen(item, 'up', () => centerOn(item))}
+				{/each}
+			</div>
+		{/if}
+
+		{#if offscreen && below.length > 0}
+			<div class="rail down">
+				{#each below as item (item.id)}
+					{@render offscreen(item, 'down', () => centerOn(item))}
+				{/each}
+			</div>
+		{/if}
 	</div>
 </div>
 
@@ -263,6 +405,10 @@
 	.dayhead {
 		padding: 9px 10px;
 		border-right: 1px solid var(--border);
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
 	}
 
 	.dayhead:last-child {
@@ -296,6 +442,19 @@
 
 	.dayhead.today .dom {
 		color: var(--pink);
+	}
+
+	/* Which platforms land on this day, readable without scrolling the grid. */
+	.markers {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 3px;
+		min-width: 0;
+	}
+
+	.scrollwrap {
+		position: relative;
 	}
 
 	.scroller {
@@ -352,6 +511,30 @@
 		transform: translateY(-1px);
 	}
 
+	/* Floating over the grid's own edges, so an off-screen card is reachable
+	   without hunting for it. */
+	.rail {
+		position: absolute;
+		left: 62px;
+		right: 0;
+		display: flex;
+		justify-content: center;
+		gap: 6px;
+		padding: 7px 10px;
+		pointer-events: none;
+		z-index: 3;
+	}
+
+	.rail.up {
+		top: 0;
+		background: linear-gradient(var(--surface) 15%, transparent);
+	}
+
+	.rail.down {
+		bottom: 0;
+		background: linear-gradient(transparent, var(--surface) 85%);
+	}
+
 	@media (max-width: 900px) {
 		.head,
 		.grid {
@@ -360,6 +543,20 @@
 
 		.calendar {
 			overflow-x: auto;
+		}
+
+		.dayhead {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 4px;
+		}
+
+		.markers {
+			justify-content: flex-start;
+		}
+
+		.rail {
+			left: 48px;
 		}
 	}
 </style>
