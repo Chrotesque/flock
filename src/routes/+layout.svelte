@@ -36,14 +36,6 @@
 
 <div class="shell">
 	<aside>
-		<a class="brand" href="{base}/">
-			<img src="{base}/flock.png" alt="" width="34" height="34" />
-			<span>
-				<strong>flock</strong>
-				<em>multi-platform publishing</em>
-			</span>
-		</a>
-
 		<nav>
 			{#each links as link (link.href)}
 				<a href="{base}{link.href}" class="navlink" class:active={isActive(link.href)}>
@@ -64,7 +56,16 @@
 			{/each}
 		</nav>
 
-		<p class="version">v{VERSION}</p>
+		<div class="foot">
+			<a class="brand" href="{base}/">
+				<img src="{base}/flock.png" alt="" width="34" height="34" />
+				<span>
+					<strong>flock</strong>
+					<em>multi-platform publishing</em>
+				</span>
+			</a>
+			<p class="version">v{VERSION}</p>
+		</div>
 	</aside>
 
 	<main class="scroll">
@@ -89,6 +90,14 @@
 		border-right: 1px solid var(--border);
 		background: rgba(16, 14, 26, 0.6);
 		backdrop-filter: blur(10px);
+	}
+
+	/* Brand and version sit together at the bottom; this block is what pushes
+	   them there, so the nav can start flush at the top. */
+	.foot {
+		margin-top: auto;
+		display: grid;
+		gap: 8px;
 	}
 
 	.brand {
@@ -170,9 +179,8 @@
 		margin-top: 1px;
 	}
 
-	/* Pinned to the bottom of the sidebar, centred across it. */
 	.version {
-		margin: auto 0 0;
+		margin: 0;
 		text-align: center;
 		font-size: 11px;
 		font-family: var(--mono);
@@ -193,7 +201,10 @@
 		aside {
 			flex-direction: row;
 			align-items: center;
-			gap: 18px;
+			/* Wraps rather than overflowing: brand + version + three nav links do
+			   not fit one row on a phone. */
+			flex-wrap: wrap;
+			gap: 10px 18px;
 			border-right: none;
 			border-bottom: 1px solid var(--border);
 			position: sticky;
@@ -207,8 +218,20 @@
 		.text em {
 			display: none;
 		}
-		.version {
-			margin: 0 0 0 auto;
+		/* The tagline is what forces the brand block wide enough to push the nav
+		   off screen, and it earns nothing on a narrow bar. */
+		.brand em {
+			display: none;
+		}
+		.brand {
+			padding: 0;
+		}
+		.foot {
+			order: -1;
+			margin-top: 0;
+			display: flex;
+			align-items: center;
+			gap: 12px;
 		}
 		main {
 			padding: 22px 18px 50px;
