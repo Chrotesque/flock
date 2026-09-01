@@ -52,16 +52,22 @@ class TemplateStore {
 		}
 	}
 
-	/** Case-insensitive, since `{horror}` should find a template named "Horror". */
+	/**
+	 * Names are forced lower case on entry, but this still folds case so that
+	 * `{Socials}` typed mid-sentence finds `socials`.
+	 */
 	byName(name: string): TextTemplate | undefined {
 		const wanted = name.trim().toLowerCase();
 		if (!wanted) return undefined;
 		return this.items.find((t) => t.name.trim().toLowerCase() === wanted);
 	}
 
-	add() {
-		this.items = [...this.items, { id: crypto.randomUUID(), name: '', content: '' }];
+	/** Returns the new template's id so the caller can expand it. */
+	add(): string {
+		const entry: TextTemplate = { id: crypto.randomUUID(), name: '', content: '' };
+		this.items = [...this.items, entry];
 		this.queueSave();
+		return entry.id;
 	}
 
 	update(id: string, patch: Partial<TextTemplate>) {
