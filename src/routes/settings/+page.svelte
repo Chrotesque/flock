@@ -3,36 +3,43 @@
 	import Checkbox from '$lib/components/Checkbox.svelte';
 	import OptionEditor from '$lib/components/OptionEditor.svelte';
 	import FilterEditor from '$lib/components/FilterEditor.svelte';
+	import GeneralSettings from '$lib/components/GeneralSettings.svelte';
 	import { PLATFORMS } from '$lib/platforms';
 	import { settings } from '$lib/stores/settings.svelte';
+	import { general } from '$lib/stores/general.svelte';
 	import { VERSION } from '$lib/version';
 	import { PB_URL } from '$lib/pb';
 	import type { FilterRule, OptionValues, PlatformId } from '$lib/types';
 
 	settings.load();
+	general.load();
 
-	let active = $state<PlatformId>('youtube');
+	type Section = 'general' | PlatformId;
+
+	let active = $state<Section>('general');
 	let tab = $state<'defaults' | 'filters'>('defaults');
 
-	let entry = $derived(settings.get(active));
-	let def = $derived(PLATFORMS[active]);
+	// Narrowed once here rather than guarded at every use site below.
+	let platform = $derived<PlatformId | null>(active === 'general' ? null : active);
+	let entry = $derived(platform ? settings.get(platform) : undefined);
+	let def = $derived(platform ? PLATFORMS[platform] : null);
 
 	function onDefaultsChanged(values: OptionValues) {
-		if (!entry) return;
+		if (!entry || !platform) return;
 		entry.defaults = values;
-		settings.queueSave(active);
+		settings.queueSave(platform);
 	}
 
 	function onFiltersChanged(next: FilterRule[]) {
-		if (!entry) return;
+		if (!entry || !platform) return;
 		entry.filters = next;
-		settings.queueSave(active);
+		settings.queueSave(platform);
 	}
 
 	function resetDefaults() {
-		if (!entry) return;
-		entry.defaults = { ...PLATFORMS[active].defaults };
-		settings.queueSave(active);
+		if (!entry || !platform) return;
+		entry.defaults = { ...PLATFORMS[platform].defaults };
+		settings.queueSave(platform);
 	}
 </script>
 
@@ -56,7 +63,34 @@
 	{:else}
 		<div class="split">
 			<aside class="card list">
-				<h3>Platforms</h3>
+				<h3>General</h3>
+				<p class="note">Settings that are not tied to one platform.</p>
+
+				<ul class="plain">
+					<li class:active={active === 'general'}>
+						<button class="pick" onclick={() => (active = 'general')}>
+							<span class="ic">
+								<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+									<path
+										d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3l1.8 2H17.5A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z"
+										stroke="currentColor"
+										stroke-width="1.6"
+										stroke-linejoin="round"
+									/>
+								</svg>
+							</span>
+							<span class="who">
+								<span class="name">Storage and defaults</span>
+								<span class="sub">
+									{general.value.destinations.length}
+									{general.value.destinations.length === 1 ? 'destination' : 'destinations'}
+								</span>
+							</span>
+						</button>
+					</li>
+				</ul>
+
+				<h3 class="second">Platforms</h3>
 				<p class="note">
 					This order is used everywhere — the compose rail, the schedule list and the confirmation
 					screen.
@@ -123,26 +157,52 @@
 				</ul>
 
 				<p class="note foot">
-					The checkbox sets whether a platform starts selected on a new upload. It does not remove
-					the platform.
+					Unticking a platform removes it from new uploads entirely — it stops being listed on the
+					compose screen. Its defaults and rules are kept.
 				</p>
 			</aside>
 
 			<section class="card panel">
-				<header class="panelhead">
-					<div class="ident">
-						<span class="ic big"><PlatformIcon platform={active} size={22} /></span>
-						<div>
-							<h2>{def.label}</h2>
-							<p>
-								{def.fieldNote} Title limit {def.titleLimit.toLocaleString()}, description limit
-								{def.descriptionLimit.toLocaleString()}.
-							</p>
+				{#if !platform || !def}
+					<header class="panelhead">
+						<div class="ident">
+							<span class="ic big">
+								<svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+									<path
+										d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3l1.8 2H17.5A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z"
+										stroke="currentColor"
+										stroke-width="1.6"
+										stroke-linejoin="round"
+									/>
+								</svg>
+							</span>
+							<div>
+								<h2>Storage and defaults</h2>
+								<p>Where finished videos go, and what a new upload starts from.</p>
+							</div>
 						</div>
-					</div>
-				</header>
+					</header>
 
-				<div class="tabs">
+					{#if general.loading}
+						<p class="banner">Loading…</p>
+					{:else}
+						<GeneralSettings />
+					{/if}
+				{:else}
+					<header class="panelhead">
+						<div class="ident">
+							<span class="ic big"><PlatformIcon {platform} size={22} /></span>
+							<div>
+								<h2>{def.label}</h2>
+								<p>
+									{def.fieldNote} Title limit {def.titleLimit.toLocaleString()}, description limit
+									{def.descriptionLimit.toLocaleString()}.
+								</p>
+							</div>
+						</div>
+					</header>
+
+					<div class="tabs">
 					<button class:active={tab === 'defaults'} onclick={() => (tab = 'defaults')}>
 						Defaults
 					</button>
@@ -185,6 +245,7 @@
 							label={def.label}
 							onchange={onFiltersChanged}
 						/>
+						{/if}
 					{/if}
 				{/if}
 			</section>
@@ -262,6 +323,18 @@
 		font-size: 11.5px;
 		color: var(--text-faint);
 		line-height: 1.5;
+	}
+
+	.second {
+		margin-top: 20px;
+		padding-top: 16px;
+		border-top: 1px solid var(--border);
+	}
+
+	/* The General row has no reorder or enable controls, so its button takes
+	   the full width of the row instead of sharing it. */
+	.plain li {
+		padding-right: 4px;
 	}
 
 	.note.foot {

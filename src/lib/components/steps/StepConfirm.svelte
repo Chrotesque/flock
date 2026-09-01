@@ -5,10 +5,13 @@
 	import CharCount from '../CharCount.svelte';
 	import { PLATFORMS } from '$lib/platforms';
 	import { draft } from '$lib/stores/draft.svelte';
+	import { general } from '$lib/stores/general.svelte';
 	import { formatSchedule, formatBytes, formatDuration } from '$lib/format';
 	import type { PlanRow } from '$lib/plan';
 
 	let { rows }: { rows: PlanRow[] } = $props();
+
+	let destination = $derived(general.defaultDestination);
 
 	let detailFor = $state<PlanRow | null>(null);
 	let detailOpen = $state(false);
@@ -38,7 +41,12 @@
 					{#if draft.file}
 						{formatBytes(draft.file.size)}
 						{#if draft.duration}<span class="dot">·</span>{formatDuration(draft.duration)}{/if}
-						<span class="dot">·</span>uploads to the NAS on confirm
+						<span class="dot">·</span>
+						{#if destination}
+							goes to <span class="dest">{destination.label || destination.path || 'unnamed'}</span>
+						{:else}
+							uploads to the NAS on confirm
+						{/if}
 					{/if}
 				</p>
 			</div>
@@ -207,6 +215,12 @@
 	.dot {
 		margin: 0 6px;
 		opacity: 0.5;
+	}
+
+	.dest {
+		color: var(--pink-soft);
+		font-family: var(--mono);
+		font-size: 11px;
 	}
 
 	.rows {

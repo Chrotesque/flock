@@ -72,12 +72,18 @@ upload to the NAS starts there.
 **Analytics** is empty for now. Below the placeholder it lists what is currently
 stored on the NAS, which is where you check that an upload actually landed.
 
-**Settings** holds the platform display order, the default publish options for each
-platform, and the adaptation rules. Rules run top to bottom and chain, so order
-matters; there is a box at the bottom to try them against sample text.
+**Settings** has two parts. *Storage and defaults* holds the NAS folders a finished
+video can be moved into (the filled circle marks the default) and the time a newly
+scheduled release starts at. Below it, each platform has its display order, its
+default publish options, and its adaptation rules; rules run top to bottom and
+chain, so order matters, and there is a box at the bottom to try them against
+sample text. Unticking a platform there removes it from new uploads entirely — it
+stops being listed on the compose screen, though its defaults and rules are kept.
 
 ## Where things live
 
 Videos and schedules live in PocketBase on the NAS, in the collections
-`upload_jobs`, `upload_targets`, `platform_settings` and `app_settings`. Nothing is
-stored in the browser, and nothing is written until you confirm an upload.
+`upload_jobs`, `upload_targets`, `platform_settings` and `app_settings`. The chosen
+destination is recorded on each upload, so changing the destination list later never
+moves something already queued. Nothing is stored in the browser, and nothing is
+written until you confirm an upload.

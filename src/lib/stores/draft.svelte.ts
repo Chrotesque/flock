@@ -1,5 +1,7 @@
 import { PLATFORM_IDS } from '../platforms';
 import { isoDate } from '../format';
+import { settings } from './settings.svelte';
+import { general } from './general.svelte';
 import type { OptionValues, PlatformId } from '../types';
 
 export type Step = 0 | 1 | 2;
@@ -34,12 +36,24 @@ class DraftStore {
 	overrides = $state<Partial<Record<PlatformId, OptionValues>>>({});
 	schedule = $state<Partial<Record<PlatformId, { date: string; time: string }>>>({});
 
+	/**
+	 * Platforms this upload will actually go to: ticked on this upload *and*
+	 * still enabled in Settings. Disabling a platform there must drop it from an
+	 * in-progress draft too, not just from the next one.
+	 *
+	 * Returned in the user's configured display order, which is what makes the
+	 * schedule list and the confirmation list agree with the compose rail.
+	 */
 	get activePlatforms(): PlatformId[] {
-		return PLATFORM_IDS.filter((id) => this.selected[id]);
+		return settings.available
+			.filter((entry) => this.selected[entry.platform])
+			.map((entry) => entry.platform);
 	}
 
 	scheduleFor(platform: PlatformId): { date: string; time: string } {
-		return this.schedule[platform] ?? { date: defaultDate(), time: '09:00' };
+		return (
+			this.schedule[platform] ?? { date: defaultDate(), time: general.value.defaultReleaseTime }
+		);
 	}
 
 	setSchedule(platform: PlatformId, value: Partial<{ date: string; time: string }>) {

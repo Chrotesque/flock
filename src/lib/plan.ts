@@ -29,7 +29,7 @@ export interface PlanRow {
  * publishing worker never re-runs the filters.
  */
 export function buildPlan(): PlanRow[] {
-	return settings.ordered
+	return settings.available
 		.filter((entry) => draft.selected[entry.platform])
 		.map((entry) => {
 			const platform = entry.platform;

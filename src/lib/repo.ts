@@ -155,6 +155,8 @@ export interface CreateJobInput {
 	description: string;
 	file: File;
 	duration: number;
+	/** Where on the NAS this video should end up, snapshotted at confirm time. */
+	destination: { label: string; path: string } | null;
 	targets: TargetPlan[];
 }
 
@@ -175,6 +177,8 @@ export async function createJob(
 	form.set('video_name', input.file.name);
 	form.set('video_size', String(input.file.size));
 	form.set('video_duration', String(Math.round(input.duration)));
+	form.set('destination_label', input.destination?.label ?? '');
+	form.set('destination_path', input.destination?.path ?? '');
 	form.set('status', 'stored');
 
 	const job = await uploadWithProgress(form, onProgress);

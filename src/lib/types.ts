@@ -70,6 +70,8 @@ export interface UploadJob {
 	video_name: string;
 	video_size: number;
 	video_duration: number;
+	destination_label: string;
+	destination_path: string;
 	status: JobStatus;
 	error?: string;
 	created: string;
@@ -102,4 +104,18 @@ export interface Draft {
 	overrides: Partial<Record<PlatformId, OptionValues>>;
 	/** Per-platform "YYYY-MM-DD" + "HH:mm", local time. */
 	schedule: Partial<Record<PlatformId, { date: string; time: string }>>;
+}
+
+/** A folder on the NAS a finished video can be moved into. */
+export interface NasDestination {
+	id: string;
+	label: string;
+	path: string;
+}
+
+export interface GeneralSettings {
+	destinations: NasDestination[];
+	defaultDestinationId: string | null;
+	/** Seeds the time on every newly scheduled platform, as "HH:mm". */
+	defaultReleaseTime: string;
 }

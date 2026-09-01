@@ -30,9 +30,18 @@ class SettingsStore {
 		}
 	}
 
-	/** Settings in the user's configured display order. */
+	/** Every platform, in the user's configured display order. */
 	get ordered(): PlatformSettings[] {
 		return [...this.list].sort((a, b) => a.sort_order - b.sort_order);
+	}
+
+	/**
+	 * The platforms a new upload may target. Unticking a platform in Settings
+	 * removes it from the compose flow entirely rather than merely starting it
+	 * unselected, so this — not `ordered` — is what the upload screens iterate.
+	 */
+	get available(): PlatformSettings[] {
+		return this.ordered.filter((entry) => entry.enabled);
 	}
 
 	get(platform: PlatformId): PlatformSettings | undefined {

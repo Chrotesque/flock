@@ -54,6 +54,11 @@ const collections = [
 			// this PC to be online.
 			{ type: 'file', name: 'video', maxSelect: 1, maxSize: 5368709120 },
 			{ type: 'text', name: 'video_name', max: 500 },
+			// Where on the NAS this video should end up. Recorded per job rather
+			// than read from settings at publish time, so changing the configured
+			// destinations later cannot relocate videos already queued.
+			{ type: 'text', name: 'destination_label', max: 200 },
+			{ type: 'text', name: 'destination_path', max: 1000 },
 			{ type: 'number', name: 'video_size' },
 			{ type: 'number', name: 'video_duration' },
 			{

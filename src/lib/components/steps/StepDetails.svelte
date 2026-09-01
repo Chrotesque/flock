@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import VideoPicker from '../VideoPicker.svelte';
 	import PlatformIcon from '../PlatformIcon.svelte';
 	import Checkbox from '../Checkbox.svelte';
@@ -19,9 +20,10 @@
 	}
 
 	// One adaptation pass per platform, so the rail can show at a glance how
-	// much each platform's text differs from what was typed.
+	// much each platform's text differs from what was typed. Only platforms
+	// enabled in Settings appear here at all.
 	let summaries = $derived(
-		settings.ordered.map((entry) => {
+		settings.available.map((entry) => {
 			const def = PLATFORMS[entry.platform];
 			const result = adapt(draft.title, draft.description, entry.filters);
 			return {
@@ -122,7 +124,11 @@
 			{/each}
 		</ul>
 
-		{#if draft.activePlatforms.length === 0}
+		{#if summaries.length === 0}
+			<p class="warnbox">
+				No platforms are enabled. Turn one on in <a href="{base}/settings">Settings</a>.
+			</p>
+		{:else if draft.activePlatforms.length === 0}
 			<p class="warnbox">Select at least one platform to continue.</p>
 		{/if}
 	</aside>
@@ -287,6 +293,11 @@
 		border: 1px solid rgba(251, 191, 36, 0.3);
 		color: var(--warn);
 		font-size: 11.5px;
+	}
+
+	.warnbox a {
+		color: inherit;
+		font-weight: 600;
 	}
 
 	@media (max-width: 1040px) {

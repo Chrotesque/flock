@@ -6,11 +6,13 @@
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
 	import { draft, type Step } from '$lib/stores/draft.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
+	import { general } from '$lib/stores/general.svelte';
 	import { buildPlan } from '$lib/plan';
 	import { createJob } from '$lib/repo';
 	import { formatBytes } from '$lib/format';
 
 	settings.load();
+	general.load();
 
 	let plan = $derived(draft.step === 2 ? buildPlan() : []);
 
@@ -68,6 +70,7 @@
 					description: draft.description,
 					file: draft.file,
 					duration: draft.duration,
+					destination: general.defaultDestination,
 					targets: plan.map((row) => ({
 						platform: row.platform,
 						title: row.title,
