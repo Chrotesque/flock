@@ -382,11 +382,14 @@
 			{:else if draft.activePlatforms.length === 0}
 				<p class="warnbox">Select at least one platform to continue.</p>
 			{:else if draft.incompletePlatforms.length > 0}
-				<p class="warnbox">
-					Still to write: {draft.incompletePlatforms
-						.map((id) => PLATFORMS[id].label)
-						.join(', ')}.
-				</p>
+				<div class="warnbox still">
+					<span>Still to write</span>
+					<span class="stillicons">
+						{#each draft.incompletePlatforms as id (id)}
+							<PlatformIcon platform={id} size={15} />
+						{/each}
+					</span>
+				</div>
 			{/if}
 		</aside>
 
@@ -415,7 +418,8 @@
 	.stage {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 320px;
-		gap: 20px;
+		column-gap: 20px;
+		row-gap: 12px;
 		align-items: start;
 	}
 
@@ -466,7 +470,7 @@
 
 	.mark {
 		flex: none;
-		color: var(--pink-soft);
+		color: var(--ok);
 	}
 
 	.dot {
@@ -773,6 +777,21 @@
 	.warnbox a {
 		color: inherit;
 		font-weight: 600;
+	}
+
+	/* Which platforms are outstanding, as icons pushed to the right edge. */
+	.still {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+	}
+
+	.stillicons {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex: none;
 	}
 
 	.videocard {
