@@ -14,6 +14,7 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 		label: 'YouTube',
 		color: '#e8484a',
 		hasTitle: true,
+		composeField: 'tags',
 		titleLimit: 100,
 		descriptionLimit: 5000,
 		fieldNote: 'Title and description are used as-is.',

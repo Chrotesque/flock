@@ -4,6 +4,7 @@
 	import VideoPicker from '../VideoPicker.svelte';
 	import PlatformIcon from '../PlatformIcon.svelte';
 	import Checkbox from '../Checkbox.svelte';
+	import TagInput from '../TagInput.svelte';
 	import PlatformModal from '../PlatformModal.svelte';
 	import CharCount from '../CharCount.svelte';
 	import { PLATFORMS } from '$lib/platforms';
@@ -62,6 +63,41 @@
 		lastField = 'description';
 		caret = { start: 0, end: 0 };
 	}
+
+	/* ---- the promoted option field ----
+	 *
+	 * A platform may pull one of its options onto this screen via `composeField`
+	 * in the registry; today only YouTube does, for its tags. The card only
+	 * appears for those platforms, so everyone else keeps the templates box at
+	 * full width.
+	 */
+
+	let promoted = $derived(
+		def?.composeField ? (def.fields.find((f) => f.key === def.composeField) ?? null) : null
+	);
+
+	/**
+	 * Read straight through rather than into local state. Seeding a copy is what
+	 * needs the untrack dance in PlatformModal, and there is nothing to gain from
+	 * it here: the override map is already the only home this value has.
+	 */
+	let promotedValue = $derived.by(() => {
+		if (!composing || !promoted) return [] as string[];
+		const raw = draft.overrides[composing]?.[promoted.key] ?? settings.defaultsFor(composing)[promoted.key];
+		return Array.isArray(raw) ? raw : [];
+	});
+
+	function setPromoted(next: string[]) {
+		if (!composing || !promoted) return;
+		draft.overrides[composing] = { ...(draft.overrides[composing] ?? {}), [promoted.key]: next };
+	}
+
+	// Only some field types carry a placeholder, so narrow before reaching for it.
+	let promotedPlaceholder = $derived(
+		promoted && 'placeholder' in promoted && promoted.placeholder
+			? promoted.placeholder
+			: 'Add and press Enter'
+	);
 
 	/* ---- template insertion ----
 	 *
@@ -278,46 +314,67 @@
 		{/if}
 	</section>
 
-	<section class="templates card">
-		<header class="tplhead">
-			<span class="label">Templates</span>
-			<span class="tplnote">
-				Click to drop one in at the cursor, or type its name in braces.
-			</span>
-		</header>
+	<div class="lower" class:split={Boolean(promoted)}>
+		<section class="templates card">
+			<header class="tplhead">
+				<span class="label">Templates</span>
+				<span class="tplnote">
+					Click to drop one in at the cursor, or type its name in braces.
+				</span>
+			</header>
 
-		{#if templates.loading}
-			<p class="tplempty">Loading…</p>
-		{:else if templates.items.length === 0}
-			<p class="tplempty">
-				None yet — add reusable text in <a href="{base}/settings">Settings</a>.
-			</p>
-		{:else}
-			<div class="chips">
-				{#each templates.items as template (template.id)}
-					<button
-						class="chip"
-						disabled={!composing}
-						onclick={() => insert(template)}
-						onmouseenter={(e) => previewOn(e, template)}
-						onmouseleave={previewOff}
-						onfocus={(e) => previewOn(e as unknown as MouseEvent, template)}
-						onblur={previewOff}
-					>
-						{template.name.trim() || 'Unnamed'}
-					</button>
-				{/each}
-			</div>
-			{#if composing && def}
-				<p class="target">
-					Inserts into <strong>{def.label}</strong>'s
-					<strong>
-						{#if lastField === 'title' && def.hasTitle}title{:else if def.hasTitle}description{:else}caption{/if}
-					</strong>.
+			{#if templates.loading}
+				<p class="tplempty">Loading…</p>
+			{:else if templates.items.length === 0}
+				<p class="tplempty">
+					None yet — add reusable text in <a href="{base}/settings">Settings</a>.
 				</p>
+			{:else}
+				<div class="chips">
+					{#each templates.items as template (template.id)}
+						<button
+							class="chip"
+							disabled={!composing}
+							onclick={() => insert(template)}
+							onmouseenter={(e) => previewOn(e, template)}
+							onmouseleave={previewOff}
+							onfocus={(e) => previewOn(e as unknown as MouseEvent, template)}
+							onblur={previewOff}
+						>
+							{template.name.trim() || 'Unnamed'}
+						</button>
+					{/each}
+				</div>
+				{#if composing && def}
+					<p class="target">
+						Inserts into <strong>{def.label}</strong>'s
+						<strong>
+							{#if lastField === 'title' && def.hasTitle}title{:else if def.hasTitle}description{:else}caption{/if}
+						</strong>.
+					</p>
+				{/if}
 			{/if}
+		</section>
+
+		{#if promoted && def}
+			<section class="promoted card">
+				<header class="tplhead">
+					<span class="label">{promoted.label}</span>
+					<span class="tplnote">{def.label} only.</span>
+				</header>
+
+				{#if promoted.type === 'tags'}
+					<div class="promotedbody">
+						<TagInput
+							value={promotedValue}
+							placeholder={promotedPlaceholder}
+							onchange={setPromoted}
+						/>
+					</div>
+				{/if}
+			</section>
 		{/if}
-	</section>
+	</div>
 
 	<div class="side">
 		<aside class="rail card">
@@ -509,10 +566,31 @@
 
 	/* ---- templates ---- */
 
-	.templates {
+	/* Templates, beside whichever option the platform promotes onto this screen.
+	   Without one the templates box keeps the full width. */
+	.lower {
 		grid-column: 1;
 		grid-row: 2;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 20px;
+		align-items: start;
+	}
+
+	.lower.split {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	}
+
+	.templates {
 		padding: 16px 18px;
+	}
+
+	.promoted {
+		padding: 16px 18px;
+	}
+
+	.promotedbody {
+		margin-top: 12px;
 	}
 
 	.tplhead {
@@ -798,6 +876,9 @@
 		padding: 18px 16px;
 		display: grid;
 		gap: 4px;
+		/* Grid items default to min-width: auto, which let a long file name push
+		   this card straight out of its 320px track. */
+		min-width: 0;
 	}
 
 	@media (max-width: 1040px) {
@@ -805,10 +886,13 @@
 			grid-template-columns: 1fr;
 		}
 		.main,
-		.templates,
+		.lower,
 		.side {
 			grid-column: auto;
 			grid-row: auto;
+		}
+		.lower.split {
+			grid-template-columns: minmax(0, 1fr);
 		}
 		.side {
 			position: static;

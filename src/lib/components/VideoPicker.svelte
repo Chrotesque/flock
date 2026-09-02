@@ -177,9 +177,10 @@
 		margin: 0 0 3px;
 		font-weight: 580;
 		font-size: 13.5px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		/* File names have no spaces to break at, so "anywhere" is what actually
+		   wraps them. While this was nowrap the row's min-content width pushed
+		   the whole card out of its 320px column instead of the text wrapping. */
+		overflow-wrap: anywhere;
 	}
 
 	.dot {

@@ -53,6 +53,13 @@ export interface PlatformDefinition {
 	 * all — nothing is stored for it and nothing is required to continue.
 	 */
 	hasTitle: boolean;
+	/**
+	 * Key of an option field promoted onto the compose screen, alongside the
+	 * templates box. Tags are authoring work rather than configuration, so
+	 * YouTube's sit next to the text instead of inside the options modal.
+	 * Undefined — the default — leaves every option in the modal.
+	 */
+	composeField?: string;
 	titleLimit: number;
 	descriptionLimit: number;
 	/** How this platform uses the text composed for it. */
