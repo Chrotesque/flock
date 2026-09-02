@@ -91,7 +91,7 @@ const collections = [
 				type: 'select',
 				name: 'status',
 				maxSelect: 1,
-				values: ['pending', 'publishing', 'published', 'failed', 'cancelled']
+				values: ['pending', 'publishing', 'scheduled', 'published', 'failed', 'cancelled']
 			},
 			{ type: 'text', name: 'remote_url', max: 1000 },
 			{ type: 'text', name: 'error', max: 2000 },

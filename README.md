@@ -15,10 +15,12 @@ On confirmation the video is uploaded to a PocketBase instance on the NAS, along
 with one scheduled entry per platform. The idea is that publishing happens later
 from the NAS, so this machine does not need to be online at release time.
 
-**The platform connections do not exist yet.** Nothing is published anywhere. The
-per-platform publish options are invented placeholders that exist so the interface
-can be judged before the real APIs are wired up. Uploads to the NAS, the schedules
-and the adaptation rules are all real and persist.
+**YouTube is connected; the other three are not.** A worker process picks up
+scheduled YouTube releases and uploads them for real — see *The worker* below.
+Instagram, TikTok and Facebook publish nowhere, and their per-platform options are
+invented placeholders that exist so the interface can be judged before those APIs
+are wired up. Uploads to the NAS, the schedules and the adaptation rules are real
+for every platform.
 
 ## Requirements
 
@@ -71,6 +73,56 @@ That builds and mirrors `build/` into flock's PocketBase at
 `\\nas\appdata\pocketbase_flock\pb_public`, which needs write access to that
 share. `pnpm deploy:dry` shows what would change without touching anything.
 PocketBase serves the files straight from disk, so there is no restart.
+
+## The worker
+
+Confirming an upload only queues it. A separate process does the publishing, and
+it has to keep running when no browser is open — so it belongs on the NAS beside
+PocketBase, not in the app. Today it handles YouTube only.
+
+It needs a Google OAuth client. In the [Google Cloud console](https://console.cloud.google.com):
+
+1. Create a project and enable **YouTube Data API v3** under *APIs & Services →
+   Library*.
+2. Under *APIs & Services → OAuth consent screen*, set it up as **External** and
+   add the Google account that owns the channel as a **test user**.
+3. Under *Credentials*, create an **OAuth client ID** of type **Desktop app**.
+   That gives you a client ID and client secret.
+
+Copy the example config and paste those two values in:
+
+```bash
+cp worker/.worker-config.example.json worker/.worker-config.json
+```
+
+Then authorise once — this opens a consent URL and writes the refresh token back
+into that file:
+
+```bash
+pnpm worker:auth
+```
+
+Check the queue without uploading anything:
+
+```bash
+pnpm worker:dry
+```
+
+Run it:
+
+```bash
+pnpm worker
+```
+
+`pnpm worker:once` does a single pass and exits, which is the easier one to watch
+while testing. The config file holds a client secret and is gitignored.
+
+**Two limits worth knowing before the first upload.** Until the Google Cloud
+project passes YouTube's API audit, every video it uploads is **locked to
+private** and cannot be made public afterwards — you would have to re-upload
+through the site. Request the audit from the API Compliance form when you want
+real releases. Separately, while the OAuth consent screen sits in *Testing*, the
+refresh token expires after **7 days**; publishing the consent screen stops that.
 
 ## Using it
 

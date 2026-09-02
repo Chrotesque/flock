@@ -80,7 +80,19 @@ export interface PlatformSettings {
 }
 
 export type JobStatus = 'draft' | 'uploading' | 'stored' | 'publishing' | 'done' | 'failed';
-export type TargetStatus = 'pending' | 'publishing' | 'published' | 'failed' | 'cancelled';
+/**
+ * `scheduled` means the platform has the video *and* the release time, and is
+ * holding it until then — YouTube keeps it private until `publishAt`. Moving
+ * the card in flock after that changes nothing on the platform, so the Calendar
+ * locks it like history rather than leaving it draggable.
+ */
+export type TargetStatus =
+	| 'pending'
+	| 'publishing'
+	| 'scheduled'
+	| 'published'
+	| 'failed'
+	| 'cancelled';
 
 export interface UploadJob {
 	id: string;

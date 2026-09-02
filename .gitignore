@@ -15,3 +15,6 @@ CLAUDE.md
 
 # PocketBase superuser credentials - never commit
 scripts/.pb-creds.json
+
+# Google OAuth client secret + refresh token - never commit
+worker/.worker-config.json

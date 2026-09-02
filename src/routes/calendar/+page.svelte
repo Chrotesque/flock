@@ -98,11 +98,14 @@
 		const at = new Date(target.scheduled_at);
 		if (Number.isNaN(at.getTime())) return null;
 
-		// "Already released" is `published` once a worker exists. Until then a
-		// slot that has simply passed also reads as history, which is what makes
-		// the greyed-out state visible at all today.
+		// Locked once the platform holds it: `published` is live, `scheduled` is
+		// uploaded with its release time already handed over, so dragging the card
+		// would only lie about what happens. A slot that has simply passed still
+		// reads as history too — that half goes away once every platform has a
+		// worker and past-due pending becomes a real fault instead.
 		const done =
 			target.status === 'published' ||
+			target.status === 'scheduled' ||
 			target.status === 'cancelled' ||
 			(target.status === 'pending' && at.getTime() < now);
 
@@ -145,6 +148,8 @@
 
 	function statusLabel(entry: Entry): string {
 		if (entry.status === 'published') return 'released';
+		if (entry.status === 'scheduled') return 'on the platform';
+		if (entry.status === 'publishing') return 'uploading';
 		if (entry.status === 'failed') return 'failed';
 		if (entry.status === 'cancelled') return 'cancelled';
 		return entry.done ? 'past due' : '';

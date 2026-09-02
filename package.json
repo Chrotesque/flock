@@ -12,7 +12,11 @@
 		"test:watch": "svelte-kit sync && vitest",
 		"setup-pb": "node scripts/runpb.mjs setup-pb.mjs",
 		"deploy": "node scripts/deploy.mjs",
-		"deploy:dry": "node scripts/deploy.mjs --dry"
+		"deploy:dry": "node scripts/deploy.mjs --dry",
+		"worker": "node worker/index.mjs",
+		"worker:once": "node worker/index.mjs --once",
+		"worker:dry": "node worker/index.mjs --dry",
+		"worker:auth": "node worker/authorize.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.0",

@@ -3,10 +3,11 @@ import type { PlatformDefinition, PlatformId } from './types';
 /**
  * The platform registry.
  *
- * Every option below is INVENTED. No platform API has been wired up yet, so
- * these exist purely to give the UI something plausible to render; expect to
- * throw most of them away once the real API surfaces are known. The character
- * limits and `hasTitle` are the parts that mirror reality.
+ * YouTube's set is REAL — every field below maps to something videos.insert
+ * actually accepts, and worker/youtube.mjs is what maps it. The other three
+ * platforms are still INVENTED placeholders that exist to give the UI something
+ * plausible to render; expect to throw most of them away once those APIs are
+ * wired up. The character limits and `hasTitle` mirror reality throughout.
  */
 export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 	youtube: {
@@ -26,18 +27,24 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 				type: 'select',
 				choices: ['Gaming', 'Education', 'Entertainment', 'Music', 'Science & Technology', 'People & Blogs']
 			},
-			{ key: 'playlist', label: 'Add to playlist', type: 'text', placeholder: 'None' },
+			{
+				key: 'playlist',
+				label: 'Add to playlist',
+				type: 'text',
+				placeholder: 'None',
+				hint: 'Matched by name. Costs a second API call after the upload.'
+			},
 			{ key: 'tags', label: 'Tags', type: 'tags', placeholder: 'Add a tag and press Enter' },
 			{ key: 'madeForKids', label: 'Made for kids', type: 'bool', hint: 'Disables comments and personalised ads.' },
 			{ key: 'notifySubscribers', label: 'Notify subscribers', type: 'bool' },
 			{ key: 'allowEmbedding', label: 'Allow embedding', type: 'bool' },
+			{ key: 'license', label: 'License', type: 'select', choices: ['Standard YouTube License', 'Creative Commons'] },
 			{
-				key: 'commentPolicy',
-				label: 'Comments',
-				type: 'select',
-				choices: ['Allow all', 'Hold potentially inappropriate', 'Hold all for review', 'Disabled']
-			},
-			{ key: 'license', label: 'License', type: 'select', choices: ['Standard YouTube License', 'Creative Commons'] }
+				key: 'syntheticMedia',
+				label: 'Contains synthetic media',
+				type: 'bool',
+				hint: 'Discloses AI-generated or altered content. Required by YouTube when it applies.'
+			}
 		],
 		defaults: {
 			visibility: 'Public',
@@ -47,8 +54,8 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 			madeForKids: false,
 			notifySubscribers: true,
 			allowEmbedding: true,
-			commentPolicy: 'Allow all',
-			license: 'Standard YouTube License'
+			license: 'Standard YouTube License',
+			syntheticMedia: false
 		}
 	},
 
