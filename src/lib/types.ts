@@ -36,14 +36,26 @@ export interface FilterResult {
 	hits: FilterHit[];
 }
 
+/** One platform's composed text. Platforms without a title leave it empty. */
+export interface PlatformText {
+	title: string;
+	description: string;
+}
+
 export interface PlatformDefinition {
 	id: PlatformId;
 	label: string;
 	/** Muted brand colour. Pink/purple stays reserved for selection state. */
 	color: string;
+	/**
+	 * Whether this platform has a title distinct from its description. False for
+	 * the caption-only platforms, whose compose panel renders no title field at
+	 * all — nothing is stored for it and nothing is required to continue.
+	 */
+	hasTitle: boolean;
 	titleLimit: number;
 	descriptionLimit: number;
-	/** How this platform actually uses the shared title/description. */
+	/** How this platform uses the text composed for it. */
 	fieldNote: string;
 	fields: OptionField[];
 	defaults: OptionValues;
@@ -65,6 +77,12 @@ export type TargetStatus = 'pending' | 'publishing' | 'published' | 'failed' | '
 
 export interface UploadJob {
 	id: string;
+	/**
+	 * A label for the job, not the published text. Since every platform is
+	 * composed separately there is no single authored pair any more; this is
+	 * taken from the first active platform so Analytics and the log have
+	 * something readable. What actually gets published lives on upload_targets.
+	 */
 	title: string;
 	description: string;
 	video: string;
@@ -97,8 +115,8 @@ export interface UploadTarget {
 
 /** The in-progress wizard state. Lives in memory only until confirmed. */
 export interface Draft {
-	title: string;
-	description: string;
+	/** Composed per platform — there is no shared title/description pair. */
+	texts: Partial<Record<PlatformId, PlatformText>>;
 	file: File | null;
 	selected: Record<PlatformId, boolean>;
 	/** Per-platform option overrides on top of that platform's saved defaults. */

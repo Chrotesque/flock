@@ -6,7 +6,7 @@
 	import { PLATFORMS } from '$lib/platforms';
 	import { draft } from '$lib/stores/draft.svelte';
 	import { general } from '$lib/stores/general.svelte';
-	import { formatSchedule, formatBytes, formatDuration } from '$lib/format';
+	import { formatSchedule, formatBytes, formatDuration, firstLine } from '$lib/format';
 	import type { PlanRow } from '$lib/plan';
 
 	let { rows }: { rows: PlanRow[] } = $props();
@@ -94,12 +94,15 @@
 	<ul class="rows">
 		{#each rows as row (row.platform)}
 			{@const def = PLATFORMS[row.platform]}
+			{@const label = def.hasTitle ? row.title : firstLine(row.description)}
 			<li class="card" class:flagged={row.overLimit || row.errors > 0}>
 				<span class="ic"><PlatformIcon platform={row.platform} size={20} /></span>
 
 				<div class="body">
 					<div class="titleline">
-						<p class="title" class:empty={!row.title}>{row.title || '(no title)'}</p>
+						<p class="title" class:empty={!label}>
+							{label || (def.hasTitle ? '(no title)' : '(no caption)')}
+						</p>
 						<button class="info" onclick={() => openDetail(row)} aria-label="Show description for {def.label}">
 							<svg viewBox="0 0 24 24" width="15" height="15" fill="none">
 								<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6" />
@@ -151,17 +154,19 @@
 	{#if detailFor}
 		{@const def = PLATFORMS[detailFor.platform]}
 		<div class="detail">
-			<div>
-				<div class="blockhead">
-					<span class="label">Title</span>
-					<CharCount value={detailFor.title} limit={def.titleLimit} />
+			{#if def.hasTitle}
+				<div>
+					<div class="blockhead">
+						<span class="label">Title</span>
+						<CharCount value={detailFor.title} limit={def.titleLimit} />
+					</div>
+					<p class="out">{detailFor.title || '(no title)'}</p>
 				</div>
-				<p class="out">{detailFor.title || '(no title)'}</p>
-			</div>
+			{/if}
 
 			<div>
 				<div class="blockhead">
-					<span class="label">Description</span>
+					<span class="label">{def.hasTitle ? 'Description' : 'Caption'}</span>
 					<CharCount value={detailFor.description} limit={def.descriptionLimit} />
 				</div>
 				<p class="out pre">{detailFor.description || '(no description)'}</p>

@@ -1,14 +1,15 @@
 # flock
 
-Write one title, one description, point it at a video file, and schedule that video
-out to YouTube, Instagram, TikTok and Facebook — each with its own release day and
-time, and its own text adaptations.
+Write each platform's text, point it at a video file, and schedule that video out to
+YouTube, Instagram, TikTok and Facebook — each with its own release day and time.
 
-Each platform has quirks: a link that works on one gets a post buried on another, a
-hashtag style that reads fine here looks broken there. Rather than maintaining four
-copies of every description, you write one and give each platform a list of
-"replace X with Y" rules. flock applies them and shows you exactly what each
-platform will receive before anything is sent.
+Every platform reads differently: a link that works on one gets a post buried on
+another, a hashtag style that looks fine here looks broken there. So you compose for
+them one at a time, switching between them with a row of pills — YouTube and Facebook
+take a title and a description, Instagram and TikTok are caption-only. On top of that
+each platform can carry a list of "replace X with Y" rules for the edits you would
+otherwise make every single time. flock shows you exactly what each platform will
+receive before anything is sent.
 
 On confirmation the video is uploaded to a PocketBase instance on the NAS, along
 with one scheduled entry per platform. The idea is that publishing happens later
@@ -80,13 +81,16 @@ cannot be changed afterwards, so pick one you will recognise later. Each browser
 needs its own; the name is stored locally, so opening flock from a different
 address counts as a different browser.
 
-**Upload** is a three-step flow. flock opens on Analytics; Upload lives at `/upload`. Enter a title, a description and a video file, and
-tick the platforms you want. Clicking a platform opens its options and a preview of
-its adapted title and description. Continue to a week calendar showing a card per
-platform: drag a card to another day or hour to move that release, or use the exact
-date and time fields underneath. The final
-screen shows a still of the video with what each platform gets and when; confirming
-takes two clicks, and the copy to the NAS starts there.
+**Upload** is a three-step flow. flock opens on Analytics; Upload lives at `/upload`.
+Tick the platforms you want on the right, pick a video file underneath them, then
+work along the row of platform pills writing the text for each one — a title and a
+description for YouTube and Facebook, a caption for Instagram and TikTok. Continue
+unlocks once every ticked platform has been written for. Clicking a platform in the
+right-hand list opens its options and a preview of its adapted text. Next comes a
+week calendar showing a card per platform: drag a card to another day or hour to move
+that release, or use the exact date and time fields underneath. The final screen
+shows a still of the video with what each platform gets and when; confirming takes
+two clicks, and the copy to the NAS starts there.
 
 **Calendar** shows every release ever scheduled on a week grid. Things already
 released — or whose slot has passed — are greyed out, and there is a toggle to hide

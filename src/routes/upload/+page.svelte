@@ -32,7 +32,7 @@
 	});
 
 	const HEADINGS = [
-		{ title: 'New upload', sub: 'One title, one description, one file — adapted per platform.' },
+		{ title: 'New upload', sub: 'Compose each platform in turn, then pick the file.' },
 		{ title: 'Schedule', sub: 'Pick a release day and time for each platform.' },
 		{ title: 'Confirm', sub: 'Review exactly what will be published, and when.' }
 	];
@@ -72,8 +72,8 @@
 		try {
 			await createJob(
 				{
-					title: draft.title,
-					description: draft.description,
+					title: draft.primaryText.title,
+					description: draft.primaryText.description,
 					file: draft.file,
 					duration: draft.duration,
 					destination: general.defaultDestination,

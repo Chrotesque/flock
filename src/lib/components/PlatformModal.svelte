@@ -32,11 +32,11 @@
 		});
 	});
 
-	let result = $derived(
-		platform
-			? adapt(draft.title, draft.description, settings.filtersFor(platform))
-			: null
-	);
+	let result = $derived.by(() => {
+		if (!platform) return null;
+		const text = draft.textFor(platform);
+		return adapt(text.title, text.description, settings.filtersFor(platform));
+	});
 
 	let tab = $state<'options' | 'preview'>('options');
 

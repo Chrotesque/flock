@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { base } from '$app/paths';
 	import VideoPicker from '../VideoPicker.svelte';
 	import PlatformIcon from '../PlatformIcon.svelte';
@@ -21,6 +22,45 @@
 	function openModal(platform: PlatformId) {
 		modalPlatform = platform;
 		modalOpen = true;
+	}
+
+	/* ---- which platform is being composed ---- */
+
+	/**
+	 * Keeps the composed platform valid — on first render, and after the one
+	 * being edited is unticked here or disabled in Settings.
+	 *
+	 * Depends on the active list only: reading `composing` as a dependency would
+	 * re-run this every time it is written, which is the same shape as the
+	 * PlatformModal and WeekCalendar loops. Hence the untrack.
+	 */
+	$effect(() => {
+		const active = draft.activePlatforms;
+		if (active.length === 0) return;
+		const current = untrack(() => draft.composing);
+		if (!current || !active.includes(current)) draft.composing = active[0];
+	});
+
+	let composing = $derived(
+		draft.composing && draft.activePlatforms.includes(draft.composing) ? draft.composing : null
+	);
+	let def = $derived(composing ? PLATFORMS[composing] : null);
+	let text = $derived(composing ? draft.textFor(composing) : { title: '', description: '' });
+
+	let pills = $derived(
+		draft.activePlatforms.map((platform) => ({
+			platform,
+			def: PLATFORMS[platform],
+			complete: draft.isComplete(platform)
+		}))
+	);
+
+	function compose(platform: PlatformId) {
+		draft.composing = platform;
+		// The new panel may not render a title at all, and its fields are fresh
+		// anyway — start the caret somewhere that always exists.
+		lastField = 'description';
+		caret = { start: 0, end: 0 };
 	}
 
 	/* ---- template insertion ----
@@ -55,8 +95,8 @@
 	 * showing the raw braces forever.
 	 */
 	function setField(field: Field, value: string) {
-		if (field === 'title') draft.title = value;
-		else draft.description = value;
+		if (!composing) return;
+		draft.setText(composing, field, value);
 		const el = elementFor(field);
 		if (el && el.value !== value) el.value = value;
 	}
@@ -73,8 +113,10 @@
 	}
 
 	function insert(template: TextTemplate) {
-		const field = lastField;
-		const value = field === 'title' ? draft.title : draft.description;
+		if (!composing) return;
+		// A caption-only platform has no title element for the text to land in.
+		const field: Field = lastField === 'title' && !def?.hasTitle ? 'description' : lastField;
+		const value = draft.textFor(composing)[field];
 		const next = value.slice(0, caret.start) + template.content + value.slice(caret.end);
 		setField(field, next);
 		place(field, caret.start + template.content.length);
@@ -129,22 +171,25 @@
 		if (hoverTimer) clearTimeout(hoverTimer);
 	});
 
-	// One adaptation pass per platform, so the rail can show at a glance how
-	// much each platform's text differs from what was typed. Only platforms
-	// enabled in Settings appear here at all.
+	// One adaptation pass per platform, over that platform's own text, so the
+	// rail can show at a glance what the rules will still do to what was typed.
+	// Only platforms enabled in Settings appear here at all.
 	let summaries = $derived(
 		settings.available.map((entry) => {
-			const def = PLATFORMS[entry.platform];
-			const result = adapt(draft.title, draft.description, entry.filters);
+			const platform = entry.platform;
+			const own = draft.textFor(platform);
+			const platformDef = PLATFORMS[platform];
+			const result = adapt(own.title, own.description, entry.filters);
 			return {
-				platform: entry.platform,
-				def,
+				platform,
+				def: platformDef,
 				hits: result.totalHits,
 				errors: result.errors,
 				overLimit:
-					result.title.output.length > def.titleLimit ||
-					result.description.output.length > def.descriptionLimit,
-				overridden: Object.keys(draft.overrides[entry.platform] ?? {}).length > 0
+					result.title.output.length > platformDef.titleLimit ||
+					result.description.output.length > platformDef.descriptionLimit,
+				overridden: Object.keys(draft.overrides[platform] ?? {}).length > 0,
+				needsText: draft.selected[platform] && !draft.isComplete(platform)
 			};
 		})
 	);
@@ -152,49 +197,85 @@
 
 <div class="stage">
 	<section class="main card">
-		<div class="field">
-			<div class="fieldhead">
-				<label class="label" for="title">Title</label>
-				<CharCount value={draft.title} limit={100} />
+		{#if pills.length > 0}
+			<div class="pills" role="tablist" aria-label="Platform being composed">
+				{#each pills as pill (pill.platform)}
+					<button
+						class="pilltab"
+						class:on={composing === pill.platform}
+						class:done={pill.complete}
+						role="tab"
+						aria-selected={composing === pill.platform}
+						onclick={() => compose(pill.platform)}
+					>
+						<PlatformIcon platform={pill.platform} size={15} />
+						<span class="pillname">{pill.def.label}</span>
+						{#if pill.complete}
+							<svg class="mark" viewBox="0 0 24 24" width="12" height="12" fill="none">
+								<path
+									d="M4 12.5 9.5 18 20 6.5"
+									stroke="currentColor"
+									stroke-width="3"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+							</svg>
+						{:else}
+							<span class="dot" aria-hidden="true"></span>
+						{/if}
+					</button>
+				{/each}
 			</div>
-			<input
-				id="title"
-				class="input"
-				bind:this={titleEl}
-				value={draft.title}
-				oninput={(e) => onFieldInput('title', e)}
-				onfocus={() => remember('title')}
-				onclick={() => remember('title')}
-				onkeyup={() => remember('title')}
-				onselect={() => remember('title')}
-				placeholder="One title — each platform adapts it"
-				autocomplete="off"
-			/>
-		</div>
+		{/if}
 
-		<div class="field">
-			<div class="fieldhead">
-				<label class="label" for="description">Description</label>
-				<CharCount value={draft.description} limit={5000} />
+		{#if composing && def}
+			{#if def.hasTitle}
+				<div class="field">
+					<div class="fieldhead">
+						<label class="label" for="title">Title</label>
+						<CharCount value={text.title} limit={def.titleLimit} />
+					</div>
+					<input
+						id="title"
+						class="input"
+						bind:this={titleEl}
+						value={text.title}
+						oninput={(e) => onFieldInput('title', e)}
+						onfocus={() => remember('title')}
+						onclick={() => remember('title')}
+						onkeyup={() => remember('title')}
+						onselect={() => remember('title')}
+						placeholder="Title for {def.label}"
+						autocomplete="off"
+					/>
+				</div>
+			{/if}
+
+			<div class="field">
+				<div class="fieldhead">
+					<label class="label" for="description">
+						{def.hasTitle ? 'Description' : 'Caption'}
+					</label>
+					<CharCount value={text.description} limit={def.descriptionLimit} />
+				</div>
+				<textarea
+					id="description"
+					class="textarea"
+					bind:this={descEl}
+					value={text.description}
+					oninput={(e) => onFieldInput('description', e)}
+					onfocus={() => remember('description')}
+					onclick={() => remember('description')}
+					onkeyup={() => remember('description')}
+					onselect={() => remember('description')}
+					placeholder="{def.hasTitle ? 'Description' : 'Caption'} for {def.label}"
+				></textarea>
 			</div>
-			<textarea
-				id="description"
-				class="textarea"
-				bind:this={descEl}
-				value={draft.description}
-				oninput={(e) => onFieldInput('description', e)}
-				onfocus={() => remember('description')}
-				onclick={() => remember('description')}
-				onkeyup={() => remember('description')}
-				onselect={() => remember('description')}
-				placeholder="One description. Platform-specific quirks are handled by the adaptation rules in Settings."
-			></textarea>
-		</div>
 
-		<div class="field">
-			<span class="label">Video file</span>
-			<VideoPicker bind:file={draft.file} bind:duration={draft.duration} />
-		</div>
+			<p class="note">{def.fieldNote}</p>
+		{:else}
+			<p class="emptypanel">Tick a platform on the right to start composing.</p>
+		{/if}
 	</section>
 
 	<section class="templates card">
@@ -216,6 +297,7 @@
 				{#each templates.items as template (template.id)}
 					<button
 						class="chip"
+						disabled={!composing}
 						onclick={() => insert(template)}
 						onmouseenter={(e) => previewOn(e, template)}
 						onmouseleave={previewOff}
@@ -226,69 +308,93 @@
 					</button>
 				{/each}
 			</div>
-			<p class="target">
-				Inserts into the <strong>{lastField === 'title' ? 'title' : 'description'}</strong>.
-			</p>
+			{#if composing && def}
+				<p class="target">
+					Inserts into <strong>{def.label}</strong>'s
+					<strong>
+						{#if lastField === 'title' && def.hasTitle}title{:else if def.hasTitle}description{:else}caption{/if}
+					</strong>.
+				</p>
+			{/if}
 		{/if}
 	</section>
 
-	<aside class="rail card">
-		<header>
-			<h3>Platforms</h3>
-			<span class="pill">{draft.activePlatforms.length} of {summaries.length}</span>
-		</header>
+	<div class="side">
+		<aside class="rail card">
+			<header>
+				<h3>Platforms</h3>
+				<span class="pill">{draft.activePlatforms.length} of {summaries.length}</span>
+			</header>
 
-		<p class="railnote">Click a platform to review its options and adapted text.</p>
+			<p class="railnote">Tick which platforms this goes to. Click one to change its options.</p>
 
-		<ul>
-			{#each summaries as item (item.platform)}
-				<li class:off={!draft.selected[item.platform]}>
-					<button class="open" onclick={() => openModal(item.platform)}>
-						<span class="ic"><PlatformIcon platform={item.platform} size={19} /></span>
-						<span class="who">
-							<span class="name">{item.def.label}</span>
-							<span class="tags">
-								{#if item.errors > 0}
-									<span class="tag bad">rule error</span>
-								{:else if item.hits > 0}
-									<span class="tag">{item.hits} adapted</span>
-								{/if}
-								{#if item.overLimit}
-									<span class="tag warn">over limit</span>
-								{/if}
-								{#if item.overridden}
-									<span class="tag alt">custom</span>
-								{/if}
+			<ul>
+				{#each summaries as item (item.platform)}
+					<li
+						class:off={!draft.selected[item.platform]}
+						class:active={composing === item.platform}
+					>
+						<button class="open" onclick={() => openModal(item.platform)}>
+							<span class="ic"><PlatformIcon platform={item.platform} size={19} /></span>
+							<span class="who">
+								<span class="name">{item.def.label}</span>
+								<span class="tags">
+									{#if item.needsText}
+										<span class="tag warn">needs text</span>
+									{/if}
+									{#if item.errors > 0}
+										<span class="tag bad">rule error</span>
+									{:else if item.hits > 0}
+										<span class="tag">{item.hits} adapted</span>
+									{/if}
+									{#if item.overLimit}
+										<span class="tag warn">over limit</span>
+									{/if}
+									{#if item.overridden}
+										<span class="tag alt">custom</span>
+									{/if}
+								</span>
 							</span>
-						</span>
-						<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
-							<path
-								d="M9 6l6 6-6 6"
-								stroke="currentColor"
-								stroke-width="1.8"
-								stroke-linecap="round"
-								stroke-linejoin="round"
+							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+								<path
+									d="M9 6l6 6-6 6"
+									stroke="currentColor"
+									stroke-width="1.8"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+							</svg>
+						</button>
+						<span class="check">
+							<Checkbox
+								checked={draft.selected[item.platform]}
+								onchange={(next) => (draft.selected[item.platform] = next)}
 							/>
-						</svg>
-					</button>
-					<span class="check">
-						<Checkbox
-							checked={draft.selected[item.platform]}
-							onchange={(next) => (draft.selected[item.platform] = next)}
-						/>
-					</span>
-				</li>
-			{/each}
-		</ul>
+						</span>
+					</li>
+				{/each}
+			</ul>
 
-		{#if summaries.length === 0}
-			<p class="warnbox">
-				No platforms are enabled. Turn one on in <a href="{base}/settings">Settings</a>.
-			</p>
-		{:else if draft.activePlatforms.length === 0}
-			<p class="warnbox">Select at least one platform to continue.</p>
-		{/if}
-	</aside>
+			{#if summaries.length === 0}
+				<p class="warnbox">
+					No platforms are enabled. Turn one on in <a href="{base}/settings">Settings</a>.
+				</p>
+			{:else if draft.activePlatforms.length === 0}
+				<p class="warnbox">Select at least one platform to continue.</p>
+			{:else if draft.incompletePlatforms.length > 0}
+				<p class="warnbox">
+					Still to write: {draft.incompletePlatforms
+						.map((id) => PLATFORMS[id].label)
+						.join(', ')}.
+				</p>
+			{/if}
+		</aside>
+
+		<section class="videocard card">
+			<span class="label">Video file</span>
+			<VideoPicker bind:file={draft.file} bind:duration={draft.duration} />
+		</section>
+	</div>
 </div>
 
 {#if hovered}
@@ -312,6 +418,92 @@
 		gap: 20px;
 		align-items: start;
 	}
+
+	/* ---- compose panel ---- */
+
+	.main {
+		grid-column: 1;
+		grid-row: 1;
+		padding: 22px;
+		display: grid;
+		gap: 20px;
+	}
+
+	.pills {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.pilltab {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 7px 12px 7px 11px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--bg-elev);
+		color: var(--text-dim);
+		font-size: 12.5px;
+		font-weight: 570;
+		transition: background 0.14s, color 0.14s, border-color 0.14s;
+	}
+
+	.pilltab:hover {
+		border-color: var(--pink-soft);
+		color: var(--text);
+	}
+
+	.pilltab.on {
+		border-color: var(--pink);
+		background: var(--accent-grad-soft);
+		color: var(--text);
+	}
+
+	.pillname {
+		line-height: 1;
+	}
+
+	.mark {
+		flex: none;
+		color: var(--pink-soft);
+	}
+
+	.dot {
+		flex: none;
+		width: 6px;
+		height: 6px;
+		border-radius: 999px;
+		border: 1.5px solid var(--text-faint);
+	}
+
+	.fieldhead {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
+	}
+
+	.fieldhead .label {
+		margin-bottom: 8px;
+	}
+
+	.note {
+		margin: -6px 0 0;
+		font-size: 11.5px;
+		color: var(--text-faint);
+		line-height: 1.45;
+	}
+
+	.emptypanel {
+		margin: 0;
+		padding: 26px 0;
+		text-align: center;
+		font-size: 13px;
+		color: var(--text-faint);
+	}
+
+	/* ---- templates ---- */
 
 	.templates {
 		grid-column: 1;
@@ -363,10 +555,15 @@
 		transition: background 0.14s, color 0.14s, border-color 0.14s;
 	}
 
-	.chip:hover {
+	.chip:hover:not(:disabled) {
 		border-color: var(--pink);
 		background: var(--accent-grad-soft);
 		color: var(--text);
+	}
+
+	.chip:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
 	}
 
 	.target {
@@ -379,6 +576,8 @@
 		color: var(--pink-soft);
 		font-weight: 600;
 	}
+
+	/* ---- template preview ---- */
 
 	.preview {
 		position: fixed;
@@ -423,31 +622,20 @@
 		overflow: hidden;
 	}
 
-	.main {
-		grid-column: 1;
-		grid-row: 1;
-		padding: 22px;
+	/* ---- right column: platforms, then the file ---- */
+
+	.side {
+		grid-column: 2;
+		grid-row: 1 / span 2;
 		display: grid;
 		gap: 20px;
-	}
-
-	.fieldhead {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 12px;
-	}
-
-	.fieldhead .label {
-		margin-bottom: 8px;
+		align-content: start;
+		position: sticky;
+		top: 0;
 	}
 
 	.rail {
-		grid-column: 2;
-		grid-row: 1 / span 2;
 		padding: 18px 16px;
-		position: sticky;
-		top: 0;
 	}
 
 	.rail header {
@@ -493,6 +681,10 @@
 
 	li.off {
 		opacity: 0.42;
+	}
+
+	li.active {
+		border-color: var(--pink);
 	}
 
 	.open {
@@ -583,17 +775,23 @@
 		font-weight: 600;
 	}
 
+	.videocard {
+		padding: 18px 16px;
+		display: grid;
+		gap: 4px;
+	}
+
 	@media (max-width: 1040px) {
 		.stage {
 			grid-template-columns: 1fr;
 		}
 		.main,
 		.templates,
-		.rail {
+		.side {
 			grid-column: auto;
 			grid-row: auto;
 		}
-		.rail {
+		.side {
 			position: static;
 		}
 	}

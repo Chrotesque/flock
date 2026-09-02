@@ -7,8 +7,23 @@ import {
 	weekLabel,
 	hourOf,
 	minuteOf,
-	makeTime
+	makeTime,
+	firstLine
 } from './format';
+
+describe('firstLine', () => {
+	it('takes the first line and trims it', () => {
+		expect(firstLine('  hello  \nworld')).toBe('hello');
+	});
+
+	it('returns the whole string when there is no break', () => {
+		expect(firstLine('just one line')).toBe('just one line');
+	});
+
+	it('handles an empty string', () => {
+		expect(firstLine('')).toBe('');
+	});
+});
 
 describe('nextDayMatching', () => {
 	// 2026-09-01 is a Tuesday.

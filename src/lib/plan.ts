@@ -23,6 +23,9 @@ export interface PlanRow {
 /**
  * Resolves the draft against each selected platform's saved settings.
  *
+ * Each platform is composed separately, so the text going in is that
+ * platform's own — the rules then run over it, exactly once, here.
+ *
  * This is the single place the adaptation rules are applied for real: the
  * confirmation screen renders these rows, and the same rows are written to
  * PocketBase. What is reviewed is therefore exactly what is stored — the
@@ -34,7 +37,8 @@ export function buildPlan(): PlanRow[] {
 		.map((entry) => {
 			const platform = entry.platform;
 			const def = PLATFORMS[platform];
-			const result = adapt(draft.title, draft.description, entry.filters);
+			const text = draft.textFor(platform);
+			const result = adapt(text.title, text.description, entry.filters);
 			const when = draft.scheduleFor(platform);
 
 			return {

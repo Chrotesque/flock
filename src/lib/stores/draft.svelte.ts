@@ -1,8 +1,8 @@
-import { PLATFORM_IDS } from '../platforms';
+import { PLATFORMS, PLATFORM_IDS } from '../platforms';
 import { isoDate, nextDayMatching } from '../format';
 import { settings } from './settings.svelte';
 import { DEFAULT_SCHEDULING } from '../types';
-import type { OptionValues, PlatformId, SchedulingProfile } from '../types';
+import type { OptionValues, PlatformId, PlatformText, SchedulingProfile } from '../types';
 
 export type Step = 0 | 1 | 2;
 export const STEP_LABELS = ['Details', 'Schedule', 'Confirm'] as const;
@@ -10,6 +10,8 @@ export const STEP_LABELS = ['Details', 'Schedule', 'Confirm'] as const;
 function allSelected(value: boolean): Record<PlatformId, boolean> {
 	return Object.fromEntries(PLATFORM_IDS.map((id) => [id, value])) as Record<PlatformId, boolean>;
 }
+
+const EMPTY_TEXT: PlatformText = { title: '', description: '' };
 
 /** Tomorrow, so a schedule is never accidentally in the past. */
 function tomorrow(): Date {
@@ -26,8 +28,16 @@ function tomorrow(): Date {
 class DraftStore {
 	step = $state<Step>(0);
 
-	title = $state('');
-	description = $state('');
+	/**
+	 * Text composed per platform. There is no shared title/description pair:
+	 * every platform is written for on its own, and the adaptation rules run
+	 * over whatever was typed for it.
+	 */
+	texts = $state<Partial<Record<PlatformId, PlatformText>>>({});
+
+	/** Which platform the details step is currently composing. */
+	composing = $state<PlatformId | null>(null);
+
 	file = $state<File | null>(null);
 	duration = $state(0);
 
@@ -36,13 +46,52 @@ class DraftStore {
 	overrides = $state<Partial<Record<PlatformId, OptionValues>>>({});
 	schedule = $state<Partial<Record<PlatformId, { date: string; time: string }>>>({});
 
+	textFor(platform: PlatformId): PlatformText {
+		return this.texts[platform] ?? EMPTY_TEXT;
+	}
+
+	setText(platform: PlatformId, field: keyof PlatformText, value: string) {
+		this.texts[platform] = { ...this.textFor(platform), [field]: value };
+	}
+
+	/**
+	 * A platform is composed once it has a description — plus a title, but only
+	 * if it is a platform that takes one. Requiring a title from Instagram or
+	 * TikTok would make Continue unreachable, since neither renders the field.
+	 */
+	isComplete(platform: PlatformId): boolean {
+		const text = this.textFor(platform);
+		if (!text.description.trim()) return false;
+		return PLATFORMS[platform].hasTitle ? Boolean(text.title.trim()) : true;
+	}
+
+	/**
+	 * Stand-in text for the job row itself, which has one title/description pair
+	 * and no platform. The description comes from the first active platform; the
+	 * title from the first that actually has one, so a job going only to the
+	 * caption-only platforms still gets a readable label instead of "(untitled)".
+	 *
+	 * This is a label, not published text — the real per-platform content is
+	 * written to upload_targets.
+	 */
+	get primaryText(): PlatformText {
+		const active = this.activePlatforms;
+		const first = active[0];
+		if (!first) return EMPTY_TEXT;
+		const titled = active.find((id) => this.textFor(id).title.trim());
+		return {
+			title: titled ? this.textFor(titled).title : '',
+			description: this.textFor(first).description
+		};
+	}
+
 	/**
 	 * Platforms this upload will actually go to: ticked on this upload *and*
 	 * still enabled in Settings. Disabling a platform there must drop it from an
 	 * in-progress draft too, not just from the next one.
 	 *
 	 * Returned in the user's configured display order, which is what makes the
-	 * schedule list and the confirmation list agree with the compose rail.
+	 * compose pills, the schedule list and the confirmation list agree.
 	 */
 	get activePlatforms(): PlatformId[] {
 		return settings.available
@@ -124,14 +173,21 @@ class DraftStore {
 		});
 	}
 
+	/** Every active platform composed, and a file chosen. */
 	get canLeaveDetails(): boolean {
-		return Boolean(this.title.trim() && this.file && this.activePlatforms.length > 0);
+		const active = this.activePlatforms;
+		return Boolean(this.file) && active.length > 0 && active.every((id) => this.isComplete(id));
+	}
+
+	/** Active platforms still missing text, for the "why is Continue off" hint. */
+	get incompletePlatforms(): PlatformId[] {
+		return this.activePlatforms.filter((id) => !this.isComplete(id));
 	}
 
 	reset() {
 		this.step = 0;
-		this.title = '';
-		this.description = '';
+		this.texts = {};
+		this.composing = null;
 		this.file = null;
 		this.duration = 0;
 		this.selected = allSelected(true);

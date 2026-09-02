@@ -290,7 +290,9 @@
 								<div>
 									<h2>{def.label}</h2>
 									<p>
-										{def.fieldNote} Title limit {def.titleLimit.toLocaleString()}, description limit
+										{def.fieldNote}
+										{#if def.hasTitle}Title limit {def.titleLimit.toLocaleString()}, description
+											limit{:else}Description limit{/if}
 										{def.descriptionLimit.toLocaleString()}.
 									</p>
 								</div>

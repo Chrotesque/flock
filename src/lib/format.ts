@@ -1,3 +1,14 @@
+/**
+ * The first line of a block of text, trimmed.
+ *
+ * Used where a caption has to stand in for a title — the caption-only platforms
+ * have nothing else to label a row with.
+ */
+export function firstLine(value: string): string {
+	const end = value.indexOf('\n');
+	return (end === -1 ? value : value.slice(0, end)).trim();
+}
+
 export function formatBytes(bytes: number): string {
 	if (!bytes) return '0 B';
 	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
