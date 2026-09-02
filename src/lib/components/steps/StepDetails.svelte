@@ -232,148 +232,150 @@
 </script>
 
 <div class="stage">
-	<section class="main card">
-		{#if pills.length > 0}
-			<div class="pills" role="tablist" aria-label="Platform being composed">
-				{#each pills as pill (pill.platform)}
-					<button
-						class="pilltab"
-						class:on={composing === pill.platform}
-						class:done={pill.complete}
-						role="tab"
-						aria-selected={composing === pill.platform}
-						onclick={() => compose(pill.platform)}
-					>
-						<PlatformIcon platform={pill.platform} size={15} />
-						<span class="pillname">{pill.def.label}</span>
-						{#if pill.complete}
-							<svg class="mark" viewBox="0 0 24 24" width="12" height="12" fill="none">
-								<path
-									d="M4 12.5 9.5 18 20 6.5"
-									stroke="currentColor"
-									stroke-width="3"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								/>
-							</svg>
-						{:else}
-							<span class="dot" aria-hidden="true"></span>
-						{/if}
-					</button>
-				{/each}
-			</div>
-		{/if}
-
-		{#if composing && def}
-			{#if def.hasTitle}
-				<div class="field">
-					<div class="fieldhead">
-						<label class="label" for="title">Title</label>
-						<CharCount value={text.title} limit={def.titleLimit} />
-					</div>
-					<input
-						id="title"
-						class="input"
-						bind:this={titleEl}
-						value={text.title}
-						oninput={(e) => onFieldInput('title', e)}
-						onfocus={() => remember('title')}
-						onclick={() => remember('title')}
-						onkeyup={() => remember('title')}
-						onselect={() => remember('title')}
-						placeholder="Title for {def.label}"
-						autocomplete="off"
-					/>
-				</div>
-			{/if}
-
-			<div class="field">
-				<div class="fieldhead">
-					<label class="label" for="description">
-						{def.hasTitle ? 'Description' : 'Caption'}
-					</label>
-					<CharCount value={text.description} limit={def.descriptionLimit} />
-				</div>
-				<textarea
-					id="description"
-					class="textarea"
-					bind:this={descEl}
-					value={text.description}
-					oninput={(e) => onFieldInput('description', e)}
-					onfocus={() => remember('description')}
-					onclick={() => remember('description')}
-					onkeyup={() => remember('description')}
-					onselect={() => remember('description')}
-					placeholder="{def.hasTitle ? 'Description' : 'Caption'} for {def.label}"
-				></textarea>
-			</div>
-
-			<p class="note">{def.fieldNote}</p>
-		{:else}
-			<p class="emptypanel">Tick a platform on the right to start composing.</p>
-		{/if}
-	</section>
-
-	<div class="lower" class:split={Boolean(promoted)}>
-		<section class="templates card">
-			<header class="tplhead">
-				<span class="label">Templates</span>
-				<span class="tplnote">
-					Click to drop one in at the cursor, or type its name in braces.
-				</span>
-			</header>
-
-			{#if templates.loading}
-				<p class="tplempty">Loading…</p>
-			{:else if templates.items.length === 0}
-				<p class="tplempty">
-					None yet — add reusable text in <a href="{base}/settings">Settings</a>.
-				</p>
-			{:else}
-				<div class="chips">
-					{#each templates.items as template (template.id)}
+	<div class="col">
+		<section class="main card">
+			{#if pills.length > 0}
+				<div class="pills" role="tablist" aria-label="Platform being composed">
+					{#each pills as pill (pill.platform)}
 						<button
-							class="chip"
-							disabled={!composing}
-							onclick={() => insert(template)}
-							onmouseenter={(e) => previewOn(e, template)}
-							onmouseleave={previewOff}
-							onfocus={(e) => previewOn(e as unknown as MouseEvent, template)}
-							onblur={previewOff}
+							class="pilltab"
+							class:on={composing === pill.platform}
+							class:done={pill.complete}
+							role="tab"
+							aria-selected={composing === pill.platform}
+							onclick={() => compose(pill.platform)}
 						>
-							{template.name.trim() || 'Unnamed'}
+							<PlatformIcon platform={pill.platform} size={15} />
+							<span class="pillname">{pill.def.label}</span>
+							{#if pill.complete}
+								<svg class="mark" viewBox="0 0 24 24" width="12" height="12" fill="none">
+									<path
+										d="M4 12.5 9.5 18 20 6.5"
+										stroke="currentColor"
+										stroke-width="3"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
+								</svg>
+							{:else}
+								<span class="dot" aria-hidden="true"></span>
+							{/if}
 						</button>
 					{/each}
 				</div>
-				{#if composing && def}
-					<p class="target">
-						Inserts into <strong>{def.label}</strong>'s
-						<strong>
-							{#if lastField === 'title' && def.hasTitle}title{:else if def.hasTitle}description{:else}caption{/if}
-						</strong>.
-					</p>
-				{/if}
 			{/if}
-		</section>
 
-		{#if promoted && def}
-			<section class="promoted card">
-				<header class="tplhead">
-					<span class="label">{promoted.label}</span>
-					<span class="tplnote">{def.label} only.</span>
-				</header>
-
-				{#if promoted.type === 'tags'}
-					<div class="promotedbody">
-						<TagInput
-							value={promotedValue}
-							placeholder={promotedPlaceholder}
-							onchange={setPromoted}
+			{#if composing && def}
+				{#if def.hasTitle}
+					<div class="field">
+						<div class="fieldhead">
+							<label class="label" for="title">Title</label>
+							<CharCount value={text.title} limit={def.titleLimit} />
+						</div>
+						<input
+							id="title"
+							class="input"
+							bind:this={titleEl}
+							value={text.title}
+							oninput={(e) => onFieldInput('title', e)}
+							onfocus={() => remember('title')}
+							onclick={() => remember('title')}
+							onkeyup={() => remember('title')}
+							onselect={() => remember('title')}
+							placeholder="Title for {def.label}"
+							autocomplete="off"
 						/>
 					</div>
 				{/if}
+
+				<div class="field">
+					<div class="fieldhead">
+						<label class="label" for="description">
+							{def.hasTitle ? 'Description' : 'Caption'}
+						</label>
+						<CharCount value={text.description} limit={def.descriptionLimit} />
+					</div>
+					<textarea
+						id="description"
+						class="textarea"
+						bind:this={descEl}
+						value={text.description}
+						oninput={(e) => onFieldInput('description', e)}
+						onfocus={() => remember('description')}
+						onclick={() => remember('description')}
+						onkeyup={() => remember('description')}
+						onselect={() => remember('description')}
+						placeholder="{def.hasTitle ? 'Description' : 'Caption'} for {def.label}"
+					></textarea>
+				</div>
+
+				<p class="note">{def.fieldNote}</p>
+			{:else}
+				<p class="emptypanel">Tick a platform on the right to start composing.</p>
+			{/if}
+		</section>
+
+		<div class="lower" class:split={Boolean(promoted)}>
+			<section class="templates card">
+				<header class="tplhead">
+					<span class="label">Templates</span>
+					<span class="tplnote">
+						Click to drop one in at the cursor, or type its name in braces.
+					</span>
+				</header>
+
+				{#if templates.loading}
+					<p class="tplempty">Loading…</p>
+				{:else if templates.items.length === 0}
+					<p class="tplempty">
+						None yet — add reusable text in <a href="{base}/settings">Settings</a>.
+					</p>
+				{:else}
+					<div class="chips">
+						{#each templates.items as template (template.id)}
+							<button
+								class="chip"
+								disabled={!composing}
+								onclick={() => insert(template)}
+								onmouseenter={(e) => previewOn(e, template)}
+								onmouseleave={previewOff}
+								onfocus={(e) => previewOn(e as unknown as MouseEvent, template)}
+								onblur={previewOff}
+							>
+								{template.name.trim() || 'Unnamed'}
+							</button>
+						{/each}
+					</div>
+					{#if composing && def}
+						<p class="target">
+							Inserts into <strong>{def.label}</strong>'s
+							<strong>
+								{#if lastField === 'title' && def.hasTitle}title{:else if def.hasTitle}description{:else}caption{/if}
+							</strong>.
+						</p>
+					{/if}
+				{/if}
 			</section>
-		{/if}
+
+			{#if promoted && def}
+				<section class="promoted card">
+					<header class="tplhead">
+						<span class="label">{promoted.label}</span>
+						<span class="tplnote">{def.label} only.</span>
+					</header>
+
+					{#if promoted.type === 'tags'}
+						<div class="promotedbody">
+							<TagInput
+								value={promotedValue}
+								placeholder={promotedPlaceholder}
+								onchange={setPromoted}
+							/>
+						</div>
+					{/if}
+				</section>
+			{/if}
+		</div>
 	</div>
 
 	<div class="side">
@@ -475,16 +477,25 @@
 	.stage {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 320px;
-		column-gap: 20px;
-		row-gap: 12px;
+		gap: 20px;
 		align-items: start;
+	}
+
+	/* The compose card and the boxes under it, as their own column.
+	   They used to be two rows of .stage that .side spanned — and a spanning
+	   item taller than the rows it covers has its excess distributed into them,
+	   which silently reopened the gap here to 60px however small row-gap was
+	   set. Separate columns cannot inflate each other. */
+	.col {
+		min-width: 0;
+		display: grid;
+		gap: 12px;
+		align-content: start;
 	}
 
 	/* ---- compose panel ---- */
 
 	.main {
-		grid-column: 1;
-		grid-row: 1;
 		padding: 22px;
 		display: grid;
 		gap: 20px;
@@ -569,8 +580,6 @@
 	/* Templates, beside whichever option the platform promotes onto this screen.
 	   Without one the templates box keeps the full width. */
 	.lower {
-		grid-column: 1;
-		grid-row: 2;
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		gap: 20px;
@@ -707,8 +716,7 @@
 	/* ---- right column: platforms, then the file ---- */
 
 	.side {
-		grid-column: 2;
-		grid-row: 1 / span 2;
+		min-width: 0;
 		display: grid;
 		gap: 20px;
 		align-content: start;
@@ -884,12 +892,6 @@
 	@media (max-width: 1040px) {
 		.stage {
 			grid-template-columns: 1fr;
-		}
-		.main,
-		.lower,
-		.side {
-			grid-column: auto;
-			grid-row: auto;
 		}
 		.lower.split {
 			grid-template-columns: minmax(0, 1fr);
