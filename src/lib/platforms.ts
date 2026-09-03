@@ -32,7 +32,7 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 				label: 'Add to playlist',
 				type: 'text',
 				placeholder: 'None',
-				hint: 'Matched by name. Costs a second API call after the upload.'
+				hint: 'Matched by name. Needs the worker authorised with --with-playlists.'
 			},
 			{ key: 'tags', label: 'Tags', type: 'tags', placeholder: 'Add a tag and press Enter' },
 			{ key: 'madeForKids', label: 'Made for kids', type: 'bool', hint: 'Disables comments and personalised ads.' },

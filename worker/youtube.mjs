@@ -260,7 +260,15 @@ export async function publishToYouTube({ target, job, pb, config, log }) {
 		try {
 			await addToPlaylist(token, videoId, String(options.playlist), log);
 		} catch (err) {
-			log(`playlist add failed (video is still up): ${err.message}`);
+			// The default grant is upload-only on purpose, so this is the expected
+			// outcome rather than a fault — name the cause instead of the status.
+			const denied = /\b(403|401)\b/.test(err.message) || err.message.includes('insufficient');
+			log(
+				denied
+					? 'playlist skipped: the upload-only grant cannot touch playlists. ' +
+							'Re-authorise with `pnpm worker:auth --with-playlists` to allow it.'
+					: `playlist add failed (video is still up): ${err.message}`
+			);
 		}
 	}
 

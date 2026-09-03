@@ -102,6 +102,18 @@ into that file:
 pnpm worker:auth
 ```
 
+That asks for **upload permission only**, which is all `videos.insert` needs and
+cannot read, edit or delete anything on the channel. The one exception is the
+*Add to playlist* option: putting a video in a playlist requires Google's broader
+`youtube` scope, which the consent screen describes as permanently deleting
+videos, comments and captions. If you want that option to work, authorise with:
+
+```bash
+pnpm worker:auth --with-playlists
+```
+
+Otherwise the playlist field is skipped and the worker says so in its log.
+
 Check the queue without uploading anything:
 
 ```bash
