@@ -11,6 +11,7 @@
 import { requireConfig } from './config.mjs';
 import { makeClient } from './pb.mjs';
 import { publishToYouTube } from './youtube.mjs';
+import { copyToDestination } from './archive.mjs';
 
 // One entry per platform that can actually publish. The loop iterates this
 // rather than picking up everything `pending`, so the three platforms without
@@ -69,7 +70,45 @@ async function handle(pb, config, platform, target) {
 	}
 }
 
+/**
+ * Files finished videos into their NAS destination.
+ *
+ * Deliberately separate from publishing: the destination is somewhere to keep
+ * the video, not a platform, so this runs for every job that asks for one —
+ * including jobs going only to platforms that have no adapter yet.
+ */
+async function copyPass(pb) {
+	const jobs = await pb.pendingCopies();
+	if (jobs.length === 0) return;
+	log(`${jobs.length} to copy to their NAS destination`);
+
+	for (const job of jobs) {
+		if (dry) {
+			log(`would copy "${job.title}" -> ${job.destination_path}`);
+			continue;
+		}
+		try {
+			const result = await copyToDestination({ job, pb, log: (m) => log(`  ${m}`) });
+			await pb.updateJob(job.id, { status: 'done', error: '' });
+			log(`copied "${job.title}" -> ${result.path}`);
+			pb.log(
+				'Copied to the NAS',
+				`${job.title || '(untitled)'} -> ${result.path}` +
+					(result.renamed ? ' (renamed: a file of that name was already there)' : '')
+			);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			// Left `stored` on purpose so the next pass retries — an unreachable
+			// share is usually temporary, and the video is safe in PocketBase.
+			await pb.updateJob(job.id, { error: message.slice(0, 1900) });
+			log(`copy FAILED for "${job.title}": ${message}`);
+		}
+	}
+}
+
 async function pass(pb, config) {
+	await copyPass(pb);
+
 	for (const platform of Object.keys(ADAPTERS)) {
 		const targets = await pb.pendingTargets(platform);
 		if (targets.length === 0) continue;

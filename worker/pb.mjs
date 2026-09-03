@@ -58,6 +58,28 @@ export function makeClient(baseUrl) {
 			return request(`/api/collections/upload_jobs/records/${id}`);
 		},
 
+		/**
+		 * Jobs with a destination folder that have not been filed into it yet.
+		 *
+		 * `stored` means "in PocketBase, not yet copied"; `done` means the copy
+		 * landed. Nothing in the SPA branches on this field — Analytics only
+		 * displays it — so those two values are free to carry that meaning.
+		 */
+		async pendingCopies() {
+			const filter = encodeURIComponent('destination_path != "" && status = "stored"');
+			const res = await request(
+				`/api/collections/upload_jobs/records?perPage=50&sort=created&filter=${filter}`
+			);
+			return res.items ?? [];
+		},
+
+		async updateJob(id, data) {
+			return request(`/api/collections/upload_jobs/records/${id}`, {
+				method: 'PATCH',
+				body: JSON.stringify(data)
+			});
+		},
+
 		async updateTarget(id, data) {
 			return request(`/api/collections/upload_targets/records/${id}`, {
 				method: 'PATCH',

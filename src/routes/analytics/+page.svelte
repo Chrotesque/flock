@@ -289,6 +289,11 @@
 		color: var(--ok);
 	}
 
+	.status.done {
+		background: rgba(168, 85, 247, 0.16);
+		color: #cfa8fb;
+	}
+
 	.status.failed {
 		background: rgba(248, 113, 113, 0.15);
 		color: var(--danger);
