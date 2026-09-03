@@ -128,6 +128,10 @@ const collections = [
 				values: ['pending', 'done', 'failed']
 			},
 			{ type: 'number', name: 'score' },
+			// Suggestions come back as a list of scored titles, where a plain score
+			// is one number — so the richer answers land here.
+			{ type: 'json', name: 'result', maxSize: 200000 },
+			{ type: 'text', name: 'context', max: 5000 },
 			{ type: 'text', name: 'error', max: 2000 },
 			...stamps
 		],

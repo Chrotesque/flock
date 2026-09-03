@@ -14,7 +14,7 @@ import { makeClient } from './pb.mjs';
 import { publishToYouTube } from './youtube.mjs';
 import { copyToDestination } from './archive.mjs';
 import { scanWatchFolder } from './watch.mjs';
-import { scoreTitle, listTools } from './vidiq.mjs';
+import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
 
 // One entry per platform that can actually publish. The loop iterates this
 // rather than picking up everything `pending`, so the three platforms without
@@ -150,6 +150,21 @@ async function scorePass(pb, config) {
 		}
 
 		try {
+			if (row.kind === 'titles') {
+				// `context` carries the description, and `result` the previous titles
+				// the SPA pulled from its own upload history.
+				const previous = Array.isArray(row.result) ? row.result : [];
+				const titles = await generateTitles(config.vidiqKey, {
+					title: row.text,
+					description: row.context || '',
+					format: row.format,
+					previousTitles: previous
+				});
+				await pb.updateScore(row.id, { status: 'done', result: titles, error: '' });
+				log(`suggested ${titles.length} titles from "${row.text.slice(0, 40)}"`);
+				continue;
+			}
+
 			const score = await scoreTitle(config.vidiqKey, {
 				title: row.text,
 				format: row.format,

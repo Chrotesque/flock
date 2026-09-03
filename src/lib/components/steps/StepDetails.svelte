@@ -13,7 +13,14 @@
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { templates, tokenOf } from '$lib/stores/templates.svelte';
-	import { loadWatchIndex, loadRecentTags, scoreTitle } from '$lib/repo';
+	import {
+		loadWatchIndex,
+		loadRecentTags,
+		scoreTitle,
+		suggestTitles,
+		recentTitles,
+		type TitleSuggestion
+	} from '$lib/repo';
 	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import { formatBytes, mergeTagGroups, tagListLength, parseTagList } from '$lib/format';
 	import { checkTags } from '$lib/tagcheck';
@@ -136,6 +143,60 @@
 		} finally {
 			scoring = false;
 		}
+	}
+
+	/* ---- vidIQ title suggestions ----
+	 *
+	 * One call returns several scored options built on what has been typed, where
+	 * scoring a single title costs the same — so this is the cheaper way to
+	 * compare. flock passes the channel's own recent titles along, which the
+	 * browser extension on a single video page has no way to know.
+	 */
+
+	let suggesting = $state(false);
+	let suggestions = $state<TitleSuggestion[]>([]);
+	let suggestFor = $state('');
+	let suggestError = $state('');
+
+	async function runSuggest() {
+		if (!composing) return;
+		const title = text.title;
+		if (!title.trim() && !text.description.trim()) return;
+
+		suggesting = true;
+		suggestError = '';
+		suggestions = [];
+		try {
+			const previous = await recentTitles(composing);
+			const result = await suggestTitles(title, {
+				platform: composing,
+				description: text.description,
+				previous,
+				format: 'long'
+			});
+			if (result.status === 'done') {
+				suggestions = result.titles;
+				suggestFor = title;
+				if (result.titles.length === 0) suggestError = 'vidIQ returned no suggestions.';
+			} else {
+				suggestError = result.error;
+			}
+		} catch (err) {
+			suggestError = err instanceof Error ? err.message : String(err);
+		} finally {
+			suggesting = false;
+		}
+	}
+
+	function useSuggestion(entry: TitleSuggestion) {
+		setField('title', entry.title);
+		// The suggestion arrived with a score, so adopting it adopts that too
+		// rather than making you pay to score what vidIQ just scored.
+		if (entry.score !== null) {
+			scoreValue = entry.score;
+			scoreFor = entry.title;
+		}
+		suggestions = [];
 	}
 
 	function compose(platform: PlatformId) {
@@ -487,12 +548,53 @@
 										Score title
 									{/if}
 								</button>
+								<button
+									class="score"
+									disabled={suggesting || (!text.title.trim() && !text.description.trim())}
+									onclick={runSuggest}
+									title="Ask vidIQ for scored alternatives built on this title"
+								>
+									{suggesting ? 'Thinking…' : 'Suggest'}
+								</button>
 							{/if}
 
 							<CharCount value={text.title} limit={def.titleLimit} />
 						</div>
-						{#if scoreError && composing === 'youtube'}
-							<p class="scoreerr">{scoreError}</p>
+
+						{#if composing === 'youtube'}
+							{#if scoreError}
+								<p class="scoreerr">{scoreError}</p>
+							{/if}
+							{#if suggestError}
+								<p class="scoreerr">{suggestError}</p>
+							{/if}
+
+							{#if suggestions.length > 0}
+								<ul class="suggestions">
+									{#each suggestions as entry (entry.title)}
+										<li>
+											<button class="usetitle" onclick={() => useSuggestion(entry)}>
+												<span class="stext">{entry.title}</span>
+												{#if entry.score !== null}
+													<span
+														class="sscore"
+														class:better={scoreValue !== null &&
+															scoreFor === suggestFor &&
+															entry.score > scoreValue}
+													>
+														{entry.score}
+													</span>
+												{/if}
+											</button>
+										</li>
+									{/each}
+								</ul>
+								<p class="suggestnote">
+									Click one to use it — its score comes with it, so adopting a suggestion costs
+									nothing further. Built on your title, your description, and your last
+									{def.label} titles.
+								</p>
+							{/if}
 						{/if}
 						<input
 							id="title"
@@ -1026,6 +1128,65 @@
 	.outof {
 		opacity: 0.6;
 		font-weight: 400;
+	}
+
+	.suggestions {
+		list-style: none;
+		margin: 0 0 12px;
+		padding: 0;
+		display: grid;
+		gap: 5px;
+	}
+
+	.usetitle {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 8px 10px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border);
+		background: var(--bg-elev);
+		text-align: left;
+		transition: border-color 0.14s, background 0.14s;
+	}
+
+	.usetitle:hover {
+		border-color: var(--pink);
+		background: var(--accent-grad-soft);
+	}
+
+	.stext {
+		flex: 1;
+		min-width: 0;
+		font-size: 13px;
+		color: var(--text);
+	}
+
+	.sscore {
+		flex: none;
+		min-width: 26px;
+		padding: 1px 6px;
+		border-radius: 999px;
+		background: var(--surface-3);
+		color: var(--text-dim);
+		font-size: 10.5px;
+		font-weight: 700;
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* Marked only when it actually beats the score already on screen. */
+	.sscore.better {
+		background: rgba(52, 211, 153, 0.16);
+		color: var(--ok);
+	}
+
+	.suggestnote {
+		margin: 0 0 6px;
+		font-size: 10.5px;
+		line-height: 1.45;
+		color: var(--text-faint);
 	}
 
 	.scoreerr {

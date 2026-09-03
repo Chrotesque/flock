@@ -373,6 +373,81 @@ export async function scoreTitle(
 	};
 }
 
+export interface TitleSuggestion {
+	title: string;
+	score: number | null;
+}
+
+/**
+ * Titles this platform has already had, newest first.
+ *
+ * Passed to vidIQ so suggestions do not come back as variations of last week's.
+ * The browser extension, sitting on one video page, has no way to know these —
+ * it is the one thing flock can bring that vidIQ cannot see for itself.
+ */
+export async function recentTitles(platform: PlatformId, limit = 12): Promise<string[]> {
+	try {
+		const res = await pb.collection('upload_targets').getList(1, limit, {
+			filter: `platform="${platform}" && title != ""`,
+			sort: '-created'
+		});
+		const seen = new Set<string>();
+		const titles: string[] = [];
+		for (const row of res.items as unknown as UploadTarget[]) {
+			const title = (row.title ?? '').trim();
+			if (!title || seen.has(title.toLowerCase())) continue;
+			seen.add(title.toLowerCase());
+			titles.push(title);
+		}
+		return titles;
+	} catch {
+		// Suggestions are better with history and fine without it.
+		return [];
+	}
+}
+
+/**
+ * Asks vidIQ for scored titles built on what has been typed so far.
+ *
+ * Same worker round trip as `scoreTitle`, and the same reason for it. One call
+ * returns several suggestions where scoring a single title costs the same, so
+ * this is the cheaper way to compare options.
+ */
+export async function suggestTitles(
+	text: string,
+	options: { platform?: string; description?: string; previous?: string[]; format?: 'long' | 'short' } = {},
+	timeoutMs = 60000
+): Promise<{ status: 'done' | 'failed'; titles: TitleSuggestion[]; error: string }> {
+	assertDeviceNamed();
+
+	const created = await pb.collection('score_requests').create({
+		kind: 'titles',
+		text: text.slice(0, 500),
+		platform: options.platform ?? '',
+		context: (options.description ?? '').slice(0, 5000),
+		format: options.format ?? 'long',
+		// Carried in `result` on the way out and replaced by the answer on the way
+		// back, so the request needs no extra column of its own.
+		result: options.previous ?? [],
+		status: 'pending'
+	});
+
+	const until = Date.now() + timeoutMs;
+	while (Date.now() < until) {
+		await new Promise((resolve) => setTimeout(resolve, 1200));
+		const row = await pb.collection('score_requests').getOne(created.id);
+		if (row.status === 'done') {
+			const titles = Array.isArray(row.result) ? (row.result as TitleSuggestion[]) : [];
+			return { status: 'done', titles, error: '' };
+		}
+		if (row.status === 'failed') {
+			return { status: 'failed', titles: [], error: String(row.error ?? 'Suggestion failed.') };
+		}
+	}
+
+	return { status: 'failed', titles: [], error: 'The worker did not answer. Is it running?' };
+}
+
 export async function listJobs(limit = 25): Promise<UploadJob[]> {
 	const res = await pb.collection('upload_jobs').getList(1, limit, { sort: '-created' });
 	return res.items as unknown as UploadJob[];

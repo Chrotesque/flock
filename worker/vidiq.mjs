@@ -99,7 +99,21 @@ async function connect(key) {
 
 async function callTool(key, name, args) {
 	const session = await connect(key);
-	return session.send('tools/call', { name, arguments: args });
+	const result = await session.send('tools/call', { name, arguments: args });
+
+	// A tool that fails answers with isError and a plain-English reason — "Not
+	// enough credits. This tool costs 5 credits." Surfacing that beats the
+	// JSON dump a caller would otherwise produce while hunting for a score
+	// that was never there.
+	if (result?.isError) {
+		const said = (result.content ?? [])
+			.filter((block) => block?.type === 'text')
+			.map((block) => block.text)
+			.join(' ')
+			.trim();
+		throw new Error(said || `vidIQ refused ${name}.`);
+	}
+	return result;
 }
 
 /**
@@ -145,6 +159,87 @@ export async function scoreTitle(key, { title, format = 'long', channelId }) {
 		throw new Error(`vidIQ returned no score: ${JSON.stringify(result).slice(0, 300)}`);
 	}
 	return score;
+}
+
+/**
+ * Pulls scored title suggestions out of a reply, whatever shape it arrived in.
+ *
+ * Written defensively on purpose: the tool's response shape is not documented,
+ * and this was built without credits to call it even once. So it tries the
+ * structured field, then JSON in the text block, then a few plausible key
+ * names, and reports honestly if none of them match rather than silently
+ * returning nothing.
+ */
+function extractTitles(result) {
+	const fromArray = (value) => {
+		if (!Array.isArray(value)) return null;
+		const rows = value
+			.map((entry) => {
+				if (typeof entry === 'string') return { title: entry, score: null };
+				const title = entry?.title ?? entry?.text ?? entry?.suggestion;
+				if (typeof title !== 'string' || !title.trim()) return null;
+				const score = typeof entry?.score === 'number' ? entry.score : null;
+				return { title: title.trim(), score };
+			})
+			.filter(Boolean);
+		return rows.length > 0 ? rows : null;
+	};
+
+	const dig = (value) => {
+		if (!value || typeof value !== 'object') return null;
+		const direct = fromArray(value);
+		if (direct) return direct;
+		for (const key of ['titles', 'suggestions', 'results', 'items', 'data']) {
+			const found = fromArray(value[key]);
+			if (found) return found;
+		}
+		return null;
+	};
+
+	const structured = dig(result?.structuredContent);
+	if (structured) return structured;
+
+	const text = (result?.content ?? [])
+		.filter((block) => block?.type === 'text')
+		.map((block) => block.text)
+		.join('\n');
+	if (!text) return null;
+
+	try {
+		return dig(JSON.parse(text));
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Asks for scored title suggestions built on what has been typed so far.
+ *
+ * One call returns several, where scoring a single title costs the same — so
+ * this is the cheaper way to compare options.
+ */
+export async function generateTitles(
+	key,
+	{ title, description, format = 'long', count = 5, previousTitles = [] }
+) {
+	const result = await callTool(key, 'vidiq_generate_titles', {
+		...(title ? { title: title.slice(0, 500) } : {}),
+		...(description ? { description: description.slice(0, 5000) } : {}),
+		type: format === 'short' ? 'short' : 'long',
+		numTitles: Math.min(10, Math.max(1, count)),
+		// flock knows the channel's own recent titles, which the extension sitting
+		// on one video page does not. Passing them is what stops five suggestions
+		// coming back as five variations of last week's.
+		...(previousTitles.length > 0
+			? { previousTitles: previousTitles.slice(0, 20).map((t) => String(t).slice(0, 200)) }
+			: {})
+	});
+
+	const titles = extractTitles(result);
+	if (!titles) {
+		throw new Error(`vidIQ returned no usable titles: ${JSON.stringify(result).slice(0, 400)}`);
+	}
+	return titles;
 }
 
 /**
