@@ -15,7 +15,11 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 		label: 'YouTube',
 		color: '#e8484a',
 		hasTitle: true,
-		composeField: 'tags',
+		composeFields: ['tagsStandard', 'tagsShorts', 'tagsLongform', 'tagsOther'],
+		tagBudget: {
+			keys: ['tagsStandard', 'tagsShorts', 'tagsLongform', 'tagsOther'],
+			limit: 500
+		},
 		titleLimit: 100,
 		descriptionLimit: 5000,
 		fieldNote: 'Title and description are used as-is.',
@@ -34,13 +38,12 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 				placeholder: 'None',
 				hint: 'Matched by name. Needs the worker authorised with --with-playlists.'
 			},
-			{
-				key: 'tags',
-				label: 'Tags',
-				type: 'tags',
-				placeholder: 'Paste a comma-separated list, or type one and press Enter',
-				charLimit: 500
-			},
+			// Split only for the interface's sake. videos.insert takes one list, and
+			// buildPlan is where these four become it.
+			{ key: 'tagsStandard', label: 'Standard', type: 'tags', placeholder: 'Paste or type' },
+			{ key: 'tagsShorts', label: 'Shorts', type: 'tags', placeholder: 'Paste or type' },
+			{ key: 'tagsLongform', label: 'Longform', type: 'tags', placeholder: 'Paste or type' },
+			{ key: 'tagsOther', label: 'Other', type: 'tags', placeholder: 'Paste or type' },
 			{ key: 'madeForKids', label: 'Made for kids', type: 'bool', hint: 'Disables comments and personalised ads.' },
 			{ key: 'notifySubscribers', label: 'Notify subscribers', type: 'bool' },
 			{ key: 'allowEmbedding', label: 'Allow embedding', type: 'bool' },
@@ -56,7 +59,10 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 			visibility: 'Public',
 			category: 'Science & Technology',
 			playlist: '',
-			tags: [],
+			tagsStandard: [],
+			tagsShorts: [],
+			tagsLongform: [],
+			tagsOther: [],
 			madeForKids: false,
 			notifySubscribers: true,
 			allowEmbedding: true,

@@ -94,8 +94,15 @@
 			rememberTags(
 				Object.fromEntries(
 					plan
-						.filter((row) => Array.isArray(row.options.tags))
-						.map((row) => [row.platform, row.options.tags as string[]])
+						.map((row) => {
+							const boxes: Record<string, string[]> = {};
+							for (const key of PLATFORMS[row.platform].tagBudget?.keys ?? []) {
+								const list = row.options[key];
+								if (Array.isArray(list) && list.length > 0) boxes[key] = list as string[];
+							}
+							return [row.platform, boxes] as const;
+						})
+						.filter(([, boxes]) => Object.keys(boxes).length > 0)
 				)
 			);
 			phase = 'done';

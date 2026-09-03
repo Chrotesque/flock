@@ -1,15 +1,19 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { page } from '$app/state';
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
 	import Checkbox from '$lib/components/Checkbox.svelte';
 	import OptionEditor from '$lib/components/OptionEditor.svelte';
 	import FilterEditor from '$lib/components/FilterEditor.svelte';
 	import GeneralSettings from '$lib/components/GeneralSettings.svelte';
+	import TagSetEditor from '$lib/components/TagSetEditor.svelte';
 	import ProfileEditor from '$lib/components/ProfileEditor.svelte';
 	import TemplateEditor from '$lib/components/TemplateEditor.svelte';
-	import { PLATFORMS } from '$lib/platforms';
+	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { templates } from '$lib/stores/templates.svelte';
+	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import type {
 		FilterRule,
@@ -22,11 +26,12 @@
 	settings.load();
 	general.load();
 	templates.load();
+	tagSets.load();
 
 	type Section = 'general' | 'templates' | 'other' | PlatformId;
 
 	let active = $state<Section>('general');
-	let tab = $state<'defaults' | 'filters' | 'profiles'>('defaults');
+	let tab = $state<'defaults' | 'tags' | 'filters' | 'profiles'>('defaults');
 
 	// Narrowed once here rather than guarded at every use site below.
 	let platform = $derived<PlatformId | null>(
@@ -67,9 +72,39 @@
 
 	// The Profiles tab only exists in profiles mode, and each platform has its
 	// own mode — so switching away from it, or to a platform that does not have
-	// it, has to put the panel back on a tab that is actually rendered.
+	// it, has to put the panel back on a tab that is actually rendered. Tags is
+	// the same shape: only platforms with a tag budget render it.
 	$effect(() => {
 		if (tab === 'profiles' && entry?.scheduling.mode !== 'profiles') tab = 'defaults';
+		if (tab === 'tags' && !hasTags) tab = 'defaults';
+	});
+
+	let hasTags = $derived(Boolean(platform && PLATFORMS[platform].tagBudget));
+
+	/**
+	 * Opens straight onto whatever the caller asked for.
+	 *
+	 * The compose screen links here with `?section=templates` or
+	 * `?platform=youtube&tab=tags`, so an Edit button lands on the thing being
+	 * edited rather than on the settings screen's front door. Read once from the
+	 * URL rather than kept in sync with it: this is a starting point, not state.
+	 */
+	$effect(() => {
+		const params = page.url.searchParams;
+		const section = params.get('section');
+		const wantPlatform = params.get('platform');
+		const wantTab = params.get('tab');
+
+		untrack(() => {
+			if (section === 'templates' || section === 'general' || section === 'other') {
+				active = section === 'general' ? 'general' : section;
+				return;
+			}
+			if (wantPlatform && isPlatformId(wantPlatform)) {
+				active = wantPlatform;
+				if (wantTab === 'tags' || wantTab === 'filters' || wantTab === 'profiles') tab = wantTab;
+			}
+		});
 	});
 
 	function resetDefaults() {
@@ -364,6 +399,14 @@
 							<button class:active={tab === 'defaults'} onclick={() => (tab = 'defaults')}>
 								Defaults
 							</button>
+							{#if hasTags}
+								<button class:active={tab === 'tags'} onclick={() => (tab = 'tags')}>
+									Tags
+									{#if tagSets.items.length > 0}
+										<span class="dot">{tagSets.items.length}</span>
+									{/if}
+								</button>
+							{/if}
 							<button class:active={tab === 'filters'} onclick={() => (tab = 'filters')}>
 								Adaptations
 								{#if entry && entry.filters.length > 0}
@@ -381,7 +424,9 @@
 						</div>
 
 						{#if entry}
-							{#if tab === 'defaults'}
+							{#if tab === 'tags'}
+								<TagSetEditor limit={PLATFORMS[platform!].tagBudget?.limit ?? 500} />
+							{:else if tab === 'defaults'}
 								<div class="defaults">
 									<section class="timing">
 										<div class="subhead">

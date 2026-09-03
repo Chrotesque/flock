@@ -2,7 +2,7 @@ import { PLATFORMS } from './platforms';
 import { adapt } from './filters';
 import { draft } from './stores/draft.svelte';
 import { settings } from './stores/settings.svelte';
-import { relativeTo, isoDate, makeTime } from './format';
+import { relativeTo, isoDate, makeTime, mergeTagGroups } from './format';
 import type { FilterHit, OptionValues, PlatformId } from './types';
 
 /** One platform's fully resolved plan: what will actually be published, and when. */
@@ -20,6 +20,24 @@ export interface PlanRow {
 	errors: number;
 	overLimit: boolean;
 	allHits: FilterHit[];
+}
+
+/**
+ * A platform's options as they will be published.
+ *
+ * For a platform with a tag budget this also collapses its tag boxes into the
+ * single `tags` list the API actually takes, de-duplicated across boxes. The
+ * boxes are kept alongside it so the record shows how the list was assembled,
+ * but `tags` is the field anything downstream reads.
+ */
+function resolveOptions(platform: PlatformId, def: (typeof PLATFORMS)[PlatformId]): OptionValues {
+	const resolved: OptionValues = {
+		...settings.defaultsFor(platform),
+		...(draft.overrides[platform] ?? {})
+	};
+	const keys = def.tagBudget?.keys;
+	if (keys && keys.length > 0) resolved.tags = mergeTagGroups(resolved, keys);
+	return resolved;
 }
 
 /**
@@ -55,7 +73,7 @@ export function buildPlan(): PlanRow[] {
 				platform,
 				title: result.title.output,
 				description: result.description.output,
-				options: { ...settings.defaultsFor(platform), ...(draft.overrides[platform] ?? {}) },
+				options: resolveOptions(platform, def),
 				date: when.date,
 				time: when.time,
 				relative: immediate

@@ -4,15 +4,7 @@ export type PlatformId = 'youtube' | 'instagram' | 'tiktok' | 'facebook';
 export type OptionField =
 	| { key: string; label: string; type: 'bool'; hint?: string }
 	| { key: string; label: string; type: 'text'; placeholder?: string; hint?: string }
-	| {
-			key: string;
-			label: string;
-			type: 'tags';
-			placeholder?: string;
-			hint?: string;
-			/** Total characters the platform allows across the whole list. */
-			charLimit?: number;
-		}
+	| { key: string; label: string; type: 'tags'; placeholder?: string; hint?: string }
 	| { key: string; label: string; type: 'number'; min?: number; max?: number; step?: number; unit?: string; hint?: string }
 	| { key: string; label: string; type: 'select'; choices: string[]; hint?: string };
 
@@ -62,12 +54,21 @@ export interface PlatformDefinition {
 	 */
 	hasTitle: boolean;
 	/**
-	 * Key of an option field promoted onto the compose screen, alongside the
-	 * templates box. Tags are authoring work rather than configuration, so
-	 * YouTube's sit next to the text instead of inside the options modal.
-	 * Undefined — the default — leaves every option in the modal.
+	 * Keys of option fields promoted onto the compose screen. Tags are authoring
+	 * work rather than configuration, so YouTube's sit beside the text instead of
+	 * inside the options modal. Undefined — the default — leaves every option in
+	 * the modal.
 	 */
-	composeField?: string;
+	composeFields?: string[];
+	/**
+	 * Fields that share one character budget, and its size.
+	 *
+	 * YouTube allows 500 characters across *all* tags, so splitting them into
+	 * boxes for the sake of the interface must not split the counter — the four
+	 * boxes are one list as far as the API is concerned. `buildPlan` flattens
+	 * these keys into `options.tags`, which is what actually gets published.
+	 */
+	tagBudget?: { keys: string[]; limit: number };
 	titleLimit: number;
 	descriptionLimit: number;
 	/** How this platform uses the text composed for it. */
@@ -248,6 +249,18 @@ export const DEFAULT_SCHEDULING: PlatformScheduling = {
 	defaultTime: '09:00',
 	profiles: []
 };
+
+/**
+ * A named group of tags, insertable into any tag box.
+ *
+ * The same idea as a text template: build the collection once, then reuse it
+ * rather than pasting the same forty tags into every video.
+ */
+export interface TagSet {
+	id: string;
+	name: string;
+	tags: string[];
+}
 
 /** A named snippet of text, insertable into a title or description. */
 export interface TextTemplate {

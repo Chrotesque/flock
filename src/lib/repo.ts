@@ -271,13 +271,26 @@ export async function loadWatchIndex(): Promise<WatchIndex | null> {
  * would mean every upload silently edited the user's saved defaults and logged a
  * settings change. This is a memory of what was used, not a preference.
  */
-export async function loadRecentTags(): Promise<Partial<Record<PlatformId, string[]>>> {
-	const stored = await getSetting<Partial<Record<PlatformId, string[]>>>('recent_tags', {});
-	const clean: Partial<Record<PlatformId, string[]>> = {};
-	for (const [platform, tags] of Object.entries(stored ?? {})) {
-		if (isPlatformId(platform) && Array.isArray(tags)) {
-			clean[platform] = tags.filter((tag): tag is string => typeof tag === 'string');
+export type RecentTags = Partial<Record<PlatformId, Record<string, string[]>>>;
+
+export async function loadRecentTags(): Promise<RecentTags> {
+	const stored = await getSetting<RecentTags>('recent_tags', {});
+	const clean: RecentTags = {};
+
+	for (const [platform, byField] of Object.entries(stored ?? {})) {
+		if (!isPlatformId(platform)) continue;
+		// A row written before tags were split into boxes holds a bare array.
+		// Nothing useful maps onto the new shape, so it is dropped rather than
+		// guessed at.
+		if (!byField || typeof byField !== 'object' || Array.isArray(byField)) continue;
+
+		const fields: Record<string, string[]> = {};
+		for (const [key, tags] of Object.entries(byField)) {
+			if (Array.isArray(tags)) {
+				fields[key] = tags.filter((tag): tag is string => typeof tag === 'string');
+			}
 		}
+		clean[platform] = fields;
 	}
 	return clean;
 }
@@ -286,14 +299,14 @@ export async function loadRecentTags(): Promise<Partial<Record<PlatformId, strin
  * Records the tag lists an upload actually went out with. Fire-and-forget, like
  * the log: failing to remember tags must never fail a finished upload.
  */
-export function rememberTags(used: Partial<Record<PlatformId, string[]>>): void {
+export function rememberTags(used: RecentTags): void {
 	void (async () => {
 		try {
 			const current = await loadRecentTags();
-			const next = { ...current };
-			for (const [platform, tags] of Object.entries(used)) {
-				if (isPlatformId(platform) && Array.isArray(tags) && tags.length > 0) {
-					next[platform] = tags;
+			const next: RecentTags = { ...current };
+			for (const [platform, byField] of Object.entries(used)) {
+				if (isPlatformId(platform) && byField && Object.keys(byField).length > 0) {
+					next[platform] = byField;
 				}
 			}
 			await setSetting('recent_tags', next);

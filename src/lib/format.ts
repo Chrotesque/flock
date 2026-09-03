@@ -22,6 +22,34 @@ export function parseTagList(raw: string, existing: string[] = []): string[] {
 }
 
 /**
+ * Collapses several tag boxes into the one list a platform actually takes.
+ *
+ * Order follows `keys`, and de-duplication is case-insensitive across boxes as
+ * well as within them — the same tag typed into Standard and into Shorts is one
+ * tag to YouTube, and paying for it twice out of 500 characters is the kind of
+ * waste that is invisible until an upload is rejected.
+ */
+export function mergeTagGroups(values: Record<string, unknown>, keys: string[]): string[] {
+	const seen = new Set<string>();
+	const merged: string[] = [];
+
+	for (const key of keys) {
+		const list = values[key];
+		if (!Array.isArray(list)) continue;
+		for (const entry of list) {
+			if (typeof entry !== 'string') continue;
+			const tag = entry.trim();
+			if (!tag) continue;
+			const dedupe = tag.toLowerCase();
+			if (seen.has(dedupe)) continue;
+			seen.add(dedupe);
+			merged.push(tag);
+		}
+	}
+	return merged;
+}
+
+/**
  * How many characters a tag list costs against YouTube's 500-character budget.
  *
  * Not simply the sum of the tags: the API counts a tag containing a space as

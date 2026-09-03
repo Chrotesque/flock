@@ -7,13 +7,24 @@
 		value = [],
 		placeholder = 'Add and press Enter',
 		onchange,
-		charLimit
+		charLimit,
+		label,
+		hint,
+		onfocus,
+		clearable = false
 	}: {
 		value?: string[];
 		placeholder?: string;
 		onchange?: (next: string[]) => void;
-		/** Platform character budget for the whole list, if it has one. */
+		/** Own character budget, for a field that is not part of a shared one. */
 		charLimit?: number;
+		/** Rendered above the box, beside the count and the clear button. */
+		label?: string;
+		/** Rendered under the box, where it has room to be read. */
+		hint?: string;
+		/** Lets the parent remember which box to drop an inserted set into. */
+		onfocus?: () => void;
+		clearable?: boolean;
 	} = $props();
 
 	let entry = $state('');
@@ -61,6 +72,32 @@
 	let over = $derived(Boolean(charLimit) && used > (charLimit ?? 0));
 </script>
 
+{#if label}
+	<div class="head">
+		<span class="boxlabel">{label}</span>
+		<span class="count">{value.length}</span>
+		{#if clearable}
+			<button
+				class="clear"
+				disabled={value.length === 0}
+				onclick={() => onchange?.([])}
+				title="Remove every tag in {label}"
+			>
+				<svg viewBox="0 0 24 24" width="12" height="12" fill="none" aria-hidden="true">
+					<path
+						d="M5 7h14M10 7V5.5h4V7m-7 0 .8 12h8.4L17 7"
+						stroke="currentColor"
+						stroke-width="1.7"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
+				</svg>
+				Clear
+			</button>
+		{/if}
+	</div>
+{/if}
+
 <div class="tags">
 	{#each value as tag (tag)}
 		<span class="tag">
@@ -82,9 +119,16 @@
 		onkeydown={onKeydown}
 		onpaste={onPaste}
 		onblur={commit}
+		onfocusin={onfocus}
 		{placeholder}
 	/>
 </div>
+
+{#if hint}
+	<!-- Under the box on its own line: as placeholder text it was cut off by the
+	     input's width, which is exactly where a hint is no use. -->
+	<p class="hint">{hint}</p>
+{/if}
 
 {#if charLimit}
 	<p class="budget" class:over>
@@ -116,6 +160,64 @@
 	.tags:focus-within {
 		border-color: var(--pink);
 		box-shadow: 0 0 0 3px rgba(255, 77, 158, 0.14);
+	}
+
+	.head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 5px;
+	}
+
+	.boxlabel {
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.count {
+		min-width: 17px;
+		padding: 0 5px;
+		border-radius: 999px;
+		background: var(--surface-3);
+		color: var(--text-dim);
+		font-size: 10px;
+		font-weight: 700;
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.clear {
+		margin-left: auto;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 2px 7px;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		color: var(--text-faint);
+		font-size: 10.5px;
+		font-weight: 600;
+		transition: color 0.14s, border-color 0.14s;
+	}
+
+	.clear:hover:not(:disabled) {
+		color: var(--danger);
+		border-color: var(--danger);
+	}
+
+	.clear:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
+
+	.hint {
+		margin: 5px 0 0;
+		font-size: 10.5px;
+		line-height: 1.4;
+		color: var(--text-faint);
 	}
 
 	.budget {

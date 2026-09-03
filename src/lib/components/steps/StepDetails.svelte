@@ -14,12 +14,14 @@
 	import { general } from '$lib/stores/general.svelte';
 	import { templates, tokenOf } from '$lib/stores/templates.svelte';
 	import { loadWatchIndex, loadRecentTags } from '$lib/repo';
-	import { formatBytes } from '$lib/format';
+	import { tagSets } from '$lib/stores/tagsets.svelte';
+	import { formatBytes, mergeTagGroups, tagListLength, parseTagList } from '$lib/format';
 	import { portal } from '$lib/portal';
 	import type { PlatformId, TextTemplate, WatchIndex } from '$lib/types';
 
 	templates.load();
 	general.load();
+	tagSets.load();
 
 	let modalOpen = $state(false);
 	let modalPlatform = $state<PlatformId | null>(null);
@@ -117,50 +119,88 @@
 
 	// What the last upload for each platform went out with. Read once: the
 	// compose screen is not where tags are edited between uploads.
-	let recentTags = $state<Partial<Record<PlatformId, string[]>>>({});
+	let recentTags = $state<Partial<Record<PlatformId, Record<string, string[]>>>>({});
 	void loadRecentTags().then((found) => (recentTags = found));
 
-	let promoted = $derived(
-		def?.composeField ? (def.fields.find((f) => f.key === def.composeField) ?? null) : null
+	/** The tag boxes this platform promotes, in registry order. */
+	let tagFields = $derived(
+		(def?.composeFields ?? [])
+			.map((key) => def?.fields.find((f) => f.key === key))
+			.filter((f): f is NonNullable<typeof f> => Boolean(f) && f!.type === 'tags')
 	);
+
+	/** Which box an inserted set lands in — the last one focused. */
+	let lastTagKey = $state<string | null>(null);
+
+	// Keeps the target valid when the platform changes. Depends on the field list
+	// only and reads the current key through untrack: the same shape as the
+	// composing effect above, for the same reason.
+	$effect(() => {
+		const keys = tagFields.map((f) => f.key);
+		if (keys.length === 0) return;
+		const current = untrack(() => lastTagKey);
+		if (!current || !keys.includes(current)) lastTagKey = keys[0];
+	});
 
 	/**
 	 * Read straight through rather than into local state. Seeding a copy is what
 	 * needs the untrack dance in PlatformModal, and there is nothing to gain from
 	 * it here: the override map is already the only home this value has.
+	 *
+	 * Override first — an empty array is a deliberate "no tags" and must not fall
+	 * through. Then the list this box went out with last time, which is the whole
+	 * point of remembering it. The saved default is the fallback on a fresh
+	 * install.
 	 */
-	let promotedValue = $derived.by(() => {
-		if (!composing || !promoted) return [] as string[];
-		// Override first — an empty array is a deliberate "no tags" and must not
-		// fall through. Then the last list used, which is the whole point of
-		// remembering it. The saved default is the fallback for a fresh install.
+	function tagValue(key: string): string[] {
+		if (!composing) return [];
 		const raw =
-			draft.overrides[composing]?.[promoted.key] ??
-			(promoted.key === 'tags' ? recentTags[composing] : undefined) ??
-			settings.defaultsFor(composing)[promoted.key];
+			draft.overrides[composing]?.[key] ??
+			recentTags[composing]?.[key] ??
+			settings.defaultsFor(composing)[key];
 		return Array.isArray(raw) ? raw : [];
-	});
+	}
 
-	/** True while the field is showing what the last upload used, untouched. */
+	function setTagField(key: string, next: string[]) {
+		if (!composing) return;
+		draft.overrides[composing] = { ...(draft.overrides[composing] ?? {}), [key]: next };
+	}
+
+	/** Drops a saved set into the box that was last focused. */
+	function applySet(tags: string[]) {
+		const key = lastTagKey ?? tagFields[0]?.key;
+		if (!key) return;
+		const current = tagValue(key);
+		const added = parseTagList(tags.join(','), current);
+		if (added.length > 0) setTagField(key, [...current, ...added]);
+	}
+
+	function clearAllTags() {
+		for (const field of tagFields) setTagField(field.key, []);
+	}
+
+	/**
+	 * One budget across every box, because YouTube's 500 characters cover the
+	 * whole list. Counted off the *merged* list, so a tag repeated between boxes
+	 * is charged once — exactly as it will be when published.
+	 */
+	let tagsMerged = $derived(
+		mergeTagGroups(
+			Object.fromEntries(tagFields.map((f) => [f.key, tagValue(f.key)])),
+			tagFields.map((f) => f.key)
+		)
+	);
+	let tagsUsed = $derived(tagListLength(tagsMerged));
+	let tagsOver = $derived(tagsUsed > (def?.tagBudget?.limit ?? Infinity));
+
+	/** True while every box still shows what the last upload used, untouched. */
 	let showingRecent = $derived(
 		Boolean(
 			composing &&
-				promoted?.key === 'tags' &&
-				draft.overrides[composing]?.tags === undefined &&
-				(recentTags[composing]?.length ?? 0) > 0
+				tagFields.length > 0 &&
+				tagFields.every((f) => draft.overrides[composing!]?.[f.key] === undefined) &&
+				tagFields.some((f) => (recentTags[composing!]?.[f.key]?.length ?? 0) > 0)
 		)
-	);
-
-	function setPromoted(next: string[]) {
-		if (!composing || !promoted) return;
-		draft.overrides[composing] = { ...(draft.overrides[composing] ?? {}), [promoted.key]: next };
-	}
-
-	// Only some field types carry a placeholder, so narrow before reaching for it.
-	let promotedPlaceholder = $derived(
-		promoted && 'placeholder' in promoted && promoted.placeholder
-			? promoted.placeholder
-			: 'Add and press Enter'
 	);
 
 	/* ---- template insertion ----
@@ -295,6 +335,17 @@
 	);
 </script>
 
+{#snippet pencil()}
+	<svg viewBox="0 0 24 24" width="11" height="11" fill="none" aria-hidden="true">
+		<path
+			d="M4.5 19.5h4L19 9l-4-4L4.5 15.5v4Z"
+			stroke="currentColor"
+			stroke-width="1.7"
+			stroke-linejoin="round"
+		/>
+	</svg>
+{/snippet}
+
 <div class="stage">
 	<div class="col">
 		<section class="main card">
@@ -374,43 +425,44 @@
 				</div>
 
 				<p class="note">{def.fieldNote}</p>
-			{:else}
-				<p class="emptypanel">Tick a platform on the right to start composing.</p>
-			{/if}
-		</section>
 
-		<div class="lower" class:split={Boolean(promoted)}>
-			<section class="templates card">
-				<header class="tplhead">
-					<span class="label">Templates</span>
-					<span class="tplnote">
-						Click to drop one in at the cursor, or type its name in braces.
-					</span>
-				</header>
+				<!-- Templates belong to the text, so they live in the same card as it
+				     — which is also what frees the row below for a full-width tags
+				     box. -->
+				<div class="tpl">
+					<header class="tplhead">
+						<span class="label">Templates</span>
+						<a class="edit" href="{base}/settings?section=templates" title="Edit templates">
+							{@render pencil()}
+							Edit
+						</a>
+						<span class="tplnote">
+							Click to drop one in at the cursor, or type its name in braces.
+						</span>
+					</header>
 
-				{#if templates.loading}
-					<p class="tplempty">Loading…</p>
-				{:else if templates.items.length === 0}
-					<p class="tplempty">
-						None yet — add reusable text in <a href="{base}/settings">Settings</a>.
-					</p>
-				{:else}
-					<div class="chips">
-						{#each templates.items as template (template.id)}
-							<button
-								class="chip"
-								disabled={!composing}
-								onclick={() => insert(template)}
-								onmouseenter={(e) => previewOn(e, template)}
-								onmouseleave={previewOff}
-								onfocus={(e) => previewOn(e as unknown as MouseEvent, template)}
-								onblur={previewOff}
-							>
-								{template.name.trim() || 'Unnamed'}
-							</button>
-						{/each}
-					</div>
-					{#if composing && def}
+					{#if templates.loading}
+						<p class="tplempty">Loading…</p>
+					{:else if templates.items.length === 0}
+						<p class="tplempty">
+							None yet — add reusable text in
+							<a href="{base}/settings?section=templates">Settings</a>.
+						</p>
+					{:else}
+						<div class="chips">
+							{#each templates.items as template (template.id)}
+								<button
+									class="chip"
+									onclick={() => insert(template)}
+									onmouseenter={(e) => previewOn(e, template)}
+									onmouseleave={previewOff}
+									onfocus={(e) => previewOn(e as unknown as MouseEvent, template)}
+									onblur={previewOff}
+								>
+									{template.name.trim() || 'Unnamed'}
+								</button>
+							{/each}
+						</div>
 						<p class="target">
 							Inserts into <strong>{def.label}</strong>'s
 							<strong>
@@ -418,35 +470,88 @@
 							</strong>.
 						</p>
 					{/if}
+				</div>
+			{:else}
+				<p class="emptypanel">Tick a platform on the right to start composing.</p>
+			{/if}
+		</section>
+
+		{#if tagFields.length > 0 && def && composing}
+			<section class="tagcard card">
+				<header class="taghead">
+					<span class="label">Tags</span>
+					<a
+						class="edit"
+						href="{base}/settings?platform={composing}&tab=tags"
+						title="Edit tag sets"
+					>
+						{@render pencil()}
+						Edit sets
+					</a>
+
+					<span class="tagbudget" class:over={tagsOver}>
+						{tagsUsed} / {def.tagBudget?.limit} characters
+						<span class="tagtotal">· {tagsMerged.length} tags in total</span>
+					</span>
+				</header>
+
+				{#if tagsOver}
+					<p class="tagwarn">
+						Over {def.label}'s limit — the upload would be rejected. A tag containing a space is
+						counted as though it were quoted, and the separators count too.
+					</p>
+				{/if}
+
+				<div class="tagsets">
+					{#if tagSets.items.length === 0}
+						<p class="tplempty">
+							No tag sets yet — build reusable groups in
+							<a href="{base}/settings?platform={composing}&tab=tags">Settings</a>.
+						</p>
+					{:else}
+						<span class="setlabel">Add a set</span>
+						{#each tagSets.items as set (set.id)}
+							<button
+								class="chip"
+								disabled={set.tags.length === 0}
+								onclick={() => applySet(set.tags)}
+								title="{set.tags.length} tags into {tagFields.find((f) => f.key === lastTagKey)
+									?.label ?? 'the first box'}"
+							>
+								{set.name.trim() || 'Unnamed'}
+								<em>{set.tags.length}</em>
+							</button>
+						{/each}
+						<span class="settarget">
+							into <strong>{tagFields.find((f) => f.key === lastTagKey)?.label ?? '—'}</strong>
+						</span>
+					{/if}
+				</div>
+
+				<div class="taggrid">
+					{#each tagFields as field (field.key)}
+						<div class="tagbox">
+							<TagInput
+								label={field.label}
+								value={tagValue(field.key)}
+								placeholder={'placeholder' in field ? (field.placeholder ?? '') : ''}
+								hint="Paste a comma-separated list, or type one and press Enter."
+								clearable
+								onfocus={() => (lastTagKey = field.key)}
+								onchange={(next) => setTagField(field.key, next)}
+							/>
+						</div>
+					{/each}
+				</div>
+
+				{#if showingRecent}
+					<p class="reused">
+						Carried over from your last {def.label} upload.
+						<button class="relink" onclick={clearAllTags}>Clear all</button>
+					</p>
 				{/if}
 			</section>
-
-			{#if promoted && def}
-				<section class="promoted card">
-					<header class="tplhead">
-						<span class="label">{promoted.label}</span>
-						<span class="tplnote">{def.label} only.</span>
-					</header>
-
-					{#if promoted.type === 'tags'}
-						<div class="promotedbody">
-							<TagInput
-								value={promotedValue}
-								placeholder={promotedPlaceholder}
-								charLimit={promoted.charLimit}
-								onchange={setPromoted}
-							/>
-							{#if showingRecent && def}
-								<p class="reused">
-									Carried over from your last {def.label} upload.
-									<button class="relink" onclick={() => setPromoted([])}>Clear</button>
-								</p>
-							{/if}
-						</div>
-					{/if}
-				</section>
-			{/if}
-		</div>
+		{/if}
 	</div>
 
 	<div class="side">
@@ -695,39 +800,121 @@
 
 	/* ---- templates ---- */
 
-	/* Templates, beside whichever option the platform promotes onto this screen.
-	   Without one the templates box keeps the full width. */
-	.lower {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 20px;
-		align-items: start;
+	/* Templates now sit inside the compose card, below the text they insert
+	   into — which is also what frees the row beneath for full-width tags. */
+	.tpl {
+		padding-top: 16px;
+		border-top: 1px solid var(--border);
 	}
 
-	.lower.split {
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	/* ---- tags: full width, one shared budget ---- */
+
+	.tagcard {
+		padding: 16px 18px 18px;
 	}
 
-	.templates {
-		padding: 16px 18px;
+	.taghead {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
+		margin-bottom: 12px;
 	}
 
-	.promoted {
-		padding: 16px 18px;
+	.taghead .label {
+		margin-bottom: 0;
 	}
 
-	.promotedbody {
-		margin-top: 12px;
+	.tagbudget {
+		margin-left: auto;
+		font-size: 11.5px;
+		font-weight: 600;
+		color: var(--text-dim);
+		font-variant-numeric: tabular-nums;
 	}
 
-	.reused {
-		margin: 8px 0 0;
+	.tagbudget.over {
+		color: var(--danger);
+	}
+
+	.tagtotal {
+		font-weight: 400;
+		color: var(--text-faint);
+	}
+
+	.tagwarn {
+		margin: 0 0 12px;
+		padding: 8px 11px;
+		border-radius: var(--radius-sm);
+		background: rgba(248, 113, 113, 0.1);
+		border: 1px solid rgba(248, 113, 113, 0.3);
+		color: var(--danger);
+		font-size: 11.5px;
+		line-height: 1.45;
+	}
+
+	.tagsets {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-bottom: 14px;
+		padding-bottom: 14px;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.setlabel,
+	.settarget {
 		font-size: 11px;
 		color: var(--text-faint);
 	}
 
+	.settarget strong {
+		color: var(--pink-soft);
+		font-weight: 600;
+	}
+
+	.chip em {
+		font-style: normal;
+		margin-left: 5px;
+		font-family: var(--mono);
+		font-size: 10px;
+		color: var(--text-faint);
+	}
+
+	/* Two-up rather than four-across: four boxes side by side leave each too
+	   narrow to read a filled-in list in. */
+	.taggrid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 16px 20px;
+	}
+
+	.tagbox {
+		min-width: 0;
+	}
+
+	/* An edit link back to wherever the thing is actually managed. */
+	.edit {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 2px 8px;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		color: var(--text-faint);
+		font-size: 10.5px;
+		font-weight: 600;
+		transition: color 0.14s, border-color 0.14s;
+	}
+
+	.edit:hover {
+		color: var(--pink-soft);
+		border-color: var(--pink);
+	}
+
 	.reused {
-		margin: 8px 0 0;
+		margin: 12px 0 0;
 		font-size: 11px;
 		color: var(--text-faint);
 	}
@@ -1102,7 +1289,7 @@
 		.stage {
 			grid-template-columns: 1fr;
 		}
-		.lower.split {
+		.taggrid {
 			grid-template-columns: minmax(0, 1fr);
 		}
 		.side {

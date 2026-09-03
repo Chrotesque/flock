@@ -46,7 +46,6 @@
 					<TagInput
 						value={(values[field.key] as string[]) ?? []}
 						placeholder={field.placeholder ?? ''}
-						charLimit={field.charLimit}
 						onchange={(next) => set(field.key, next)}
 					/>
 				{:else if field.type === 'number'}
