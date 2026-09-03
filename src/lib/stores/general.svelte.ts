@@ -8,7 +8,8 @@ export const GENERAL_KEY = 'general';
 export const DEFAULT_GENERAL: GeneralSettings = {
 	destinations: [],
 	defaultDestinationId: null,
-	watchFolder: ''
+	watchFolder: '',
+	complianceBranding: false
 };
 
 /**
@@ -43,7 +44,8 @@ class GeneralStore {
 			this.value = {
 				destinations: Array.isArray(stored.destinations) ? stored.destinations : [],
 				defaultDestinationId: stored.defaultDestinationId ?? null,
-				watchFolder: stored.watchFolder ?? ''
+				watchFolder: stored.watchFolder ?? '',
+				complianceBranding: stored.complianceBranding ?? false
 			};
 			this.#loaded = true;
 			this.#logged = $state.snapshot(this.value);
@@ -108,6 +110,13 @@ class GeneralStore {
 			}
 		}
 
+		if (before.complianceBranding !== after.complianceBranding) {
+			logAction(
+				'settings',
+				`Turned compliance branding ${after.complianceBranding ? 'on' : 'off'}`
+			);
+		}
+
 		if (before.watchFolder !== after.watchFolder) {
 			logAction(
 				'settings',
@@ -167,6 +176,12 @@ class GeneralStore {
 		if (this.value.defaultDestinationId === id) {
 			this.value.defaultDestinationId = this.value.destinations[0]?.id ?? null;
 		}
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	setComplianceBranding(on: boolean) {
+		this.value.complianceBranding = on;
 		this.queueSave();
 		this.#queueLog();
 	}

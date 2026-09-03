@@ -1,10 +1,20 @@
 <script lang="ts">
+	import { general } from '$lib/stores/general.svelte';
 	import type { PlatformId } from '$lib/types';
 
 	// Brand glyphs, drawn in muted brand colours. The app's own pink/purple is
 	// reserved for selection state, so a "selected" platform always reads
 	// clearly regardless of which brand colour sits next to it.
+	//
+	// With compliance branding on, YouTube's mark switches to its official red
+	// and a white play triangle instead. YouTube's API branding guidelines forbid
+	// altering the colours of its logo, and the muted version is exactly that —
+	// so the compliant rendering has to be available even though it sits awkwardly
+	// beside the other three. Read from the store rather than threaded as a prop:
+	// this component has a dozen call sites and none of them care.
 	let { platform, size = 22 }: { platform: PlatformId; size?: number } = $props();
+
+	let compliant = $derived(platform === 'youtube' && general.value.complianceBranding);
 </script>
 
 <svg
@@ -18,9 +28,9 @@
 	{#if platform === 'youtube'}
 		<path
 			d="M23.5 6.5a3 3 0 0 0-2.1-2.1C19.5 3.9 12 3.9 12 3.9s-7.5 0-9.4.5A3 3 0 0 0 .5 6.5C0 8.4 0 12 0 12s0 3.6.5 5.5a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.5.5-5.5s0-3.6-.5-5.5Z"
-			fill="currentColor"
+			fill={compliant ? '#FF0000' : 'currentColor'}
 		/>
-		<path d="M9.6 15.6V8.4l6.3 3.6-6.3 3.6Z" fill="#0a0912" />
+		<path d="M9.6 15.6V8.4l6.3 3.6-6.3 3.6Z" fill={compliant ? '#FFFFFF' : '#0a0912'} />
 	{:else if platform === 'instagram'}
 		<rect
 			x="2.4"

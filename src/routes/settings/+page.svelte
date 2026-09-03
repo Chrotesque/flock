@@ -23,14 +23,14 @@
 	general.load();
 	templates.load();
 
-	type Section = 'general' | 'templates' | PlatformId;
+	type Section = 'general' | 'templates' | 'other' | PlatformId;
 
 	let active = $state<Section>('general');
 	let tab = $state<'defaults' | 'filters' | 'profiles'>('defaults');
 
 	// Narrowed once here rather than guarded at every use site below.
 	let platform = $derived<PlatformId | null>(
-		active === 'general' || active === 'templates' ? null : active
+		active === 'general' || active === 'templates' || active === 'other' ? null : active
 	);
 	let entry = $derived(platform ? settings.get(platform) : undefined);
 	let def = $derived(platform ? PLATFORMS[platform] : null);
@@ -152,6 +152,27 @@
 								</span>
 							</button>
 						</li>
+						<li class:active={active === 'other'}>
+							<button class="pick" onclick={() => (active = 'other')}>
+								<span class="ic">
+									<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+										<circle cx="12" cy="12" r="8.2" stroke="currentColor" stroke-width="1.6" />
+										<path
+											d="M12 8.6v.1M12 11.4v4"
+											stroke="currentColor"
+											stroke-width="1.8"
+											stroke-linecap="round"
+										/>
+									</svg>
+								</span>
+								<span class="who">
+									<span class="name">Other</span>
+									<span class="sub">
+										{general.value.complianceBranding ? 'compliance on' : 'compliance off'}
+									</span>
+								</span>
+							</button>
+						</li>
 					</ul>
 
 					<h3 class="second">Platforms</h3>
@@ -227,7 +248,47 @@
 				</aside>
 
 				<section class="card panel">
-					{#if active === 'templates'}
+					{#if active === 'other'}
+						<header class="panelhead">
+							<div class="ident">
+								<span class="ic big">
+									<svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+										<circle cx="12" cy="12" r="8.2" stroke="currentColor" stroke-width="1.6" />
+										<path
+											d="M12 8.6v.1M12 11.4v4"
+											stroke="currentColor"
+											stroke-width="1.8"
+											stroke-linecap="round"
+										/>
+									</svg>
+								</span>
+								<div>
+									<h2>Other</h2>
+									<p>Everything that does not belong to a platform or to storage.</p>
+								</div>
+							</div>
+						</header>
+
+						<div class="otherbody">
+							<Checkbox
+								checked={general.value.complianceBranding}
+								label="Compliance modifications"
+								onchange={(next) => general.setComplianceBranding(next)}
+							/>
+							<p class="otherhint">
+								Renders platform brand marks the way each platform's API branding guidelines
+								require — for YouTube, its official logo in its official colours, plus a
+								clickable logo linking back to YouTube in the YouTube options panel.
+							</p>
+							<p class="otherhint">
+								Off by default because official brand colours clash with the muted palette this
+								interface uses, where pink is reserved for selection state. Turn it on when the
+								interface is being reviewed or screenshotted for an API audit —
+								<strong>on is the compliant state</strong>, and YouTube's guidelines expect
+								branding wherever its API has a presence.
+							</p>
+						</div>
+					{:else if active === 'templates'}
 						<header class="panelhead">
 							<div class="ident">
 								<span class="ic big">

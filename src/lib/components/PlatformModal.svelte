@@ -8,6 +8,7 @@
 	import { PLATFORMS } from '$lib/platforms';
 	import { adapt } from '$lib/filters';
 	import { settings } from '$lib/stores/settings.svelte';
+	import { general } from '$lib/stores/general.svelte';
 	import { draft } from '$lib/stores/draft.svelte';
 	import type { OptionValues, PlatformId } from '$lib/types';
 
@@ -65,6 +66,43 @@
 					<h2>{def.label}</h2>
 					<p>{def.fieldNote}</p>
 				</div>
+
+				{#if platform === 'youtube' && general.value.complianceBranding}
+					<!--
+						The guidelines require the logo to be a link back to YouTube, and to
+						sit next to where the API implementation appears. This panel is that
+						place: it is the YouTube-specific options, and unlike the compose
+						rail it is not already inside a button, so a link nests legally here.
+						It also stays clear of flock's own name, which brand features may
+						never be shown alongside.
+					-->
+					<a
+						class="ytmark"
+						href="https://www.youtube.com"
+						target="_blank"
+						rel="noreferrer noopener"
+						aria-label="YouTube"
+					>
+						<!-- 88 wide, not 72: the wordmark measures out to x≈84, and a clipped
+						     logo is precisely what "must not be altered or obscured" rules out. -->
+						<svg viewBox="0 0 88 24" width="88" height="24" fill="none" aria-hidden="true">
+							<path
+								d="M23.5 6.5a3 3 0 0 0-2.1-2.1C19.5 3.9 12 3.9 12 3.9s-7.5 0-9.4.5A3 3 0 0 0 .5 6.5C0 8.4 0 12 0 12s0 3.6.5 5.5a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.5.5-5.5s0-3.6-.5-5.5Z"
+								fill="#FF0000"
+							/>
+							<path d="M9.6 15.6V8.4l6.3 3.6-6.3 3.6Z" fill="#FFFFFF" />
+							<text
+								x="27"
+								y="17"
+								fill="#FFFFFF"
+								font-family="Roboto, Arial, Helvetica, sans-serif"
+								font-size="14.5"
+								font-weight="700"
+								letter-spacing="-0.6">YouTube</text
+							>
+						</svg>
+					</a>
+				{/if}
 			</div>
 		{/if}
 	{/snippet}
@@ -90,10 +128,22 @@
 
 			<OptionEditor fields={def.fields} bind:values onchange={override} />
 
-			<p class="footnote">
-				These options are placeholders. They exist so the flow can be judged before the real
-				{def.label} API is wired up.
-			</p>
+			<!--
+				Only three of the four are placeholders now. Saying otherwise in the
+				YouTube panel is both wrong and actively misleading in a screenshot —
+				its options map to real videos.insert fields.
+			-->
+			{#if platform === 'youtube'}
+				<p class="footnote">
+					These options map to real YouTube Data API fields and are applied when the video is
+					uploaded.
+				</p>
+			{:else}
+				<p class="footnote">
+					These options are placeholders. They exist so the flow can be judged before the real
+					{def.label} API is wired up.
+				</p>
+			{/if}
 		{:else}
 			<section class="preview">
 				<div class="block">
@@ -130,6 +180,18 @@
 </Modal>
 
 <style>
+	.ytmark {
+		margin-left: auto;
+		flex: none;
+		display: block;
+		align-self: center;
+		/* Solid backing: the guidelines require the mark stay fully visible with
+		   enough contrast, and the modal header is a gradient. */
+		background: #0a0912;
+		padding: 5px 8px;
+		border-radius: 6px;
+	}
+
 	.head {
 		display: flex;
 		align-items: center;

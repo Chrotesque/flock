@@ -166,6 +166,17 @@ export interface GeneralSettings {
 	 * SPA cannot read a filesystem itself.
 	 */
 	watchFolder: string;
+	/**
+	 * Renders YouTube's brand features the way its API branding guidelines
+	 * require: the official mark in official colours, and a clickable logo
+	 * linking back to YouTube wherever the API has a presence.
+	 *
+	 * Off by default because the official red fights the muted palette the rest
+	 * of the interface is built on — pink/purple is reserved for selection state,
+	 * and a full-strength brand colour beside it muddies that. On is the
+	 * compliant state; off is the comfortable one.
+	 */
+	complianceBranding: boolean;
 }
 
 /** One video sitting in the watch folder, as the worker last saw it. */
