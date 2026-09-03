@@ -264,6 +264,45 @@ export async function loadWatchIndex(): Promise<WatchIndex | null> {
 	return index;
 }
 
+/**
+ * The tag list last published for each platform.
+ *
+ * Kept apart from `platform_settings.defaults` on purpose: writing it there
+ * would mean every upload silently edited the user's saved defaults and logged a
+ * settings change. This is a memory of what was used, not a preference.
+ */
+export async function loadRecentTags(): Promise<Partial<Record<PlatformId, string[]>>> {
+	const stored = await getSetting<Partial<Record<PlatformId, string[]>>>('recent_tags', {});
+	const clean: Partial<Record<PlatformId, string[]>> = {};
+	for (const [platform, tags] of Object.entries(stored ?? {})) {
+		if (isPlatformId(platform) && Array.isArray(tags)) {
+			clean[platform] = tags.filter((tag): tag is string => typeof tag === 'string');
+		}
+	}
+	return clean;
+}
+
+/**
+ * Records the tag lists an upload actually went out with. Fire-and-forget, like
+ * the log: failing to remember tags must never fail a finished upload.
+ */
+export function rememberTags(used: Partial<Record<PlatformId, string[]>>): void {
+	void (async () => {
+		try {
+			const current = await loadRecentTags();
+			const next = { ...current };
+			for (const [platform, tags] of Object.entries(used)) {
+				if (isPlatformId(platform) && Array.isArray(tags) && tags.length > 0) {
+					next[platform] = tags;
+				}
+			}
+			await setSetting('recent_tags', next);
+		} catch {
+			// Nothing to do — the upload has already succeeded.
+		}
+	})();
+}
+
 export async function listJobs(limit = 25): Promise<UploadJob[]> {
 	const res = await pb.collection('upload_jobs').getList(1, limit, { sort: '-created' });
 	return res.items as unknown as UploadJob[];

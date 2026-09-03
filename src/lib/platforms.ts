@@ -34,7 +34,13 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 				placeholder: 'None',
 				hint: 'Matched by name. Needs the worker authorised with --with-playlists.'
 			},
-			{ key: 'tags', label: 'Tags', type: 'tags', placeholder: 'Add a tag and press Enter' },
+			{
+				key: 'tags',
+				label: 'Tags',
+				type: 'tags',
+				placeholder: 'Paste a comma-separated list, or type one and press Enter',
+				charLimit: 500
+			},
 			{ key: 'madeForKids', label: 'Made for kids', type: 'bool', hint: 'Disables comments and personalised ads.' },
 			{ key: 'notifySubscribers', label: 'Notify subscribers', type: 'bool' },
 			{ key: 'allowEmbedding', label: 'Allow embedding', type: 'bool' },

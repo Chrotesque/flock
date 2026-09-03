@@ -13,7 +13,7 @@
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { templates, tokenOf } from '$lib/stores/templates.svelte';
-	import { loadWatchIndex } from '$lib/repo';
+	import { loadWatchIndex, loadRecentTags } from '$lib/repo';
 	import { formatBytes } from '$lib/format';
 	import { portal } from '$lib/portal';
 	import type { PlatformId, TextTemplate, WatchIndex } from '$lib/types';
@@ -115,6 +115,11 @@
 	 * full width.
 	 */
 
+	// What the last upload for each platform went out with. Read once: the
+	// compose screen is not where tags are edited between uploads.
+	let recentTags = $state<Partial<Record<PlatformId, string[]>>>({});
+	void loadRecentTags().then((found) => (recentTags = found));
+
 	let promoted = $derived(
 		def?.composeField ? (def.fields.find((f) => f.key === def.composeField) ?? null) : null
 	);
@@ -126,9 +131,25 @@
 	 */
 	let promotedValue = $derived.by(() => {
 		if (!composing || !promoted) return [] as string[];
-		const raw = draft.overrides[composing]?.[promoted.key] ?? settings.defaultsFor(composing)[promoted.key];
+		// Override first — an empty array is a deliberate "no tags" and must not
+		// fall through. Then the last list used, which is the whole point of
+		// remembering it. The saved default is the fallback for a fresh install.
+		const raw =
+			draft.overrides[composing]?.[promoted.key] ??
+			(promoted.key === 'tags' ? recentTags[composing] : undefined) ??
+			settings.defaultsFor(composing)[promoted.key];
 		return Array.isArray(raw) ? raw : [];
 	});
+
+	/** True while the field is showing what the last upload used, untouched. */
+	let showingRecent = $derived(
+		Boolean(
+			composing &&
+				promoted?.key === 'tags' &&
+				draft.overrides[composing]?.tags === undefined &&
+				(recentTags[composing]?.length ?? 0) > 0
+		)
+	);
 
 	function setPromoted(next: string[]) {
 		if (!composing || !promoted) return;
@@ -412,8 +433,15 @@
 							<TagInput
 								value={promotedValue}
 								placeholder={promotedPlaceholder}
+								charLimit={promoted.charLimit}
 								onchange={setPromoted}
 							/>
+							{#if showingRecent && def}
+								<p class="reused">
+									Carried over from your last {def.label} upload.
+									<button class="relink" onclick={() => setPromoted([])}>Clear</button>
+								</p>
+							{/if}
 						</div>
 					{/if}
 				</section>
@@ -690,6 +718,18 @@
 
 	.promotedbody {
 		margin-top: 12px;
+	}
+
+	.reused {
+		margin: 8px 0 0;
+		font-size: 11px;
+		color: var(--text-faint);
+	}
+
+	.reused {
+		margin: 8px 0 0;
+		font-size: 11px;
+		color: var(--text-faint);
 	}
 
 	.tplhead {

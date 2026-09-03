@@ -8,8 +8,53 @@ import {
 	hourOf,
 	minuteOf,
 	makeTime,
-	firstLine
+	firstLine,
+	parseTagList,
+	tagListLength
 } from './format';
+
+describe('parseTagList', () => {
+	it('splits a comma-separated paste and trims each tag', () => {
+		expect(parseTagList('cthulhu game, arkham ,  frogwares')).toEqual([
+			'cthulhu game',
+			'arkham',
+			'frogwares'
+		]);
+	});
+
+	it('drops empties from stray or trailing commas', () => {
+		expect(parseTagList('a,,b,')).toEqual(['a', 'b']);
+	});
+
+	it('de-duplicates case-insensitively, keeping the first casing', () => {
+		expect(parseTagList('the sinking city 2,The Sinking City 2')).toEqual(['the sinking city 2']);
+	});
+
+	it('never re-adds what the field already holds', () => {
+		expect(parseTagList('arkham,frogwares', ['Arkham'])).toEqual(['frogwares']);
+	});
+});
+
+describe('tagListLength', () => {
+	it('is zero for no tags', () => {
+		expect(tagListLength([])).toBe(0);
+	});
+
+	it('counts a single tag as its own length', () => {
+		expect(tagListLength(['frogwares'])).toBe(9);
+	});
+
+	// YouTube's own worked example: "Foo Baz" is nine characters, "Foo-Baz" seven.
+	it('counts a tag containing a space as though it were quoted', () => {
+		expect(tagListLength(['Foo Baz'])).toBe(9);
+		expect(tagListLength(['Foo-Baz'])).toBe(7);
+	});
+
+	it('counts the separators between tags', () => {
+		// 7 + 7 for the tags, plus one comma.
+		expect(tagListLength(['Foo-Baz', 'Bar-Qux'])).toBe(15);
+	});
+});
 
 describe('firstLine', () => {
 	it('takes the first line and trims it', () => {

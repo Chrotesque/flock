@@ -4,7 +4,15 @@ export type PlatformId = 'youtube' | 'instagram' | 'tiktok' | 'facebook';
 export type OptionField =
 	| { key: string; label: string; type: 'bool'; hint?: string }
 	| { key: string; label: string; type: 'text'; placeholder?: string; hint?: string }
-	| { key: string; label: string; type: 'tags'; placeholder?: string; hint?: string }
+	| {
+			key: string;
+			label: string;
+			type: 'tags';
+			placeholder?: string;
+			hint?: string;
+			/** Total characters the platform allows across the whole list. */
+			charLimit?: number;
+		}
 	| { key: string; label: string; type: 'number'; min?: number; max?: number; step?: number; unit?: string; hint?: string }
 	| { key: string; label: string; type: 'select'; choices: string[]; hint?: string };
 

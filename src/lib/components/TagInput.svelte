@@ -1,19 +1,45 @@
 <script lang="ts">
+	import { parseTagList, tagListLength } from '$lib/format';
+
 	// Controlled: the parent owns the array and is told about every change.
 	// Two-way binding would not survive the values object being replaced.
 	let {
 		value = [],
 		placeholder = 'Add and press Enter',
-		onchange
-	}: { value?: string[]; placeholder?: string; onchange?: (next: string[]) => void } = $props();
+		onchange,
+		charLimit
+	}: {
+		value?: string[];
+		placeholder?: string;
+		onchange?: (next: string[]) => void;
+		/** Platform character budget for the whole list, if it has one. */
+		charLimit?: number;
+	} = $props();
 
 	let entry = $state('');
 
+	/**
+	 * Takes one tag or a whole comma-separated list, so the list a platform hands
+	 * you can be pasted in as-is rather than typed one at a time.
+	 */
 	function commit() {
-		const next = entry.trim().replace(/,+$/, '');
+		const raw = entry;
 		entry = '';
-		if (!next || value.includes(next)) return;
-		onchange?.([...value, next]);
+		const added = parseTagList(raw, value);
+		if (added.length > 0) onchange?.([...value, ...added]);
+	}
+
+	/**
+	 * Splitting on paste rather than waiting for Enter: a pasted list otherwise
+	 * sits in the field as one long string, and the obvious next move — pressing
+	 * Enter — would previously have committed all of it as a single tag.
+	 */
+	function onPaste(event: ClipboardEvent) {
+		const text = event.clipboardData?.getData('text') ?? '';
+		if (!text.includes(',')) return; // a single tag can paste normally
+		event.preventDefault();
+		entry = entry + text;
+		commit();
 	}
 
 	function remove(tag: string) {
@@ -28,6 +54,11 @@
 			onchange?.(value.slice(0, -1));
 		}
 	}
+
+	// Only YouTube sets a budget, and its arithmetic is not the sum of the tags —
+	// see tagListLength.
+	let used = $derived(charLimit ? tagListLength(value) : 0);
+	let over = $derived(Boolean(charLimit) && used > (charLimit ?? 0));
 </script>
 
 <div class="tags">
@@ -46,8 +77,28 @@
 			</button>
 		</span>
 	{/each}
-	<input bind:value={entry} onkeydown={onKeydown} onblur={commit} {placeholder} />
+	<input
+		bind:value={entry}
+		onkeydown={onKeydown}
+		onpaste={onPaste}
+		onblur={commit}
+		{placeholder}
+	/>
 </div>
+
+{#if charLimit}
+	<p class="budget" class:over>
+		<span>{used} / {charLimit} characters</span>
+		{#if over}
+			<span class="warn">over the limit — the upload will be rejected</span>
+		{:else}
+			<span class="note">
+				{value.length}
+				{value.length === 1 ? 'tag' : 'tags'} · a tag with a space is counted as though quoted
+			</span>
+		{/if}
+	</p>
+{/if}
 
 <style>
 	.tags {
@@ -65,6 +116,26 @@
 	.tags:focus-within {
 		border-color: var(--pink);
 		box-shadow: 0 0 0 3px rgba(255, 77, 158, 0.14);
+	}
+
+	.budget {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
+		flex-wrap: wrap;
+		margin: 6px 0 0;
+		font-size: 11px;
+		color: var(--text-faint);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.budget.over {
+		color: var(--danger);
+	}
+
+	.budget .warn {
+		font-weight: 600;
 	}
 
 	.tag {

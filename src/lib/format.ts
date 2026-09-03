@@ -1,4 +1,42 @@
 /**
+ * Splits a pasted comma-separated list into tags.
+ *
+ * Case-insensitively de-duplicated, keeping the casing of the first occurrence:
+ * YouTube matches tags case-insensitively, so "Arkham" and "arkham" would spend
+ * the character budget twice to no effect. `existing` is what the field already
+ * holds, so a paste never re-adds what is already there.
+ */
+export function parseTagList(raw: string, existing: string[] = []): string[] {
+	const seen = new Set(existing.map((tag) => tag.toLowerCase()));
+	const added: string[] = [];
+
+	for (const piece of raw.split(',')) {
+		const tag = piece.trim();
+		if (!tag) continue;
+		const key = tag.toLowerCase();
+		if (seen.has(key)) continue;
+		seen.add(key);
+		added.push(tag);
+	}
+	return added;
+}
+
+/**
+ * How many characters a tag list costs against YouTube's 500-character budget.
+ *
+ * Not simply the sum of the tags: the API counts a tag containing a space as
+ * though it were wrapped in quotation marks, and those quotes count — so
+ * "Foo Baz" is nine characters where "Foo-Baz" is seven. The commas between
+ * entries count too. Getting this wrong means an upload rejected at the last
+ * step for a list that looked comfortably short.
+ */
+export function tagListLength(tags: string[]): number {
+	if (tags.length === 0) return 0;
+	const body = tags.reduce((total, tag) => total + tag.length + (tag.includes(' ') ? 2 : 0), 0);
+	return body + (tags.length - 1);
+}
+
+/**
  * The first line of a block of text, trimmed.
  *
  * Used where a caption has to stand in for a title — the caption-only platforms

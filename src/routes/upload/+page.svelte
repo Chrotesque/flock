@@ -8,7 +8,7 @@
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { buildPlan } from '$lib/plan';
-	import { createJob } from '$lib/repo';
+	import { createJob, rememberTags } from '$lib/repo';
 	import { formatBytes } from '$lib/format';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { PLATFORMS } from '$lib/platforms';
@@ -88,6 +88,15 @@
 					}))
 				},
 				(fraction) => (progress = fraction)
+			);
+			// Remembered from the plan rather than the draft, so what is stored is
+			// what actually went out — overrides and saved defaults included.
+			rememberTags(
+				Object.fromEntries(
+					plan
+						.filter((row) => Array.isArray(row.options.tags))
+						.map((row) => [row.platform, row.options.tags as string[]])
+				)
 			);
 			phase = 'done';
 		} catch (err) {
