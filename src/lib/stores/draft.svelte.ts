@@ -79,6 +79,23 @@ class DraftStore {
 	overrides = $state<Partial<Record<PlatformId, OptionValues>>>({});
 	schedule = $state<Partial<Record<PlatformId, { date: string; time: string }>>>({});
 
+	/**
+	 * Platforms to publish the moment the worker sees them, rather than at a
+	 * slot. Nothing in the worker had to change for this: it only hands a
+	 * release time to the platform when that time is in the *future*, so a slot
+	 * of "now" already falls through to an immediate upload at the requested
+	 * visibility.
+	 */
+	immediate = $state<Partial<Record<PlatformId, boolean>>>({});
+
+	isImmediate(platform: PlatformId): boolean {
+		return this.immediate[platform] === true;
+	}
+
+	setImmediate(platform: PlatformId, on: boolean) {
+		this.immediate[platform] = on;
+	}
+
 	textFor(platform: PlatformId): PlatformText {
 		return this.texts[platform] ?? EMPTY_TEXT;
 	}
@@ -184,6 +201,7 @@ class DraftStore {
 	get pastPlatforms(): PlatformId[] {
 		const now = Date.now();
 		return this.activePlatforms.filter((id) => {
+			if (this.isImmediate(id)) return false;
 			const entry = this.scheduleFor(id);
 			const at = new Date(`${entry.date}T${entry.time || '00:00'}`).getTime();
 			return Number.isFinite(at) && at < now;
@@ -201,6 +219,7 @@ class DraftStore {
 	 */
 	get scheduleComplete(): boolean {
 		return this.activePlatforms.every((id) => {
+			if (this.isImmediate(id)) return true;
 			const entry = this.scheduleFor(id);
 			return Boolean(entry.date && entry.time);
 		});
@@ -227,6 +246,7 @@ class DraftStore {
 		this.selected = allSelected(true);
 		this.overrides = {};
 		this.schedule = {};
+		this.immediate = {};
 		this.profile = {};
 	}
 }

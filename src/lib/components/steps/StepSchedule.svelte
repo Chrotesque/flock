@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PlatformIcon from '../PlatformIcon.svelte';
 	import PostCard from '../PostCard.svelte';
+	import Checkbox from '../Checkbox.svelte';
 	import WeekCalendar from '../WeekCalendar.svelte';
 	import { PLATFORMS } from '$lib/platforms';
 	import { settings } from '$lib/stores/settings.svelte';
@@ -15,7 +16,11 @@
 	// The cards are the plan rows themselves, so what is dragged around here is
 	// literally what the confirmation screen will list. The platform id doubles
 	// as the drag payload, since there is exactly one card per platform.
-	let rows = $derived(buildPlan().map((row) => ({ ...row, id: row.platform })));
+	let all = $derived(buildPlan().map((row) => ({ ...row, id: row.platform })));
+	// A platform releasing on pickup has no slot, so it has no card: placing one
+	// at "now" would claim a release time that is never handed to the platform.
+	let rows = $derived(all.filter((row) => !row.immediate));
+	let nowRows = $derived(all.filter((row) => row.immediate));
 
 	let weekDays = $derived(
 		new Set(
@@ -73,45 +78,71 @@
 		</div>
 	{/if}
 
+	{#if nowRows.length > 0}
+		<div class="offweek nowstrip">
+			<span>Releasing on pickup, so not on the grid:</span>
+			{#each nowRows as row (row.platform)}
+				<span class="jump static">
+					<PlatformIcon platform={row.platform} size={13} />
+					{PLATFORMS[row.platform].label}
+				</span>
+			{/each}
+		</div>
+	{/if}
+
 	<div class="strip">
 		{#each draft.activePlatforms as id (id)}
 			{@const entry = draft.scheduleFor(id)}
 			{@const profiles = profilesFor(id)}
-			<div class="ctrl card">
+			{@const now = draft.isImmediate(id)}
+			<div class="ctrl card" class:now>
 				<div class="who">
 					<span class="ic"><PlatformIcon platform={id} size={16} /></span>
 					<span class="name">{PLATFORMS[id].label}</span>
 				</div>
 
-				{#if profiles.length > 0}
-					{@const active = draft.profileFor(id)}
-					<div class="chips">
-						{#each profiles as profile (profile.id)}
-							<button
-								class="chip"
-								class:on={active?.id === profile.id}
-								onclick={() => draft.applyProfile(id, profile.id)}
-							>
-								{profile.name || 'Unnamed'}
-							</button>
-						{/each}
+				<Checkbox
+					checked={now}
+					label="Release immediately"
+					onchange={(next) => draft.setImmediate(id, next)}
+				/>
+
+				{#if now}
+					<p class="nownote">
+						Published as soon as the worker picks it up, at the visibility set in this platform's
+						options — no release time is handed over.
+					</p>
+				{:else}
+					{#if profiles.length > 0}
+						{@const active = draft.profileFor(id)}
+						<div class="chips">
+							{#each profiles as profile (profile.id)}
+								<button
+									class="chip"
+									class:on={active?.id === profile.id}
+									onclick={() => draft.applyProfile(id, profile.id)}
+								>
+									{profile.name || 'Unnamed'}
+								</button>
+							{/each}
+						</div>
+					{/if}
+
+					<div class="inputs">
+						<input
+							class="input sm"
+							type="date"
+							value={entry.date}
+							onchange={(e) => draft.setSchedule(id, { date: e.currentTarget.value })}
+						/>
+						<input
+							class="input sm time"
+							type="time"
+							value={entry.time}
+							onchange={(e) => draft.setSchedule(id, { time: e.currentTarget.value })}
+						/>
 					</div>
 				{/if}
-
-				<div class="inputs">
-					<input
-						class="input sm"
-						type="date"
-						value={entry.date}
-						onchange={(e) => draft.setSchedule(id, { date: e.currentTarget.value })}
-					/>
-					<input
-						class="input sm time"
-						type="time"
-						value={entry.time}
-						onchange={(e) => draft.setSchedule(id, { time: e.currentTarget.value })}
-					/>
-				</div>
 			</div>
 		{/each}
 	</div>
@@ -299,6 +330,24 @@
 	.name {
 		font-size: 12.5px;
 		font-weight: 570;
+	}
+
+	.ctrl.now {
+		border-color: var(--pink);
+	}
+
+	.nownote {
+		margin: 0;
+		font-size: 11px;
+		line-height: 1.45;
+		color: var(--text-faint);
+	}
+
+	/* Not a button, so it must not borrow .jump's interactive hover. */
+	.nowstrip .static,
+	.nowstrip .static:hover {
+		cursor: default;
+		border-color: var(--border);
 	}
 
 	.chips {

@@ -2,7 +2,7 @@ import { PLATFORMS } from './platforms';
 import { adapt } from './filters';
 import { draft } from './stores/draft.svelte';
 import { settings } from './stores/settings.svelte';
-import { relativeTo } from './format';
+import { relativeTo, isoDate, makeTime } from './format';
 import type { FilterHit, OptionValues, PlatformId } from './types';
 
 /** One platform's fully resolved plan: what will actually be published, and when. */
@@ -14,6 +14,8 @@ export interface PlanRow {
 	date: string;
 	time: string;
 	relative: string;
+	/** Publish on pickup instead of at a slot. */
+	immediate: boolean;
 	hits: number;
 	errors: number;
 	overLimit: boolean;
@@ -39,7 +41,15 @@ export function buildPlan(): PlanRow[] {
 			const def = PLATFORMS[platform];
 			const text = draft.textFor(platform);
 			const result = adapt(text.title, text.description, entry.filters);
-			const when = draft.scheduleFor(platform);
+			// An immediate release is stamped with the moment of confirmation. By
+			// the time the worker reads it that instant has passed, which is exactly
+			// what makes it publish straight away rather than hand over a release
+			// time — no special case needed anywhere downstream.
+			const immediate = draft.isImmediate(platform);
+			const now = new Date();
+			const when = immediate
+				? { date: isoDate(now), time: makeTime(now.getHours(), now.getMinutes()) }
+				: draft.scheduleFor(platform);
 
 			return {
 				platform,
@@ -48,7 +58,10 @@ export function buildPlan(): PlanRow[] {
 				options: { ...settings.defaultsFor(platform), ...(draft.overrides[platform] ?? {}) },
 				date: when.date,
 				time: when.time,
-				relative: relativeTo(when.date, when.time),
+				relative: immediate
+					? 'as soon as the worker picks it up'
+					: relativeTo(when.date, when.time),
+				immediate,
 				hits: result.totalHits,
 				errors: result.errors,
 				overLimit:

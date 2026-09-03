@@ -73,8 +73,14 @@
 
 		<div class="file">
 			<div class="filemeta">
-				<p class="name">{draft.file?.name ?? 'No file'}</p>
+				<p class="name">{draft.videoName || 'No file'}</p>
 				<p class="sub">
+					<!--
+						Both routes have to report here. A watch-folder pick has a name and a
+						size but no bytes in the browser, so it has no duration and no poster
+						frame — reading only `draft.file` left this screen claiming "No file"
+						for a video that was in fact chosen.
+					-->
 					{#if draft.file}
 						{formatBytes(draft.file.size)}
 						{#if draft.duration}<span class="dot">·</span>{formatDuration(draft.duration)}{/if}
@@ -83,6 +89,13 @@
 							will be copied to <span class="dest">{destination.label || destination.path || 'unnamed'}</span>
 						{:else}
 							uploads to the NAS on confirm
+						{/if}
+					{:else if draft.nasFile}
+						{formatBytes(draft.nasFile.size)}
+						<span class="dot">·</span>already on the NAS, nothing to transfer
+						{#if destination}
+							<span class="dot">·</span>will be copied to
+							<span class="dest">{destination.label || destination.path || 'unnamed'}</span>
 						{/if}
 					{/if}
 				</p>
@@ -130,7 +143,7 @@
 				</div>
 
 				<div class="when">
-					<span class="date">{formatSchedule(row.date, row.time)}</span>
+					<span class="date">{row.immediate ? 'Immediately' : formatSchedule(row.date, row.time)}</span>
 					<span class="rel">{row.relative}</span>
 				</div>
 			</li>
