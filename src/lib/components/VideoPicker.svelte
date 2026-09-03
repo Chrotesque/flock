@@ -4,10 +4,18 @@
 	// A browser cannot read the absolute path of a chosen file, so flock works
 	// with the File handle itself and uploads the bytes to the NAS. The path is
 	// shown only as the file name the OS reports.
+	// `onchange` exists so the parent can clear a competing selection — picking a
+	// browser file has to drop whatever was chosen from the watch folder, and a
+	// binding alone cannot say "this just changed".
 	let {
 		file = $bindable<File | null>(null),
-		duration = $bindable(0)
-	}: { file?: File | null; duration?: number } = $props();
+		duration = $bindable(0),
+		onchange
+	}: {
+		file?: File | null;
+		duration?: number;
+		onchange?: (next: File | null) => void;
+	} = $props();
 
 	let dragging = $state(false);
 	let input: HTMLInputElement;
@@ -29,6 +37,7 @@
 		if (!next) return;
 		if (!next.type.startsWith('video/')) return;
 		file = next;
+		onchange?.(next);
 	}
 
 	function onDrop(event: DragEvent) {
@@ -80,7 +89,15 @@
 				</p>
 				<div class="actions">
 					<button class="btn btn-ghost sm" onclick={() => input.click()}>Replace</button>
-					<button class="btn btn-ghost sm danger" onclick={() => (file = null)}>Remove</button>
+					<button
+						class="btn btn-ghost sm danger"
+						onclick={() => {
+							file = null;
+							onchange?.(null);
+						}}
+					>
+						Remove
+					</button>
 				</div>
 			</div>
 		</div>

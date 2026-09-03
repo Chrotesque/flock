@@ -105,6 +105,12 @@ export interface UploadJob {
 	title: string;
 	description: string;
 	video: string;
+	/**
+	 * Set instead of `video` when the file was picked out of the watch folder
+	 * rather than uploaded. The bytes stay where they are — PocketBase holds
+	 * only the reference, which is what lifts the 5 GiB file-field cap.
+	 */
+	source_path: string;
 	video_name: string;
 	video_size: number;
 	video_duration: number;
@@ -154,6 +160,41 @@ export interface NasDestination {
 export interface GeneralSettings {
 	destinations: NasDestination[];
 	defaultDestinationId: string | null;
+	/**
+	 * Folder on the NAS that videos can be dropped into instead of uploaded
+	 * through the browser. The worker scans it and publishes the listing; the
+	 * SPA cannot read a filesystem itself.
+	 */
+	watchFolder: string;
+}
+
+/** One video sitting in the watch folder, as the worker last saw it. */
+export interface WatchFile {
+	name: string;
+	size: number;
+	modified: string;
+	/**
+	 * Absolute path as the *worker* sees it, which is not necessarily how the
+	 * folder was typed into Settings — a UNC path from a Windows machine is a
+	 * Linux path once the worker runs on the NAS. Emitting it here keeps the
+	 * browser out of the business of joining paths it cannot verify.
+	 */
+	path: string;
+}
+
+/**
+ * The worker's listing of the watch folder, written to `app_settings` under
+ * `watch_index`.
+ *
+ * A cache rather than a setting, which is a small abuse of that collection —
+ * but it means the SPA needs no second service to talk to, no CORS and no extra
+ * URL to configure. The worker already polls; it writes this on the way past.
+ */
+export interface WatchIndex {
+	folder: string;
+	scannedAt: string;
+	files: WatchFile[];
+	error?: string;
 }
 
 /**

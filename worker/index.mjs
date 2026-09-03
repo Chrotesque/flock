@@ -12,6 +12,7 @@ import { requireConfig } from './config.mjs';
 import { makeClient } from './pb.mjs';
 import { publishToYouTube } from './youtube.mjs';
 import { copyToDestination } from './archive.mjs';
+import { scanWatchFolder } from './watch.mjs';
 
 // One entry per platform that can actually publish. The loop iterates this
 // rather than picking up everything `pending`, so the three platforms without
@@ -106,7 +107,26 @@ async function copyPass(pb) {
 	}
 }
 
+/**
+ * Publishes what is sitting in the watch folder so the compose screen can list
+ * it. The folder is configured in the SPA, so it is read back out of settings
+ * each pass rather than duplicated into the worker's own config.
+ */
+async function watchPass(pb) {
+	const row = await pb.getSetting('general');
+	const folder = row?.value?.watchFolder?.trim() ?? '';
+	if (!folder) return;
+
+	const index = await scanWatchFolder(folder);
+	if (!index) return;
+
+	await pb.setSetting('watch_index', index);
+	if (index.error) log(`watch folder: ${index.error}`);
+	else log(`watch folder: ${index.files.length} video(s) in ${index.folder}`);
+}
+
 async function pass(pb, config) {
+	await watchPass(pb);
 	await copyPass(pb);
 
 	for (const platform of Object.keys(ADAPTERS)) {

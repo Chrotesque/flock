@@ -9,8 +9,8 @@ import { createWriteStream } from 'node:fs';
 import { access, mkdir, rename, stat, unlink } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join, parse } from 'node:path';
-import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { resolveFolder } from './paths.mjs';
 
 async function exists(path) {
 	try {
@@ -45,8 +45,11 @@ async function freeName(dir, filename) {
  * cannot leave something that looks like a finished video behind.
  */
 export async function copyToDestination({ job, pb, log }) {
-	const dir = (job.destination_path || '').trim();
-	if (!dir) return { skipped: 'no destination set' };
+	const configured = (job.destination_path || '').trim();
+	if (!configured) return { skipped: 'no destination set' };
+	// Resolved so a destination typed as a UNC path on Windows still works once
+	// the worker is running in a container on the NAS.
+	const dir = await resolveFolder(configured);
 
 	// mkdir -p rather than requiring the folder to exist: a destination the user
 	// typed into Settings has never been checked by anything until now.
@@ -63,7 +66,7 @@ export async function copyToDestination({ job, pb, log }) {
 	log(`copying ${filename} (${(source.size / 1024 / 1024).toFixed(1)} MB) -> ${dir}`);
 
 	try {
-		await pipeline(Readable.fromWeb(source.body), createWriteStream(partial));
+		await pipeline(source.stream, createWriteStream(partial));
 	} catch (err) {
 		await unlink(partial).catch(() => {});
 		throw new Error(`Copy failed: ${err.message}`);

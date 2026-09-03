@@ -5,7 +5,7 @@
 // stays a description of the interface, not of Google's wire format.
 
 import { request as httpsRequest } from 'node:https';
-import { Readable, Transform } from 'node:stream';
+import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { accessToken, forgetToken } from './google.mjs';
 
@@ -173,7 +173,7 @@ function putVideo(uploadUrl, body, { size, mimeType, onProgress }) {
 		);
 		req.on('error', reject);
 
-		pipeline(Readable.fromWeb(body), progressMeter(size, onProgress), req).catch(reject);
+		pipeline(body, progressMeter(size, onProgress), req).catch(reject);
 	});
 }
 
@@ -234,7 +234,7 @@ export async function publishToYouTube({ target, job, pb, config, log }) {
 		});
 	}
 
-	const result = await putVideo(uploadUrl, video.body, {
+	const result = await putVideo(uploadUrl, video.stream, {
 		size: video.size,
 		mimeType: video.mimeType,
 		onProgress: (pct) => log(`  ${pct}%`)

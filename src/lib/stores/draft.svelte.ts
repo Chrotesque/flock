@@ -2,7 +2,13 @@ import { PLATFORMS, PLATFORM_IDS } from '../platforms';
 import { isoDate, nextDayMatching } from '../format';
 import { settings } from './settings.svelte';
 import { DEFAULT_SCHEDULING } from '../types';
-import type { OptionValues, PlatformId, PlatformText, SchedulingProfile } from '../types';
+import type {
+	OptionValues,
+	PlatformId,
+	PlatformText,
+	SchedulingProfile,
+	WatchFile
+} from '../types';
 
 export type Step = 0 | 1 | 2;
 export const STEP_LABELS = ['Details', 'Schedule', 'Confirm'] as const;
@@ -39,7 +45,34 @@ class DraftStore {
 	composing = $state<PlatformId | null>(null);
 
 	file = $state<File | null>(null);
+
+	/**
+	 * A video picked out of the watch folder rather than uploaded through the
+	 * browser. Mutually exclusive with `file`: choosing either clears the other,
+	 * so there is never a question of which one the job gets built from.
+	 */
+	nasFile = $state<WatchFile | null>(null);
+
 	duration = $state(0);
+
+	/** Either route counts — the wizard does not care which one was used. */
+	get hasVideo(): boolean {
+		return Boolean(this.file || this.nasFile);
+	}
+
+	/** The name to show for whichever video is chosen. */
+	get videoName(): string {
+		return this.file?.name ?? this.nasFile?.name ?? '';
+	}
+
+	chooseNasFile(entry: WatchFile | null) {
+		this.nasFile = entry;
+		if (entry) {
+			this.file = null;
+			// A referenced file has no bytes here to read a duration out of.
+			this.duration = 0;
+		}
+	}
 
 	selected = $state<Record<PlatformId, boolean>>(allSelected(true));
 	/** Per-platform overrides layered on top of that platform's saved defaults. */
@@ -176,7 +209,7 @@ class DraftStore {
 	/** Every active platform composed, and a file chosen. */
 	get canLeaveDetails(): boolean {
 		const active = this.activePlatforms;
-		return Boolean(this.file) && active.length > 0 && active.every((id) => this.isComplete(id));
+		return this.hasVideo && active.length > 0 && active.every((id) => this.isComplete(id));
 	}
 
 	/** Active platforms still missing text, for the "why is Continue off" hint. */
@@ -189,6 +222,7 @@ class DraftStore {
 		this.texts = {};
 		this.composing = null;
 		this.file = null;
+		this.nasFile = null;
 		this.duration = 0;
 		this.selected = allSelected(true);
 		this.overrides = {};

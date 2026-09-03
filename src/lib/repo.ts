@@ -5,6 +5,7 @@ import { logAction, assertDeviceNamed } from './log';
 import type {
 	OptionValues,
 	PlatformId,
+	WatchIndex,
 	PlatformScheduling,
 	PlatformSettings,
 	UploadJob,
@@ -176,7 +177,13 @@ export function toInstant(date: string, time: string): string {
 export interface CreateJobInput {
 	title: string;
 	description: string;
-	file: File;
+	/**
+	 * Exactly one of these. `file` uploads the bytes through the browser;
+	 * `source` references a video already sitting in the watch folder, which is
+	 * how a video larger than the file field's 5 GiB cap gets published.
+	 */
+	file: File | null;
+	source: { path: string; name: string; size: number } | null;
 	duration: number;
 	/** Where on the NAS this video should end up, snapshotted at confirm time. */
 	destination: { label: string; path: string } | null;
@@ -194,16 +201,28 @@ export async function createJob(
 	onProgress: (fraction: number) => void
 ): Promise<UploadJob> {
 	assertDeviceNamed();
+	if (!input.file && !input.source) throw new Error('No video chosen.');
+
 	const form = new FormData();
 	form.set('title', input.title);
 	form.set('description', input.description);
-	form.set('video', input.file);
-	form.set('video_name', input.file.name);
-	form.set('video_size', String(input.file.size));
 	form.set('video_duration', String(Math.round(input.duration)));
 	form.set('destination_label', input.destination?.label ?? '');
 	form.set('destination_path', input.destination?.path ?? '');
 	form.set('status', 'stored');
+
+	if (input.file) {
+		form.set('video', input.file);
+		form.set('video_name', input.file.name);
+		form.set('video_size', String(input.file.size));
+		form.set('source_path', '');
+	} else if (input.source) {
+		// Nothing to transfer — the video is already on the NAS. The progress
+		// callback still has to reach 1, or the confirm screen sits at 0%.
+		form.set('source_path', input.source.path);
+		form.set('video_name', input.source.name);
+		form.set('video_size', String(input.source.size));
+	}
 
 	const job = await uploadWithProgress(form, onProgress);
 
@@ -219,15 +238,30 @@ export async function createJob(
 		});
 	}
 
+	const sourceName = input.file ? input.file.name : (input.source?.name ?? 'unknown');
 	logAction(
 		'upload',
 		`Uploaded "${input.title || 'untitled'}"`,
-		`${input.file.name} → ${input.targets.length} platform(s): ${input.targets
-			.map((t) => t.platform)
-			.join(', ')}`
+		`${sourceName}${input.source ? ' (from the watch folder)' : ''} → ${input.targets.length} ` +
+			`platform(s): ${input.targets.map((t) => t.platform).join(', ')}`
 	);
 
 	return job;
+}
+
+/**
+ * The worker's listing of the watch folder.
+ *
+ * A browser cannot read a filesystem, so this is the only way the compose
+ * screen knows what is sitting there. It is written by the worker on each poll
+ * pass, which means it is stale by up to that interval — `scannedAt` is shown
+ * so an empty list reads as "nothing scanned recently" rather than "no files".
+ */
+export async function loadWatchIndex(): Promise<WatchIndex | null> {
+	const empty: WatchIndex | null = null;
+	const index = await getSetting<WatchIndex | null>('watch_index', empty);
+	if (!index || !Array.isArray(index.files)) return null;
+	return index;
 }
 
 export async function listJobs(limit = 25): Promise<UploadJob[]> {

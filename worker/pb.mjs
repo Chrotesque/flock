@@ -7,6 +7,11 @@
 // The SDK is not used here — the worker has no bundler and wants a readable
 // stream of the video file, which the SDK does not hand back.
 
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { Readable } from 'node:stream';
+import { resolveFolder } from './paths.mjs';
+
 export function makeClient(baseUrl) {
 	async function request(path, options = {}) {
 		const res = await fetch(`${baseUrl}${path}`, {
@@ -92,10 +97,29 @@ export function makeClient(baseUrl) {
 		},
 
 		/**
-		 * Opens the stored video for reading. Returns the byte length alongside
-		 * the stream because YouTube's resumable upload has to declare it up front.
+		 * Opens a job's video for reading, whichever route it arrived by.
+		 *
+		 * Always hands back a Node stream and a byte length: callers pipe it, and
+		 * YouTube's resumable upload has to declare the length up front. A job
+		 * with `source_path` never went through PocketBase at all — the bytes are
+		 * read straight off the NAS, which is what makes a file above the 5 GiB
+		 * upload cap publishable.
 		 */
 		async openVideo(job) {
+			if (job.source_path) {
+				const path = await resolveFolder(job.source_path);
+				let info;
+				try {
+					info = await stat(path);
+				} catch (err) {
+					throw new Error(`Referenced video is gone: ${job.source_path} (${err.code || err.message})`);
+				}
+				if (!info.isFile() || info.size === 0) {
+					throw new Error(`Referenced video is not a readable file: ${job.source_path}`);
+				}
+				return { stream: createReadStream(path), size: info.size, mimeType: 'video/*' };
+			}
+
 			const res = await fetch(this.videoUrl(job));
 			if (!res.ok || !res.body) {
 				throw new Error(`Cannot read the stored video (${res.status}) at ${this.videoUrl(job)}`);
@@ -104,7 +128,32 @@ export function makeClient(baseUrl) {
 			if (!Number.isFinite(size) || size <= 0) {
 				throw new Error('PocketBase did not report a size for the stored video.');
 			}
-			return { body: res.body, size, mimeType: res.headers.get('content-type') || 'video/*' };
+			return {
+				stream: Readable.fromWeb(res.body),
+				size,
+				mimeType: res.headers.get('content-type') || 'video/*'
+			};
+		},
+
+		/** app_settings is key/value; the worker uses it for the watch index. */
+		async getSetting(key) {
+			const filter = encodeURIComponent(`key="${key}"`);
+			const res = await request(`/api/collections/app_settings/records?perPage=1&filter=${filter}`);
+			return res.items?.[0] ?? null;
+		},
+
+		async setSetting(key, value) {
+			const existing = await this.getSetting(key);
+			if (existing) {
+				return request(`/api/collections/app_settings/records/${existing.id}`, {
+					method: 'PATCH',
+					body: JSON.stringify({ value })
+				});
+			}
+			return request('/api/collections/app_settings/records', {
+				method: 'POST',
+				body: JSON.stringify({ key, value })
+			});
 		},
 
 		/**

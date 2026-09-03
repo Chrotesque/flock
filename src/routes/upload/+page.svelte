@@ -63,7 +63,7 @@
 			armed = true;
 			return;
 		}
-		if (!draft.file) return;
+		if (!draft.hasVideo) return;
 
 		phase = 'uploading';
 		progress = 0;
@@ -75,6 +75,7 @@
 					title: draft.primaryText.title,
 					description: draft.primaryText.description,
 					file: draft.file,
+					source: draft.nasFile,
 					duration: draft.duration,
 					destination: general.defaultDestination,
 					targets: plan.map((row) => ({
@@ -226,11 +227,20 @@
 			{#if phase === 'uploading'}
 				<div class="uploading card">
 					<div class="bar"><span style="width: {progress * 100}%"></span></div>
-					<p>
-						Sending <strong>{draft.file?.name}</strong>
-						{#if draft.file}({formatBytes(draft.file.size)}){/if} to the NAS — keep this tab open until
-						it finishes.
-					</p>
+					{#if draft.file}
+						<p>
+							Sending <strong>{draft.file.name}</strong>
+							({formatBytes(draft.file.size)}) to the NAS — keep this tab open until it finishes.
+						</p>
+					{:else}
+						<!-- A file picked off the NAS is already there; only the job rows are
+						     being written, so there is nothing to keep the tab open for. -->
+						<p>
+							Queueing <strong>{draft.nasFile?.name}</strong>
+							{#if draft.nasFile}({formatBytes(draft.nasFile.size)}){/if} — already on the NAS, so
+							there is nothing to transfer.
+						</p>
+					{/if}
 				</div>
 			{/if}
 		{/if}

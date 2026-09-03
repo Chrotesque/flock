@@ -11,11 +11,15 @@
 	import { adapt } from '$lib/filters';
 	import { draft } from '$lib/stores/draft.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
+	import { general } from '$lib/stores/general.svelte';
 	import { templates, tokenOf } from '$lib/stores/templates.svelte';
+	import { loadWatchIndex } from '$lib/repo';
+	import { formatBytes } from '$lib/format';
 	import { portal } from '$lib/portal';
-	import type { PlatformId, TextTemplate } from '$lib/types';
+	import type { PlatformId, TextTemplate, WatchIndex } from '$lib/types';
 
 	templates.load();
+	general.load();
 
 	let modalOpen = $state(false);
 	let modalPlatform = $state<PlatformId | null>(null);
@@ -55,6 +59,45 @@
 			complete: draft.isComplete(platform)
 		}))
 	);
+
+	/* ---- videos already sitting on the NAS ----
+	 *
+	 * The browser cannot read a filesystem, so the listing comes from the worker
+	 * by way of PocketBase. It is therefore as fresh as the worker's last poll,
+	 * which is why the scan time is shown rather than implied.
+	 */
+
+	let watchIndex = $state<WatchIndex | null>(null);
+	let watchLoading = $state(false);
+
+	async function refreshWatch() {
+		if (!general.value.watchFolder) return;
+		watchLoading = true;
+		try {
+			watchIndex = await loadWatchIndex();
+		} catch {
+			watchIndex = null;
+		} finally {
+			watchLoading = false;
+		}
+	}
+
+	// Depends on the configured folder only: setting one in Settings should make
+	// the list appear without a reload, but nothing here writes what it reads.
+	$effect(() => {
+		void general.value.watchFolder;
+		void refreshWatch();
+	});
+
+	let scannedLabel = $derived.by(() => {
+		if (!watchIndex?.scannedAt) return 'never';
+		const at = new Date(watchIndex.scannedAt);
+		if (Number.isNaN(at.getTime())) return 'never';
+		const mins = Math.round((Date.now() - at.getTime()) / 60000);
+		if (mins < 1) return 'just now';
+		if (mins < 60) return `${mins} min ago`;
+		return at.toLocaleString();
+	});
 
 	function compose(platform: PlatformId) {
 		draft.composing = platform;
@@ -454,7 +497,54 @@
 
 		<section class="videocard card">
 			<span class="label">Video file</span>
-			<VideoPicker bind:file={draft.file} bind:duration={draft.duration} />
+			<VideoPicker
+				bind:file={draft.file}
+				bind:duration={draft.duration}
+				onchange={() => draft.chooseNasFile(null)}
+			/>
+
+			<div class="onnas">
+				<span class="label">Or pick one off the NAS</span>
+
+				{#if !general.value.watchFolder}
+					<p class="nasnote">
+						No watch folder set — add one in <a href="{base}/settings">Settings</a> to drop videos
+						straight onto the NAS instead of uploading them here.
+					</p>
+				{:else if watchLoading}
+					<p class="nasnote">Looking…</p>
+				{:else if !watchIndex}
+					<p class="nasnote">
+						The worker has not scanned <code>{general.value.watchFolder}</code> yet.
+					</p>
+				{:else if watchIndex.error}
+					<p class="nasnote bad">{watchIndex.error}</p>
+				{:else if watchIndex.files.length === 0}
+					<p class="nasnote">Nothing in <code>{watchIndex.folder}</code> right now.</p>
+				{:else}
+					<ul class="naslist">
+						{#each watchIndex.files as entry (entry.path)}
+							<li>
+								<button
+									class="nasitem"
+									class:on={draft.nasFile?.path === entry.path}
+									onclick={() => draft.chooseNasFile(entry)}
+								>
+									<span class="nasname">{entry.name}</span>
+									<span class="nasmeta">{formatBytes(entry.size)}</span>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+
+				{#if watchIndex && !watchIndex.error}
+					<p class="nasnote faint">
+						Scanned {scannedLabel}.
+						<button class="relink" onclick={refreshWatch}>Refresh</button>
+					</p>
+				{/if}
+			</div>
 		</section>
 	</div>
 </div>
@@ -878,6 +968,85 @@
 		align-items: center;
 		gap: 6px;
 		flex: none;
+	}
+
+	/* ---- videos already on the NAS ---- */
+
+	.onnas {
+		margin-top: 14px;
+		padding-top: 14px;
+		border-top: 1px solid var(--border);
+	}
+
+	.nasnote {
+		margin: 8px 0 0;
+		font-size: 11.5px;
+		line-height: 1.45;
+		color: var(--text-faint);
+	}
+
+	.nasnote.bad {
+		color: var(--danger);
+	}
+
+	.nasnote a {
+		color: var(--pink-soft);
+	}
+
+	.nasnote code {
+		font-family: var(--mono);
+		font-size: 10.5px;
+		overflow-wrap: anywhere;
+	}
+
+	.relink {
+		color: var(--pink-soft);
+		font-size: 11.5px;
+		text-decoration: underline;
+	}
+
+	.naslist {
+		list-style: none;
+		margin: 10px 0 0;
+		padding: 0;
+		display: grid;
+		gap: 5px;
+		max-height: 210px;
+		overflow-y: auto;
+	}
+
+	.nasitem {
+		width: 100%;
+		display: grid;
+		gap: 1px;
+		padding: 7px 9px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border);
+		background: var(--bg-elev);
+		text-align: left;
+		transition: border-color 0.14s, background 0.14s;
+	}
+
+	.nasitem:hover {
+		border-color: var(--pink-soft);
+	}
+
+	.nasitem.on {
+		border-color: var(--pink);
+		background: var(--accent-grad-soft);
+	}
+
+	.nasname {
+		font-size: 12px;
+		font-weight: 560;
+		color: var(--text);
+		/* File names have no spaces to break at. */
+		overflow-wrap: anywhere;
+	}
+
+	.nasmeta {
+		font-size: 10.5px;
+		color: var(--text-faint);
 	}
 
 	.videocard {

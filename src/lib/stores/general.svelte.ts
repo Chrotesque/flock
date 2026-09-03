@@ -7,7 +7,8 @@ export const GENERAL_KEY = 'general';
 
 export const DEFAULT_GENERAL: GeneralSettings = {
 	destinations: [],
-	defaultDestinationId: null
+	defaultDestinationId: null,
+	watchFolder: ''
 };
 
 /**
@@ -41,7 +42,8 @@ class GeneralStore {
 			// forward and written back on the next save.
 			this.value = {
 				destinations: Array.isArray(stored.destinations) ? stored.destinations : [],
-				defaultDestinationId: stored.defaultDestinationId ?? null
+				defaultDestinationId: stored.defaultDestinationId ?? null,
+				watchFolder: stored.watchFolder ?? ''
 			};
 			this.#loaded = true;
 			this.#logged = $state.snapshot(this.value);
@@ -106,6 +108,14 @@ class GeneralStore {
 			}
 		}
 
+		if (before.watchFolder !== after.watchFolder) {
+			logAction(
+				'settings',
+				'Changed the watch folder',
+				`${before.watchFolder || '(none)'} → ${after.watchFolder || '(none)'}`
+			);
+		}
+
 		if (before.defaultDestinationId !== after.defaultDestinationId) {
 			logAction(
 				'settings',
@@ -157,6 +167,12 @@ class GeneralStore {
 		if (this.value.defaultDestinationId === id) {
 			this.value.defaultDestinationId = this.value.destinations[0]?.id ?? null;
 		}
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	setWatchFolder(path: string) {
+		this.value.watchFolder = path;
 		this.queueSave();
 		this.#queueLog();
 	}

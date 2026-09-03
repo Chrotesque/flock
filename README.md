@@ -74,11 +74,31 @@ That builds and mirrors `build/` into flock's PocketBase at
 share. `pnpm deploy:dry` shows what would change without touching anything.
 PocketBase serves the files straight from disk, so there is no restart.
 
+## Two ways to give flock a video
+
+**Upload it in the browser.** Drop a file on the picker. Simple, and fine up to a
+few hundred megabytes — but it is one HTTP request with no resume, and PocketBase
+caps a stored file at 5 GB.
+
+**Or drop it on the NAS.** Set a *watch folder* in Settings, copy videos into it
+over SMB, and the compose screen lists what is there. Picking one references the
+file where it lies rather than transferring it, so nothing goes through the
+browser and the 5 GB cap does not apply. This is the only route for a large
+video, and the transfer is a normal file copy you can resume or retry.
+
+The listing comes from the worker, which scans the folder each time it polls — so
+nothing appears there until the worker has run at least once, and the compose
+screen shows when it last looked.
+
 ## The worker
 
 Confirming an upload only queues it. A separate process does the publishing, and
 it has to keep running when no browser is open — so it belongs on the NAS beside
 PocketBase, not in the app. Today it handles YouTube only.
+
+It also scans the watch folder and copies finished videos into their NAS
+destination, both of which happen regardless of which platforms a job is bound
+for.
 
 It needs a Google OAuth client. In the [Google Cloud console](https://console.cloud.google.com):
 
@@ -146,7 +166,7 @@ needs its own; the name is stored locally, so opening flock from a different
 address counts as a different browser.
 
 **Upload** is a three-step flow. flock opens on Analytics; Upload lives at `/upload`.
-Tick the platforms you want on the right, pick a video file underneath them, then
+Tick the platforms you want on the right, choose a video underneath them, then
 work along the row of platform pills writing the text for each one — a title and a
 description for YouTube and Facebook, a caption for Instagram and TikTok. Continue
 unlocks once every ticked platform has been written for. Clicking a platform in the

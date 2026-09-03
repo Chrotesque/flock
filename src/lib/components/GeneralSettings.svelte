@@ -79,10 +79,37 @@
 			</ul>
 
 			<p class="hint">
-				The filled circle marks the default. Nothing copies files yet — the destination is stored on
-				the upload for the publishing worker to act on once it exists.
+				The filled circle marks the default. The destination is recorded on the upload itself, and
+				the worker copies the video there once it is stored.
 			</p>
 		{/if}
+	</section>
+
+	<section>
+		<div class="subhead">
+			<div>
+				<h4>Watch folder</h4>
+				<p>
+					A folder on the NAS you can drop videos into instead of uploading them through the
+					browser. The compose screen lists what is in it, and picking one references the file
+					where it lies rather than transferring it — which is the only route for a video above the
+					5 GB upload limit.
+				</p>
+			</div>
+		</div>
+
+		<input
+			class="input"
+			value={value.watchFolder}
+			oninput={(e) => general.setWatchFolder(e.currentTarget.value)}
+			placeholder="\\nas\shared\flock-incoming"
+			autocomplete="off"
+			spellcheck="false"
+		/>
+		<p class="hint">
+			The worker scans this folder and publishes the listing; the browser cannot read a filesystem
+			itself. Nothing appears on the compose screen until the worker has run at least once.
+		</p>
 	</section>
 
 	<section>

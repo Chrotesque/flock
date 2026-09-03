@@ -55,6 +55,10 @@ const collections = [
 			// The video itself, parked on the NAS so publishing no longer needs
 			// this PC to be online.
 			{ type: 'file', name: 'video', maxSelect: 1, maxSize: 5368709120 },
+			// Set instead of `video` for a file picked out of the watch folder:
+			// the bytes are left on the NAS and only referenced, which is what
+			// makes a video larger than the file field's 5 GiB cap possible.
+			{ type: 'text', name: 'source_path', max: 1000 },
 			{ type: 'text', name: 'video_name', max: 500 },
 			// Where on the NAS this video should end up. Recorded per job rather
 			// than read from settings at publish time, so changing the configured
