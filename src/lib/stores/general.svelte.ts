@@ -1,3 +1,4 @@
+import { newId } from '../id';
 import { getSetting, setSetting } from '../repo';
 import { logAction } from '../log';
 import { settle, LOG_SETTLE_MS } from '../settle';
@@ -154,7 +155,7 @@ class GeneralStore {
 	}
 
 	addDestination() {
-		const entry: NasDestination = { id: crypto.randomUUID(), label: '', path: '' };
+		const entry: NasDestination = { id: newId(), label: '', path: '' };
 		this.value.destinations = [...this.value.destinations, entry];
 		// First one added becomes the default, so there is never a list of
 		// destinations with nothing selected.

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { newId } from '$lib/id';
 	import Checkbox from './Checkbox.svelte';
 	import { WEEK_ORDER, dayLabel } from '$lib/format';
 	import type { SchedulingProfile } from '$lib/types';
@@ -31,7 +32,7 @@
 		onchange([
 			...profiles,
 			{
-				id: crypto.randomUUID(),
+				id: newId(),
 				name: '',
 				useTime: true,
 				time: '09:00',

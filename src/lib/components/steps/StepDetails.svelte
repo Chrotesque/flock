@@ -188,6 +188,29 @@
 		for (const field of tagFields) setTagField(field.key, []);
 	}
 
+	/** Which box a merged tag came from, for the tooltip on the Final tab. */
+	function sourceOf(tag: string): string {
+		const key = tag.toLowerCase();
+		return (
+			tagFields.find((f) => tagValue(f.key).some((t) => t.toLowerCase() === key))?.label ?? ''
+		);
+	}
+
+	/**
+	 * Deleting from the Final tab removes the tag from the box it actually lives
+	 * in. Every box, in fact: the merge is case-insensitive, so a tag sitting in
+	 * two boxes appears once here — taking it out of only the first would leave
+	 * it to reappear the moment the list rebuilt.
+	 */
+	function removeEverywhere(tag: string) {
+		const key = tag.toLowerCase();
+		for (const field of tagFields) {
+			const current = tagValue(field.key);
+			const next = current.filter((t) => t.toLowerCase() !== key);
+			if (next.length !== current.length) setTagField(field.key, next);
+		}
+	}
+
 	/**
 	 * One budget across every box, because YouTube's 500 characters cover the
 	 * whole list. Counted off the *merged* list, so a tag repeated between boxes
@@ -557,10 +580,28 @@
 								Nothing yet. Fill any of the other tabs and the combined list appears here.
 							</p>
 						{:else}
-							<p class="finaltags">{tagsMerged.join(', ')}</p>
+							<div class="finaltags">
+								{#each tagsMerged as tag (tag.toLowerCase())}
+									{@const from = sourceOf(tag)}
+									<span class="tag" title={from ? `From ${from}` : ''}>
+										{tag}
+										<button onclick={() => removeEverywhere(tag)} aria-label="Remove {tag}">
+											<svg viewBox="0 0 12 12" width="9" height="9">
+												<path
+													d="M3 3l6 6M9 3l-6 6"
+													stroke="currentColor"
+													stroke-width="1.7"
+													stroke-linecap="round"
+												/>
+											</svg>
+										</button>
+									</span>
+								{/each}
+							</div>
 							<p class="finalnote">
-								This is the single list {def.label} receives — every box merged, in tab order,
-								with duplicates removed. Read-only; edit the boxes to change it.
+								The single list {def.label} receives — every box merged, in tab order, with
+								duplicates removed. Removing one here takes it out of whichever box it came
+								from; hover a tag to see which.
 							</p>
 						{/if}
 					</div>
@@ -977,12 +1018,38 @@
 	}
 
 	.finaltags {
-		margin: 0;
-		font-size: 13px;
-		line-height: 1.65;
-		color: var(--text);
-		overflow-wrap: anywhere;
-		user-select: all;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	/* Matches the boxes' own chips, so the merged view reads as the same
+	   material rather than a different kind of thing. */
+	.finaltags .tag {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 3px 6px 3px 9px;
+		border-radius: 7px;
+		font-size: 12px;
+		background: var(--accent-grad-soft);
+		border: 1px solid rgba(255, 77, 158, 0.28);
+		color: var(--pink-soft);
+	}
+
+	.finaltags .tag button {
+		display: grid;
+		place-items: center;
+		width: 14px;
+		height: 14px;
+		border-radius: 4px;
+		color: inherit;
+		opacity: 0.7;
+	}
+
+	.finaltags .tag button:hover {
+		opacity: 1;
+		background: rgba(255, 77, 158, 0.2);
 	}
 
 	.finalnote,

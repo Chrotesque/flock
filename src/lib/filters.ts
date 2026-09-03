@@ -1,3 +1,4 @@
+import { newId } from './id';
 import type { FilterHit, FilterResult, FilterRule } from './types';
 
 function escapeRegex(source: string): string {
@@ -15,7 +16,7 @@ function escapeReplacement(source: string): string {
 
 export function newRule(partial: Partial<FilterRule> = {}): FilterRule {
 	return {
-		id: crypto.randomUUID(),
+		id: newId(),
 		enabled: true,
 		find: '',
 		replace: '',

@@ -1,3 +1,4 @@
+import { newId } from '../id';
 import { getSetting, setSetting } from '../repo';
 import { logAction } from '../log';
 import { settle, LOG_SETTLE_MS } from '../settle';
@@ -122,7 +123,7 @@ class TemplateStore {
 
 	/** Returns the new template's id so the caller can expand it. */
 	add(): string {
-		const entry: TextTemplate = { id: crypto.randomUUID(), name: '', content: '' };
+		const entry: TextTemplate = { id: newId(), name: '', content: '' };
 		this.items = [...this.items, entry];
 		this.queueSave();
 		this.#queueLog();
