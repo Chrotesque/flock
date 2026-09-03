@@ -16,6 +16,7 @@
 	import { loadWatchIndex, loadRecentTags, scoreTitle } from '$lib/repo';
 	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import { formatBytes, mergeTagGroups, tagListLength, parseTagList } from '$lib/format';
+	import { checkTags } from '$lib/tagcheck';
 	import { portal } from '$lib/portal';
 	import type { PlatformId, TextTemplate, WatchIndex } from '$lib/types';
 
@@ -260,6 +261,17 @@
 	);
 	let tagsUsed = $derived(tagListLength(tagsMerged));
 	let tagsOver = $derived(tagsUsed > (def?.tagBudget?.limit ?? Infinity));
+
+	/**
+	 * A local health read on the merged list — not vidIQ's rating, which is a
+	 * proprietary model over their search data and is not in their API at all.
+	 * This only measures what flock can see: whether the list fits, repeats
+	 * itself, or wanders away from what the video actually says.
+	 */
+	let tagHealth = $derived(
+		checkTags(tagsMerged, `${text.title} ${text.description}`, def?.tagBudget?.limit ?? 500)
+	);
+	let tagIssues = $derived(tagHealth.findings.filter((f) => f.kind !== 'empty'));
 
 	/** True while every box still shows what the last upload used, untouched. */
 	let showingRecent = $derived(
@@ -588,6 +600,17 @@
 						{@render pencil()}
 					</a>
 
+					{#if tagsMerged.length > 0}
+						<span
+							class="health"
+							class:poor={tagHealth.score < 60}
+							class:fair={tagHealth.score >= 60 && tagHealth.score < 85}
+							title="flock's own check — not vidIQ's rating"
+						>
+							Health {tagHealth.score}<span class="tagtotal">/100</span>
+						</span>
+					{/if}
+
 					<span class="tagbudget" class:over={tagsOver}>
 						{tagsUsed} / {def.tagBudget?.limit} characters
 						<span class="tagtotal">· {tagsMerged.length} tags in total</span>
@@ -666,6 +689,27 @@
 								duplicates removed. Removing one here takes it out of whichever box it came
 								from; hover a tag to see which.
 							</p>
+
+							{#if tagIssues.length > 0}
+								<ul class="checks">
+									{#each tagIssues as finding (finding.kind)}
+										<li class={finding.severity}>
+											<span class="checkmsg">{finding.message}</span>
+											{#if finding.cost > 0}
+												<span class="checkcost">−{finding.cost}</span>
+											{/if}
+											{#if finding.tags.length > 0}
+												<span class="checktags">{finding.tags.join(', ')}</span>
+											{/if}
+										</li>
+									{/each}
+								</ul>
+								<p class="checknote">
+									flock's own check, not vidIQ's rating — that one is a model over their search
+									data and is not in their API. This reads only what is here: whether the list
+									fits, repeats itself, or drifts from what the video says.
+								</p>
+							{/if}
 						{/if}
 					</div>
 				{:else}
@@ -1030,6 +1074,80 @@
 
 	.taghead .label {
 		margin-bottom: 0;
+	}
+
+	/* flock's own read, kept visually distinct from the character budget so the
+	   two are not mistaken for one number. */
+	.health {
+		margin-left: auto;
+		padding: 2px 9px;
+		border-radius: 999px;
+		border: 1px solid var(--ok);
+		color: var(--ok);
+		font-size: 10.5px;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.health.fair {
+		border-color: var(--warn);
+		color: var(--warn);
+	}
+
+	.health.poor {
+		border-color: var(--danger);
+		color: var(--danger);
+	}
+
+	.checks {
+		list-style: none;
+		margin: 12px 0 0;
+		padding: 0;
+		display: grid;
+		gap: 6px;
+	}
+
+	.checks li {
+		display: flex;
+		align-items: baseline;
+		flex-wrap: wrap;
+		gap: 4px 8px;
+		padding: 7px 10px;
+		border-radius: var(--radius-sm);
+		background: var(--bg-elev);
+		border-left: 2px solid var(--text-faint);
+		font-size: 11.5px;
+		line-height: 1.45;
+		color: var(--text-dim);
+	}
+
+	.checks li.error {
+		border-left-color: var(--danger);
+		color: var(--danger);
+	}
+
+	.checks li.warn {
+		border-left-color: var(--warn);
+	}
+
+	.checkcost {
+		font-family: var(--mono);
+		font-size: 10px;
+		color: var(--text-faint);
+	}
+
+	.checktags {
+		flex-basis: 100%;
+		font-size: 10.5px;
+		color: var(--text-faint);
+		overflow-wrap: anywhere;
+	}
+
+	.checknote {
+		margin: 10px 0 0;
+		font-size: 10.5px;
+		line-height: 1.45;
+		color: var(--text-faint);
 	}
 
 	.tagbudget {
