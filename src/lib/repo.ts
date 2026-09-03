@@ -316,6 +316,63 @@ export function rememberTags(used: RecentTags): void {
 	})();
 }
 
+/* ------------------------------------------------------------------ */
+/* title scoring                                                        */
+/* ------------------------------------------------------------------ */
+
+export interface ScoreResult {
+	status: 'pending' | 'done' | 'failed';
+	score: number | null;
+	error: string;
+}
+
+/**
+ * Asks the worker to score a title, and waits for the answer.
+ *
+ * The browser cannot call vidIQ itself: they have no REST API, only an MCP
+ * server, and its key is a credential that must not ship inside a static build.
+ * So the ask is written to PocketBase and the worker — which holds the key —
+ * answers it. The worker checks this queue every few seconds rather than on its
+ * ordinary poll, because somebody is watching the button.
+ *
+ * Resolves `pending` if the worker never answers, which is what it looks like
+ * when the worker is not running at all.
+ */
+export async function scoreTitle(
+	text: string,
+	options: { platform?: string; channel?: string; format?: 'long' | 'short' } = {},
+	timeoutMs = 25000
+): Promise<ScoreResult> {
+	assertDeviceNamed();
+
+	const created = await pb.collection('score_requests').create({
+		kind: 'title',
+		text: text.slice(0, 500),
+		platform: options.platform ?? '',
+		channel: options.channel ?? '',
+		format: options.format ?? 'long',
+		status: 'pending'
+	});
+
+	const until = Date.now() + timeoutMs;
+	while (Date.now() < until) {
+		await new Promise((resolve) => setTimeout(resolve, 900));
+		const row = await pb.collection('score_requests').getOne(created.id);
+		if (row.status === 'done') {
+			return { status: 'done', score: typeof row.score === 'number' ? row.score : null, error: '' };
+		}
+		if (row.status === 'failed') {
+			return { status: 'failed', score: null, error: String(row.error ?? 'Scoring failed.') };
+		}
+	}
+
+	return {
+		status: 'pending',
+		score: null,
+		error: 'The worker did not answer. Is it running?'
+	};
+}
+
 export async function listJobs(limit = 25): Promise<UploadJob[]> {
 	const res = await pb.collection('upload_jobs').getList(1, limit, { sort: '-created' });
 	return res.items as unknown as UploadJob[];

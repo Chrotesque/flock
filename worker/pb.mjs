@@ -59,6 +59,22 @@ export function makeClient(baseUrl) {
 			return res.items ?? [];
 		},
 
+		/** Scoring asks waiting to be answered, oldest first. */
+		async pendingScores() {
+			const filter = encodeURIComponent('status="pending"');
+			const res = await request(
+				`/api/collections/score_requests/records?perPage=20&sort=created&filter=${filter}`
+			);
+			return res.items ?? [];
+		},
+
+		async updateScore(id, data) {
+			return request(`/api/collections/score_requests/records/${id}`, {
+				method: 'PATCH',
+				body: JSON.stringify(data)
+			});
+		},
+
 		async getJob(id) {
 			return request(`/api/collections/upload_jobs/records/${id}`);
 		},

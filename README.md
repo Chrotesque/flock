@@ -100,6 +100,21 @@ It also scans the watch folder and copies finished videos into their NAS
 destination, both of which happen regardless of which platforms a job is bound
 for.
 
+**vidIQ title scoring** runs through the worker too, because vidIQ has no REST
+API — an MCP server is their whole public surface, and its key is a credential.
+Generate one at `app.vidiq.com/account/settings/mcp`, put it in the worker config
+as `vidiqKey`, then check it without spending credits:
+
+```bash
+pnpm worker:vidiq
+```
+
+The compose screen then shows a **Score title** button beside the YouTube title.
+It scores on demand rather than as you type, since each call costs credits.
+
+vidIQ scores titles and thumbnails only. There is no tag rating in their API,
+whatever the browser extension shows on YouTube's own pages.
+
 It needs a Google OAuth client. In the [Google Cloud console](https://console.cloud.google.com):
 
 1. Create a project and enable **YouTube Data API v3** under *APIs & Services →
@@ -149,12 +164,15 @@ pnpm worker
 `pnpm worker:once` does a single pass and exits, which is the easier one to watch
 while testing. The config file holds a client secret and is gitignored.
 
-**Two limits worth knowing before the first upload.** Until the Google Cloud
-project passes YouTube's API audit, every video it uploads is **locked to
-private** and cannot be made public afterwards — you would have to re-upload
-through the site. Request the audit from the API Compliance form when you want
-real releases. Separately, while the OAuth consent screen sits in *Testing*, the
-refresh token expires after **7 days**; publishing the consent screen stops that.
+**One limit worth knowing.** While the OAuth consent screen sits in *Testing*,
+Google expires the refresh token after **7 days**, so you would be re-running
+`pnpm worker:auth` every week. Publishing the consent screen stops that.
+
+Google's docs also say uploads from an API project that has not passed their
+compliance audit are locked to private. That was tested here and does not
+happen — private, scheduled-public and immediately-public all worked. The
+worker still reports the locked case if it ever appears, since the behaviour
+being relied on is not the documented one.
 
 ## Using it
 

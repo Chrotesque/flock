@@ -33,7 +33,11 @@ export function loadConfig() {
 			clientSecret: process.env.GOOGLE_CLIENT_SECRET || google.clientSecret || '',
 			refreshToken: process.env.GOOGLE_REFRESH_TOKEN || google.refreshToken || ''
 		},
-		pollSeconds: Number(process.env.FLOCK_POLL_SECONDS || file.pollSeconds || 60)
+		pollSeconds: Number(process.env.FLOCK_POLL_SECONDS || file.pollSeconds || 60),
+		// Scoring is answered on its own, much faster tick: a person is watching
+		// the button spin, where nobody is watching an upload queue.
+		scoreSeconds: Number(process.env.FLOCK_SCORE_SECONDS || file.scoreSeconds || 3),
+		vidiqKey: process.env.VIDIQ_API_KEY || file.vidiqKey || ''
 	};
 }
 

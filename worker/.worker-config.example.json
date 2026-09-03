@@ -1,6 +1,8 @@
 {
   "pocketbaseUrl": "http://<pocketbase-host>:8091",
   "pollSeconds": 60,
+  "scoreSeconds": 3,
+  "vidiqKey": "",
   "google": {
     "clientId": "PASTE-CLIENT-ID.apps.googleusercontent.com",
     "clientSecret": "PASTE-CLIENT-SECRET",

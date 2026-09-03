@@ -4,6 +4,7 @@
 //   pnpm worker         poll forever
 //   pnpm worker:once    one pass, then exit
 //   pnpm worker:dry     one pass, reporting what it would do, uploading nothing
+//   pnpm worker:vidiq   check the vidIQ key, spending no credits
 //
 // Belongs on the NAS beside PocketBase, not in the SPA: it holds an OAuth
 // client secret, and it has to keep running when no browser is open.
@@ -13,6 +14,7 @@ import { makeClient } from './pb.mjs';
 import { publishToYouTube } from './youtube.mjs';
 import { copyToDestination } from './archive.mjs';
 import { scanWatchFolder } from './watch.mjs';
+import { scoreTitle, listTools } from './vidiq.mjs';
 
 // One entry per platform that can actually publish. The loop iterates this
 // rather than picking up everything `pending`, so the three platforms without
@@ -21,6 +23,7 @@ const ADAPTERS = { youtube: publishToYouTube };
 
 const once = process.argv.includes('--once');
 const dry = process.argv.includes('--dry');
+const checkVidiq = process.argv.includes('--vidiq');
 
 function stamp() {
 	return new Date().toLocaleTimeString();
@@ -125,6 +128,43 @@ async function watchPass(pb) {
 	else log(`watch folder: ${index.files.length} video(s) in ${index.folder}`);
 }
 
+/**
+ * Answers scoring requests from the compose screen.
+ *
+ * Runs on its own, much faster tick than everything else: somebody is watching
+ * a button spin here, where nobody watches an upload queue. A missing key is
+ * reported onto the row rather than logged and forgotten, so the interface can
+ * say why nothing came back.
+ */
+async function scorePass(pb, config) {
+	const requests = await pb.pendingScores();
+	if (requests.length === 0) return;
+
+	for (const row of requests) {
+		if (!config.vidiqKey) {
+			await pb.updateScore(row.id, {
+				status: 'failed',
+				error: 'No vidIQ key configured. Add vidiqKey to the worker config.'
+			});
+			continue;
+		}
+
+		try {
+			const score = await scoreTitle(config.vidiqKey, {
+				title: row.text,
+				format: row.format,
+				channelId: row.channel || undefined
+			});
+			await pb.updateScore(row.id, { status: 'done', score, error: '' });
+			log(`scored "${row.text.slice(0, 50)}" -> ${score}`);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			await pb.updateScore(row.id, { status: 'failed', error: message.slice(0, 1900) });
+			log(`score failed for "${row.text.slice(0, 40)}": ${message}`);
+		}
+	}
+}
+
 async function pass(pb, config) {
 	await watchPass(pb);
 	await copyPass(pb);
@@ -158,6 +198,17 @@ async function recoverStale(pb) {
 }
 
 async function main() {
+	// The vidIQ check needs neither PocketBase nor Google — it exists to answer
+	// whether the key is any good before anything else is set up.
+	if (checkVidiq) {
+		const { vidiqKey } = requireConfig({ needToken: false, needGoogle: false });
+		if (!vidiqKey) throw new Error('No vidiqKey in the worker config.');
+		const tools = await listTools(vidiqKey);
+		log(`vidIQ key works — ${tools.length} tools available`);
+		log(`scoring tool present: ${tools.includes('vidiq_score_title')}`);
+		return;
+	}
+
 	const config = requireConfig({ needToken: !dry, needGoogle: !dry });
 	const pb = makeClient(config.pocketbaseUrl);
 
@@ -168,12 +219,20 @@ async function main() {
 	if (!dry) await recoverStale(pb);
 
 	if (once || dry) {
+		await scorePass(pb, config);
 		await pass(pb, config);
 		log('single pass complete');
 		return;
 	}
 
-	log(`polling every ${config.pollSeconds}s — ctrl-c to stop`);
+	log(`polling every ${config.pollSeconds}s, scoring every ${config.scoreSeconds}s — ctrl-c to stop`);
+
+	// Its own interval rather than a counter inside the main loop: an upload can
+	// hold that loop for many minutes, and a score request must not queue behind
+	// one.
+	setInterval(() => {
+		void scorePass(pb, config).catch((err) => log(`score pass failed: ${err.message}`));
+	}, Math.max(1, config.scoreSeconds) * 1000);
 	for (;;) {
 		try {
 			await pass(pb, config);

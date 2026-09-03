@@ -13,7 +13,7 @@
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { templates, tokenOf } from '$lib/stores/templates.svelte';
-	import { loadWatchIndex, loadRecentTags } from '$lib/repo';
+	import { loadWatchIndex, loadRecentTags, scoreTitle } from '$lib/repo';
 	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import { formatBytes, mergeTagGroups, tagListLength, parseTagList } from '$lib/format';
 	import { portal } from '$lib/portal';
@@ -100,6 +100,42 @@
 		if (mins < 60) return `${mins} min ago`;
 		return at.toLocaleString();
 	});
+
+	/* ---- vidIQ title score ----
+	 *
+	 * Held against the exact title it was measured on, so editing the title
+	 * clears the number rather than leaving a stale score attached to different
+	 * words.
+	 */
+
+	let scoring = $state(false);
+	let scoreValue = $state<number | null>(null);
+	let scoreFor = $state('');
+	let scoreError = $state('');
+
+	async function runScore() {
+		if (!composing) return;
+		const title = text.title;
+		if (!title.trim()) return;
+
+		scoring = true;
+		scoreError = '';
+		try {
+			const result = await scoreTitle(title, { platform: composing, format: 'long' });
+			if (result.status === 'done') {
+				scoreValue = result.score;
+				scoreFor = title;
+			} else {
+				scoreValue = null;
+				scoreError = result.error;
+			}
+		} catch (err) {
+			scoreValue = null;
+			scoreError = err instanceof Error ? err.message : String(err);
+		} finally {
+			scoring = false;
+		}
+	}
 
 	function compose(platform: PlatformId) {
 		draft.composing = platform;
@@ -417,8 +453,35 @@
 					<div class="field">
 						<div class="fieldhead">
 							<label class="label" for="title">Title</label>
+
+							{#if composing === 'youtube'}
+								<!--
+									The score comes back through the worker, because vidIQ has no
+									REST API and its key must not ship in a static build. On
+									demand rather than as you type: each call costs credits.
+								-->
+								<button
+									class="score"
+									class:done={scoreFor === text.title && scoreValue !== null}
+									disabled={scoring || !text.title.trim()}
+									onclick={runScore}
+									title="Score this title with vidIQ"
+								>
+									{#if scoring}
+										Scoring…
+									{:else if scoreFor === text.title && scoreValue !== null}
+										vidIQ {scoreValue}<span class="outof">/100</span>
+									{:else}
+										Score title
+									{/if}
+								</button>
+							{/if}
+
 							<CharCount value={text.title} limit={def.titleLimit} />
 						</div>
+						{#if scoreError && composing === 'youtube'}
+							<p class="scoreerr">{scoreError}</p>
+						{/if}
 						<input
 							id="title"
 							class="input"
@@ -884,6 +947,47 @@
 
 	.fieldhead .label {
 		margin-bottom: 8px;
+	}
+
+	/* Sits between the label and the character count, so the title row carries
+	   everything about the title. */
+	.score {
+		margin-right: auto;
+		margin-left: 10px;
+		padding: 2px 9px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--bg-elev);
+		color: var(--text-dim);
+		font-size: 10.5px;
+		font-weight: 600;
+		transition: color 0.14s, border-color 0.14s;
+	}
+
+	.score:hover:not(:disabled) {
+		color: var(--text);
+		border-color: var(--pink);
+	}
+
+	.score:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+
+	.score.done {
+		border-color: var(--ok);
+		color: var(--ok);
+	}
+
+	.outof {
+		opacity: 0.6;
+		font-weight: 400;
+	}
+
+	.scoreerr {
+		margin: 0 0 6px;
+		font-size: 11px;
+		color: var(--danger);
 	}
 
 	.note {

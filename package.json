@@ -16,7 +16,8 @@
 		"worker": "node worker/index.mjs",
 		"worker:once": "node worker/index.mjs --once",
 		"worker:dry": "node worker/index.mjs --dry",
-		"worker:auth": "node worker/authorize.mjs"
+		"worker:auth": "node worker/authorize.mjs",
+		"worker:vidiq": "node worker/index.mjs --vidiq"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.0",

@@ -108,6 +108,32 @@ const collections = [
 		]
 	},
 	{
+		// Scoring asks the SPA cannot make itself: vidIQ has no REST API, only an
+		// MCP server, and its key is a credential — so the browser writes the
+		// request here and the worker answers it. Kept as rows rather than a
+		// single slot so the history of what scored what survives.
+		name: 'score_requests',
+		type: 'base',
+		...RULES,
+		fields: [
+			{ type: 'text', name: 'kind', required: true, max: 40 },
+			{ type: 'text', name: 'text', required: true, max: 500 },
+			{ type: 'text', name: 'platform', max: 40 },
+			{ type: 'text', name: 'channel', max: 60 },
+			{ type: 'text', name: 'format', max: 20 },
+			{
+				type: 'select',
+				name: 'status',
+				maxSelect: 1,
+				values: ['pending', 'done', 'failed']
+			},
+			{ type: 'number', name: 'score' },
+			{ type: 'text', name: 'error', max: 2000 },
+			...stamps
+		],
+		indexes: ['CREATE INDEX `idx_score_requests_status` ON `score_requests` (`status`)']
+	},
+	{
 		// Claimed device names. A browser writes one row here when it is named;
 		// the unique index on `key` is what actually prevents two machines
 		// sharing a name, since a check-then-write would race.
