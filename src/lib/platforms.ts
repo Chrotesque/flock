@@ -42,7 +42,7 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 			// buildPlan is where these four become it.
 			{ key: 'tagsStandard', label: 'Standard', type: 'tags', placeholder: 'Paste or type' },
 			{ key: 'tagsShorts', label: 'Shorts', type: 'tags', placeholder: 'Paste or type' },
-			{ key: 'tagsLongform', label: 'Longform', type: 'tags', placeholder: 'Paste or type' },
+			{ key: 'tagsLongform', label: 'Long Form', type: 'tags', placeholder: 'Paste or type' },
 			{ key: 'tagsOther', label: 'Other', type: 'tags', placeholder: 'Paste or type' },
 			{ key: 'madeForKids', label: 'Made for kids', type: 'bool', hint: 'Disables comments and personalised ads.' },
 			{ key: 'notifySubscribers', label: 'Notify subscribers', type: 'bool' },

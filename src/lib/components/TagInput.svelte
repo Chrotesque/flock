@@ -11,7 +11,8 @@
 		label,
 		hint,
 		onfocus,
-		clearable = false
+		clearable = false,
+		big = false
 	}: {
 		value?: string[];
 		placeholder?: string;
@@ -25,6 +26,8 @@
 		/** Lets the parent remember which box to drop an inserted set into. */
 		onfocus?: () => void;
 		clearable?: boolean;
+		/** Taller box, for when it is the only one on screen. */
+		big?: boolean;
 	} = $props();
 
 	let entry = $state('');
@@ -98,7 +101,7 @@
 	</div>
 {/if}
 
-<div class="tags">
+<div class="tags" class:big>
 	{#each value as tag (tag)}
 		<span class="tag">
 			{tag}
@@ -155,6 +158,11 @@
 		border-radius: var(--radius);
 		padding: 7px 8px;
 		transition: border-color 0.15s;
+	}
+
+	.tags.big {
+		min-height: 150px;
+		align-content: flex-start;
 	}
 
 	.tags:focus-within {

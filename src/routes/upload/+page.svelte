@@ -160,70 +160,86 @@
 					<h1>{HEADINGS[draft.step].title}</h1>
 					<p>{HEADINGS[draft.step].sub}</p>
 				</div>
-				<div class="progress">
-					<Stepper step={draft.step} onjump={(index) => goto(index as Step)} />
-				</div>
-			</header>
 
-			<nav class="actions">
-				{#if draft.step > 0}
-					<button class="btn" onclick={back} disabled={phase === 'uploading'}>
-						<svg viewBox="0 0 24 24" width="15" height="15" fill="none">
+				<!--
+					Back and forward flank the stepper on its own row, so moving through
+					the wizard is one cluster rather than a header and a separate bar.
+					The confirm step keeps a worded button: an arrow cannot say "this
+					starts a multi-GB upload and needs a second click".
+				-->
+				<nav class="progress">
+					<button
+						class="btn nav"
+						onclick={back}
+						disabled={draft.step === 0 || phase === 'uploading'}
+						aria-label="Back"
+						title="Back"
+					>
+						<svg viewBox="0 0 24 24" width="17" height="17" fill="none">
 							<path
 								d="M19 12H6m5 5-5-5 5-5"
 								stroke="currentColor"
-								stroke-width="1.9"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							/>
-						</svg>
-						Back
-					</button>
-				{/if}
-
-				<div class="spacer"></div>
-
-				{#if phase === 'error'}
-					<span class="failure">{failure}</span>
-				{/if}
-
-				{#if draft.step === 1 && draft.pastPlatforms.length > 0}
-					<span class="blocked">
-						{draft.pastPlatforms.map((id) => PLATFORMS[id].label).join(', ')}
-						{draft.pastPlatforms.length === 1 ? 'is' : 'are'} scheduled in the past.
-					</span>
-				{/if}
-
-				{#if draft.step < 2}
-					<button class="btn btn-primary" onclick={next} disabled={!canContinue}>
-						Continue
-						<svg viewBox="0 0 24 24" width="15" height="15" fill="none">
-							<path
-								d="M5 12h13m-5-5 5 5-5 5"
-								stroke="currentColor"
-								stroke-width="1.9"
+								stroke-width="2"
 								stroke-linecap="round"
 								stroke-linejoin="round"
 							/>
 						</svg>
 					</button>
-				{:else}
-					<button
-						class="btn btn-primary confirm"
-						class:armed
-						onclick={confirm}
-						disabled={phase === 'uploading' || plan.length === 0}
-					>
-						{#if phase === 'uploading'}
-							Uploading… {Math.round(progress * 100)}%
-						{:else if armed}
-							Click again to confirm
-						{:else}
-							Upload and schedule
-						{/if}
-					</button>
-				{/if}
-			</nav>
+
+					<div class="steps">
+						<Stepper step={draft.step} onjump={(index) => goto(index as Step)} />
+					</div>
+
+					{#if draft.step < 2}
+						<button
+							class="btn btn-primary nav"
+							onclick={next}
+							disabled={!canContinue}
+							aria-label="Continue"
+							title="Continue"
+						>
+							<svg viewBox="0 0 24 24" width="17" height="17" fill="none">
+								<path
+									d="M5 12h13m-5-5 5 5-5 5"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+							</svg>
+						</button>
+					{:else}
+						<button
+							class="btn btn-primary confirm"
+							class:armed
+							onclick={confirm}
+							disabled={phase === 'uploading' || plan.length === 0}
+						>
+							{#if phase === 'uploading'}
+								Uploading… {Math.round(progress * 100)}%
+							{:else if armed}
+								Click again to confirm
+							{:else}
+								Upload and schedule
+							{/if}
+						</button>
+					{/if}
+				</nav>
+			</header>
+
+			{#if phase === 'error' || (draft.step === 1 && draft.pastPlatforms.length > 0)}
+				<div class="notes">
+					{#if phase === 'error'}
+						<span class="failure">{failure}</span>
+					{/if}
+					{#if draft.step === 1 && draft.pastPlatforms.length > 0}
+						<span class="blocked">
+							{draft.pastPlatforms.map((id) => PLATFORMS[id].label).join(', ')}
+							{draft.pastPlatforms.length === 1 ? 'is' : 'are'} scheduled in the past.
+						</span>
+					{/if}
+				</div>
+			{/if}
 
 			{#if settings.error}
 				<p class="banner error">Could not reach PocketBase — {settings.error}</p>
@@ -274,7 +290,9 @@
 		align-items: flex-end;
 		justify-content: space-between;
 		gap: 30px;
-		margin-bottom: 26px;
+		margin-bottom: 22px;
+		padding-bottom: 18px;
+		border-bottom: 1px solid var(--border);
 	}
 
 	h1 {
@@ -287,9 +305,27 @@
 		color: var(--text-dim);
 	}
 
+	/* The arrows sit either side of the stepper with a deliberate gap, so they
+	   read as "leave this step" rather than as part of the step labels. */
 	.progress {
-		width: min(380px, 45vw);
+		display: flex;
+		align-items: center;
+		gap: 22px;
 		flex: none;
+	}
+
+	.steps {
+		width: min(380px, 40vw);
+	}
+
+	/* Square, so an arrow-only button does not read as a truncated worded one. */
+	.nav {
+		flex: none;
+		width: 38px;
+		height: 38px;
+		padding: 0;
+		display: grid;
+		place-items: center;
 	}
 
 	.banner {
@@ -307,23 +343,19 @@
 		color: var(--danger);
 	}
 
-	.actions {
+	.notes {
 		display: flex;
 		align-items: center;
-		gap: 10px;
-		margin-bottom: 20px;
-		padding-bottom: 18px;
-		border-bottom: 1px solid var(--border);
+		justify-content: flex-end;
+		flex-wrap: wrap;
+		gap: 12px;
+		margin: -12px 0 18px;
 	}
 
 	.blocked {
 		font-size: 12px;
 		color: var(--warn);
 		text-align: right;
-	}
-
-	.spacer {
-		flex: 1;
 	}
 
 	.failure {
@@ -432,6 +464,11 @@
 		}
 		.progress {
 			width: 100%;
+			gap: 14px;
+		}
+		.steps {
+			flex: 1;
+			width: auto;
 		}
 	}
 </style>

@@ -132,6 +132,13 @@
 	/** Which box an inserted set lands in — the last one focused. */
 	let lastTagKey = $state<string | null>(null);
 
+	/** Which tag tab is showing. "final" is the merged, read-only view. */
+	let tagTab = $state<string>('final');
+
+	let activeBoxLabel = $derived(
+		tagFields.find((f) => f.key === lastTagKey)?.label ?? tagFields[0]?.label ?? '—'
+	);
+
 	// Keeps the target valid when the platform changes. Depends on the field list
 	// only and reads the current key through untrack: the same shape as the
 	// composing effect above, for the same reason.
@@ -140,6 +147,8 @@
 		if (keys.length === 0) return;
 		const current = untrack(() => lastTagKey);
 		if (!current || !keys.includes(current)) lastTagKey = keys[0];
+		const tab = untrack(() => tagTab);
+		if (tab !== 'final' && !keys.includes(tab)) tagTab = 'final';
 	});
 
 	/**
@@ -432,9 +441,13 @@
 				<div class="tpl">
 					<header class="tplhead">
 						<span class="label">Templates</span>
-						<a class="edit" href="{base}/settings?section=templates" title="Edit templates">
+						<a
+							class="edit"
+							href="{base}/settings?section=templates"
+							title="Edit templates"
+							aria-label="Edit templates"
+						>
 							{@render pencil()}
-							Edit
 						</a>
 						<span class="tplnote">
 							Click to drop one in at the cursor, or type its name in braces.
@@ -484,9 +497,9 @@
 						class="edit"
 						href="{base}/settings?platform={composing}&tab=tags"
 						title="Edit tag sets"
+						aria-label="Edit tag sets"
 					>
 						{@render pencil()}
-						Edit sets
 					</a>
 
 					<span class="tagbudget" class:over={tagsOver}>
@@ -502,47 +515,96 @@
 					</p>
 				{/if}
 
-				<div class="tagsets">
-					{#if tagSets.items.length === 0}
-						<p class="tplempty">
-							No tag sets yet — build reusable groups in
-							<a href="{base}/settings?platform={composing}&tab=tags">Settings</a>.
-						</p>
-					{:else}
+				<!--
+					One box at a time, full width. Four side by side left each too
+					narrow to read a filled list in; tabs give the whole width to
+					whichever group is being worked on. "Final" is the merged result —
+					read-only, because it is computed, and copyable because that is the
+					only reason to look at it.
+				-->
+				<div class="tagtabs" role="tablist">
+					<button
+						class="tagtab"
+						class:on={tagTab === 'final'}
+						role="tab"
+						aria-selected={tagTab === 'final'}
+						onclick={() => (tagTab = 'final')}
+					>
+						Final Tags
+						<em>{tagsMerged.length}</em>
+					</button>
+					{#each tagFields as field (field.key)}
+						<button
+							class="tagtab"
+							class:on={tagTab === field.key}
+							role="tab"
+							aria-selected={tagTab === field.key}
+							onclick={() => {
+								tagTab = field.key;
+								lastTagKey = field.key;
+							}}
+						>
+							{field.label}
+							<em>{tagValue(field.key).length}</em>
+						</button>
+					{/each}
+				</div>
+
+				{#if tagTab === 'final'}
+					<div class="finalbox">
+						{#if tagsMerged.length === 0}
+							<p class="finalempty">
+								Nothing yet. Fill any of the other tabs and the combined list appears here.
+							</p>
+						{:else}
+							<p class="finaltags">{tagsMerged.join(', ')}</p>
+							<p class="finalnote">
+								This is the single list {def.label} receives — every box merged, in tab order,
+								with duplicates removed. Read-only; edit the boxes to change it.
+							</p>
+						{/if}
+					</div>
+				{:else}
+					{#each tagFields as field (field.key)}
+						{#if tagTab === field.key}
+							<div class="tagbox">
+								<TagInput
+									value={tagValue(field.key)}
+									placeholder="Paste a comma-separated list, or type one and press Enter"
+									clearable
+									label={field.label}
+									big
+									onfocus={() => (lastTagKey = field.key)}
+									onchange={(next) => setTagField(field.key, next)}
+								/>
+							</div>
+						{/if}
+					{/each}
+				{/if}
+
+				{#if tagSets.items.length > 0}
+					<div class="tagsets">
 						<span class="setlabel">Add a set</span>
 						{#each tagSets.items as set (set.id)}
 							<button
 								class="chip"
-								disabled={set.tags.length === 0}
+								disabled={set.tags.length === 0 || tagTab === 'final'}
 								onclick={() => applySet(set.tags)}
-								title="{set.tags.length} tags into {tagFields.find((f) => f.key === lastTagKey)
-									?.label ?? 'the first box'}"
+								title="{set.tags.length} tags into {activeBoxLabel}"
 							>
 								{set.name.trim() || 'Unnamed'}
 								<em>{set.tags.length}</em>
 							</button>
 						{/each}
 						<span class="settarget">
-							into <strong>{tagFields.find((f) => f.key === lastTagKey)?.label ?? '—'}</strong>
+							{#if tagTab === 'final'}
+								pick a box first
+							{:else}
+								into <strong>{activeBoxLabel}</strong>
+							{/if}
 						</span>
-					{/if}
-				</div>
-
-				<div class="taggrid">
-					{#each tagFields as field (field.key)}
-						<div class="tagbox">
-							<TagInput
-								label={field.label}
-								value={tagValue(field.key)}
-								placeholder={'placeholder' in field ? (field.placeholder ?? '') : ''}
-								hint="Paste a comma-separated list, or type one and press Enter."
-								clearable
-								onfocus={() => (lastTagKey = field.key)}
-								onchange={(next) => setTagField(field.key, next)}
-							/>
-						</div>
-					{/each}
-				</div>
+					</div>
+				{/if}
 
 				{#if showingRecent}
 					<p class="reused">
@@ -853,14 +915,97 @@
 		line-height: 1.45;
 	}
 
+	/* ---- one tag box at a time ---- */
+
+	.tagtabs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		padding: 3px;
+		margin-bottom: 14px;
+		background: var(--bg-elev);
+		border: 1px solid var(--border);
+		border-radius: 10px;
+	}
+
+	.tagtab {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 12px;
+		border-radius: 7px;
+		font-size: 12.5px;
+		font-weight: 560;
+		color: var(--text-dim);
+		transition: background 0.15s, color 0.15s;
+	}
+
+	.tagtab:hover {
+		color: var(--text);
+	}
+
+	.tagtab.on {
+		background: var(--surface-3);
+		color: var(--text);
+	}
+
+	.tagtab em {
+		font-style: normal;
+		min-width: 16px;
+		padding: 0 4px;
+		border-radius: 999px;
+		background: var(--surface-2);
+		font-family: var(--mono);
+		font-size: 10px;
+		color: var(--text-faint);
+		text-align: center;
+	}
+
+	.tagtab.on em {
+		background: var(--accent-grad-soft);
+		color: var(--pink-soft);
+	}
+
+	/* The merged result. Selectable so it can be copied out, but not editable —
+	   it is computed from the boxes. */
+	.finalbox {
+		min-height: 150px;
+		padding: 11px 12px;
+		border-radius: var(--radius);
+		background: var(--bg-elev);
+		border: 1px solid var(--border);
+	}
+
+	.finaltags {
+		margin: 0;
+		font-size: 13px;
+		line-height: 1.65;
+		color: var(--text);
+		overflow-wrap: anywhere;
+		user-select: all;
+	}
+
+	.finalnote,
+	.finalempty {
+		margin: 10px 0 0;
+		font-size: 11px;
+		line-height: 1.45;
+		color: var(--text-faint);
+	}
+
+	.finalempty {
+		margin: 0;
+	}
+
+	/* Only rendered when sets exist, so the row takes no space otherwise. */
 	.tagsets {
 		display: flex;
 		align-items: center;
 		flex-wrap: wrap;
 		gap: 6px;
-		margin-bottom: 14px;
-		padding-bottom: 14px;
-		border-bottom: 1px solid var(--border);
+		margin-top: 14px;
+		padding-top: 14px;
+		border-top: 1px solid var(--border);
 	}
 
 	.setlabel,
@@ -882,29 +1027,20 @@
 		color: var(--text-faint);
 	}
 
-	/* Two-up rather than four-across: four boxes side by side leave each too
-	   narrow to read a filled-in list in. */
-	.taggrid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 16px 20px;
-	}
-
 	.tagbox {
 		min-width: 0;
 	}
 
 	/* An edit link back to wherever the thing is actually managed. */
+	/* Icon only — the tooltip carries the wording. */
 	.edit {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		padding: 2px 8px;
-		border-radius: 999px;
+		display: grid;
+		place-items: center;
+		width: 22px;
+		height: 22px;
+		border-radius: 6px;
 		border: 1px solid var(--border);
 		color: var(--text-faint);
-		font-size: 10.5px;
-		font-weight: 600;
 		transition: color 0.14s, border-color 0.14s;
 	}
 
@@ -1288,9 +1424,6 @@
 	@media (max-width: 1040px) {
 		.stage {
 			grid-template-columns: 1fr;
-		}
-		.taggrid {
-			grid-template-columns: minmax(0, 1fr);
 		}
 		.side {
 			position: static;
