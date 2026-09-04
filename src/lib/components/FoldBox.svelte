@@ -84,6 +84,10 @@
 		gap: 0;
 	}
 
+	.box > :global(*) {
+		min-width: 0;
+	}
+
 	.head {
 		display: flex;
 		align-items: center;

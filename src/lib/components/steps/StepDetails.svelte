@@ -923,11 +923,9 @@
 	<div class="side">
 		<aside class="rail card">
 			<header>
-				<h3>Platforms</h3>
+				<h3>Platform Settings</h3>
 				<span class="pill">{draft.activePlatforms.length} of {summaries.length}</span>
 			</header>
-
-			<p class="railnote">Tick which platforms this goes to. Click one to change its options.</p>
 
 			<ul>
 				{#each summaries as item (item.platform)}
@@ -1761,19 +1759,13 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: 4px;
+		margin-bottom: 12px;
 	}
 
 	h3 {
 		font-size: 14px;
 	}
 
-	.railnote {
-		margin: 0 0 14px;
-		font-size: 11.5px;
-		color: var(--text-faint);
-		line-height: 1.45;
-	}
 
 	ul {
 		list-style: none;

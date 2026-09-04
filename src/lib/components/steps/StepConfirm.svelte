@@ -13,6 +13,13 @@
 
 	let destination = $derived(general.defaultDestination);
 
+	/** "In 11h - Sat 5 Sep, 09:00", or the immediate wording on its own. */
+	function whenLine(row: PlanRow): string {
+		if (row.immediate) return 'Immediately, as soon as the worker picks it up';
+		const rel = row.relative.charAt(0).toUpperCase() + row.relative.slice(1);
+		return `${rel} - ${formatSchedule(row.date, row.time)}`;
+	}
+
 	// A still of the video itself, so the last screen before upload shows what is
 	// actually being sent rather than just its file name.
 	let posterUrl = $state('');
@@ -65,7 +72,7 @@
 			<video
 				class="poster"
 				src={posterUrl}
-				muted
+				controls
 				playsinline
 				preload="metadata"
 				onloadeddata={showFirstFrame}
@@ -131,9 +138,10 @@
 				<span class="ic"><PlatformIcon platform={row.platform} size={20} /></span>
 
 				<div class="body">
+					<p class="date">{whenLine(row)}</p>
 					<div class="titleline">
 						<p class="title" class:empty={!label}>
-							{label || (def.hasTitle ? '(no title)' : '(no caption)')}
+							{def.hasTitle ? 'Title' : 'Caption'}: {label ? `"${label}"` : '(none)'}
 						</p>
 						<button class="info" onclick={() => openDetail(row)} aria-label="Show description for {def.label}">
 							<svg viewBox="0 0 24 24" width="15" height="15" fill="none">
@@ -148,7 +156,6 @@
 						</button>
 					</div>
 					<p class="meta">
-						<span class="who">{def.label}</span>
 						{#if row.platform === 'youtube' && row.options.playlist}
 							<span class="dot">·</span>playlist: {row.options.playlist}
 						{/if}
@@ -165,11 +172,6 @@
 							<span class="dot">·</span><span class="bad">rule error</span>
 						{/if}
 					</p>
-				</div>
-
-				<div class="when">
-					<span class="date">{row.immediate ? 'Immediately' : formatSchedule(row.date, row.time)}</span>
-					<span class="rel">{row.relative}</span>
 				</div>
 			</li>
 		{/each}
@@ -244,10 +246,12 @@
 </Modal>
 
 <style>
+	/* The video on the left, the per-platform list beside it. */
 	.wrap {
 		display: grid;
-		gap: 14px;
-		max-width: 880px;
+		grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
+		gap: 20px;
+		align-items: start;
 	}
 
 	.summary {
@@ -261,7 +265,10 @@
 	   otherwise be taller than the screen at this width. `contain` letterboxes
 	   instead of cropping, so the frame shown is the whole frame. */
 	.poster {
-		width: 80%;
+		width: 100%;
+		/* Wide enough to watch, never taller than the screen. */
+		max-width: min(100%, calc(70vh * 16 / 9));
+		justify-self: center;
 		aspect-ratio: 16 / 9;
 		object-fit: contain;
 		border-radius: 12px;
@@ -277,7 +284,7 @@
 	}
 
 	.thumbwrap {
-		width: 80%;
+		width: 100%;
 		display: flex;
 		align-items: center;
 		gap: 12px;
@@ -416,8 +423,9 @@
 		color: var(--text-faint);
 	}
 
-	.who {
-		color: var(--text-dim);
+	/* With the platform name gone, the first item must not start with a dot. */
+	.meta .dot:first-child {
+		display: none;
 	}
 
 	.adapted {
@@ -428,21 +436,10 @@
 		color: var(--warn);
 	}
 
-	.when {
-		flex: none;
-		text-align: right;
-	}
-
 	.date {
-		display: block;
+		margin: 0 0 3px;
 		font-size: 12.5px;
 		font-weight: 570;
-	}
-
-	.rel {
-		display: block;
-		font-size: 11px;
-		color: var(--text-faint);
 	}
 
 	.dhead {
@@ -525,6 +522,12 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	@media (max-width: 1040px) {
+		.wrap {
+			grid-template-columns: 1fr;
+		}
 	}
 
 	@media (max-width: 640px) {

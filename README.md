@@ -211,8 +211,9 @@ unlocks once every ticked platform has been written for. Clicking a platform in 
 right-hand list opens its options and a preview of its adapted text. Next comes a
 week calendar showing a card per platform: drag a card to another day or hour to move
 that release, or use the exact date and time fields underneath. The final screen
-shows a still of the video with what each platform gets and when; confirming takes
-two clicks, and the copy to the NAS starts there.
+plays the video beside what each platform gets and when; confirming is the tick
+button, pressed once and then again within two seconds while it shows "!!!", and
+the copy to the NAS starts there.
 
 **Calendar** shows every release ever scheduled on a week grid. Things already
 released — or whose slot has passed — are greyed out, and there is a toggle to hide

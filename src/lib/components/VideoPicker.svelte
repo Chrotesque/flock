@@ -120,6 +120,9 @@
 
 <style>
 	.picker {
+		/* A grid item's min-width defaults to auto, which let the chosen-file row
+		   push this box past the edge of its column. */
+		min-width: 0;
 		border: 1.5px dashed var(--border-strong);
 		border-radius: var(--radius-lg);
 		background: var(--bg-elev);
@@ -170,14 +173,15 @@
 	}
 
 	.chosen {
-		display: flex;
-		gap: 14px;
+		display: grid;
+		grid-template-columns: 120px minmax(0, 1fr);
+		gap: 12px;
 		align-items: center;
 	}
 
 	video {
-		width: 132px;
-		height: 76px;
+		width: 120px;
+		height: 68px;
 		flex: none;
 		object-fit: cover;
 		border-radius: var(--radius);
@@ -207,6 +211,7 @@
 
 	.actions {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 4px;
 		margin-top: 8px;
 	}

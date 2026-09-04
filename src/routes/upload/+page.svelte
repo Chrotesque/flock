@@ -18,9 +18,17 @@
 
 	let plan = $derived(draft.step === 2 ? buildPlan() : []);
 
-	// The confirm button deliberately takes two clicks: this is the point where
-	// a multi-GB upload and four scheduled publishes become real.
+	// The confirm button deliberately takes two clicks, the second within two
+	// seconds of the first: this is the point where a multi-GB upload and four
+	// scheduled publishes become real.
 	let armed = $state(false);
+	let armTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function disarm() {
+		if (armTimer) clearTimeout(armTimer);
+		armTimer = null;
+		armed = false;
+	}
 	let phase = $state<'idle' | 'uploading' | 'done' | 'error'>('idle');
 	let progress = $state(0);
 	let failure = $state('');
@@ -28,7 +36,7 @@
 	// Any edit disarms the confirmation, so a stale second click cannot fire.
 	$effect(() => {
 		void draft.step;
-		armed = false;
+		disarm();
 	});
 
 	const HEADINGS = [
@@ -39,7 +47,7 @@
 
 	function goto(step: Step) {
 		draft.step = step;
-		armed = false;
+		disarm();
 	}
 
 	function next() {
@@ -61,8 +69,10 @@
 	async function confirm() {
 		if (!armed) {
 			armed = true;
+			armTimer = setTimeout(() => (armed = false), 2000);
 			return;
 		}
+		disarm();
 		if (!draft.hasVideo) return;
 
 		phase = 'uploading';
@@ -116,7 +126,7 @@
 	function startOver() {
 		draft.reset();
 		phase = 'idle';
-		armed = false;
+		disarm();
 		progress = 0;
 	}
 </script>
@@ -165,12 +175,14 @@
 				<!--
 					Back and forward flank the stepper on its own row, so moving through
 					the wizard is one cluster rather than a header and a separate bar.
-					The confirm step keeps a worded button: an arrow cannot say "this
-					starts a multi-GB upload and needs a second click".
+					On the confirm step the forward button is the tick that starts the
+					upload: it arms on the first press and fires on a second within two
+					seconds, showing "!!!" in between so the state is unmistakable.
 				-->
 				<nav class="progress">
 					<button
 						class="btn nav"
+						class:ghost={draft.step === 0}
 						onclick={back}
 						disabled={draft.step === 0 || phase === 'uploading'}
 						aria-label="Back"
@@ -211,17 +223,27 @@
 						</button>
 					{:else}
 						<button
-							class="btn btn-primary confirm"
+							class="btn btn-primary nav confirm"
 							class:armed
 							onclick={confirm}
 							disabled={phase === 'uploading' || plan.length === 0}
+							aria-label={armed ? 'Click again within two seconds to upload' : 'Upload and schedule'}
+							title={armed ? 'Click again within two seconds to upload' : 'Upload and schedule'}
 						>
 							{#if phase === 'uploading'}
-								Uploading… {Math.round(progress * 100)}%
+								<span class="pct">{Math.round(progress * 100)}%</span>
 							{:else if armed}
-								Click again to confirm
+								<span class="bang">!!!</span>
 							{:else}
-								Upload and schedule
+								<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+									<path
+										d="M4 12.5 9.5 18 20 6.5"
+										stroke="currentColor"
+										stroke-width="2.2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
+								</svg>
 							{/if}
 						</button>
 					{/if}
@@ -329,6 +351,29 @@
 		padding: 0;
 		display: grid;
 		place-items: center;
+	}
+
+	/* Kept in the row rather than removed, so the stepper does not shift when
+	   the back button has nowhere to go. */
+	.nav.ghost {
+		visibility: hidden;
+		pointer-events: none;
+	}
+
+	.confirm {
+		width: auto;
+		min-width: 38px;
+		padding: 0 10px;
+	}
+
+	.bang {
+		font-weight: 800;
+		letter-spacing: 0.08em;
+	}
+
+	.pct {
+		font-size: 12px;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.banner {
