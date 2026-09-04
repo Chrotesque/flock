@@ -12,7 +12,7 @@
 	} from '$lib/repo';
 	import { formatBytes, formatDuration, relativeTo } from '$lib/format';
 	import { KIND_LABELS, KIND_ORDER, kindOfVideo, type VideoKind } from '$lib/videokind';
-	import { launchRate, LAUNCH_CAP_HOURS, type LaunchRate } from '$lib/launch';
+	import { launchRate, WINDOWS, DEFAULT_WINDOW, type LaunchRate } from '$lib/launch';
 	import type { StatsStatus, UploadJob, UploadTarget, VideoStats, YouTubeVideo } from '$lib/types';
 
 	// The live half: the newest videos on the channel as the worker reads them.
@@ -24,6 +24,27 @@
 	let open = $state<string | null>(null);
 	// Which kind of video the table is narrowed to; null shows every kind.
 	let kind = $state<VideoKind | null>(null);
+
+	// The window every video's views/h is normalised to, in hours. Remembered
+	// per browser; localStorage is wrapped because private windows and blocked
+	// site data throw rather than returning null.
+	const WINDOW_KEY = 'flock.analytics.window';
+	function readWindow(): number {
+		try {
+			const stored = Number(localStorage.getItem(WINDOW_KEY));
+			return (WINDOWS as readonly number[]).includes(stored) ? stored : DEFAULT_WINDOW;
+		} catch {
+			return DEFAULT_WINDOW;
+		}
+	}
+	let hoursWindow = $state(readWindow());
+	$effect(() => {
+		try {
+			localStorage.setItem(WINDOW_KEY, String(hoursWindow));
+		} catch {
+			// Nothing to do: the choice just will not survive a reload.
+		}
+	});
 	// Ticks once a second so "12 s ago" keeps counting between events.
 	let now = $state(Date.now());
 
@@ -152,20 +173,19 @@
 	function rateDetail(launch: LaunchRate): string {
 		switch (launch.mode) {
 			case 'settled':
-				return launch.hours >= LAUNCH_CAP_HOURS
-					? `${perHour(launch.rate)} — ${launch.views.toLocaleString()} views over its first two days, ` +
-							'which never faded to a trickle'
-					: `${perHour(launch.rate)} — ${launch.views.toLocaleString()} views in its first ` +
-							`${hoursText(launch.hours)}, until the launch faded to a trickle`;
+				return (
+					`${perHour(launch.rate)} — ${launch.views.toLocaleString()} views in its first ` +
+					`${hoursText(launch.hours)}, and nothing after that counted`
+				);
 			case 'running':
 				return (
 					`${perHour(launch.rate)} so far — ${launch.views.toLocaleString()} views in ` +
-					`${hoursText(launch.hours)}, and the launch has not faded yet`
+					`${hoursText(launch.hours)} of the ${hoursWindow} h window, still open`
 				);
 			case 'lifetime':
 				return (
 					`${perHour(launch.rate)} lifetime average — flock was not watching when this ` +
-					'was released, so its launch is unknown'
+					`was released, so its first ${hoursWindow} h are unknown`
 				);
 			default:
 				return 'not released yet';
@@ -403,6 +423,15 @@
 					{/if}
 				{/each}
 				<p class="rule">Shorts are under three minutes. Long form is over, and not live.</p>
+
+				<label class="window">
+					<span>Normalise views/h to</span>
+					<select bind:value={hoursWindow}>
+						{#each WINDOWS as h (h)}
+							<option value={h}>First {h} hours</option>
+						{/each}
+					</select>
+				</label>
 			</nav>
 
 			<div class="table card">
@@ -414,13 +443,13 @@
 					<span class="num">Views</span>
 					<span class="num">Likes</span>
 					<span class="num">Comments</span>
-					<span class="num" title="Views from release until the launch faded to a trickle">
+					<span class="num" title="Views in the first {hoursWindow} hours after release, per hour">
 						Views/h
 					</span>
 					<span></span>
 				</div>
 				{#each shown as row (row.id)}
-					{@const launch = launchRate(row, runs, now)}
+					{@const launch = launchRate(row, runs, now, hoursWindow)}
 					<button
 						class="row"
 						class:open={open === row.id}
@@ -682,6 +711,36 @@
 		font-size: 11px;
 		line-height: 1.45;
 		color: var(--text-faint);
+	}
+
+	.window {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-top: 14px;
+	}
+
+	.window span {
+		font-size: 11px;
+		font-weight: 650;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.window select {
+		padding: 8px 10px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border);
+		background: var(--surface);
+		color: var(--text);
+		font: inherit;
+		font-size: 12.5px;
+		cursor: pointer;
+	}
+
+	.window select:hover {
+		border-color: var(--border-strong);
 	}
 
 	.empty {
@@ -1014,8 +1073,12 @@
 			flex-direction: row;
 			flex-wrap: wrap;
 		}
-		.rule {
+		.rule,
+		.window {
 			flex-basis: 100%;
+		}
+		.window {
+			margin-top: 4px;
 		}
 		.row {
 			grid-template-columns: 56px minmax(0, 1fr) 76px 76px 72px;

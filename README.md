@@ -220,14 +220,14 @@ them, refreshed every 30 seconds while the worker runs: views, likes and
 comments in a row per video, and everything else the API returns underneath
 when you click one. The buttons on the left narrow it to Shorts (under three
 minutes), long form, live streams, or whatever fits none of those. *Views/h*
-is the launch rate: views from release until the launch faded, divided by the
-hours between — where "faded" is the first full hour that brought in under a
-tenth of the video's best hour. Late trickle cannot move it. It is final once
-that hour has passed (or after two days, if it never fades), shown in italics
-while the launch is still going, and muted for videos released before the
-worker was watching, where it is a lifetime average instead. It needs the
-worker running. Below that it lists what is currently stored on the NAS, which
-is where you check that an upload actually landed.
+normalises every video to the same window after release, picked from the
+dropdown under the buttons: with *First 3 hours* only the views from those
+three hours count, divided by three, and nothing later moves it. It is final
+once the window has closed, shown in italics while it is still open, and
+muted for videos released before the worker was watching, where it is a
+lifetime average instead. It needs the worker running. Below that it lists
+what is currently stored on the NAS, which is where you check that an upload
+actually landed.
 
 **Settings** has three parts. *Storage and defaults* holds the NAS folders a
 finished video is copied into (the filled circle marks the default) and shows this

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { covered, launchEnd, launchRate, LAUNCH_CAP_HOURS } from './launch';
+import { covered, launchRate } from './launch';
 import type { StatsSample } from './types';
 
 const T = Date.parse('2026-09-05T10:00:00.000Z');
@@ -20,6 +20,7 @@ function history(gains: number[]): StatsSample[] {
 }
 
 const watching = [{ from: at(-60), to: at(60 * 80) }];
+const burst = history([400, 500, 260, 5, 3, 2, 1, 2]);
 
 describe('covered', () => {
 	it('needs one run to span the whole range', () => {
@@ -38,30 +39,13 @@ describe('covered', () => {
 	});
 });
 
-describe('launchEnd', () => {
-	it('is the first hour under a tenth of the best', () => {
-		expect(launchEnd([400, 500, 260, 5])).toBe(3);
-		expect(launchEnd([400, 500, 260, 51, 49])).toBe(4);
-		expect(launchEnd([400, 500, 260, 50, 49])).toBe(3);
-	});
-
-	it('is not reached while the hours keep climbing', () => {
-		expect(launchEnd([400, 500])).toBe(-1);
-		expect(launchEnd([100, 200, 300])).toBe(-1);
-	});
-
-	it('waits for a real burst rather than settling on a quiet start', () => {
-		expect(launchEnd([0, 0, 300, 20])).toBe(3);
-		expect(launchEnd([3, 0, 0])).toBe(-1);
-	});
-});
-
 describe('launchRate', () => {
-	it('settles on the burst and ignores the trickle after it', () => {
+	it('counts the first N hours and nothing else', () => {
 		const result = launchRate(
-			{ published_at: at(0), views: 1173, history: history([400, 500, 260, 5, 3, 2, 1, 2]) },
+			{ published_at: at(0), views: 1173, history: burst },
 			watching,
-			T + 8 * 60 * MIN
+			T + 8 * 60 * MIN,
+			3
 		);
 		expect(result.mode).toBe('settled');
 		if (result.mode !== 'settled') return;
@@ -71,53 +55,32 @@ describe('launchRate', () => {
 		expect(result.until).toBe(at(180));
 	});
 
-	it('keeps running while the burst is still going', () => {
+	it('reads differently for a different window', () => {
+		const six = launchRate({ published_at: at(0), views: 1173, history: burst }, watching, T + 8 * 60 * MIN, 6);
+		expect(six.mode).toBe('settled');
+		if (six.mode !== 'settled') return;
+		expect(six.views).toBe(1170);
+		expect(six.rate).toBeCloseTo(1170 / 6);
+	});
+
+	it('keeps running until the window closes', () => {
 		const result = launchRate(
 			{ published_at: at(0), views: 900, history: history([400, 500]) },
 			watching,
-			T + 150 * MIN
+			T + 150 * MIN,
+			3
 		);
 		expect(result.mode).toBe('running');
 		if (result.mode !== 'running') return;
 		expect(result.rate).toBeCloseTo(900 / 2.5);
+		expect(result.hours).toBeCloseTo(2.5);
 	});
 
-	it('settles even when the views never quite stop', () => {
-		const result = launchRate(
-			{ published_at: at(0), views: 1215, history: history([400, 500, 260, 30, 25]) },
-			watching,
-			T + 5 * 60 * MIN
-		);
-		expect(result.mode).toBe('settled');
-		if (result.mode !== 'settled') return;
-		expect(result.hours).toBe(3);
-		expect(result.views).toBe(1160);
-	});
-
-	it('does not settle on a slow start before the burst arrives', () => {
-		const result = launchRate(
-			{ published_at: at(0), views: 320, history: history([0, 0, 300, 20]) },
-			watching,
-			T + 4 * 60 * MIN
-		);
-		expect(result.mode).toBe('settled');
-		if (result.mode !== 'settled') return;
-		expect(result.hours).toBe(3);
-		expect(result.views).toBe(300);
-	});
-
-	it('gives up waiting for a burst after two days', () => {
-		const gains = Array.from({ length: 50 }, () => 10);
-		const result = launchRate(
-			{ published_at: at(0), views: 500, history: history(gains) },
-			watching,
-			T + 50 * 60 * MIN
-		);
-		expect(result.mode).toBe('settled');
-		if (result.mode !== 'settled') return;
-		expect(result.hours).toBe(LAUNCH_CAP_HOURS);
-		expect(result.views).toBe(480);
-		expect(result.rate).toBeCloseTo(10);
+	it('settles the moment the window closes', () => {
+		const open = launchRate({ published_at: at(0), views: 1160, history: burst }, watching, T + 179 * MIN, 3);
+		const closed = launchRate({ published_at: at(0), views: 1165, history: burst }, watching, T + 180 * MIN, 3);
+		expect(open.mode).toBe('running');
+		expect(closed.mode).toBe('settled');
 	});
 
 	it('falls back to a lifetime average when release was not watched', () => {
@@ -125,23 +88,20 @@ describe('launchRate', () => {
 		const result = launchRate(
 			{ published_at: at(0), views: 100, history: [sample(300, 100)] },
 			late,
-			T + 400 * MIN
+			T + 400 * MIN,
+			3
 		);
 		expect(result.mode).toBe('lifetime');
 		if (result.mode !== 'lifetime') return;
 		expect(result.rate).toBeCloseTo(100 / (400 / 60));
 	});
 
-	it('does not trust a fade the worker slept through', () => {
+	it('does not trust a window the worker slept through', () => {
 		const patchy = [
 			{ from: at(-60), to: at(80) },
 			{ from: at(100), to: at(600) }
 		];
-		const result = launchRate(
-			{ published_at: at(0), views: 1165, history: history([400, 500, 260, 5]) },
-			patchy,
-			T + 6 * 60 * MIN
-		);
+		const result = launchRate({ published_at: at(0), views: 1165, history: burst }, patchy, T + 6 * 60 * MIN, 3);
 		expect(result.mode).toBe('lifetime');
 	});
 
@@ -153,16 +113,17 @@ describe('launchRate', () => {
 				history: [sample(-600, 0), sample(-300, 0), ...history([400, 500, 5])]
 			},
 			watching,
-			T + 4 * 60 * MIN
+			T + 4 * 60 * MIN,
+			3
 		);
 		expect(result.mode).toBe('settled');
 		if (result.mode !== 'settled') return;
-		expect(result.hours).toBe(2);
-		expect(result.views).toBe(900);
+		expect(result.views).toBe(905);
 	});
 
-	it('has nothing to say before release', () => {
-		expect(launchRate({ published_at: at(60), views: 0, history: [] }, watching, T).mode).toBe('none');
-		expect(launchRate({ published_at: '', views: 0, history: [] }, watching, T).mode).toBe('none');
+	it('has nothing to say before release or without a window', () => {
+		expect(launchRate({ published_at: at(60), views: 0, history: [] }, watching, T, 3).mode).toBe('none');
+		expect(launchRate({ published_at: '', views: 0, history: [] }, watching, T, 3).mode).toBe('none');
+		expect(launchRate({ published_at: at(0), views: 5, history: [] }, watching, T + 60 * MIN, 0).mode).toBe('none');
 	});
 });
