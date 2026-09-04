@@ -11,6 +11,8 @@
 		subscribeStats
 	} from '$lib/repo';
 	import { formatBytes, formatDuration, relativeTo } from '$lib/format';
+	import { KIND_LABELS, KIND_ORDER, kindOfVideo, type VideoKind } from '$lib/videokind';
+	import { launchRate, type LaunchRate } from '$lib/launch';
 	import type { StatsStatus, UploadJob, UploadTarget, VideoStats, YouTubeVideo } from '$lib/types';
 
 	// The live half: the newest videos on the channel as the worker reads them.
@@ -20,6 +22,8 @@
 	let status = $state<StatsStatus | null>(null);
 	let statsError = $state<string | null>(null);
 	let open = $state<string | null>(null);
+	// Which kind of video the table is narrowed to; null shows every kind.
+	let kind = $state<VideoKind | null>(null);
 	// Ticks once a second so "12 s ago" keeps counting between events.
 	let now = $state(Date.now());
 
@@ -33,6 +37,13 @@
 	const sorted = $derived(
 		[...videos].sort((a, b) => (b.published_at || '').localeCompare(a.published_at || ''))
 	);
+	const counts = $derived.by(() => {
+		const tally: Record<VideoKind, number> = { short: 0, long: 0, live: 0, other: 0 };
+		for (const row of sorted) tally[kindOfVideo(row)] += 1;
+		return tally;
+	});
+	const shown = $derived(kind ? sorted.filter((row) => kindOfVideo(row) === kind) : sorted);
+	const runs = $derived(status?.runs ?? []);
 
 	async function load() {
 		loading = true;
@@ -125,30 +136,39 @@
 		return n == null ? '—' : n.toLocaleString();
 	}
 
-	/**
-	 * Views gained per hour, from the newest sample at least an hour old — or
-	 * the oldest there is, if the video is younger than that. Measured against
-	 * now rather than the last sample, so a video that has gone quiet reads as
-	 * slowing down instead of freezing at its last burst.
-	 */
-	function vph(row: VideoStats): number | null {
-		const history = Array.isArray(row.history) ? row.history : [];
-		if (history.length === 0 || row.views == null) return null;
-		const cutoff = now - 3_600_000;
-		let base = history[0];
-		for (const sample of history) {
-			if (Date.parse(sample[0]) <= cutoff) base = sample;
-			else break;
-		}
-		const hours = (now - Date.parse(base[0])) / 3_600_000;
-		if (!(hours > 1 / 6) || base[1] == null) return null;
-		return (row.views - base[1]) / hours;
+	function perHour(rate: number): string {
+		return rate < 10 ? rate.toFixed(1) : Math.round(rate).toLocaleString();
 	}
 
-	function rate(row: VideoStats): string {
-		const v = vph(row);
-		if (v === null) return '—';
-		return v < 10 ? v.toFixed(1) : Math.round(v).toLocaleString();
+	function hoursText(hours: number): string {
+		return hours < 10 ? `${hours.toFixed(1)} h` : `${Math.round(hours).toLocaleString()} h`;
+	}
+
+	function rateText(launch: LaunchRate): string {
+		return launch.mode === 'none' ? '—' : perHour(launch.rate);
+	}
+
+	/** The long form of the same number, for the details and the tooltip. */
+	function rateDetail(launch: LaunchRate): string {
+		switch (launch.mode) {
+			case 'settled':
+				return (
+					`${perHour(launch.rate)} — ${launch.views.toLocaleString()} views from release ` +
+					`to the first hour without one, ${hoursText(launch.hours)} in`
+				);
+			case 'running':
+				return (
+					`${perHour(launch.rate)} so far — ${launch.views.toLocaleString()} views in ` +
+					`${hoursText(launch.hours)}, still getting views every hour`
+				);
+			case 'lifetime':
+				return (
+					`${perHour(launch.rate)} lifetime average — flock was not watching when this ` +
+					'was released, so its first quiet hour is unknown'
+				);
+			default:
+				return 'not released yet';
+		}
 	}
 
 	function thumb(row: VideoStats): string {
@@ -202,7 +222,7 @@
 	}
 
 	/** Everything the API returned, grouped for reading. Empty fields are dropped. */
-	function facts(row: VideoStats): FactGroup[] {
+	function facts(row: VideoStats, launch: LaunchRate): FactGroup[] {
 		const d = row.data ?? ({} as YouTubeVideo);
 		const s = d.snippet ?? {};
 		const st = d.status ?? {};
@@ -251,7 +271,7 @@
 						stats.commentCount != null ? Number(stats.commentCount).toLocaleString() : 'off'
 					],
 					['Favourites', stats.favoriteCount],
-					['Views per hour', rate(row)],
+					['Views per hour', rateDetail(launch)],
 					['Samples kept', String(row.history?.length ?? 0)],
 					['Last movement', last ? ago(last[0]) : undefined],
 					['Last read', ago(row.fetched_at)]
@@ -367,65 +387,89 @@
 			channel appear here and refresh every 30 seconds.
 		</p>
 	{:else}
-		<div class="table card">
-			<div class="row cols">
-				<span></span>
-				<span>Video</span>
-				<span>Published</span>
-				<span>Length</span>
-				<span class="num">Views</span>
-				<span class="num">Likes</span>
-				<span class="num">Comments</span>
-				<span class="num">Views/h</span>
-				<span></span>
-			</div>
-			{#each sorted as row (row.id)}
-				<button
-					class="row"
-					class:open={open === row.id}
-					onclick={() => (open = open === row.id ? null : row.id)}
-				>
-					{#if thumb(row)}
-						<img class="thumb" src={thumb(row)} alt="" loading="lazy" />
-					{:else}
-						<span class="thumb"></span>
+		<div class="live">
+			<nav class="kinds" aria-label="Kind of video">
+				{#each KIND_ORDER as k (k)}
+					{#if k !== 'other' || counts.other > 0}
+						<button
+							class="kind"
+							class:active={kind === k}
+							onclick={() => (kind = kind === k ? null : k)}
+						>
+							<span>{KIND_LABELS[k]}</span>
+							<span class="count">{counts[k]}</span>
+						</button>
 					{/if}
-					<span class="vid">
-						<span class="vtitle">{row.title || '(untitled)'}</span>
-						<span class="vmeta">
-							{row.video_id}
-							{#if viaFlock(row)}<span class="dot">·</span><span class="via">flock</span>{/if}
-							<span class="dot">·</span>read {ago(row.fetched_at)}
+				{/each}
+				<p class="rule">Shorts are under three minutes. Long form is over, and not live.</p>
+			</nav>
+
+			<div class="table card">
+				<div class="row cols">
+					<span></span>
+					<span>Video</span>
+					<span>Published</span>
+					<span>Length</span>
+					<span class="num">Views</span>
+					<span class="num">Likes</span>
+					<span class="num">Comments</span>
+					<span class="num" title="Views from release to the first hour without one">Views/h</span>
+					<span></span>
+				</div>
+				{#each shown as row (row.id)}
+					{@const launch = launchRate(row, runs, now)}
+					<button
+						class="row"
+						class:open={open === row.id}
+						onclick={() => (open = open === row.id ? null : row.id)}
+					>
+						{#if thumb(row)}
+							<img class="thumb" src={thumb(row)} alt="" loading="lazy" />
+						{:else}
+							<span class="thumb"></span>
+						{/if}
+						<span class="vid">
+							<span class="vtitle">{row.title || '(untitled)'}</span>
+							<span class="vmeta">
+								{row.video_id}
+								{#if viaFlock(row)}<span class="dot">·</span><span class="via">flock</span>{/if}
+								<span class="dot">·</span>read {ago(row.fetched_at)}
+							</span>
 						</span>
-					</span>
-					<span class="cell">{ago(row.published_at)}</span>
-					<span class="cell">{formatDuration(row.duration)}</span>
-					<span class="cell num">{num(row.views)}</span>
-					<span class="cell num">{num(row.likes)}</span>
-					<span class="cell num">{num(row.comments)}</span>
-					<span class="cell num rate">{rate(row)}</span>
-					<span class="pill privacy {row.privacy}">{row.privacy || '?'}</span>
-				</button>
-				{#if open === row.id}
-					<div class="details">
-						{#each facts(row) as group (group.title)}
-							<section class="group">
-								<h4>{group.title}</h4>
-								<dl>
-									{#each group.rows as [label, value] (label)}
-										<dt>{label}</dt>
-										<dd>{value}</dd>
-									{/each}
-								</dl>
-							</section>
-						{/each}
-						<details class="raw">
-							<summary>Everything the API returned</summary>
-							<pre>{JSON.stringify(row.data, null, 2)}</pre>
-						</details>
-					</div>
+						<span class="cell">{ago(row.published_at)}</span>
+						<span class="cell">{formatDuration(row.duration)}</span>
+						<span class="cell num">{num(row.views)}</span>
+						<span class="cell num">{num(row.likes)}</span>
+						<span class="cell num">{num(row.comments)}</span>
+						<span class="cell num rate {launch.mode}" title={rateDetail(launch)}>
+							{rateText(launch)}
+						</span>
+						<span class="pill privacy {row.privacy}">{row.privacy || '?'}</span>
+					</button>
+					{#if open === row.id}
+						<div class="details">
+							{#each facts(row, launch) as group (group.title)}
+								<section class="group">
+									<h4>{group.title}</h4>
+									<dl>
+										{#each group.rows as [label, value] (label)}
+											<dt>{label}</dt>
+											<dd>{value}</dd>
+										{/each}
+									</dl>
+								</section>
+							{/each}
+							<details class="raw">
+								<summary>Everything the API returned</summary>
+								<pre>{JSON.stringify(row.data, null, 2)}</pre>
+							</details>
+						</div>
+					{/if}
+				{/each}
+				{#if shown.length === 0}
+					<p class="empty">Nothing of that kind yet.</p>
 				{/if}
-			{/each}
+			</div>
 		</div>
 	{/if}
 
@@ -578,6 +622,73 @@
 
 	/* ---- the live table ---- */
 
+	.live {
+		display: grid;
+		grid-template-columns: 148px minmax(0, 1fr);
+		gap: 14px;
+		align-items: start;
+	}
+
+	.kinds {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.kind {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 9px 12px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border);
+		background: var(--surface);
+		color: var(--text-dim);
+		font: inherit;
+		font-size: 12.5px;
+		font-weight: 570;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.kind:hover {
+		border-color: var(--border-strong);
+		color: var(--text);
+	}
+
+	.kind.active {
+		border-color: var(--pink);
+		background: rgba(255, 77, 158, 0.12);
+		color: var(--text);
+	}
+
+	.count {
+		font-size: 11px;
+		font-weight: 650;
+		color: var(--text-faint);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.kind.active .count {
+		color: var(--pink-soft);
+	}
+
+	.rule {
+		margin: 4px 2px 0;
+		font-size: 11px;
+		line-height: 1.45;
+		color: var(--text-faint);
+	}
+
+	.empty {
+		margin: 0;
+		padding: 16px 14px;
+		border-top: 1px solid var(--border);
+		font-size: 12.5px;
+		color: var(--text-faint);
+	}
+
 	.table {
 		overflow: hidden;
 	}
@@ -665,6 +776,16 @@
 	.rate {
 		color: var(--text);
 		font-weight: 600;
+	}
+
+	.rate.running {
+		font-style: italic;
+		color: var(--text-dim);
+	}
+
+	.rate.lifetime {
+		font-weight: 500;
+		color: var(--text-faint);
 	}
 
 	.privacy {
@@ -883,6 +1004,16 @@
 	}
 
 	@media (max-width: 900px) {
+		.live {
+			grid-template-columns: 1fr;
+		}
+		.kinds {
+			flex-direction: row;
+			flex-wrap: wrap;
+		}
+		.rule {
+			flex-basis: 100%;
+		}
 		.row {
 			grid-template-columns: 56px minmax(0, 1fr) 76px 76px 72px;
 		}

@@ -380,6 +380,18 @@ export interface VideoStats {
 	updated: string;
 }
 
+/**
+ * A stretch during which the worker polled without a break. It records these
+ * itself, because a gap in a video's samples means "nothing moved" only if
+ * flock was watching through it — samples are written on change, so an hour
+ * with no sample and an hour with the worker switched off look the same in
+ * the history.
+ */
+export interface PollRun {
+	from: string;
+	to: string;
+}
+
 /** The stats pass's heartbeat, in app_settings under `stats_status`. */
 export interface StatsStatus {
 	polledAt: string;
@@ -388,4 +400,5 @@ export interface StatsStatus {
 	intervalSeconds: number;
 	videos: number;
 	error: string;
+	runs?: PollRun[];
 }

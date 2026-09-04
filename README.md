@@ -216,11 +216,16 @@ time and the machine that made it. Filter by category, search, or click a device
 tag to see only that machine. It cannot be edited or cleared.
 
 **Analytics** shows the newest fifty videos on the channel as YouTube reports
-them, refreshed every 30 seconds while the worker runs: views, likes, comments
-and views per hour in a row per video, and everything else the API returns
-underneath when you click one. It needs the worker running. Below that it lists
-what is currently stored on the NAS, which is where you check that an upload
-actually landed.
+them, refreshed every 30 seconds while the worker runs: views, likes and
+comments in a row per video, and everything else the API returns underneath
+when you click one. The buttons on the left narrow it to Shorts (under three
+minutes), long form, live streams, or whatever fits none of those. *Views/h*
+is the launch rate: views from release until the first hour without one,
+divided by the hours between. It is final once that hour has passed, shown in
+italics while the video is still getting views, and muted for videos released
+before the worker was watching, where it is a lifetime average instead. It
+needs the worker running. Below that it lists what is currently stored on the
+NAS, which is where you check that an upload actually landed.
 
 **Settings** has three parts. *Storage and defaults* holds the NAS folders a
 finished video is copied into (the filled circle marks the default) and shows this

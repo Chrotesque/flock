@@ -41,6 +41,7 @@ let spent = { day: '', units: 0 };
 let paused = false;
 let parts = ALL_PARTS;
 let lastError = '';
+let runs = null;
 
 /** Google's quota resets at midnight Pacific, whatever clock the worker runs on. */
 function pacificDay() {
@@ -58,6 +59,28 @@ function charge(units) {
 
 export function unitsToday() {
 	return spent.day === pacificDay() ? spent.units : 0;
+}
+
+/**
+ * The stretches during which the worker polled without a break, kept in the
+ * heartbeat. The screen needs them to tell a quiet hour from an hour the
+ * worker was switched off: samples are written only on change, so the
+ * history alone cannot say which it was. A restart within a few intervals
+ * continues the current run rather than opening a new one.
+ */
+async function loadRuns(pb) {
+	if (runs) return;
+	const row = await pb.getSetting('stats_status');
+	runs = Array.isArray(row?.value?.runs) ? row.value.runs : [];
+}
+
+function noteRun(config) {
+	const now = new Date().toISOString();
+	const last = runs[runs.length - 1];
+	const gap = last ? Date.parse(now) - Date.parse(last.to) : Infinity;
+	if (last && gap <= 3 * Math.max(5, config.statsSeconds) * 1000) last.to = now;
+	else runs.push({ from: now, to: now });
+	if (runs.length > 100) runs.splice(0, runs.length - 100);
 }
 
 async function api(config, path, retry = true) {
@@ -185,6 +208,7 @@ async function report(pb, config, extra) {
 		intervalSeconds: config.statsSeconds,
 		videos: 0,
 		error: '',
+		runs: runs ?? [],
 		...extra
 	});
 }
@@ -210,6 +234,7 @@ export async function statsPass({ pb, config, log }) {
 	}
 
 	try {
+		await loadRuns(pb);
 		const ids = await recentIds(config, config.statsVideos);
 		if (ids.length === 0) {
 			await report(pb, config, { videos: 0 });
@@ -217,6 +242,7 @@ export async function statsPass({ pb, config, log }) {
 		}
 
 		const items = await fetchVideos(config, ids);
+		noteRun(config);
 		const existing = await pb.listVideoStats();
 		const byVideo = new Map(existing.map((row) => [row.video_id, row]));
 		const now = new Date().toISOString();
