@@ -281,9 +281,11 @@
 </div>
 
 <style>
+	/* Full width: the details step lays three columns across whatever the
+	   window gives, and the layout's own 40px keeps it off the edges. */
 	.page {
-		max-width: 1180px;
-		margin: 0 auto;
+		max-width: none;
+		margin: 0;
 	}
 
 	.head {

@@ -918,6 +918,7 @@
 		{/if}
 	</div>
 
+	<div class="aside">
 	<div class="side">
 		<aside class="rail card">
 			<header>
@@ -992,6 +993,55 @@
 			{/if}
 		</aside>
 
+		{#if youtubeActive}
+			<section class="videocard card">
+				<span class="label">Paid promotion <span class="labelnote">YouTube</span></span>
+				<Checkbox
+					checked={paidPromotion}
+					label="This video contains paid promotion"
+					onchange={setPaidPromotion}
+				/>
+				<p class="nasnote faint">
+					Product placement, sponsorship or endorsement. YouTube adds its own disclosure to the
+					video. Off on every new upload.
+				</p>
+			</section>
+
+			<section class="videocard card">
+				<span class="label">Playlist <span class="labelnote">YouTube</span></span>
+				<select
+					class="playlist"
+					value={playlistValue}
+					onchange={(e) => setPlaylist(e.currentTarget.value)}
+				>
+					<option value="">None</option>
+					{#if playlistValue && !playlists?.items.some((p) => p.title === playlistValue)}
+						<option value={playlistValue}>{playlistValue} (not on the channel)</option>
+					{/if}
+					{#each playlists?.items ?? [] as item (item.id)}
+						<option value={item.title}>{item.title} ({item.count})</option>
+					{/each}
+				</select>
+				{#if playlistsLoading}
+					<p class="nasnote">Looking…</p>
+				{:else if !playlists}
+					<p class="nasnote">The worker has not listed the channel's playlists yet.</p>
+				{:else if playlists.error}
+					<p class="nasnote bad">{playlists.error}</p>
+				{:else}
+					<p class="nasnote faint">
+						{playlists.items.length} on the channel, listed {listedLabel}.
+						<button class="relink" onclick={refreshPlaylists}>Refresh</button>
+					</p>
+				{/if}
+				<p class="nasnote faint">
+					Adding needs the worker authorised with <code>--with-playlists</code>.
+				</p>
+			</section>
+		{/if}
+	</div>
+
+	<div class="media">
 		<section class="videocard card">
 			<span class="label">Video file</span>
 			<VideoPicker
@@ -1049,52 +1099,8 @@
 				<span class="label">Thumbnail <span class="labelnote">YouTube</span></span>
 				<ThumbnailPicker bind:file={draft.thumbnail} />
 			</section>
-
-			<section class="videocard card">
-				<span class="label">Paid promotion <span class="labelnote">YouTube</span></span>
-				<Checkbox
-					checked={paidPromotion}
-					label="This video contains paid promotion"
-					onchange={setPaidPromotion}
-				/>
-				<p class="nasnote faint">
-					Product placement, sponsorship or endorsement. YouTube adds its own disclosure to the
-					video. Off on every new upload.
-				</p>
-			</section>
-
-			<section class="videocard card">
-				<span class="label">Playlist <span class="labelnote">YouTube</span></span>
-				<select
-					class="playlist"
-					value={playlistValue}
-					onchange={(e) => setPlaylist(e.currentTarget.value)}
-				>
-					<option value="">None</option>
-					{#if playlistValue && !playlists?.items.some((p) => p.title === playlistValue)}
-						<option value={playlistValue}>{playlistValue} (not on the channel)</option>
-					{/if}
-					{#each playlists?.items ?? [] as item (item.id)}
-						<option value={item.title}>{item.title} ({item.count})</option>
-					{/each}
-				</select>
-				{#if playlistsLoading}
-					<p class="nasnote">Looking…</p>
-				{:else if !playlists}
-					<p class="nasnote">The worker has not listed the channel's playlists yet.</p>
-				{:else if playlists.error}
-					<p class="nasnote bad">{playlists.error}</p>
-				{:else}
-					<p class="nasnote faint">
-						{playlists.items.length} on the channel, listed {listedLabel}.
-						<button class="relink" onclick={refreshPlaylists}>Refresh</button>
-					</p>
-				{/if}
-				<p class="nasnote faint">
-					Adding needs the worker authorised with <code>--with-playlists</code>.
-				</p>
-			</section>
 		{/if}
+	</div>
 	</div>
 </div>
 
@@ -1115,9 +1121,29 @@
 <style>
 	.stage {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) 320px;
+		grid-template-columns: minmax(0, 1fr) auto;
 		gap: 20px;
 		align-items: start;
+	}
+
+	/* The two side columns: platforms with the small YouTube boxes, then the
+	   video and its thumbnail. Fixed widths, so only the compose card gives
+	   when the window does; below 1440px they stack into one column, and below
+	   1040px the whole stage does. */
+	.aside {
+		display: grid;
+		grid-template-columns: 270px 310px;
+		gap: 20px;
+		align-items: start;
+		position: sticky;
+		top: 0;
+	}
+
+	.media {
+		min-width: 0;
+		display: grid;
+		gap: 20px;
+		align-content: start;
 	}
 
 	/* The compose card and the boxes under it, as their own column.
@@ -1720,15 +1746,13 @@
 		overflow: hidden;
 	}
 
-	/* ---- right column: platforms, then the file ---- */
+	/* ---- middle column: platforms, then the small YouTube boxes ---- */
 
 	.side {
 		min-width: 0;
 		display: grid;
 		gap: 20px;
 		align-content: start;
-		position: sticky;
-		top: 0;
 	}
 
 	.rail {
@@ -1998,11 +2022,18 @@
 		min-width: 0;
 	}
 
+	@media (max-width: 1440px) {
+		.aside {
+			grid-template-columns: 320px;
+		}
+	}
+
 	@media (max-width: 1040px) {
 		.stage {
 			grid-template-columns: 1fr;
 		}
-		.side {
+		.aside {
+			grid-template-columns: 1fr;
 			position: static;
 		}
 	}
