@@ -34,6 +34,22 @@ function mergeScheduling(stored: unknown): PlatformScheduling {
 }
 
 /**
+ * Stored defaults over the registry's, field by field: a default added to the
+ * registry after the row was written would otherwise be missing entirely, and
+ * one removed from it (the per-upload playlist, once a saved default) would
+ * otherwise ride along in every plan with no control left to see it by.
+ */
+function mergeDefaults(id: PlatformId, stored: unknown): OptionValues {
+	const known = PLATFORMS[id].defaults;
+	const value = (stored && typeof stored === 'object' ? stored : {}) as OptionValues;
+	const merged: OptionValues = { ...known };
+	for (const key of Object.keys(known)) {
+		if (key in value) merged[key] = value[key];
+	}
+	return merged;
+}
+
+/**
  * Loads every platform's settings, creating any row that does not exist yet
  * from the registry defaults. Seeding lives here rather than in setup-pb.mjs
  * so the shipped defaults have exactly one source of truth (platforms.ts).
@@ -58,9 +74,7 @@ export async function loadPlatformSettings(): Promise<PlatformSettings[]> {
 				platform: id,
 				enabled: existing.enabled ?? true,
 				sort_order: existing.sort_order ?? index,
-				// A default added to the registry after the row was written would
-				// otherwise be missing entirely.
-				defaults: { ...PLATFORMS[id].defaults, ...(existing.defaults ?? {}) },
+				defaults: mergeDefaults(id, existing.defaults),
 				filters: Array.isArray(existing.filters) ? existing.filters : [],
 				scheduling: mergeScheduling(existing.scheduling)
 			});

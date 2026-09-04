@@ -66,13 +66,9 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 				type: 'select',
 				choices: YOUTUBE_LANGUAGES
 			},
-			{
-				key: 'playlist',
-				label: 'Add to playlist',
-				type: 'text',
-				placeholder: 'None',
-				hint: 'Picked from the channel\'s playlists on the compose screen. Matched by name; adding needs the worker authorised with --with-playlists.'
-			},
+			// The playlist is deliberately not a field here: it differs on every
+			// upload, so it is picked on the compose screen and lands in the
+			// target's options as `playlist` (the playlist's title) from there.
 			// Split only for the interface's sake. videos.insert takes one list, and
 			// buildPlan is where these four become it.
 			{ key: 'tagsStandard', label: 'Standard', type: 'tags', placeholder: 'Paste or type' },
@@ -95,7 +91,7 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 			category: 'Science & Technology',
 			videoLanguage: 'English (US)',
 			textLanguage: 'English (US)',
-			playlist: '',
+
 			tagsStandard: [],
 			tagsShorts: [],
 			tagsLongform: [],

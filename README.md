@@ -141,16 +141,16 @@ That asks for **upload permission plus read-only access** to the channel. Upload
 is all `videos.insert` needs; read-only is what the Analytics screen's stats
 need, and it cannot change anything. An authorisation made before Analytics
 existed has read the channel fine too, so re-run this only if the worker reports
-a scope error. The one exception is the *Add to playlist*
-option: putting a video in a playlist requires Google's broader
+a scope error. The one exception is the playlist box on the compose screen:
+putting a video in a playlist requires Google's broader
 `youtube` scope, which the consent screen describes as permanently deleting
-videos, comments and captions. If you want that option to work, authorise with:
+videos, comments and captions. If you want that to work, authorise with:
 
 ```bash
 pnpm worker:auth --with-playlists
 ```
 
-Otherwise the playlist field is skipped and the worker says so in its log.
+Otherwise the playlist is skipped and the worker says so in its log.
 
 Check the queue without uploading anything:
 

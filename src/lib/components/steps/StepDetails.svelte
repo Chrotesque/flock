@@ -116,8 +116,9 @@
 	 * Both YouTube-only, so they only render while YouTube is going to get this
 	 * upload. The playlist list comes from the worker by way of PocketBase,
 	 * exactly like the watch folder: the browser holds no Google credentials.
-	 * The value kept is the playlist's title, which is what the worker has
-	 * always matched on — so a default typed into Settings still works.
+	 * The choice is per upload and lives only in the draft's overrides — there
+	 * is no saved default, since no two uploads want the same one. The value
+	 * kept is the playlist's title, which is what the worker matches on.
 	 */
 
 	let youtubeActive = $derived(draft.activePlatforms.includes('youtube'));
@@ -136,9 +137,7 @@
 	}
 	void refreshPlaylists();
 
-	let playlistValue = $derived(
-		String(draft.overrides.youtube?.playlist ?? settings.defaultsFor('youtube').playlist ?? '')
-	);
+	let playlistValue = $derived(String(draft.overrides.youtube?.playlist ?? ''));
 
 	function setPlaylist(name: string) {
 		draft.overrides.youtube = { ...(draft.overrides.youtube ?? {}), playlist: name };
