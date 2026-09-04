@@ -1,11 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { covered, launchRate } from './launch';
+import { covered, launchEnd, launchRate, LAUNCH_CAP_HOURS } from './launch';
 import type { StatsSample } from './types';
 
 const T = Date.parse('2026-09-05T10:00:00.000Z');
 const MIN = 60_000;
 const at = (minutes: number) => new Date(T + minutes * MIN).toISOString();
 const sample = (minutes: number, views: number): StatsSample => [at(minutes), views, 0, 0];
+
+/** A history that gained `gains[h]` views in hour h, each landing mid-hour. */
+function history(gains: number[]): StatsSample[] {
+	let views = 0;
+	const out: StatsSample[] = [];
+	gains.forEach((gain, h) => {
+		if (gain <= 0) return;
+		views += gain;
+		out.push(sample(h * 60 + 30, views));
+	});
+	return out;
+}
+
+const watching = [{ from: at(-60), to: at(60 * 80) }];
 
 describe('covered', () => {
 	it('needs one run to span the whole range', () => {
@@ -24,54 +38,86 @@ describe('covered', () => {
 	});
 });
 
-describe('launchRate', () => {
-	const watching = [{ from: at(-60), to: at(240) }];
+describe('launchEnd', () => {
+	it('is the first hour under a tenth of the best', () => {
+		expect(launchEnd([400, 500, 260, 5])).toBe(3);
+		expect(launchEnd([400, 500, 260, 51, 49])).toBe(4);
+		expect(launchEnd([400, 500, 260, 50, 49])).toBe(3);
+	});
 
-	it('settles on the first hour without a view', () => {
+	it('is not reached while the hours keep climbing', () => {
+		expect(launchEnd([400, 500])).toBe(-1);
+		expect(launchEnd([100, 200, 300])).toBe(-1);
+	});
+
+	it('waits for a real burst rather than settling on a quiet start', () => {
+		expect(launchEnd([0, 0, 300, 20])).toBe(3);
+		expect(launchEnd([3, 0, 0])).toBe(-1);
+	});
+});
+
+describe('launchRate', () => {
+	it('settles on the burst and ignores the trickle after it', () => {
 		const result = launchRate(
-			{ published_at: at(0), views: 9, history: [sample(10, 5), sample(30, 9)] },
+			{ published_at: at(0), views: 1173, history: history([400, 500, 260, 5, 3, 2, 1, 2]) },
 			watching,
-			T + 120 * MIN
+			T + 8 * 60 * MIN
 		);
 		expect(result.mode).toBe('settled');
 		if (result.mode !== 'settled') return;
-		expect(result.views).toBe(9);
-		expect(result.hours).toBeCloseTo(0.5);
-		expect(result.rate).toBeCloseTo(18);
-		expect(result.quietAt).toBe(at(30));
+		expect(result.views).toBe(1160);
+		expect(result.hours).toBe(3);
+		expect(result.rate).toBeCloseTo(1160 / 3);
+		expect(result.until).toBe(at(180));
 	});
 
-	it('keeps running while views keep coming', () => {
+	it('keeps running while the burst is still going', () => {
 		const result = launchRate(
-			{ published_at: at(0), views: 9, history: [sample(10, 5), sample(30, 9)] },
+			{ published_at: at(0), views: 900, history: history([400, 500]) },
 			watching,
-			T + 50 * MIN
+			T + 150 * MIN
 		);
 		expect(result.mode).toBe('running');
 		if (result.mode !== 'running') return;
-		expect(result.rate).toBeCloseTo(9 / (50 / 60));
+		expect(result.rate).toBeCloseTo(900 / 2.5);
 	});
 
-	it('does not settle while a later view is still possible', () => {
-		// Views at +10 and +100: the gap between them is over an hour, so that
-		// quiet hour is final even though the video moved again afterwards.
+	it('settles even when the views never quite stop', () => {
 		const result = launchRate(
-			{ published_at: at(0), views: 12, history: [sample(10, 5), sample(100, 12)] },
+			{ published_at: at(0), views: 1215, history: history([400, 500, 260, 30, 25]) },
 			watching,
-			T + 130 * MIN
+			T + 5 * 60 * MIN
 		);
 		expect(result.mode).toBe('settled');
 		if (result.mode !== 'settled') return;
-		expect(result.quietAt).toBe(at(10));
-		expect(result.views).toBe(5);
+		expect(result.hours).toBe(3);
+		expect(result.views).toBe(1160);
 	});
 
-	it('is zero for a video nobody watched in its first hour', () => {
-		const result = launchRate({ published_at: at(0), views: 3, history: [sample(90, 3)] }, watching, T + 120 * MIN);
+	it('does not settle on a slow start before the burst arrives', () => {
+		const result = launchRate(
+			{ published_at: at(0), views: 320, history: history([0, 0, 300, 20]) },
+			watching,
+			T + 4 * 60 * MIN
+		);
 		expect(result.mode).toBe('settled');
 		if (result.mode !== 'settled') return;
-		expect(result.rate).toBe(0);
-		expect(result.quietAt).toBe(at(0));
+		expect(result.hours).toBe(3);
+		expect(result.views).toBe(300);
+	});
+
+	it('gives up waiting for a burst after two days', () => {
+		const gains = Array.from({ length: 50 }, () => 10);
+		const result = launchRate(
+			{ published_at: at(0), views: 500, history: history(gains) },
+			watching,
+			T + 50 * 60 * MIN
+		);
+		expect(result.mode).toBe('settled');
+		if (result.mode !== 'settled') return;
+		expect(result.hours).toBe(LAUNCH_CAP_HOURS);
+		expect(result.views).toBe(480);
+		expect(result.rate).toBeCloseTo(10);
 	});
 
 	it('falls back to a lifetime average when release was not watched', () => {
@@ -86,29 +132,33 @@ describe('launchRate', () => {
 		expect(result.rate).toBeCloseTo(100 / (400 / 60));
 	});
 
-	it('does not trust a quiet hour the worker slept through', () => {
+	it('does not trust a fade the worker slept through', () => {
 		const patchy = [
-			{ from: at(-60), to: at(20) },
-			{ from: at(40), to: at(240) }
+			{ from: at(-60), to: at(80) },
+			{ from: at(100), to: at(600) }
 		];
 		const result = launchRate(
-			{ published_at: at(0), views: 5, history: [sample(10, 5)] },
+			{ published_at: at(0), views: 1165, history: history([400, 500, 260, 5]) },
 			patchy,
-			T + 240 * MIN
+			T + 6 * 60 * MIN
 		);
 		expect(result.mode).toBe('lifetime');
 	});
 
 	it('ignores samples from before release', () => {
 		const result = launchRate(
-			{ published_at: at(0), views: 4, history: [sample(-600, 0), sample(-300, 0), sample(5, 4)] },
+			{
+				published_at: at(0),
+				views: 905,
+				history: [sample(-600, 0), sample(-300, 0), ...history([400, 500, 5])]
+			},
 			watching,
-			T + 120 * MIN
+			T + 4 * 60 * MIN
 		);
 		expect(result.mode).toBe('settled');
 		if (result.mode !== 'settled') return;
-		expect(result.quietAt).toBe(at(5));
-		expect(result.views).toBe(4);
+		expect(result.hours).toBe(2);
+		expect(result.views).toBe(900);
 	});
 
 	it('has nothing to say before release', () => {

@@ -3,22 +3,36 @@ import type { PollRun, StatsSample } from './types';
 export type { PollRun };
 
 /**
- * Views per hour from release to the first hour without a single view.
+ * Views per hour over the launch: from release until the burst faded.
  *
- * - `settled`: that quiet hour was observed, so the number is final.
- * - `running`: watched from release and still getting views every hour, so
- *   the number is the rate so far and will keep moving until it settles.
- * - `lifetime`: flock was not watching from release, so the first quiet hour
- *   cannot be known. Views over the whole time since release instead.
+ * "Faded" is the first full hour that gained no more than a tenth of the
+ * video's best hour so far. That is fixed by the early data alone, so late
+ * trickle cannot move it — where "until 90% of the views" would drift every
+ * time the total crept up. A best hour under `MIN_PEAK` is not a burst yet,
+ * so a slow starter keeps waiting for one; after `LAUNCH_CAP_HOURS` the wait
+ * ends and the first two days stand as the launch.
+ *
+ * - `settled`: the fade (or the cap) was observed, so the number is final.
+ * - `running`: watched from release and the burst has not faded yet, so the
+ *   number is the rate so far and will keep moving until it settles.
+ * - `lifetime`: flock was not watching from release, so the burst cannot be
+ *   known. Views over the whole time since release instead.
  * - `none`: not released yet, or nothing to count.
  */
 export type LaunchRate =
-	| { mode: 'settled'; rate: number; views: number; hours: number; quietAt: string }
+	| { mode: 'settled'; rate: number; views: number; hours: number; until: string }
 	| { mode: 'running'; rate: number; views: number; hours: number }
 	| { mode: 'lifetime'; rate: number; views: number; hours: number }
 	| { mode: 'none' };
 
 const HOUR = 3_600_000;
+
+/** An hour gaining no more than this share of the best hour ends the launch. */
+export const TRICKLE_SHARE = 0.1;
+/** A best hour under this is not a burst; keep waiting for one. */
+export const MIN_PEAK = 10;
+/** Stop waiting here and take the first two days as the launch. */
+export const LAUNCH_CAP_HOURS = 48;
 
 /** Whether one run spans [from, to], allowing `slack` at either end for the poll interval. */
 export function covered(runs: PollRun[], from: number, to: number, slack = 0): boolean {
@@ -27,6 +41,46 @@ export function covered(runs: PollRun[], from: number, to: number, slack = 0): b
 		const end = Date.parse(run.to);
 		return Number.isFinite(start) && Number.isFinite(end) && start - slack <= from && end + slack >= to;
 	});
+}
+
+interface Point {
+	t: number;
+	views: number;
+}
+
+/** Views at an instant: the last sample at or before it. Samples are a step function. */
+function viewsAt(points: Point[], t: number): number {
+	let views = 0;
+	for (const point of points) {
+		if (point.t > t) break;
+		views = point.views;
+	}
+	return views;
+}
+
+/** Views gained in each full hour since release, for the first `hours` of them. */
+export function hourlyGains(points: Point[], released: number, hours: number): number[] {
+	const gains: number[] = [];
+	for (let h = 0; h < hours; h++) {
+		gains.push(viewsAt(points, released + (h + 1) * HOUR) - viewsAt(points, released + h * HOUR));
+	}
+	return gains;
+}
+
+/**
+ * The hour the launch ended: the first full hour, after the best one so far,
+ * that gained no more than a tenth of it. -1 while the burst is still going.
+ */
+export function launchEnd(gains: number[]): number {
+	let peak = -1;
+	for (let h = 0; h < gains.length; h++) {
+		if (peak === -1 || gains[h] > gains[peak]) {
+			peak = h;
+			continue;
+		}
+		if (gains[peak] >= MIN_PEAK && gains[h] <= Math.max(1, gains[peak] * TRICKLE_SHARE)) return h;
+	}
+	return -1;
 }
 
 export function launchRate(
@@ -41,30 +95,42 @@ export function launchRate(
 	// Every moment the counters were seen to move after release, with release
 	// itself at zero. Samples from before release belong to the private phase
 	// of a scheduled upload and say nothing about the launch.
-	const points: { t: number; views: number }[] = [{ t: released, views: 0 }];
+	const points: Point[] = [{ t: released, views: 0 }];
 	for (const [iso, views] of video.history ?? []) {
 		const t = Date.parse(iso);
 		if (Number.isFinite(t) && t > released && views != null) points.push({ t, views });
 	}
+	points.sort((a, b) => a.t - b.t);
 
-	for (let i = 0; i < points.length; i++) {
-		const next = i + 1 < points.length ? points[i + 1].t : now;
-		if (next - points[i].t < HOUR) continue;
-		// A quiet hour began here. It is the *first* one only if the worker was
-		// watching the whole way from release to the end of it.
-		if (!covered(runs, released, points[i].t + HOUR, slack)) break;
-		const hours = (points[i].t - released) / HOUR;
+	const fullHours = Math.min(Math.floor((now - released) / HOUR), LAUNCH_CAP_HOURS);
+	const gains = hourlyGains(points, released, fullHours);
+	let end = launchEnd(gains);
+	if (end === -1 && fullHours >= LAUNCH_CAP_HOURS) end = LAUNCH_CAP_HOURS;
+
+	const lifetimeHours = (now - released) / HOUR;
+	const lifetime: LaunchRate = {
+		mode: 'lifetime',
+		rate: lifetimeHours > 0 ? video.views / lifetimeHours : 0,
+		views: video.views,
+		hours: lifetimeHours
+	};
+
+	if (end !== -1) {
+		const until = released + end * HOUR;
+		// Final only if the worker watched the whole way from release through
+		// the hour that ended it — a gap in polling looks exactly like a fade.
+		const through = end === LAUNCH_CAP_HOURS ? until : until + HOUR;
+		if (!covered(runs, released, through, slack)) return lifetime;
+		const views = viewsAt(points, until);
 		return {
 			mode: 'settled',
-			rate: hours > 0 ? points[i].views / hours : 0,
-			views: points[i].views,
-			hours,
-			quietAt: new Date(points[i].t).toISOString()
+			rate: end > 0 ? views / end : 0,
+			views,
+			hours: end,
+			until: new Date(until).toISOString()
 		};
 	}
 
-	const hours = (now - released) / HOUR;
-	const rate = hours > 0 ? video.views / hours : 0;
-	if (covered(runs, released, now, slack)) return { mode: 'running', rate, views: video.views, hours };
-	return { mode: 'lifetime', rate, views: video.views, hours };
+	if (!covered(runs, released, now, slack)) return lifetime;
+	return { mode: 'running', rate: lifetime.rate, views: video.views, hours: lifetimeHours };
 }

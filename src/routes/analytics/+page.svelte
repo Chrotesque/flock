@@ -12,7 +12,7 @@
 	} from '$lib/repo';
 	import { formatBytes, formatDuration, relativeTo } from '$lib/format';
 	import { KIND_LABELS, KIND_ORDER, kindOfVideo, type VideoKind } from '$lib/videokind';
-	import { launchRate, type LaunchRate } from '$lib/launch';
+	import { launchRate, LAUNCH_CAP_HOURS, type LaunchRate } from '$lib/launch';
 	import type { StatsStatus, UploadJob, UploadTarget, VideoStats, YouTubeVideo } from '$lib/types';
 
 	// The live half: the newest videos on the channel as the worker reads them.
@@ -152,19 +152,20 @@
 	function rateDetail(launch: LaunchRate): string {
 		switch (launch.mode) {
 			case 'settled':
-				return (
-					`${perHour(launch.rate)} — ${launch.views.toLocaleString()} views from release ` +
-					`to the first hour without one, ${hoursText(launch.hours)} in`
-				);
+				return launch.hours >= LAUNCH_CAP_HOURS
+					? `${perHour(launch.rate)} — ${launch.views.toLocaleString()} views over its first two days, ` +
+							'which never faded to a trickle'
+					: `${perHour(launch.rate)} — ${launch.views.toLocaleString()} views in its first ` +
+							`${hoursText(launch.hours)}, until the launch faded to a trickle`;
 			case 'running':
 				return (
 					`${perHour(launch.rate)} so far — ${launch.views.toLocaleString()} views in ` +
-					`${hoursText(launch.hours)}, still getting views every hour`
+					`${hoursText(launch.hours)}, and the launch has not faded yet`
 				);
 			case 'lifetime':
 				return (
 					`${perHour(launch.rate)} lifetime average — flock was not watching when this ` +
-					'was released, so its first quiet hour is unknown'
+					'was released, so its launch is unknown'
 				);
 			default:
 				return 'not released yet';
@@ -274,7 +275,7 @@
 					['Views per hour', rateDetail(launch)],
 					['Samples kept', String(row.history?.length ?? 0)],
 					['Last movement', last ? ago(last[0]) : undefined],
-					['Last read', ago(row.fetched_at)]
+					['Last changed', ago(row.fetched_at)]
 				])
 			},
 			{
@@ -413,7 +414,9 @@
 					<span class="num">Views</span>
 					<span class="num">Likes</span>
 					<span class="num">Comments</span>
-					<span class="num" title="Views from release to the first hour without one">Views/h</span>
+					<span class="num" title="Views from release until the launch faded to a trickle">
+						Views/h
+					</span>
 					<span></span>
 				</div>
 				{#each shown as row (row.id)}
@@ -433,7 +436,7 @@
 							<span class="vmeta">
 								{row.video_id}
 								{#if viaFlock(row)}<span class="dot">·</span><span class="via">flock</span>{/if}
-								<span class="dot">·</span>read {ago(row.fetched_at)}
+								<span class="dot">·</span>changed {ago(row.fetched_at)}
 							</span>
 						</span>
 						<span class="cell">{ago(row.published_at)}</span>
