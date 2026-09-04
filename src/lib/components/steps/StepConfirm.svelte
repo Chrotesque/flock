@@ -8,6 +8,7 @@
 	import { general } from '$lib/stores/general.svelte';
 	import { formatSchedule, formatBytes, formatDuration, firstLine } from '$lib/format';
 	import type { PlanRow } from '$lib/plan';
+	import type { PlatformId } from '$lib/types';
 
 	let { rows }: { rows: PlanRow[] } = $props();
 
@@ -56,6 +57,14 @@
 		if (video.currentTime === 0) video.currentTime = 0.1;
 	}
 
+	// Which pane the stage shows: the video, or a platform's thumbnail at the
+	// same size, so the preview is actually judgeable. Falls back to the video
+	// if the platform whose tab was open drops out of the plan.
+	let tab = $state<'video' | PlatformId>('video');
+	let shownTab = $derived(
+		tab !== 'video' && !rows.some((row) => row.platform === tab) ? 'video' : tab
+	);
+
 	let detailFor = $state<PlanRow | null>(null);
 	let detailOpen = $state(false);
 
@@ -67,33 +76,63 @@
 
 <div class="wrap">
 	<section class="card summary">
-		{#if posterUrl}
-			<!-- svelte-ignore a11y_media_has_caption -->
-			<video
-				class="poster"
-				src={posterUrl}
-				controls
-				playsinline
-				preload="metadata"
-				onloadeddata={showFirstFrame}
-			></video>
+		<div class="tabs" role="tablist">
+			<button
+				class="tab"
+				class:active={shownTab === 'video'}
+				role="tab"
+				aria-selected={shownTab === 'video'}
+				onclick={() => (tab = 'video')}
+			>
+				Video
+			</button>
+			{#each rows as row (row.platform)}
+				{#if row.platform === 'youtube'}
+					<button
+						class="tab"
+						class:active={shownTab === row.platform}
+						role="tab"
+						aria-selected={shownTab === row.platform}
+						onclick={() => (tab = row.platform)}
+					>
+						<PlatformIcon platform={row.platform} size={14} />
+						Thumbnail
+					</button>
+				{/if}
+			{/each}
+		</div>
+
+		{#if shownTab === 'video'}
+			{#if posterUrl}
+				<!-- svelte-ignore a11y_media_has_caption -->
+				<video
+					class="poster"
+					src={posterUrl}
+					controls
+					playsinline
+					preload="metadata"
+					onloadeddata={showFirstFrame}
+				></video>
+			{:else}
+				<div class="poster empty">
+					<svg viewBox="0 0 24 24" width="28" height="28" fill="none" aria-hidden="true">
+						<path
+							d="M4 6.5A2.5 2.5 0 0 1 6.5 4h7A2.5 2.5 0 0 1 16 6.5v11A2.5 2.5 0 0 1 13.5 20h-7A2.5 2.5 0 0 1 4 17.5v-11ZM16 9.5l4-2.2v9.4l-4-2.2"
+							stroke="currentColor"
+							stroke-width="1.7"
+							stroke-linejoin="round"
+						/>
+					</svg>
+					{#if draft.nasFile}
+						<p>Picked off the NAS, so there is nothing to play here.</p>
+					{/if}
+				</div>
+			{/if}
+		{:else if thumbUrl}
+			<img class="poster" src={thumbUrl} alt="Thumbnail for YouTube" />
 		{:else}
 			<div class="poster empty">
-				<svg viewBox="0 0 24 24" width="28" height="28" fill="none" aria-hidden="true">
-					<path
-						d="M4 6.5A2.5 2.5 0 0 1 6.5 4h7A2.5 2.5 0 0 1 16 6.5v11A2.5 2.5 0 0 1 13.5 20h-7A2.5 2.5 0 0 1 4 17.5v-11ZM16 9.5l4-2.2v9.4l-4-2.2"
-						stroke="currentColor"
-						stroke-width="1.7"
-						stroke-linejoin="round"
-					/>
-				</svg>
-			</div>
-		{/if}
-
-		{#if thumbUrl}
-			<div class="thumbwrap">
-				<img class="thumb" src={thumbUrl} alt="Chosen thumbnail" />
-				<span class="thumbnote">Thumbnail for YouTube</span>
+				<p>No thumbnail chosen. YouTube will pick a frame.</p>
 			</div>
 		{/if}
 
@@ -126,7 +165,6 @@
 					{/if}
 				</p>
 			</div>
-			<span class="pill">{rows.length} {rows.length === 1 ? 'platform' : 'platforms'}</span>
 		</div>
 	</section>
 
@@ -138,7 +176,6 @@
 				<span class="ic"><PlatformIcon platform={row.platform} size={20} /></span>
 
 				<div class="body">
-					<p class="date">{whenLine(row)}</p>
 					<div class="titleline">
 						<p class="title" class:empty={!label}>
 							{def.hasTitle ? 'Title' : 'Caption'}: {label ? `"${label}"` : '(none)'}
@@ -154,6 +191,7 @@
 								/>
 							</svg>
 						</button>
+						<p class="date">{whenLine(row)}</p>
 					</div>
 					<p class="meta">
 						{#if row.platform === 'youtube' && row.options.playlist}
@@ -278,30 +316,47 @@
 
 	.poster.empty {
 		display: grid;
-		place-items: center;
+		place-content: center;
+		justify-items: center;
+		gap: 8px;
 		background: var(--bg-elev);
 		color: var(--text-faint);
 	}
 
-	.thumbwrap {
+	.poster.empty p {
+		margin: 0;
+		font-size: 12.5px;
+	}
+
+	.tabs {
 		width: 100%;
 		display: flex;
+		gap: 4px;
+	}
+
+	.tab {
+		display: inline-flex;
 		align-items: center;
-		gap: 12px;
-	}
-
-	.thumb {
-		width: 128px;
-		aspect-ratio: 16 / 9;
-		object-fit: cover;
-		border-radius: 8px;
-		border: 1px solid var(--border-strong);
-		background: #000;
-	}
-
-	.thumbnote {
-		font-size: 12px;
+		gap: 6px;
+		padding: 6px 12px;
+		border-radius: 999px;
+		border: 1px solid transparent;
+		background: none;
 		color: var(--text-dim);
+		font: inherit;
+		font-size: 12px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.tab:hover {
+		color: var(--text);
+	}
+
+	.tab.active {
+		background: var(--surface-3);
+		border-color: var(--border-strong);
+		color: var(--text);
 	}
 
 	.file {
@@ -382,19 +437,22 @@
 		min-width: 0;
 	}
 
+	/* Title left, date right, on one line — and when they meet, the title is
+	   the one that wraps. */
 	.titleline {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		gap: 7px;
 	}
 
 	.title {
+		flex: 1 1 auto;
+		min-width: 0;
 		margin: 0;
 		font-size: 13.5px;
 		font-weight: 560;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		line-height: 1.4;
+		overflow-wrap: anywhere;
 	}
 
 	.title.empty {
@@ -437,9 +495,13 @@
 	}
 
 	.date {
-		margin: 0 0 3px;
+		flex: none;
+		margin: 0 0 0 auto;
 		font-size: 12.5px;
 		font-weight: 570;
+		line-height: 1.4;
+		white-space: nowrap;
+		text-align: right;
 	}
 
 	.dhead {

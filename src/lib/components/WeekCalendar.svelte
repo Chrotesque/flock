@@ -548,6 +548,7 @@
 	.cell.dense {
 		display: flex;
 		flex-wrap: wrap;
+		justify-content: center;
 		align-content: start;
 	}
 
