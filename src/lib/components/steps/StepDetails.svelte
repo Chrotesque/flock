@@ -123,6 +123,9 @@
 	 */
 
 	let youtubeActive = $derived(draft.activePlatforms.includes('youtube'));
+	let tiktokActive = $derived(draft.activePlatforms.includes('tiktok'));
+	// The thumbnail and the paid-promotion box serve both of these.
+	let mediaActive = $derived(youtubeActive || tiktokActive);
 	let playlists = $state<PlaylistIndex | null>(null);
 	let playlistsLoading = $state(false);
 
@@ -146,11 +149,43 @@
 
 	// Per upload as well, and off unless ticked: it changes too often to be a
 	// saved default, and a default of "yes" would mislabel every other video.
-	let paidPromotion = $derived(Boolean(draft.overrides.youtube?.paidPromotion));
+	// One box for both platforms that ask: YouTube's paid-promotion flag and
+	// TikTok's commercial-content disclosure are the same admission.
+	let paidPromotion = $derived(
+		Boolean(draft.overrides.youtube?.paidPromotion || draft.overrides.tiktok?.discloseContent)
+	);
 
 	function setPaidPromotion(on: boolean) {
-		draft.overrides.youtube = { ...(draft.overrides.youtube ?? {}), paidPromotion: on };
+		if (youtubeActive) {
+			draft.overrides.youtube = { ...(draft.overrides.youtube ?? {}), paidPromotion: on };
+		}
+		if (tiktokActive) {
+			draft.overrides.tiktok = { ...(draft.overrides.tiktok ?? {}), discloseContent: on };
+		}
 	}
+
+	/* ---- TikTok's caption cut-off ----
+	 *
+	 * A textarea cannot colour part of its own text, so a mirror of the caption
+	 * sits behind it with the part past the visible length tinted, and the
+	 * textarea's own text is made transparent over it. The textarea is grown to
+	 * fit rather than scrolled while the mirror is there, so the two can never
+	 * scroll apart.
+	 */
+	let captionPreview = $derived(def?.visibleCaption ?? null);
+	let captionHidden = $derived(
+		captionPreview === null ? 0 : Math.max(0, text.description.length - captionPreview)
+	);
+
+	$effect(() => {
+		if (captionPreview === null || !descEl) return;
+		void text.description;
+		descEl.style.height = 'auto';
+		descEl.style.height = `${descEl.scrollHeight + 2}px`;
+		return () => {
+			if (descEl) descEl.style.height = '';
+		};
+	});
 
 	let listedLabel = $derived.by(() => {
 		if (!playlists?.fetchedAt) return 'never';
@@ -672,18 +707,38 @@
 						</label>
 						<CharCount value={text.description} limit={def.descriptionLimit} />
 					</div>
-					<textarea
-						id="description"
-						class="textarea"
-						bind:this={descEl}
-						value={text.description}
-						oninput={(e) => onFieldInput('description', e)}
-						onfocus={() => remember('description')}
-						onclick={() => remember('description')}
-						onkeyup={() => remember('description')}
-						onselect={() => remember('description')}
-						placeholder="{def.hasTitle ? 'Description' : 'Caption'} for {def.label}"
-					></textarea>
+					<div class="captionwrap">
+						{#if captionPreview !== null}
+							<div class="mirror" aria-hidden="true">{text.description.slice(
+									0,
+									captionPreview
+								)}<span class="cut">{text.description.slice(captionPreview)}</span>{'​'}</div>
+						{/if}
+						<textarea
+							id="description"
+							class="textarea"
+							class:seethrough={captionPreview !== null}
+							bind:this={descEl}
+							value={text.description}
+							oninput={(e) => onFieldInput('description', e)}
+							onfocus={() => remember('description')}
+							onclick={() => remember('description')}
+							onkeyup={() => remember('description')}
+							onselect={() => remember('description')}
+							placeholder="{def.hasTitle ? 'Description' : 'Caption'} for {def.label}"
+						></textarea>
+					</div>
+					{#if captionPreview !== null}
+						<p class="cutnote" class:over={captionHidden > 0}>
+							{#if captionHidden > 0}
+								{captionHidden} characters sit behind "more" — {def.label} shows about the first
+								{captionPreview} under the video.
+							{:else}
+								{def.label} shows about the first {captionPreview} characters under the video;
+								anything past that turns red here.
+							{/if}
+						</p>
+					{/if}
 				</div>
 
 				<p class="note">{def.fieldNote}</p>
@@ -1009,16 +1064,18 @@
 			{/if}
 		</aside>
 
-		{#if youtubeActive}
+		{#if mediaActive}
 			<section class="videocard card">
 				<span class="label">Paid promotion</span>
 				<Checkbox
 					checked={paidPromotion}
-					label="This video contains paid promotion"
+					label="This video contains paid promotion or commercial content"
 					onchange={setPaidPromotion}
 				/>
 			</section>
+		{/if}
 
+		{#if youtubeActive}
 			<FoldBox label="Playlist" done={Boolean(playlistValue)} summary={playlistValue}>
 				<select
 					class="playlist"
@@ -1104,7 +1161,7 @@
 			</div>
 		</FoldBox>
 
-		{#if youtubeActive}
+		{#if mediaActive}
 			<FoldBox
 				label="Thumbnail"
 				done={Boolean(draft.thumbnail)}
@@ -2020,6 +2077,60 @@
 	.nasmeta {
 		font-size: 10.5px;
 		color: var(--text-faint);
+	}
+
+	/* ---- caption mirror ---- */
+
+	.captionwrap {
+		position: relative;
+	}
+
+	.mirror {
+		position: absolute;
+		inset: 0;
+		padding: 11px 13px;
+		border: 1px solid transparent;
+		border-radius: var(--radius);
+		background: var(--bg-elev);
+		font: inherit;
+		line-height: 1.6;
+		white-space: pre-wrap;
+		overflow-wrap: break-word;
+		overflow: hidden;
+		color: var(--text);
+		pointer-events: none;
+	}
+
+	.mirror .cut {
+		color: #f08b8b;
+	}
+
+	.textarea.seethrough {
+		/* Block, not the inline-block default: the inline baseline gap would make
+		   the wrapper, and so the mirror, a few pixels taller than the box. */
+		display: block;
+		position: relative;
+		background: transparent;
+		color: transparent;
+		caret-color: var(--text);
+		font: inherit;
+		line-height: 1.6;
+		resize: none;
+		overflow: hidden;
+	}
+
+	.textarea.seethrough::selection {
+		background: rgba(255, 77, 158, 0.3);
+	}
+
+	.cutnote {
+		margin: 6px 0 0;
+		font-size: 11.5px;
+		color: var(--text-faint);
+	}
+
+	.cutnote.over {
+		color: #f08b8b;
 	}
 
 	.playlist {

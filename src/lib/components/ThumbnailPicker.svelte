@@ -96,7 +96,7 @@
 				<circle cx="15.5" cy="9" r="1.3" fill="currentColor" />
 			</svg>
 			<p class="lead">Drop an image here, or click to browse</p>
-			<p class="sub">Optional. 1280×720 works best; up to 2 MB. Without one, YouTube picks a frame.</p>
+			<p class="sub">Optional. 1280×720 works best; up to 2 MB. Without one, the platform picks a frame.</p>
 		</div>
 	{/if}
 </div>

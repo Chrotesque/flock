@@ -65,6 +65,7 @@
 	let shownTab = $derived(
 		tab !== 'video' && !rows.some((row) => row.platform === tab) ? 'video' : tab
 	);
+	let paneLabel = $derived(shownTab === 'video' ? '' : PLATFORMS[shownTab].label);
 
 	// The thumbnail blown up to the whole window, for the last look before it
 	// goes out. Portalled to <body>: a transformed ancestor would otherwise pin
@@ -93,7 +94,7 @@
 				Video
 			</button>
 			{#each rows as row (row.platform)}
-				{#if row.platform === 'youtube'}
+				{#if row.platform === 'youtube' || row.platform === 'tiktok'}
 					<button
 						class="tab"
 						class:active={shownTab === row.platform}
@@ -142,7 +143,7 @@
 					aria-label="Show the thumbnail at full size"
 					title="Maximise"
 				>
-					<img class="poster" src={thumbUrl} alt="Thumbnail for YouTube" />
+					<img class="poster" src={thumbUrl} alt="Thumbnail for {paneLabel}" />
 				</button>
 				<button
 					class="maximise"
@@ -163,7 +164,7 @@
 			</div>
 		{:else}
 			<div class="poster empty">
-				<p>No thumbnail chosen. YouTube will pick a frame.</p>
+				<p>No thumbnail chosen. {paneLabel} will pick a frame.</p>
 			</div>
 		{/if}
 
@@ -245,7 +246,7 @@
 						{#if row.platform === 'youtube' && row.options.playlist}
 							<span class="dot">·</span>playlist: {row.options.playlist}
 						{/if}
-						{#if row.platform === 'youtube' && row.options.paidPromotion}
+						{#if (row.platform === 'youtube' && row.options.paidPromotion) || (row.platform === 'tiktok' && row.options.discloseContent)}
 							<span class="dot">·</span>paid promotion
 						{/if}
 						{#if row.hits > 0}
@@ -277,7 +278,7 @@
 		onclick={() => (maximised = false)}
 		aria-label="Close the full-size thumbnail"
 	>
-		<img src={thumbUrl} alt="Thumbnail for YouTube, full size" />
+		<img src={thumbUrl} alt="Thumbnail at full size" />
 	</button>
 {/if}
 

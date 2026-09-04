@@ -142,13 +142,25 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 		titleLimit: 90,
 		descriptionLimit: 2200,
 		fieldNote: 'Caption only — TikTok has no separate title.',
+		// TikTok shows roughly the first hundred characters of a caption under
+		// the video before "…more". A guess, not an API value: adjust here.
+		visibleCaption: 100,
 		fields: [
 			{ key: 'privacy', label: 'Who can view', type: 'select', choices: ['Public', 'Friends', 'Private'] },
 			{ key: 'coverFrame', label: 'Cover frame', type: 'number', min: 0, max: 60, step: 0.5, unit: 's' },
+			{
+				key: 'hdUpload',
+				label: 'High quality uploads',
+				type: 'bool',
+				hint: 'HD by default, as TikTok Studio does from the web.'
+			},
 			{ key: 'allowComments', label: 'Allow comments', type: 'bool' },
 			{ key: 'allowDuet', label: 'Allow Duet', type: 'bool' },
 			{ key: 'allowStitch', label: 'Allow Stitch', type: 'bool' },
-			{ key: 'discloseContent', label: 'Disclose commercial content', type: 'bool' },
+			// The commercial-content disclosure itself is per upload — the paid
+			// promotion box on the compose screen, shared with YouTube — and
+			// lands in the target's options as `discloseContent`. This is what
+			// kind, once it is disclosed.
 			{
 				key: 'brandedContent',
 				label: 'Content disclosure',
@@ -160,10 +172,10 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 		defaults: {
 			privacy: 'Public',
 			coverFrame: 1,
+			hdUpload: true,
 			allowComments: true,
 			allowDuet: true,
 			allowStitch: true,
-			discloseContent: false,
 			brandedContent: 'None',
 			autoAddMusic: false
 		}

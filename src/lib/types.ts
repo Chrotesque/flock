@@ -71,6 +71,12 @@ export interface PlatformDefinition {
 	tagBudget?: { keys: string[]; limit: number };
 	titleLimit: number;
 	descriptionLimit: number;
+	/**
+	 * How much of a caption the platform shows on the video before "…more".
+	 * Anything past it is marked while writing. A best guess until an API says
+	 * otherwise; the whole caption is still stored and published.
+	 */
+	visibleCaption?: number;
 	/** How this platform uses the text composed for it. */
 	fieldNote: string;
 	fields: OptionField[];
