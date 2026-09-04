@@ -7,6 +7,7 @@
 	import { draft } from '$lib/stores/draft.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { formatSchedule, formatBytes, formatDuration, firstLine } from '$lib/format';
+	import { portal } from '$lib/portal';
 	import type { PlanRow } from '$lib/plan';
 	import type { PlatformId } from '$lib/types';
 
@@ -64,6 +65,11 @@
 	let shownTab = $derived(
 		tab !== 'video' && !rows.some((row) => row.platform === tab) ? 'video' : tab
 	);
+
+	// The thumbnail blown up to the whole window, for the last look before it
+	// goes out. Portalled to <body>: a transformed ancestor would otherwise pin
+	// a fixed element to the card instead of the viewport.
+	let maximised = $state(false);
 
 	let detailFor = $state<PlanRow | null>(null);
 	let detailOpen = $state(false);
@@ -129,7 +135,32 @@
 				</div>
 			{/if}
 		{:else if thumbUrl}
-			<img class="poster" src={thumbUrl} alt="Thumbnail for YouTube" />
+			<div class="stage">
+				<button
+					class="zoomable"
+					onclick={() => (maximised = true)}
+					aria-label="Show the thumbnail at full size"
+					title="Maximise"
+				>
+					<img class="poster" src={thumbUrl} alt="Thumbnail for YouTube" />
+				</button>
+				<button
+					class="maximise"
+					onclick={() => (maximised = true)}
+					aria-label="Show the thumbnail at full size"
+					title="Maximise"
+				>
+					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+						<path
+							d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"
+							stroke="currentColor"
+							stroke-width="1.9"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					</svg>
+				</button>
+			</div>
 		{:else}
 			<div class="poster empty">
 				<p>No thumbnail chosen. YouTube will pick a frame.</p>
@@ -193,6 +224,23 @@
 						</button>
 						<p class="date">{whenLine(row)}</p>
 					</div>
+					{#if row.platform === 'youtube' && row.options.visibility === 'Private'}
+						<p
+							class="warnline"
+							title="Uploaded as private and left private: nothing goes public at the slot."
+						>
+							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+								<path
+									d="M12 3.5 21 19.5H3L12 3.5Z"
+									stroke="currentColor"
+									stroke-width="1.8"
+									stroke-linejoin="round"
+								/>
+								<path d="M12 10v4M12 16.4v.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+							</svg>
+							Visibility: Private
+						</p>
+					{/if}
 					<p class="meta">
 						{#if row.platform === 'youtube' && row.options.playlist}
 							<span class="dot">·</span>playlist: {row.options.playlist}
@@ -215,6 +263,23 @@
 		{/each}
 	</ul>
 </div>
+
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key === 'Escape') maximised = false;
+	}}
+/>
+
+{#if maximised && thumbUrl}
+	<button
+		class="lightbox"
+		use:portal
+		onclick={() => (maximised = false)}
+		aria-label="Close the full-size thumbnail"
+	>
+		<img src={thumbUrl} alt="Thumbnail for YouTube, full size" />
+	</button>
+{/if}
 
 <Modal bind:open={detailOpen} width="640px">
 	{#snippet header()}
@@ -328,35 +393,116 @@
 		font-size: 12.5px;
 	}
 
+	/* A proper tab strip: a rule under the row, and the open tab standing on it
+	   with its underline in the accent, so the row reads as tabs at a glance. */
 	.tabs {
 		width: 100%;
 		display: flex;
-		gap: 4px;
+		gap: 2px;
+		border-bottom: 1px solid var(--border-strong);
 	}
 
 	.tab {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
-		padding: 6px 12px;
-		border-radius: 999px;
+		gap: 7px;
+		margin-bottom: -1px;
+		padding: 9px 16px;
 		border: 1px solid transparent;
+		border-bottom: 2px solid transparent;
+		border-radius: 9px 9px 0 0;
 		background: none;
 		color: var(--text-dim);
 		font: inherit;
-		font-size: 12px;
+		font-size: 12.5px;
 		font-weight: 600;
 		cursor: pointer;
+		transition:
+			color 0.12s,
+			background 0.12s;
 	}
 
 	.tab:hover {
 		color: var(--text);
+		background: var(--surface-2);
 	}
 
 	.tab.active {
-		background: var(--surface-3);
-		border-color: var(--border-strong);
 		color: var(--text);
+		background: var(--surface-2);
+		border-color: var(--border-strong);
+		border-bottom-color: var(--pink);
+	}
+
+	.stage {
+		position: relative;
+		width: min(100%, calc(70vh * 16 / 9));
+		justify-self: center;
+	}
+
+	.stage .poster {
+		display: block;
+		width: 100%;
+		max-width: 100%;
+	}
+
+	.zoomable {
+		display: block;
+		width: 100%;
+		padding: 0;
+		border: 0;
+		background: none;
+		cursor: zoom-in;
+	}
+
+	.maximise {
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		display: grid;
+		place-items: center;
+		width: 32px;
+		height: 32px;
+		border-radius: 8px;
+		border: 1px solid rgba(255, 255, 255, 0.18);
+		background: rgba(8, 6, 14, 0.7);
+		color: #fff;
+		cursor: zoom-in;
+	}
+
+	.maximise:hover {
+		background: rgba(8, 6, 14, 0.9);
+		border-color: var(--pink);
+	}
+
+	.lightbox {
+		position: fixed;
+		inset: 0;
+		z-index: 1000;
+		display: grid;
+		place-items: center;
+		padding: 40px;
+		border: 0;
+		background: rgba(8, 6, 14, 0.94);
+		cursor: zoom-out;
+	}
+
+	.lightbox img {
+		max-width: 100%;
+		max-height: 100%;
+		object-fit: contain;
+		border-radius: 8px;
+		box-shadow: 0 24px 70px rgba(0, 0, 0, 0.7);
+	}
+
+	.warnline {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin: 5px 0 0;
+		font-size: 12px;
+		font-weight: 650;
+		color: var(--warn);
 	}
 
 	.file {
