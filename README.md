@@ -219,10 +219,12 @@ tag to see only that machine. It cannot be edited or cleared.
 them, refreshed every 30 seconds while the worker runs: views, likes and
 comments in a row per video, and everything else the API returns underneath
 when you click one. The buttons on the left narrow it to Shorts (under three
-minutes), long form, live streams, or whatever fits none of those. A counter
-that has moved since you opened the page turns green and shows the change
-beside it, as in `940 (+9)`; Refresh resets those markers. It needs the
-worker running. Below that it lists what is currently stored on the NAS,
+minutes), long form, live streams, or whatever fits none of those; tick any
+combination, and untick *Hide unlisted* to see unlisted videos too — both
+choices are remembered. A total row at the top adds up whatever is shown. A
+counter that has moved since you opened the page turns green and shows the
+change beside it, as in `940 (+9)`; Refresh resets those markers. It needs
+the worker running. Below that it lists what is currently stored on the NAS,
 which is where you check that an upload actually landed.
 
 **Settings** has three parts. *Storage and defaults* holds the NAS folders a

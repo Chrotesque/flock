@@ -21,8 +21,50 @@
 	let status = $state<StatsStatus | null>(null);
 	let statsError = $state<string | null>(null);
 	let open = $state<string | null>(null);
-	// Which kind of video the table is narrowed to; null shows every kind.
-	let kind = $state<VideoKind | null>(null);
+	// Which kinds are shown, any combination, and whether unlisted videos are
+	// hidden. Both remembered per browser; localStorage is wrapped because
+	// private windows and blocked site data throw rather than returning null.
+	const KINDS_KEY = 'flock.analytics.kinds';
+	const UNLISTED_KEY = 'flock.analytics.hideUnlisted';
+
+	function remembered<T>(key: string, fallback: T, parse: (raw: string) => T | null): T {
+		try {
+			const raw = localStorage.getItem(key);
+			return raw == null ? fallback : (parse(raw) ?? fallback);
+		} catch {
+			return fallback;
+		}
+	}
+
+	let kinds = $state<Record<VideoKind, boolean>>(
+		remembered(KINDS_KEY, { short: true, long: true, live: true, other: true }, (raw) => {
+			const on: unknown = JSON.parse(raw);
+			if (!Array.isArray(on)) return null;
+			return Object.fromEntries(KIND_ORDER.map((k) => [k, on.includes(k)])) as Record<
+				VideoKind,
+				boolean
+			>;
+		})
+	);
+	let hideUnlisted = $state(
+		remembered(UNLISTED_KEY, true, (raw) => (raw === '1' ? true : raw === '0' ? false : null))
+	);
+
+	$effect(() => {
+		const on = KIND_ORDER.filter((k) => kinds[k]);
+		try {
+			localStorage.setItem(KINDS_KEY, JSON.stringify(on));
+		} catch {
+			// The choice just will not survive a reload.
+		}
+	});
+	$effect(() => {
+		try {
+			localStorage.setItem(UNLISTED_KEY, hideUnlisted ? '1' : '0');
+		} catch {
+			// As above.
+		}
+	});
 
 	// The counters as they stood when the page was opened (or last refreshed),
 	// so a row that moves since can show how far. Reset by Refresh.
@@ -51,12 +93,30 @@
 	const sorted = $derived(
 		[...videos].sort((a, b) => (b.published_at || '').localeCompare(a.published_at || ''))
 	);
+	// Counts beside the kind boxes respect the unlisted toggle, so they add up
+	// to what the total row shows.
+	const listed = $derived(
+		hideUnlisted ? sorted.filter((row) => row.privacy !== 'unlisted') : sorted
+	);
+	const unlistedCount = $derived(sorted.length - listed.length);
 	const counts = $derived.by(() => {
 		const tally: Record<VideoKind, number> = { short: 0, long: 0, live: 0, other: 0 };
-		for (const row of sorted) tally[kindOfVideo(row)] += 1;
+		for (const row of listed) tally[kindOfVideo(row)] += 1;
 		return tally;
 	});
-	const shown = $derived(kind ? sorted.filter((row) => kindOfVideo(row) === kind) : sorted);
+	const shown = $derived(listed.filter((row) => kinds[kindOfVideo(row)]));
+	const totals = $derived.by(() => {
+		const sum = { views: 0, likes: 0, comments: 0, dViews: 0, dLikes: 0, dComments: 0 };
+		for (const row of shown) {
+			sum.views += row.views ?? 0;
+			sum.likes += row.likes ?? 0;
+			sum.comments += row.comments ?? 0;
+			sum.dViews += delta(row, 'views');
+			sum.dLikes += delta(row, 'likes');
+			sum.dComments += delta(row, 'comments');
+		}
+		return sum;
+	});
 
 	async function load() {
 		loading = true;
@@ -378,32 +438,47 @@
 		</p>
 	{:else}
 		<div class="live">
-			<nav class="kinds" aria-label="Kind of video">
+			<nav class="kinds" aria-label="Which videos to show">
 				{#each KIND_ORDER as k (k)}
 					{#if k !== 'other' || counts.other > 0}
-						<button
-							class="kind"
-							class:active={kind === k}
-							onclick={() => (kind = kind === k ? null : k)}
-						>
-							<span>{KIND_LABELS[k]}</span>
+						<label class="kind" class:active={kinds[k]}>
+							<input type="checkbox" bind:checked={kinds[k]} />
+							<span class="name">{KIND_LABELS[k]}</span>
 							<span class="count">{counts[k]}</span>
-						</button>
+						</label>
 					{/if}
 				{/each}
+				<label class="kind toggle" class:active={hideUnlisted}>
+					<input type="checkbox" bind:checked={hideUnlisted} />
+					<span class="name">Hide unlisted</span>
+					<span class="count">{unlistedCount}</span>
+				</label>
 				<p class="rule">Shorts are under three minutes. Long form is over, and not live.</p>
 			</nav>
 
 			<div class="table card">
-				<div class="row cols">
+				<div class="row cols" class:noprivacy={hideUnlisted}>
 					<span></span>
 					<span>Video</span>
 					<span>Published</span>
-					<span>Length</span>
+					<span class="num">Length</span>
 					<span class="num">Views</span>
 					<span class="num">Likes</span>
 					<span class="num">Comments</span>
+					{#if !hideUnlisted}<span></span>{/if}
+				</div>
+				<div class="row total" class:noprivacy={hideUnlisted}>
 					<span></span>
+					<span class="vid">
+						<span class="vtitle">Total</span>
+						<span class="vmeta">{shown.length} {shown.length === 1 ? 'video' : 'videos'}</span>
+					</span>
+					<span></span>
+					<span></span>
+					{@render counter(totals.views, totals.dViews)}
+					{@render counter(totals.likes, totals.dLikes)}
+					{@render counter(totals.comments, totals.dComments)}
+					{#if !hideUnlisted}<span></span>{/if}
 				</div>
 				{#each shown as row (row.id)}
 					{@const dViews = delta(row, 'views')}
@@ -412,6 +487,7 @@
 					<button
 						class="row"
 						class:open={open === row.id}
+						class:noprivacy={hideUnlisted}
 						onclick={() => (open = open === row.id ? null : row.id)}
 					>
 						{#if thumb(row)}
@@ -424,15 +500,20 @@
 							<span class="vmeta">
 								{row.video_id}
 								{#if viaFlock(row)}<span class="dot">·</span><span class="via">flock</span>{/if}
+								{#if hideUnlisted && row.privacy && row.privacy !== 'public'}
+									<span class="dot">·</span><span class="priv {row.privacy}">{row.privacy}</span>
+								{/if}
 								<span class="dot">·</span>changed {ago(row.fetched_at)}
 							</span>
 						</span>
 						<span class="cell">{ago(row.published_at)}</span>
-						<span class="cell">{formatDuration(row.duration)}</span>
+						<span class="cell num">{formatDuration(row.duration)}</span>
 						{@render counter(row.views, dViews)}
 						{@render counter(row.likes, dLikes)}
 						{@render counter(row.comments, dComments)}
-						<span class="pill privacy {row.privacy}">{row.privacy || '?'}</span>
+						{#if !hideUnlisted}
+							<span class="pill privacy {row.privacy}">{row.privacy || '?'}</span>
+						{/if}
 					</button>
 					{#if open === row.id}
 						<div class="details">
@@ -455,7 +536,7 @@
 					{/if}
 				{/each}
 				{#if shown.length === 0}
-					<p class="empty">Nothing of that kind yet.</p>
+					<p class="empty">Nothing to show with these boxes ticked.</p>
 				{/if}
 			</div>
 		</div>
@@ -626,8 +707,7 @@
 	.kind {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
+		gap: 9px;
 		padding: 9px 12px;
 		border-radius: var(--radius-sm);
 		border: 1px solid var(--border);
@@ -638,6 +718,24 @@
 		font-weight: 570;
 		text-align: left;
 		cursor: pointer;
+		user-select: none;
+	}
+
+	.kind input {
+		flex: none;
+		width: 14px;
+		height: 14px;
+		margin: 0;
+		accent-color: var(--pink);
+		cursor: pointer;
+	}
+
+	.kind .name {
+		flex: 1;
+	}
+
+	.kind.toggle {
+		margin-top: 10px;
 	}
 
 	.kind:hover {
@@ -683,9 +781,9 @@
 
 	.row {
 		display: grid;
-		grid-template-columns: 72px minmax(0, 1fr) 82px 64px 104px 88px 104px 78px;
+		grid-template-columns: 72px minmax(0, 1fr) 68px 56px 96px 80px 96px 74px;
 		align-items: center;
-		gap: 12px;
+		gap: 10px;
 		width: 100%;
 		padding: 8px 14px;
 		text-align: left;
@@ -695,6 +793,20 @@
 		border: 0;
 		border-top: 1px solid var(--border);
 		cursor: pointer;
+	}
+
+	.row.noprivacy {
+		grid-template-columns: 72px minmax(0, 1fr) 68px 56px 96px 80px 96px;
+	}
+
+	.row.total {
+		cursor: default;
+		background: var(--surface-2);
+	}
+
+	.row.total .cell {
+		color: var(--text);
+		font-weight: 600;
 	}
 
 	.row.cols {
@@ -708,7 +820,7 @@
 		cursor: default;
 	}
 
-	.row:not(.cols):hover,
+	.row:not(.cols):not(.total):hover,
 	.row.open {
 		background: var(--surface-2);
 	}
@@ -748,6 +860,14 @@
 	.via {
 		color: var(--pink-soft);
 		font-weight: 650;
+	}
+
+	.priv {
+		text-transform: capitalize;
+	}
+
+	.priv.private {
+		color: var(--danger);
 	}
 
 	.cell {
@@ -1005,6 +1125,9 @@
 		}
 		.row {
 			grid-template-columns: 56px minmax(0, 1fr) 100px 72px;
+		}
+		.row.noprivacy {
+			grid-template-columns: 56px minmax(0, 1fr) 100px;
 		}
 		.row > :nth-child(3),
 		.row > :nth-child(4),
