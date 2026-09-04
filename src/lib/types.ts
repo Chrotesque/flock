@@ -347,6 +347,7 @@ export interface YouTubeVideo {
 	};
 	topicDetails?: { topicCategories?: string[] };
 	liveStreamingDetails?: Record<string, string>;
+	paidProductPlacementDetails?: { hasPaidProductPlacement?: boolean };
 	fileDetails?: {
 		fileName?: string;
 		fileSize?: string;

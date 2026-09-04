@@ -143,6 +143,14 @@
 		draft.overrides.youtube = { ...(draft.overrides.youtube ?? {}), playlist: name };
 	}
 
+	// Per upload as well, and off unless ticked: it changes too often to be a
+	// saved default, and a default of "yes" would mislabel every other video.
+	let paidPromotion = $derived(Boolean(draft.overrides.youtube?.paidPromotion));
+
+	function setPaidPromotion(on: boolean) {
+		draft.overrides.youtube = { ...(draft.overrides.youtube ?? {}), paidPromotion: on };
+	}
+
 	let listedLabel = $derived.by(() => {
 		if (!playlists?.fetchedAt) return 'never';
 		const at = new Date(playlists.fetchedAt);
@@ -1040,6 +1048,19 @@
 			<section class="videocard card">
 				<span class="label">Thumbnail <span class="labelnote">YouTube</span></span>
 				<ThumbnailPicker bind:file={draft.thumbnail} />
+			</section>
+
+			<section class="videocard card">
+				<span class="label">Paid promotion <span class="labelnote">YouTube</span></span>
+				<Checkbox
+					checked={paidPromotion}
+					label="This video contains paid promotion"
+					onchange={setPaidPromotion}
+				/>
+				<p class="nasnote faint">
+					Product placement, sponsorship or endorsement. YouTube adds its own disclosure to the
+					video. Off on every new upload.
+				</p>
 			</section>
 
 			<section class="videocard card">

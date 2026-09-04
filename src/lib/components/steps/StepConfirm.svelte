@@ -152,6 +152,9 @@
 						{#if row.platform === 'youtube' && row.options.playlist}
 							<span class="dot">·</span>playlist: {row.options.playlist}
 						{/if}
+						{#if row.platform === 'youtube' && row.options.paidPromotion}
+							<span class="dot">·</span>paid promotion
+						{/if}
 						{#if row.hits > 0}
 							<span class="dot">·</span><span class="adapted">{row.hits} adapted</span>
 						{/if}

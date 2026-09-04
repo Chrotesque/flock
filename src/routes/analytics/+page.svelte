@@ -299,6 +299,7 @@
 					['Public stats', yes(st.publicStatsViewable)],
 					['Made for kids', yes(st.madeForKids)],
 					['Synthetic media', yes(st.containsSyntheticMedia)],
+					['Paid promotion', yes(d.paidProductPlacementDetails?.hasPaidProductPlacement)],
 					['Live', s.liveBroadcastContent !== 'none' ? s.liveBroadcastContent : undefined]
 				])
 			},

@@ -200,9 +200,10 @@ address counts as a different browser.
 
 **Upload** is a three-step flow. flock opens on Analytics; Upload lives at `/upload`.
 Tick the platforms you want on the right and choose a video underneath them. With
-YouTube ticked, two more boxes appear below it: a thumbnail (optional; JPEG, PNG,
-GIF or WebP up to 2 MB) and a playlist dropdown listing the channel's own
-playlists as the worker last read them. Then
+YouTube ticked, three more boxes appear below it: a thumbnail (optional; JPEG,
+PNG, GIF or WebP up to 2 MB), a paid-promotion checkbox that is off on every new
+upload, and a playlist dropdown listing the channel's own playlists as the worker
+last read them. Then
 work along the row of platform pills writing the text for each one — a title and a
 description for YouTube and Facebook, a caption for Instagram and TikTok. Continue
 unlocks once every ticked platform has been written for. Clicking a platform in the

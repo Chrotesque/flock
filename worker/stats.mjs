@@ -28,7 +28,8 @@ const PUBLIC_PARTS = [
 	'contentDetails',
 	'status',
 	'topicDetails',
-	'liveStreamingDetails'
+	'liveStreamingDetails',
+	'paidProductPlacementDetails'
 ];
 const ALL_PARTS = [...PUBLIC_PARTS, 'fileDetails', 'processingDetails', 'suggestions'];
 

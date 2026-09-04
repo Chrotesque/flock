@@ -102,7 +102,13 @@ function buildResource(target, options, release) {
 	if (textLanguage) snippet.defaultLanguage = textLanguage;
 	if (videoLanguage) snippet.defaultAudioLanguage = videoLanguage;
 
-	return { snippet, status };
+	const resource = { snippet, status };
+	// Only when ticked: an untouched upload sends exactly the request it always
+	// has, and the first ticked one is what proves the part is accepted.
+	if (options.paidPromotion) {
+		resource.paidProductPlacementDetails = { hasPaidProductPlacement: true };
+	}
+	return resource;
 }
 
 async function api(token, path, options = {}) {
@@ -123,7 +129,12 @@ async function api(token, path, options = {}) {
 async function startSession(token, resource, { size, mimeType, notifySubscribers }) {
 	const url = new URL(UPLOAD);
 	url.searchParams.set('uploadType', 'resumable');
-	url.searchParams.set('part', 'snippet,status');
+	url.searchParams.set(
+		'part',
+		resource.paidProductPlacementDetails
+			? 'snippet,status,paidProductPlacementDetails'
+			: 'snippet,status'
+	);
 	url.searchParams.set('notifySubscribers', String(Boolean(notifySubscribers)));
 
 	const res = await fetch(url, {
