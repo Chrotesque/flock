@@ -3,6 +3,7 @@
 	import { base } from '$app/paths';
 	import VideoPicker from '../VideoPicker.svelte';
 	import ThumbnailPicker from '../ThumbnailPicker.svelte';
+	import FoldBox from '../FoldBox.svelte';
 	import PlatformIcon from '../PlatformIcon.svelte';
 	import Checkbox from '../Checkbox.svelte';
 	import TagInput from '../TagInput.svelte';
@@ -995,20 +996,15 @@
 
 		{#if youtubeActive}
 			<section class="videocard card">
-				<span class="label">Paid promotion <span class="labelnote">YouTube</span></span>
+				<span class="label">Paid promotion</span>
 				<Checkbox
 					checked={paidPromotion}
 					label="This video contains paid promotion"
 					onchange={setPaidPromotion}
 				/>
-				<p class="nasnote faint">
-					Product placement, sponsorship or endorsement. YouTube adds its own disclosure to the
-					video. Off on every new upload.
-				</p>
 			</section>
 
-			<section class="videocard card">
-				<span class="label">Playlist <span class="labelnote">YouTube</span></span>
+			<FoldBox label="Playlist" done={Boolean(playlistValue)} summary={playlistValue}>
 				<select
 					class="playlist"
 					value={playlistValue}
@@ -1037,13 +1033,12 @@
 				<p class="nasnote faint">
 					Adding needs the worker authorised with <code>--with-playlists</code>.
 				</p>
-			</section>
+			</FoldBox>
 		{/if}
 	</div>
 
 	<div class="media">
-		<section class="videocard card">
-			<span class="label">Video file</span>
+		<FoldBox label="Video file" done={draft.hasVideo} summary={draft.videoName}>
 			<VideoPicker
 				bind:file={draft.file}
 				bind:duration={draft.duration}
@@ -1092,13 +1087,16 @@
 					</p>
 				{/if}
 			</div>
-		</section>
+		</FoldBox>
 
 		{#if youtubeActive}
-			<section class="videocard card">
-				<span class="label">Thumbnail <span class="labelnote">YouTube</span></span>
+			<FoldBox
+				label="Thumbnail"
+				done={Boolean(draft.thumbnail)}
+				summary={draft.thumbnail?.name ?? ''}
+			>
 				<ThumbnailPicker bind:file={draft.thumbnail} />
-			</section>
+			</FoldBox>
 		{/if}
 	</div>
 	</div>
@@ -1987,14 +1985,6 @@
 
 	.nasmeta {
 		font-size: 10.5px;
-		color: var(--text-faint);
-	}
-
-	.labelnote {
-		margin-left: 6px;
-		font-weight: 500;
-		letter-spacing: 0;
-		text-transform: none;
 		color: var(--text-faint);
 	}
 
