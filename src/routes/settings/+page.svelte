@@ -4,6 +4,7 @@
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
 	import Checkbox from '$lib/components/Checkbox.svelte';
 	import OptionEditor from '$lib/components/OptionEditor.svelte';
+	import TimeZoneList from '$lib/components/TimeZoneList.svelte';
 	import FilterEditor from '$lib/components/FilterEditor.svelte';
 	import GeneralSettings from '$lib/components/GeneralSettings.svelte';
 	import TagSetEditor from '$lib/components/TagSetEditor.svelte';
@@ -322,6 +323,8 @@
 								<strong>on is the compliant state</strong>, and YouTube's guidelines expect
 								branding wherever its API has a presence.
 							</p>
+
+							<TimeZoneList />
 						</div>
 					{:else if active === 'templates'}
 						<header class="panelhead">

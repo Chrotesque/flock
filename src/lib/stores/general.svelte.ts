@@ -3,6 +3,7 @@ import { getSetting, setSetting } from '../repo';
 import { logAction } from '../log';
 import { settle, LOG_SETTLE_MS } from '../settle';
 import type { GeneralSettings, NasDestination } from '../types';
+import type { TimeZoneChoice } from '../timezones';
 
 export const GENERAL_KEY = 'general';
 
@@ -10,7 +11,8 @@ export const DEFAULT_GENERAL: GeneralSettings = {
 	destinations: [],
 	defaultDestinationId: null,
 	watchFolder: '',
-	complianceBranding: false
+	complianceBranding: false,
+	timeZones: []
 };
 
 /**
@@ -46,7 +48,8 @@ class GeneralStore {
 				destinations: Array.isArray(stored.destinations) ? stored.destinations : [],
 				defaultDestinationId: stored.defaultDestinationId ?? null,
 				watchFolder: stored.watchFolder ?? '',
-				complianceBranding: stored.complianceBranding ?? false
+				complianceBranding: stored.complianceBranding ?? false,
+				timeZones: Array.isArray(stored.timeZones) ? stored.timeZones : []
 			};
 			this.#loaded = true;
 			this.#logged = $state.snapshot(this.value);
@@ -126,6 +129,31 @@ class GeneralStore {
 			);
 		}
 
+		const zonesWere = new Map(before.timeZones.map((z) => [z.id, z]));
+		const zonesNow = new Map(after.timeZones.map((z) => [z.id, z]));
+		const zoneName = (z?: TimeZoneChoice) => z?.label.trim() || z?.zone.trim() || 'unnamed';
+
+		for (const [id, tz] of zonesNow) {
+			const old = zonesWere.get(id);
+			if (!old || (!old.label.trim() && !old.zone.trim())) {
+				if (tz.label.trim() || tz.zone.trim()) {
+					logAction('settings', `Added time zone ${zoneName(tz)}`, tz.zone);
+				}
+				continue;
+			}
+			if (old.label !== tz.label || old.zone !== tz.zone) {
+				logAction(
+					'settings',
+					`Changed time zone ${zoneName(old)}`,
+					`${old.label} (${old.zone}) → ${tz.label} (${tz.zone})`
+				);
+			}
+		}
+
+		for (const [id, tz] of zonesWere) {
+			if (!zonesNow.has(id)) logAction('settings', `Removed time zone ${zoneName(tz)}`, tz.zone);
+		}
+
 		if (before.defaultDestinationId !== after.defaultDestinationId) {
 			logAction(
 				'settings',
@@ -189,6 +217,25 @@ class GeneralStore {
 
 	setWatchFolder(path: string) {
 		this.value.watchFolder = path;
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	addTimeZone() {
+		const entry: TimeZoneChoice = { id: newId(), label: '', zone: '' };
+		this.value.timeZones = [...this.value.timeZones, entry];
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	updateTimeZone(id: string, patch: Partial<TimeZoneChoice>) {
+		this.value.timeZones = this.value.timeZones.map((z) => (z.id === id ? { ...z, ...patch } : z));
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	removeTimeZone(id: string) {
+		this.value.timeZones = this.value.timeZones.filter((z) => z.id !== id);
 		this.queueSave();
 		this.#queueLog();
 	}

@@ -1,3 +1,5 @@
+import type { TimeZoneChoice } from './timezones';
+
 export type PlatformId = 'youtube' | 'instagram' | 'tiktok' | 'facebook';
 
 /** How a platform's option is rendered in its modal + settings panel. */
@@ -194,6 +196,12 @@ export interface GeneralSettings {
 	 * compliant state; off is the comfortable one.
 	 */
 	complianceBranding: boolean;
+	/**
+	 * Extra zones for the calendar's second time column, beside the built-in
+	 * US West and US East. IANA names; one the runtime does not know is left
+	 * out of the dropdown rather than shown as a wrong clock.
+	 */
+	timeZones: TimeZoneChoice[];
 }
 
 /** One video sitting in the watch folder, as the worker last saw it. */

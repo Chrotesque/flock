@@ -1,5 +1,8 @@
 <script lang="ts" generics="T extends { id: string; date: string; time: string }">
 	import { edgeVelocity } from '$lib/autoscroll';
+	import { portal } from '$lib/portal';
+	import { general } from '$lib/stores/general.svelte';
+	import { BUILT_IN_ZONES, clock, isValidZone, zoneTime } from '$lib/timezones';
 	import { untrack, type Snippet } from 'svelte';
 	import { isoDate, startOfWeek, addDays, weekLabel, hourOf, dayLabel } from '$lib/format';
 
@@ -70,53 +73,117 @@
 		return items.filter((item) => item.date === iso);
 	}
 
-	/* ---- drag and drop ---- */
+	/* ---- drag and drop ----
+	 *
+	 * Pointer events rather than the HTML drag-and-drop API. A native drag
+	 * runs in the browser's own loop, which withholds wheel events for its
+	 * whole duration, so the grid could not be scrolled with the wheel while
+	 * a card was held. With pointer capture the grid drives the drag itself:
+	 * the wheel keeps working, the cell under the pointer is found by
+	 * geometry, and a fixed ghost of the card follows the pointer while the
+	 * card itself stays in its cell, dimmed, until the drop lands.
+	 */
 
+	const DRAG_THRESHOLD_PX = 4;
 	let dragging = $state<string | null>(null);
 	let over = $state<string | null>(null);
+	let pointer = $state({ x: 0, y: 0 });
+	let pending: { id: string; x: number; y: number; pointerId: number; node: HTMLElement } | null =
+		null;
 
 	function key(iso: string, hour: number) {
 		return `${iso}#${hour}`;
 	}
 
-	function onDrop(event: DragEvent, iso: string, hour: number) {
-		event.preventDefault();
-		const id = event.dataTransfer?.getData('text/plain') || dragging;
+	function beginDrag(event: PointerEvent, id: string) {
+		if (!ondropitem || event.button !== 0) return;
+		const node = event.currentTarget as HTMLElement;
+		pending = { id, x: event.clientX, y: event.clientY, pointerId: event.pointerId, node };
+		try {
+			node.setPointerCapture(event.pointerId);
+		} catch {
+			// No live pointer to capture (a synthetic event); the drag still works
+			// as long as the moves reach the card.
+		}
+	}
+
+	function moveDrag(event: PointerEvent) {
+		if (!pending || event.pointerId !== pending.pointerId) return;
+		if (!dragging) {
+			// A press that has not moved is a click, not a drag.
+			if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) < DRAG_THRESHOLD_PX) {
+				return;
+			}
+			dragging = pending.id;
+		}
+		pointer = { x: event.clientX, y: event.clientY };
+		updateOver();
+		autoScroll(event.clientY);
+	}
+
+	function finish(event: PointerEvent): { id: string | null; target: string | null } {
+		const result = { id: dragging, target: over };
+		try {
+			pending?.node.releasePointerCapture(event.pointerId);
+		} catch {
+			// Already released.
+		}
+		pending = null;
 		dragging = null;
 		over = null;
 		stopAutoScroll();
-		if (id) ondropitem?.(id, iso, hour);
+		return result;
+	}
+
+	function endDrag(event: PointerEvent) {
+		if (!pending || event.pointerId !== pending.pointerId) return;
+		const { id, target } = finish(event);
+		if (id && target) {
+			const [iso, hour] = target.split('#');
+			ondropitem?.(id, iso, Number(hour));
+		}
+	}
+
+	function cancelDrag(event: PointerEvent) {
+		if (!pending || event.pointerId !== pending.pointerId) return;
+		finish(event);
+	}
+
+	/**
+	 * The cell under the pointer, by geometry: the pointer is captured by the
+	 * card, so nothing else receives events. Re-run on scroll as well, since
+	 * the wheel moves the grid under a pointer that has not moved.
+	 */
+	function updateOver() {
+		if (!dragging) return;
+		const hit = document
+			.elementFromPoint(pointer.x, pointer.y)
+			?.closest<HTMLElement>('[data-cell]');
+		over = hit?.dataset.cell ?? null;
 	}
 
 	/* ---- scrolling while dragging ----
 	 *
-	 * The browser swallows wheel events for the length of a native drag, so a
-	 * card could not be dragged to an hour that was off screen. dragover keeps
-	 * firing with the pointer position while a drag is over the grid; within
-	 * the edge zone at the scroller's top or bottom, the grid is scrolled every
-	 * frame at a speed that grows the deeper into the zone the pointer is (the
-	 * maths is in autoscroll.ts, with the tests). The
-	 * loop stops on drop or drag end, and on its own if dragover goes quiet,
-	 * which is what happens when the pointer leaves the grid mid-drag.
+	 * The wheel works during a pointer drag, but a card held near the top or
+	 * bottom edge should carry the grid with it as well. The speed comes from
+	 * autoscroll.ts (with the tests); the loop runs on animation frames until
+	 * the drag ends or the pointer leaves the edge zone.
 	 */
-	const QUIET_MS = 300;
 	let scrollVelocity = 0;
 	let scrollFrame: number | null = null;
-	let lastDragOver = 0;
 
-	function autoScroll(event: DragEvent) {
+	function autoScroll(clientY: number) {
 		const el = scroller;
 		if (!el || !dragging) return;
-		lastDragOver = performance.now();
 		const rect = el.getBoundingClientRect();
-		scrollVelocity = edgeVelocity(event.clientY, rect.top, rect.bottom);
+		scrollVelocity = edgeVelocity(clientY, rect.top, rect.bottom);
 		if (scrollVelocity !== 0 && scrollFrame === null) scrollFrame = requestAnimationFrame(scrollStep);
 	}
 
 	function scrollStep() {
 		scrollFrame = null;
 		const el = scroller;
-		if (!el || !dragging || scrollVelocity === 0 || performance.now() - lastDragOver > QUIET_MS) return;
+		if (!el || !dragging || scrollVelocity === 0) return;
 		el.scrollTop += scrollVelocity;
 		scrollFrame = requestAnimationFrame(scrollStep);
 	}
@@ -125,6 +192,56 @@
 		scrollVelocity = 0;
 		if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
 		scrollFrame = null;
+	}
+
+	/* ---- a second clock in the time column ---- */
+
+	const ZONE_KEY = 'flock.calendar.zone';
+	general.load();
+
+	/** Built-ins first, then whatever Settings adds that the runtime knows. */
+	let zoneChoices = $derived([
+		...BUILT_IN_ZONES,
+		...general.value.timeZones.filter((z) => z.label.trim() && isValidZone(z.zone))
+	]);
+
+	function readZone(): string {
+		try {
+			return localStorage.getItem(ZONE_KEY) ?? '';
+		} catch {
+			return '';
+		}
+	}
+
+	let zoneId = $state(readZone());
+	let zone = $derived(zoneChoices.find((z) => z.id === zoneId) ?? null);
+
+	function setZone(id: string) {
+		zoneId = id;
+		try {
+			localStorage.setItem(ZONE_KEY, id);
+		} catch {
+			// The choice just will not survive a reload.
+		}
+	}
+
+	/**
+	 * The zone's clock at each local hour, taken on the first day of the week
+	 * shown. A week straddling a daylight-saving change is off by an hour on
+	 * the far side of it; the column is a reading aid, not the schedule.
+	 */
+	let zoneTimes = $derived.by(() => {
+		if (!zone) return null;
+		return HOURS.map((hour) => {
+			const at = new Date(weekStart);
+			at.setHours(hour, 0, 0, 0);
+			return zoneTime(at, zone.zone);
+		});
+	});
+
+	/** Night and evening, tinted so the working day stands out. */
+	function offHours(hour: number) {
+		return hour < 8 || hour >= 16;
 	}
 
 	/* ---- off-screen tracking ----
@@ -206,6 +323,9 @@
 	}
 
 	function onScroll() {
+		// Cheap, and wanted at once rather than on the next frame: the cell
+		// under a held card changes as the grid moves beneath it.
+		updateOver();
 		if (ticking) return;
 		ticking = true;
 		requestAnimationFrame(() => {
@@ -329,9 +449,22 @@
 	{@render toolbar?.()}
 </header>
 
-<div class="calendar card">
+<div class="calendar card" class:zoned={Boolean(zone)} class:dragging={Boolean(dragging)}>
 	<div class="head" style="padding-right: {gutter}px">
-		<div class="corner"></div>
+		<div class="corner">
+			<select
+				class="zonepick"
+				value={zoneId}
+				onchange={(e) => setZone(e.currentTarget.value)}
+				aria-label="Second time zone"
+				title="Show another zone's clock beside the local one"
+			>
+				<option value="">Local</option>
+				{#each zoneChoices as choice (choice.id)}
+					<option value={choice.id}>{choice.label}</option>
+				{/each}
+			</select>
+		</div>
 		{#each days as day (day.iso)}
 			<div class="dayhead" class:today={day.iso === today}>
 				<div class="daymeta">
@@ -349,47 +482,51 @@
 		{/each}
 	</div>
 
+	{#if dragging}
+		{@const lifted = items.find((item) => item.id === dragging)}
+		{#if lifted}
+			<div class="ghost" style="left: {pointer.x}px; top: {pointer.y}px" use:portal>
+				{@render card(lifted)}
+			</div>
+		{/if}
+	{/if}
+
 	<div class="scrollwrap">
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="scroller scroll" bind:this={scroller} onscroll={onScroll} ondragover={autoScroll}>
+		<div class="scroller scroll" bind:this={scroller} onscroll={onScroll}>
 			<div class="grid" style="--row: {ROW_PX}px">
 				{#each HOURS as hour (hour)}
-					<div class="timelabel"><span>{String(hour).padStart(2, '0')}:00</span></div>
+					<div class="timelabel" class:offhours={offHours(hour)} class:zoned={Boolean(zone)}>
+						<span>{String(hour).padStart(2, '0')}:00</span>
+						{#if zoneTimes}
+							{@const t = zoneTimes[hour]}
+							<span class="zonetime" title={zone?.zone}>
+								{t ? clock(t) : '—'}{#if t && t.dayOffset !== 0}<sup
+										>{t.dayOffset > 0 ? '+1' : '−1'}</sup
+									>{/if}
+							</span>
+						{/if}
+					</div>
 
 					{#each days as day (day.iso)}
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
 							class="cell"
 							class:dense
 							class:today={day.iso === today}
+							class:offhours={offHours(hour)}
 							class:over={over === key(day.iso, hour)}
-							ondragover={(e) => {
-								if (!ondropitem) return;
-								e.preventDefault();
-								over = key(day.iso, hour);
-							}}
-							ondragleave={() => {
-								if (over === key(day.iso, hour)) over = null;
-							}}
-							ondrop={(e) => onDrop(e, day.iso, hour)}
+							data-cell={key(day.iso, hour)}
 						>
 							{#each cardsAt(day.iso, hour) as item (item.id)}
 								{#if candrag?.(item)}
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<div
 										class="slot grab"
-										draggable="true"
+										class:lifted={dragging === item.id}
 										use:register={item.id}
-										ondragstart={(e) => {
-											dragging = item.id;
-											e.dataTransfer?.setData('text/plain', item.id);
-											if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-										}}
-										ondragend={() => {
-											dragging = null;
-											over = null;
-											stopAutoScroll();
-										}}
+										onpointerdown={(e) => beginDrag(e, item.id)}
+										onpointermove={moveDrag}
+										onpointerup={endDrag}
+										onpointercancel={cancelDrag}
 									>
 										{@render card(item)}
 									</div>
@@ -477,14 +614,25 @@
 		flex: 1;
 	}
 
+	/* The time gutter's width lives here so the grid, the header corner and
+	   the off-screen rail all read one value. */
 	.calendar {
+		--gutter: 84px;
 		overflow: hidden;
+	}
+
+	.calendar.zoned {
+		--gutter: 132px;
+	}
+
+	.calendar.dragging {
+		user-select: none;
 	}
 
 	.head,
 	.grid {
 		display: grid;
-		grid-template-columns: 62px repeat(7, minmax(0, 1fr));
+		grid-template-columns: var(--gutter) repeat(7, minmax(0, 1fr));
 	}
 
 	.head {
@@ -494,6 +642,27 @@
 
 	.corner {
 		border-right: 1px solid var(--border);
+		display: grid;
+		align-items: center;
+		padding: 6px;
+	}
+
+	.zonepick {
+		width: 100%;
+		min-width: 0;
+		padding: 4px 6px;
+		border-radius: 7px;
+		border: 1px solid var(--border);
+		background: var(--bg-elev);
+		color: var(--text-dim);
+		font: inherit;
+		font-size: 11px;
+		cursor: pointer;
+	}
+
+	.zonepick:hover {
+		border-color: var(--border-strong);
+		color: var(--text);
 	}
 
 	.dayhead {
@@ -570,6 +739,31 @@
 		padding-top: 5px;
 	}
 
+	.timelabel.zoned {
+		justify-content: space-between;
+		gap: 6px;
+		padding-left: 8px;
+		padding-right: 8px;
+	}
+
+	.zonetime {
+		font-family: var(--mono);
+		font-size: 12px;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-faint);
+	}
+
+	.zonetime sup {
+		margin-left: 1px;
+		font-size: 9px;
+	}
+
+	/* Night and evening, tinted the same; today's own tint wins over it. */
+	.timelabel.offhours,
+	.cell.offhours {
+		background: rgba(120, 100, 200, 0.07);
+	}
+
 	.timelabel span {
 		font-family: var(--mono);
 		font-size: 13px;
@@ -606,6 +800,20 @@
 
 	.grab {
 		cursor: grab;
+		touch-action: none;
+	}
+
+	.slot.lifted {
+		opacity: 0.35;
+	}
+
+	.ghost {
+		position: fixed;
+		z-index: 1000;
+		pointer-events: none;
+		transform: translate(-50%, -50%);
+		opacity: 0.95;
+		filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.5));
 	}
 
 	.grab:active {
@@ -622,7 +830,7 @@
 	   day its card is on. */
 	.rail {
 		position: absolute;
-		left: 62px;
+		left: var(--gutter);
 		right: 0;
 		display: grid;
 		grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -652,9 +860,17 @@
 	}
 
 	@media (max-width: 900px) {
+		.calendar {
+			--gutter: 64px;
+		}
+
+		.calendar.zoned {
+			--gutter: 112px;
+		}
+
 		.head,
 		.grid {
-			grid-template-columns: 48px repeat(7, minmax(78px, 1fr));
+			grid-template-columns: var(--gutter) repeat(7, minmax(78px, 1fr));
 		}
 
 		.calendar {
@@ -672,7 +888,7 @@
 		}
 
 		.rail {
-			left: 48px;
+			left: var(--gutter);
 		}
 	}
 </style>

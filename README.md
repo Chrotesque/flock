@@ -213,7 +213,11 @@ description for YouTube and Facebook, a caption for Instagram and TikTok. Contin
 unlocks once every ticked platform has been written for. Clicking a platform in the
 right-hand list opens its options and a preview of its adapted text. Next comes a
 week calendar showing a card per platform: drag a card to another day or hour to move
-that release, or use the exact date and time fields underneath. The final screen
+that release, or use the exact date and time fields underneath. While a card is held
+the grid scrolls with the wheel, or on its own near the top and bottom edges. A
+dropdown above the time column shows a second zone's clock beside the local one —
+US West, US East, or any zone added under Settings → Other — and the night and
+evening hours are tinted. The final screen
 plays the video, with tabs for the YouTube thumbnail and the TikTok cover at the
 same size, beside what each platform gets and when; confirming is the tick
 button, pressed once and then again within two seconds while it shows "!!!", and
@@ -241,11 +245,12 @@ change beside it, as in `940 (+9)`; Refresh resets those markers. It needs
 the worker running. Below that it lists what is currently stored on the NAS,
 which is where you check that an upload actually landed.
 
-**Settings** has three parts. *Storage and defaults* holds the NAS folders a
+**Settings** has four parts. *Storage and defaults* holds the NAS folders a
 finished video is copied into (the filled circle marks the default) and shows this
 browser's device name. *Templates* holds reusable blocks of text: on the upload
 screen they appear under the details, and typing a template's name in braces —
-`{outro}` — swaps it in as you write.
+`{outro}` — swaps it in as you write. *Other* holds the compliance switch and any
+extra time zones for the calendar's second clock.
 
 Below those, each platform has its display order, its release timing, its default
 publish options, and its adaptation rules. YouTube's defaults include the language
