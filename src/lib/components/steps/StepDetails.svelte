@@ -812,6 +812,23 @@
 							<em>{tagValue(field.key).length}</em>
 						</button>
 					{/each}
+					<button
+						class="tagclear"
+						onclick={clearAllTags}
+						disabled={tagsMerged.length === 0}
+						aria-label="Remove every tag from every box"
+						title="Remove every tag from every box"
+					>
+						<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+							<path
+								d="M4 4l8 8M12 4l-8 8"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.9"
+								stroke-linecap="round"
+							/>
+						</svg>
+					</button>
 				</div>
 
 				{#if tagTab === 'final'}
@@ -1466,6 +1483,31 @@
 	}
 
 	/* ---- one tag box at a time ---- */
+
+	/* Empties every box at once, from the far end of the tab strip. */
+	.tagclear {
+		margin-left: auto;
+		align-self: center;
+		display: grid;
+		place-items: center;
+		width: 26px;
+		height: 26px;
+		border-radius: 7px;
+		border: 0;
+		background: none;
+		color: var(--text-faint);
+		cursor: pointer;
+	}
+
+	.tagclear:hover:not(:disabled) {
+		color: var(--danger);
+		background: rgba(248, 113, 113, 0.14);
+	}
+
+	.tagclear:disabled {
+		opacity: 0.35;
+		cursor: default;
+	}
 
 	.tagtabs {
 		display: flex;
