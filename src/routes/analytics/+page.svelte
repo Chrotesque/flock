@@ -26,6 +26,7 @@
 	// private windows and blocked site data throw rather than returning null.
 	const KINDS_KEY = 'flock.analytics.kinds';
 	const UNLISTED_KEY = 'flock.analytics.hideUnlisted';
+	const PRIVATE_KEY = 'flock.analytics.hidePrivate';
 
 	function remembered<T>(key: string, fallback: T, parse: (raw: string) => T | null): T {
 		try {
@@ -49,6 +50,11 @@
 	let hideUnlisted = $state(
 		remembered(UNLISTED_KEY, true, (raw) => (raw === '1' ? true : raw === '0' ? false : null))
 	);
+	// On by default, which also hides a scheduled upload until its slot: it is
+	// private until then. The count beside the box is what says it is there.
+	let hidePrivate = $state(
+		remembered(PRIVATE_KEY, true, (raw) => (raw === '1' ? true : raw === '0' ? false : null))
+	);
 
 	$effect(() => {
 		const on = KIND_ORDER.filter((k) => kinds[k]);
@@ -61,6 +67,13 @@
 	$effect(() => {
 		try {
 			localStorage.setItem(UNLISTED_KEY, hideUnlisted ? '1' : '0');
+		} catch {
+			// As above.
+		}
+	});
+	$effect(() => {
+		try {
+			localStorage.setItem(PRIVATE_KEY, hidePrivate ? '1' : '0');
 		} catch {
 			// As above.
 		}
@@ -96,9 +109,14 @@
 	// Counts beside the kind boxes respect the unlisted toggle, so they add up
 	// to what the total row shows.
 	const listed = $derived(
-		hideUnlisted ? sorted.filter((row) => row.privacy !== 'unlisted') : sorted
+		sorted.filter(
+			(row) =>
+				!(hideUnlisted && row.privacy === 'unlisted') &&
+				!(hidePrivate && row.privacy === 'private')
+		)
 	);
-	const unlistedCount = $derived(sorted.length - listed.length);
+	const unlistedCount = $derived(sorted.filter((row) => row.privacy === 'unlisted').length);
+	const privateCount = $derived(sorted.filter((row) => row.privacy === 'private').length);
 	const counts = $derived.by(() => {
 		const tally: Record<VideoKind, number> = { short: 0, long: 0, live: 0, other: 0 };
 		for (const row of listed) tally[kindOfVideo(row)] += 1;
@@ -454,6 +472,11 @@
 					<span class="name">Hide unlisted</span>
 					<span class="count">{unlistedCount}</span>
 				</label>
+				<label class="kind toggle" class:active={hidePrivate}>
+					<input type="checkbox" bind:checked={hidePrivate} />
+					<span class="name">Hide private</span>
+					<span class="count">{privateCount}</span>
+				</label>
 				<p class="rule">Shorts are under three minutes. Long form is over, and not live.</p>
 			</nav>
 
@@ -737,6 +760,10 @@
 
 	.kind.toggle {
 		margin-top: 10px;
+	}
+
+	.kind.toggle + .kind.toggle {
+		margin-top: 0;
 	}
 
 	.kind:hover {
