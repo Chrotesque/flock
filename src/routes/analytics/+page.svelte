@@ -12,7 +12,6 @@
 	} from '$lib/repo';
 	import { formatBytes, formatDuration, relativeTo } from '$lib/format';
 	import { KIND_LABELS, KIND_ORDER, kindOfVideo, type VideoKind } from '$lib/videokind';
-	import { launchRate, WINDOWS, DEFAULT_WINDOW, type LaunchRate } from '$lib/launch';
 	import type { StatsStatus, UploadJob, UploadTarget, VideoStats, YouTubeVideo } from '$lib/types';
 
 	// The live half: the newest videos on the channel as the worker reads them.
@@ -25,26 +24,20 @@
 	// Which kind of video the table is narrowed to; null shows every kind.
 	let kind = $state<VideoKind | null>(null);
 
-	// The window every video's views/h is normalised to, in hours. Remembered
-	// per browser; localStorage is wrapped because private windows and blocked
-	// site data throw rather than returning null.
-	const WINDOW_KEY = 'flock.analytics.window';
-	function readWindow(): number {
-		try {
-			const stored = Number(localStorage.getItem(WINDOW_KEY));
-			return (WINDOWS as readonly number[]).includes(stored) ? stored : DEFAULT_WINDOW;
-		} catch {
-			return DEFAULT_WINDOW;
-		}
+	// The counters as they stood when the page was opened (or last refreshed),
+	// so a row that moves since can show how far. Reset by Refresh.
+	type Counters = { views: number | null; likes: number | null; comments: number | null };
+	let baseline = $state<Record<string, Counters>>({});
+
+	function counters(row: VideoStats): Counters {
+		return { views: row.views, likes: row.likes, comments: row.comments };
 	}
-	let hoursWindow = $state(readWindow());
-	$effect(() => {
-		try {
-			localStorage.setItem(WINDOW_KEY, String(hoursWindow));
-		} catch {
-			// Nothing to do: the choice just will not survive a reload.
-		}
-	});
+
+	function delta(row: VideoStats, key: keyof Counters): number {
+		const before = baseline[row.id]?.[key];
+		const after = row[key];
+		return before == null || after == null ? 0 : after - before;
+	}
 	// Ticks once a second so "12 s ago" keeps counting between events.
 	let now = $state(Date.now());
 
@@ -64,7 +57,6 @@
 		return tally;
 	});
 	const shown = $derived(kind ? sorted.filter((row) => kindOfVideo(row) === kind) : sorted);
-	const runs = $derived(status?.runs ?? []);
 
 	async function load() {
 		loading = true;
@@ -82,6 +74,7 @@
 		statsError = null;
 		try {
 			[videos, status] = await Promise.all([listVideoStats(), getStatsStatus()]);
+			baseline = Object.fromEntries(videos.map((row) => [row.id, counters(row)]));
 		} catch (err) {
 			statsError = err instanceof Error ? err.message : String(err);
 		}
@@ -102,6 +95,8 @@
 				}
 				const known = videos.some((v) => v.id === row.id);
 				videos = known ? videos.map((v) => (v.id === row.id ? row : v)) : [...videos, row];
+				// A video first seen now has nothing to be measured against yet.
+				if (!known) baseline = { ...baseline, [row.id]: counters(row) };
 			},
 			onStatus: (next) => (status = next)
 		});
@@ -157,41 +152,6 @@
 		return n == null ? '—' : n.toLocaleString();
 	}
 
-	function perHour(rate: number): string {
-		return rate < 10 ? rate.toFixed(1) : Math.round(rate).toLocaleString();
-	}
-
-	function hoursText(hours: number): string {
-		return hours < 10 ? `${hours.toFixed(1)} h` : `${Math.round(hours).toLocaleString()} h`;
-	}
-
-	function rateText(launch: LaunchRate): string {
-		return launch.mode === 'none' ? '—' : perHour(launch.rate);
-	}
-
-	/** The long form of the same number, for the details and the tooltip. */
-	function rateDetail(launch: LaunchRate): string {
-		switch (launch.mode) {
-			case 'settled':
-				return (
-					`${perHour(launch.rate)} — ${launch.views.toLocaleString()} views in its first ` +
-					`${hoursText(launch.hours)}, and nothing after that counted`
-				);
-			case 'running':
-				return (
-					`${perHour(launch.rate)} so far — ${launch.views.toLocaleString()} views in ` +
-					`${hoursText(launch.hours)} of the ${hoursWindow} h window, still open`
-				);
-			case 'lifetime':
-				return (
-					`${perHour(launch.rate)} lifetime average — flock was not watching when this ` +
-					`was released, so its first ${hoursWindow} h are unknown`
-				);
-			default:
-				return 'not released yet';
-		}
-	}
-
 	function thumb(row: VideoStats): string {
 		const t = row.data?.snippet?.thumbnails ?? {};
 		return t.medium?.url ?? t.default?.url ?? t.high?.url ?? '';
@@ -243,7 +203,7 @@
 	}
 
 	/** Everything the API returned, grouped for reading. Empty fields are dropped. */
-	function facts(row: VideoStats, launch: LaunchRate): FactGroup[] {
+	function facts(row: VideoStats): FactGroup[] {
 		const d = row.data ?? ({} as YouTubeVideo);
 		const s = d.snippet ?? {};
 		const st = d.status ?? {};
@@ -292,7 +252,6 @@
 						stats.commentCount != null ? Number(stats.commentCount).toLocaleString() : 'off'
 					],
 					['Favourites', stats.favoriteCount],
-					['Views per hour', rateDetail(launch)],
 					['Samples kept', String(row.history?.length ?? 0)],
 					['Last movement', last ? ago(last[0]) : undefined],
 					['Last changed', ago(row.fetched_at)]
@@ -366,17 +325,27 @@
 	}
 </script>
 
+{#snippet counter(value: number | null, change: number)}
+	<span class="cell num" class:up={change > 0} class:down={change < 0}>
+		{num(value)}{#if change}<span class="delta"
+				>({change > 0 ? '+' : ''}{change.toLocaleString()})</span
+			>{/if}
+	</span>
+{/snippet}
+
 <div class="page">
 	<header class="head">
 		<div>
 			<h1>Analytics</h1>
 			<p>
 				The newest videos on the channel, as YouTube reports them. The worker reads them every
-				{status?.intervalSeconds ?? 30} seconds; this page updates as it writes.
+				{status?.intervalSeconds ?? 30} seconds; this page updates as it writes, and a counter
+				that has moved since you opened it turns green with the change.
 			</p>
 		</div>
 		<button
 			class="btn sm"
+			title="Reload, and reset the change markers"
 			onclick={() => {
 				void load();
 				void loadStats();
@@ -423,15 +392,6 @@
 					{/if}
 				{/each}
 				<p class="rule">Shorts are under three minutes. Long form is over, and not live.</p>
-
-				<label class="window">
-					<span>Normalise views/h to</span>
-					<select bind:value={hoursWindow}>
-						{#each WINDOWS as h (h)}
-							<option value={h}>First {h} hours</option>
-						{/each}
-					</select>
-				</label>
 			</nav>
 
 			<div class="table card">
@@ -443,13 +403,12 @@
 					<span class="num">Views</span>
 					<span class="num">Likes</span>
 					<span class="num">Comments</span>
-					<span class="num" title="Views in the first {hoursWindow} hours after release, per hour">
-						Views/h
-					</span>
 					<span></span>
 				</div>
 				{#each shown as row (row.id)}
-					{@const launch = launchRate(row, runs, now, hoursWindow)}
+					{@const dViews = delta(row, 'views')}
+					{@const dLikes = delta(row, 'likes')}
+					{@const dComments = delta(row, 'comments')}
 					<button
 						class="row"
 						class:open={open === row.id}
@@ -470,17 +429,14 @@
 						</span>
 						<span class="cell">{ago(row.published_at)}</span>
 						<span class="cell">{formatDuration(row.duration)}</span>
-						<span class="cell num">{num(row.views)}</span>
-						<span class="cell num">{num(row.likes)}</span>
-						<span class="cell num">{num(row.comments)}</span>
-						<span class="cell num rate {launch.mode}" title={rateDetail(launch)}>
-							{rateText(launch)}
-						</span>
+						{@render counter(row.views, dViews)}
+						{@render counter(row.likes, dLikes)}
+						{@render counter(row.comments, dComments)}
 						<span class="pill privacy {row.privacy}">{row.privacy || '?'}</span>
 					</button>
 					{#if open === row.id}
 						<div class="details">
-							{#each facts(row, launch) as group (group.title)}
+							{#each facts(row) as group (group.title)}
 								<section class="group">
 									<h4>{group.title}</h4>
 									<dl>
@@ -713,36 +669,6 @@
 		color: var(--text-faint);
 	}
 
-	.window {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		margin-top: 14px;
-	}
-
-	.window span {
-		font-size: 11px;
-		font-weight: 650;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		color: var(--text-faint);
-	}
-
-	.window select {
-		padding: 8px 10px;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--border);
-		background: var(--surface);
-		color: var(--text);
-		font: inherit;
-		font-size: 12.5px;
-		cursor: pointer;
-	}
-
-	.window select:hover {
-		border-color: var(--border-strong);
-	}
-
 	.empty {
 		margin: 0;
 		padding: 16px 14px;
@@ -757,7 +683,7 @@
 
 	.row {
 		display: grid;
-		grid-template-columns: 72px minmax(0, 1fr) 82px 64px 84px 72px 84px 72px 78px;
+		grid-template-columns: 72px minmax(0, 1fr) 82px 64px 104px 88px 104px 78px;
 		align-items: center;
 		gap: 12px;
 		width: 100%;
@@ -835,19 +761,20 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	.rate {
-		color: var(--text);
+	.cell.up {
+		color: var(--ok);
 		font-weight: 600;
 	}
 
-	.rate.running {
-		font-style: italic;
-		color: var(--text-dim);
+	.cell.down {
+		color: var(--danger);
 	}
 
-	.rate.lifetime {
-		font-weight: 500;
-		color: var(--text-faint);
+	.delta {
+		margin-left: 4px;
+		font-size: 11px;
+		font-weight: 600;
+		opacity: 0.9;
 	}
 
 	.privacy {
@@ -1073,15 +1000,11 @@
 			flex-direction: row;
 			flex-wrap: wrap;
 		}
-		.rule,
-		.window {
+		.rule {
 			flex-basis: 100%;
 		}
-		.window {
-			margin-top: 4px;
-		}
 		.row {
-			grid-template-columns: 56px minmax(0, 1fr) 76px 76px 72px;
+			grid-template-columns: 56px minmax(0, 1fr) 100px 72px;
 		}
 		.row > :nth-child(3),
 		.row > :nth-child(4),

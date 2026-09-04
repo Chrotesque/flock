@@ -219,15 +219,11 @@ tag to see only that machine. It cannot be edited or cleared.
 them, refreshed every 30 seconds while the worker runs: views, likes and
 comments in a row per video, and everything else the API returns underneath
 when you click one. The buttons on the left narrow it to Shorts (under three
-minutes), long form, live streams, or whatever fits none of those. *Views/h*
-normalises every video to the same window after release, picked from the
-dropdown under the buttons: with *First 3 hours* only the views from those
-three hours count, divided by three, and nothing later moves it. It is final
-once the window has closed, shown in italics while it is still open, and
-muted for videos released before the worker was watching, where it is a
-lifetime average instead. It needs the worker running. Below that it lists
-what is currently stored on the NAS, which is where you check that an upload
-actually landed.
+minutes), long form, live streams, or whatever fits none of those. A counter
+that has moved since you opened the page turns green and shows the change
+beside it, as in `940 (+9)`; Refresh resets those markers. It needs the
+worker running. Below that it lists what is currently stored on the NAS,
+which is where you check that an upload actually landed.
 
 **Settings** has three parts. *Storage and defaults* holds the NAS folders a
 finished video is copied into (the filled circle marks the default) and shows this
