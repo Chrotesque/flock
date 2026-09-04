@@ -14,22 +14,29 @@ const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 /**
- * Upload-only by default, deliberately.
+ * Upload plus read-only by default, deliberately.
  *
  * `youtube.upload` is exactly what videos.insert needs and nothing more — it
- * cannot read, edit or delete anything on the channel. Adding a video to a
- * playlist needs `youtube`, which the consent screen describes as "see, edit,
- * and permanently delete your YouTube videos, ratings, comments and captions".
- * There is no narrower playlist scope, so that convenience is not worth handing
- * a publishing tool delete rights by default.
+ * cannot edit or delete anything on the channel. `youtube.readonly` is the
+ * scope Google documents for reading the channel and its counters, and it can
+ * change nothing; an upload-only grant has read them fine in practice, but that
+ * is not the documented behaviour, so it is asked for. Adding a video to a
+ * playlist needs `youtube`, which the
+ * consent screen describes as "see, edit, and permanently delete your YouTube
+ * videos, ratings, comments and captions". There is no narrower playlist
+ * scope, so that convenience is not worth handing a publishing tool delete
+ * rights by default.
  *
  * Pass --with-playlists to opt into the broader grant.
  */
-const UPLOAD_ONLY = ['https://www.googleapis.com/auth/youtube.upload'];
-const WITH_PLAYLISTS = [...UPLOAD_ONLY, 'https://www.googleapis.com/auth/youtube'];
+const DEFAULT = [
+	'https://www.googleapis.com/auth/youtube.upload',
+	'https://www.googleapis.com/auth/youtube.readonly'
+];
+const WITH_PLAYLISTS = [...DEFAULT, 'https://www.googleapis.com/auth/youtube'];
 
 const withPlaylists = process.argv.includes('--with-playlists');
-const SCOPES = withPlaylists ? WITH_PLAYLISTS : UPLOAD_ONLY;
+const SCOPES = withPlaylists ? WITH_PLAYLISTS : DEFAULT;
 
 function reply(res, status, title, body) {
 	res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -97,9 +104,9 @@ function getCode(clientId) {
 
 			console.log(
 				withPlaylists
-					? '\nRequesting upload + full account access (needed for "Add to playlist").'
-					: '\nRequesting upload access only. Re-run with --with-playlists if you want\n' +
-							'the "Add to playlist" option to work; it needs far broader permission.'
+					? '\nRequesting upload + read-only + full account access (needed for "Add to playlist").'
+					: '\nRequesting upload and read-only access. Re-run with --with-playlists if you\n' +
+							'want the "Add to playlist" option to work; it needs far broader permission.'
 			);
 			console.log('\nOpen this in a browser signed in to the YouTube channel:\n');
 			console.log(auth.toString() + '\n');

@@ -37,7 +37,14 @@ export function loadConfig() {
 		// Scoring is answered on its own, much faster tick: a person is watching
 		// the button spin, where nobody is watching an upload queue.
 		scoreSeconds: Number(process.env.FLOCK_SCORE_SECONDS || file.scoreSeconds || 3),
-		vidiqKey: process.env.VIDIQ_API_KEY || file.vidiqKey || ''
+		vidiqKey: process.env.VIDIQ_API_KEY || file.vidiqKey || '',
+		// The stats pass. One videos.list covers fifty videos for one unit, so the
+		// interval alone sets the daily cost: 30s is 2,880 of the 10,000 units
+		// that also pay 1,600 per upload. 0 turns the pass off.
+		statsSeconds: Number(process.env.FLOCK_STATS_SECONDS ?? file.statsSeconds ?? 30),
+		statsVideos: Number(process.env.FLOCK_STATS_VIDEOS ?? file.statsVideos ?? 50),
+		// Units the pass may spend in a day before it pauses until Google's reset.
+		statsBudget: Number(process.env.FLOCK_STATS_BUDGET ?? file.statsBudget ?? 6000)
 	};
 }
 

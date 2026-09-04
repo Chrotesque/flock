@@ -108,6 +108,28 @@ export function makeClient(baseUrl) {
 			});
 		},
 
+		/** Every video the stats pass has ever seen, newest first. */
+		async listVideoStats() {
+			const res = await request(
+				'/api/collections/video_stats/records?perPage=200&sort=-published_at'
+			);
+			return res.items ?? [];
+		},
+
+		async createVideoStats(data) {
+			return request('/api/collections/video_stats/records', {
+				method: 'POST',
+				body: JSON.stringify(data)
+			});
+		},
+
+		async updateVideoStats(id, data) {
+			return request(`/api/collections/video_stats/records/${id}`, {
+				method: 'PATCH',
+				body: JSON.stringify(data)
+			});
+		},
+
 		videoUrl(job) {
 			return `${baseUrl}/api/files/upload_jobs/${job.id}/${encodeURIComponent(job.video)}`;
 		},

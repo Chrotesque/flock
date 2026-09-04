@@ -138,6 +138,32 @@ const collections = [
 		indexes: ['CREATE INDEX `idx_score_requests_status` ON `score_requests` (`status`)']
 	},
 	{
+		// The newest videos on the channel as the worker last read them, one row
+		// per video and keyed by YouTube's id rather than by anything of flock's:
+		// most of the channel was never published through here. `data` is the
+		// whole videos.list item, and `history` the counters each time they
+		// moved, so the screen can draw a curve without a second collection.
+		name: 'video_stats',
+		type: 'base',
+		...RULES,
+		fields: [
+			{ type: 'text', name: 'video_id', required: true, max: 40 },
+			{ type: 'text', name: 'title', max: 500 },
+			{ type: 'date', name: 'published_at' },
+			{ type: 'text', name: 'privacy', max: 20 },
+			{ type: 'number', name: 'duration' },
+			{ type: 'number', name: 'views' },
+			{ type: 'number', name: 'likes' },
+			{ type: 'number', name: 'comments' },
+			{ type: 'json', name: 'data', maxSize: 500000 },
+			// [[iso, views, likes, comments], ...], appended only when one moved.
+			{ type: 'json', name: 'history', maxSize: 500000 },
+			{ type: 'date', name: 'fetched_at' },
+			...stamps
+		],
+		indexes: ['CREATE UNIQUE INDEX `idx_video_stats_video` ON `video_stats` (`video_id`)']
+	},
+	{
 		// Claimed device names. A browser writes one row here when it is named;
 		// the unique index on `key` is what actually prevents two machines
 		// sharing a name, since a check-then-write would race.

@@ -9,7 +9,9 @@ import type {
 	PlatformScheduling,
 	PlatformSettings,
 	UploadJob,
-	UploadTarget
+	UploadTarget,
+	VideoStats,
+	StatsStatus
 } from './types';
 
 /* ------------------------------------------------------------------ */
@@ -459,6 +461,48 @@ export async function listTargets(jobId?: string): Promise<UploadTarget[]> {
 		...(jobId ? { filter: `job="${jobId}"` } : {})
 	});
 	return rows as unknown as UploadTarget[];
+}
+
+/* ------------------------------------------------------------------ */
+/* youtube stats                                                        */
+/* ------------------------------------------------------------------ */
+
+export async function listVideoStats(): Promise<VideoStats[]> {
+	const rows = await pb.collection('video_stats').getFullList({ sort: '-published_at' });
+	return rows as unknown as VideoStats[];
+}
+
+export async function getStatsStatus(): Promise<StatsStatus | null> {
+	const res = await pb
+		.collection('app_settings')
+		.getList(1, 1, { filter: 'key="stats_status"' });
+	const row = res.items[0];
+	return row ? (row.value as StatsStatus) : null;
+}
+
+/**
+ * Pushes the worker's writes into the page as they land: a row whenever a
+ * video changes, the heartbeat every poll. Realtime is what makes a 30-second
+ * poll on the worker feel live in the browser without the browser polling
+ * anything. Returns the unsubscribe.
+ */
+export function subscribeStats(handlers: {
+	onVideo: (row: VideoStats, action: string) => void;
+	onStatus: (status: StatsStatus) => void;
+}): () => void {
+	const videos = pb
+		.collection('video_stats')
+		.subscribe('*', (e) => handlers.onVideo(e.record as unknown as VideoStats, e.action));
+	const settings = pb.collection('app_settings').subscribe('*', (e) => {
+		if (e.record.key === 'stats_status') handlers.onStatus(e.record.value as StatsStatus);
+	});
+	// A failed subscription (PocketBase down, collection missing) is not an
+	// error the page can act on; the list load reports that already.
+	videos.catch(() => {});
+	settings.catch(() => {});
+	return () => {
+		for (const sub of [videos, settings]) void sub.then((unsubscribe) => unsubscribe());
+	};
 }
 
 export async function deleteJob(id: string): Promise<void> {

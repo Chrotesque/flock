@@ -5,6 +5,7 @@
 //   pnpm worker:once    one pass, then exit
 //   pnpm worker:dry     one pass, reporting what it would do, uploading nothing
 //   pnpm worker:vidiq   check the vidIQ key, spending no credits
+//   pnpm worker:stats   one stats pass over the channel, then exit
 //
 // Belongs on the NAS beside PocketBase, not in the SPA: it holds an OAuth
 // client secret, and it has to keep running when no browser is open.
@@ -15,6 +16,7 @@ import { publishToYouTube } from './youtube.mjs';
 import { copyToDestination } from './archive.mjs';
 import { scanWatchFolder } from './watch.mjs';
 import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
+import { statsPass, unitsToday } from './stats.mjs';
 
 // One entry per platform that can actually publish. The loop iterates this
 // rather than picking up everything `pending`, so the three platforms without
@@ -24,6 +26,7 @@ const ADAPTERS = { youtube: publishToYouTube };
 const once = process.argv.includes('--once');
 const dry = process.argv.includes('--dry');
 const checkVidiq = process.argv.includes('--vidiq');
+const statsOnly = process.argv.includes('--stats');
 
 function stamp() {
 	return new Date().toLocaleTimeString();
@@ -231,16 +234,49 @@ async function main() {
 	log(`PocketBase ok at ${config.pocketbaseUrl}`);
 	log(`adapters: ${Object.keys(ADAPTERS).join(', ')}`);
 
+	// Reads only, so it goes before the stale-row recovery: a stats check must
+	// not touch the publishing queue.
+	if (statsOnly) {
+		await statsPass({ pb, config, log });
+		log(`stats pass complete — ${unitsToday()} unit(s) spent`);
+		return;
+	}
+
 	if (!dry) await recoverStale(pb);
 
 	if (once || dry) {
 		await scorePass(pb, config);
+		if (!dry && config.statsSeconds > 0) await statsPass({ pb, config, log });
 		await pass(pb, config);
 		log('single pass complete');
 		return;
 	}
 
 	log(`polling every ${config.pollSeconds}s, scoring every ${config.scoreSeconds}s — ctrl-c to stop`);
+
+	// Same reason as scoring: an upload can hold the main loop for many
+	// minutes, and the Analytics screen should not go stale for the duration.
+	// `busy` stops a slow poll overlapping the next tick.
+	if (config.statsSeconds > 0) {
+		log(
+			`stats: newest ${config.statsVideos} videos every ${config.statsSeconds}s, ` +
+				`up to ${config.statsBudget} units a day`
+		);
+		let busy = false;
+		const tick = async () => {
+			if (busy) return;
+			busy = true;
+			try {
+				await statsPass({ pb, config, log });
+			} catch (err) {
+				log(`stats pass failed: ${err.message}`);
+			} finally {
+				busy = false;
+			}
+		};
+		void tick();
+		setInterval(() => void tick(), Math.max(5, config.statsSeconds) * 1000);
+	}
 
 	// Its own interval rather than a counter inside the main loop: an upload can
 	// hold that loop for many minutes, and a score request must not queue behind

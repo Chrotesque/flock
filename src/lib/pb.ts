@@ -17,8 +17,9 @@ const url =
 
 export const pb = new PocketBase(url, new MemoryAuthStore());
 
-// Realtime is unused; the auto-cancellation of overlapping requests is not
-// wanted either, since several panels load in parallel on mount.
+// Realtime is used only by the Analytics screen, to pick up the worker's stats
+// as it writes them. The auto-cancellation of overlapping requests is not
+// wanted, since several panels load in parallel on mount.
 pb.autoCancellation(false);
 
 export const PB_URL = url;

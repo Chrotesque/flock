@@ -279,3 +279,113 @@ export interface LogEntry {
 	device: string;
 	created: string;
 }
+
+/**
+ * One item from YouTube's videos.list, with every part the owner can ask for.
+ * Loosely typed on purpose: the screen shows whatever arrived, and Google adds
+ * fields without notice.
+ */
+export interface YouTubeVideo {
+	id: string;
+	snippet?: {
+		title?: string;
+		description?: string;
+		publishedAt?: string;
+		channelTitle?: string;
+		categoryId?: string;
+		tags?: string[];
+		defaultLanguage?: string;
+		defaultAudioLanguage?: string;
+		liveBroadcastContent?: string;
+		thumbnails?: Record<string, { url: string; width?: number; height?: number }>;
+	};
+	statistics?: {
+		viewCount?: string;
+		likeCount?: string;
+		commentCount?: string;
+		favoriteCount?: string;
+	};
+	contentDetails?: {
+		duration?: string;
+		dimension?: string;
+		definition?: string;
+		caption?: string;
+		licensedContent?: boolean;
+		projection?: string;
+	};
+	status?: {
+		uploadStatus?: string;
+		privacyStatus?: string;
+		license?: string;
+		embeddable?: boolean;
+		publicStatsViewable?: boolean;
+		madeForKids?: boolean;
+		selfDeclaredMadeForKids?: boolean;
+		publishAt?: string;
+		containsSyntheticMedia?: boolean;
+	};
+	topicDetails?: { topicCategories?: string[] };
+	liveStreamingDetails?: Record<string, string>;
+	fileDetails?: {
+		fileName?: string;
+		fileSize?: string;
+		fileType?: string;
+		container?: string;
+		durationMs?: string;
+		bitrateBps?: string;
+		videoStreams?: {
+			widthPixels?: number;
+			heightPixels?: number;
+			frameRateFps?: number;
+			bitrateBps?: string;
+			codec?: string;
+		}[];
+		audioStreams?: { channelCount?: number; codec?: string; bitrateBps?: string }[];
+	};
+	processingDetails?: {
+		processingStatus?: string;
+		processingProgress?: { partsTotal?: string; partsProcessed?: string; timeLeftMs?: string };
+		processingFailureReason?: string;
+	};
+	suggestions?: {
+		processingErrors?: string[];
+		processingWarnings?: string[];
+		processingHints?: string[];
+		tagSuggestions?: { tag: string }[];
+		editorSuggestions?: string[];
+	};
+}
+
+/** [iso, views, likes, comments] — one per poll on which a counter moved. */
+export type StatsSample = [string, number | null, number | null, number | null];
+
+/**
+ * One video on the channel as the worker last read it. Keyed by YouTube's id
+ * rather than by a job: most of the channel was never published through flock.
+ */
+export interface VideoStats {
+	id: string;
+	video_id: string;
+	title: string;
+	published_at: string;
+	privacy: string;
+	duration: number;
+	views: number | null;
+	likes: number | null;
+	comments: number | null;
+	data: YouTubeVideo;
+	history: StatsSample[];
+	fetched_at: string;
+	created: string;
+	updated: string;
+}
+
+/** The stats pass's heartbeat, in app_settings under `stats_status`. */
+export interface StatsStatus {
+	polledAt: string;
+	unitsToday: number;
+	budget: number;
+	intervalSeconds: number;
+	videos: number;
+	error: string;
+}

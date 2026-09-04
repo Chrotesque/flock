@@ -137,9 +137,12 @@ into that file:
 pnpm worker:auth
 ```
 
-That asks for **upload permission only**, which is all `videos.insert` needs and
-cannot read, edit or delete anything on the channel. The one exception is the
-*Add to playlist* option: putting a video in a playlist requires Google's broader
+That asks for **upload permission plus read-only access** to the channel. Upload
+is all `videos.insert` needs; read-only is what the Analytics screen's stats
+need, and it cannot change anything. An authorisation made before Analytics
+existed has read the channel fine too, so re-run this only if the worker reports
+a scope error. The one exception is the *Add to playlist*
+option: putting a video in a playlist requires Google's broader
 `youtube` scope, which the consent screen describes as permanently deleting
 videos, comments and captions. If you want that option to work, authorise with:
 
@@ -162,7 +165,15 @@ pnpm worker
 ```
 
 `pnpm worker:once` does a single pass and exits, which is the easier one to watch
-while testing. The config file holds a client secret and is gitignored.
+while testing. `pnpm worker:stats` runs one stats poll on its own, which is the
+quickest way to confirm the read scope works. The config file holds a client
+secret and is gitignored.
+
+The stats poll reads the newest fifty videos every 30 seconds by default, which
+is about a third of the daily API quota that uploads also draw on. `statsSeconds`,
+`statsVideos` and `statsBudget` in the worker config adjust it; when a day's
+polling reaches the budget it pauses until Google's reset at midnight Pacific,
+so it can never leave an upload without quota.
 
 **One limit worth knowing.** While the OAuth consent screen sits in *Testing*,
 Google expires the refresh token after **7 days**, so you would be re-running
@@ -204,8 +215,12 @@ locked either way.
 time and the machine that made it. Filter by category, search, or click a device
 tag to see only that machine. It cannot be edited or cleared.
 
-**Analytics** is empty for now. Below the placeholder it lists what is currently
-stored on the NAS, which is where you check that an upload actually landed.
+**Analytics** shows the newest fifty videos on the channel as YouTube reports
+them, refreshed every 30 seconds while the worker runs: views, likes, comments
+and views per hour in a row per video, and everything else the API returns
+underneath when you click one. It needs the worker running. Below that it lists
+what is currently stored on the NAS, which is where you check that an upload
+actually landed.
 
 **Settings** has three parts. *Storage and defaults* holds the NAS folders a
 finished video is copied into (the filled circle marks the default) and shows this
@@ -229,7 +244,7 @@ defaults and rules are kept.
 
 Videos and schedules live in PocketBase on the NAS, in the collections
 `upload_jobs`, `upload_targets`, `platform_settings`, `app_settings`,
-`activity_log` and `devices`. The chosen destination is recorded on each upload, so
+`activity_log`, `devices` and `video_stats`. The chosen destination is recorded on each upload, so
 changing the destination list later never redirects something already queued —
 and the file is copied there, never moved. Nothing is written until you confirm an
 upload; the only thing kept in the browser is this device's name.

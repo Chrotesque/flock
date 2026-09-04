@@ -1,19 +1,38 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
-	import { PLATFORMS } from '$lib/platforms';
-	import { listJobs, listTargets, deleteJob } from '$lib/repo';
-	import { isPlatformId } from '$lib/platforms';
+	import { PLATFORMS, isPlatformId } from '$lib/platforms';
+	import {
+		listJobs,
+		listTargets,
+		deleteJob,
+		listVideoStats,
+		getStatsStatus,
+		subscribeStats
+	} from '$lib/repo';
 	import { formatBytes, formatDuration, relativeTo } from '$lib/format';
-	import type { UploadJob, UploadTarget } from '$lib/types';
+	import type { StatsStatus, UploadJob, UploadTarget, VideoStats, YouTubeVideo } from '$lib/types';
 
-	// Analytics proper comes later. Until then this route is the window onto
-	// what is actually sitting on the NAS — which is also how you check that an
-	// upload really landed.
+	// The live half: the newest videos on the channel as the worker reads them.
+	// Loaded once, then kept current by PocketBase realtime — the worker polls
+	// YouTube, the browser polls nothing.
+	let videos = $state<VideoStats[]>([]);
+	let status = $state<StatsStatus | null>(null);
+	let statsError = $state<string | null>(null);
+	let open = $state<string | null>(null);
+	// Ticks once a second so "12 s ago" keeps counting between events.
+	let now = $state(Date.now());
+
+	// The NAS half: what is stored, which is also how you check an upload landed.
 	let jobs = $state<UploadJob[]>([]);
 	let targets = $state<UploadTarget[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let busy = $state<string | null>(null);
+
+	const sorted = $derived(
+		[...videos].sort((a, b) => (b.published_at || '').localeCompare(a.published_at || ''))
+	);
 
 	async function load() {
 		loading = true;
@@ -27,8 +46,37 @@
 		}
 	}
 
+	async function loadStats() {
+		statsError = null;
+		try {
+			[videos, status] = await Promise.all([listVideoStats(), getStatsStatus()]);
+		} catch (err) {
+			statsError = err instanceof Error ? err.message : String(err);
+		}
+	}
+
 	$effect(() => {
 		void load();
+		void loadStats();
+	});
+
+	onMount(() => {
+		const clock = setInterval(() => (now = Date.now()), 1000);
+		const unsubscribe = subscribeStats({
+			onVideo: (row, action) => {
+				if (action === 'delete') {
+					videos = videos.filter((v) => v.id !== row.id);
+					return;
+				}
+				const known = videos.some((v) => v.id === row.id);
+				videos = known ? videos.map((v) => (v.id === row.id ? row : v)) : [...videos, row];
+			},
+			onStatus: (next) => (status = next)
+		});
+		return () => {
+			clearInterval(clock);
+			unsubscribe();
+		};
 	});
 
 	function targetsOf(jobId: string): UploadTarget[] {
@@ -56,31 +104,330 @@
 			busy = null;
 		}
 	}
+
+	function ago(iso: string | undefined): string {
+		if (!iso) return 'never';
+		const t = Date.parse(iso);
+		if (Number.isNaN(t)) return 'never';
+		const s = Math.max(0, Math.round((now - t) / 1000));
+		if (s < 60) return `${s} s ago`;
+		const m = Math.round(s / 60);
+		if (m < 60) return `${m} min ago`;
+		const h = Math.round(m / 60);
+		if (h < 48) return `${h} h ago`;
+		const d = Math.round(h / 24);
+		if (d < 90) return `${d} d ago`;
+		if (d < 730) return `${Math.round(d / 30)} mo ago`;
+		return `${Math.round(d / 365)} y ago`;
+	}
+
+	function num(n: number | null | undefined): string {
+		return n == null ? '—' : n.toLocaleString();
+	}
+
+	/**
+	 * Views gained per hour, from the newest sample at least an hour old — or
+	 * the oldest there is, if the video is younger than that. Measured against
+	 * now rather than the last sample, so a video that has gone quiet reads as
+	 * slowing down instead of freezing at its last burst.
+	 */
+	function vph(row: VideoStats): number | null {
+		const history = Array.isArray(row.history) ? row.history : [];
+		if (history.length === 0 || row.views == null) return null;
+		const cutoff = now - 3_600_000;
+		let base = history[0];
+		for (const sample of history) {
+			if (Date.parse(sample[0]) <= cutoff) base = sample;
+			else break;
+		}
+		const hours = (now - Date.parse(base[0])) / 3_600_000;
+		if (!(hours > 1 / 6) || base[1] == null) return null;
+		return (row.views - base[1]) / hours;
+	}
+
+	function rate(row: VideoStats): string {
+		const v = vph(row);
+		if (v === null) return '—';
+		return v < 10 ? v.toFixed(1) : Math.round(v).toLocaleString();
+	}
+
+	function thumb(row: VideoStats): string {
+		const t = row.data?.snippet?.thumbnails ?? {};
+		return t.medium?.url ?? t.default?.url ?? t.high?.url ?? '';
+	}
+
+	/** Whether this video went out through flock — its target holds the watch URL. */
+	function viaFlock(row: VideoStats): boolean {
+		return targets.some((t) => (t.remote_url ?? '').includes(row.video_id));
+	}
+
+	type Fact = [string, string];
+	interface FactGroup {
+		title: string;
+		rows: Fact[];
+	}
+
+	const CATEGORIES: Record<string, string> = {
+		'1': 'Film & Animation',
+		'2': 'Autos & Vehicles',
+		'10': 'Music',
+		'15': 'Pets & Animals',
+		'17': 'Sports',
+		'19': 'Travel & Events',
+		'20': 'Gaming',
+		'22': 'People & Blogs',
+		'23': 'Comedy',
+		'24': 'Entertainment',
+		'25': 'News & Politics',
+		'26': 'Howto & Style',
+		'27': 'Education',
+		'28': 'Science & Technology',
+		'29': 'Nonprofits & Activism'
+	};
+
+	function pairs(list: [string, string | undefined | null][]): Fact[] {
+		return list.filter((p): p is Fact => p[1] != null && p[1] !== '');
+	}
+
+	function yes(v: boolean | undefined): string | undefined {
+		return v === undefined ? undefined : v ? 'yes' : 'no';
+	}
+
+	function when(iso: string | undefined): string | undefined {
+		return iso ? new Date(iso).toLocaleString() : undefined;
+	}
+
+	function mbps(bps: string | undefined): string | undefined {
+		return bps ? `${(Number(bps) / 1e6).toFixed(1)} Mbit/s` : undefined;
+	}
+
+	/** Everything the API returned, grouped for reading. Empty fields are dropped. */
+	function facts(row: VideoStats): FactGroup[] {
+		const d = row.data ?? ({} as YouTubeVideo);
+		const s = d.snippet ?? {};
+		const st = d.status ?? {};
+		const c = d.contentDetails ?? {};
+		const stats = d.statistics ?? {};
+		const f = d.fileDetails;
+		const p = d.processingDetails;
+		const sg = d.suggestions;
+		const video = f?.videoStreams?.[0];
+		const audio = f?.audioStreams?.[0];
+		const last = row.history?.[row.history.length - 1];
+
+		const groups: FactGroup[] = [
+			{
+				title: 'Listing',
+				rows: pairs([
+					['Published', when(s.publishedAt)],
+					['Goes public', when(st.publishAt)],
+					['Privacy', st.privacyStatus],
+					['Upload status', st.uploadStatus],
+					['Category', s.categoryId ? (CATEGORIES[s.categoryId] ?? s.categoryId) : undefined],
+					['Tags', s.tags?.length ? `${s.tags.length} — ${s.tags.join(', ')}` : 'none'],
+					[
+						'Topics',
+						d.topicDetails?.topicCategories
+							?.map((u) => decodeURIComponent(u.split('/').pop() ?? '').replace(/_/g, ' '))
+							.join(', ')
+					],
+					['Language', s.defaultLanguage],
+					['Audio language', s.defaultAudioLanguage],
+					['License', st.license],
+					['Embeddable', yes(st.embeddable)],
+					['Public stats', yes(st.publicStatsViewable)],
+					['Made for kids', yes(st.madeForKids)],
+					['Synthetic media', yes(st.containsSyntheticMedia)],
+					['Live', s.liveBroadcastContent !== 'none' ? s.liveBroadcastContent : undefined]
+				])
+			},
+			{
+				title: 'Counters',
+				rows: pairs([
+					['Views', stats.viewCount != null ? Number(stats.viewCount).toLocaleString() : undefined],
+					['Likes', stats.likeCount != null ? Number(stats.likeCount).toLocaleString() : 'hidden'],
+					[
+						'Comments',
+						stats.commentCount != null ? Number(stats.commentCount).toLocaleString() : 'off'
+					],
+					['Favourites', stats.favoriteCount],
+					['Views per hour', rate(row)],
+					['Samples kept', String(row.history?.length ?? 0)],
+					['Last movement', last ? ago(last[0]) : undefined],
+					['Last read', ago(row.fetched_at)]
+				])
+			},
+			{
+				title: 'Media',
+				rows: pairs([
+					['Duration', formatDuration(row.duration)],
+					['Definition', c.definition],
+					['Dimension', c.dimension],
+					['Captions', c.caption],
+					['Licensed content', yes(c.licensedContent)],
+					['Projection', c.projection],
+					['File', f?.fileName],
+					['Size', f?.fileSize ? formatBytes(Number(f.fileSize)) : undefined],
+					['Container', f?.container],
+					[
+						'Video stream',
+						video
+							? [
+									video.widthPixels && video.heightPixels
+										? `${video.widthPixels}×${video.heightPixels}`
+										: '',
+									video.frameRateFps ? `${video.frameRateFps} fps` : '',
+									video.codec,
+									mbps(video.bitrateBps)
+								]
+									.filter(Boolean)
+									.join(' · ')
+							: undefined
+					],
+					[
+						'Audio stream',
+						audio
+							? [
+									audio.codec,
+									audio.channelCount ? `${audio.channelCount} ch` : '',
+									audio.bitrateBps ? `${Math.round(Number(audio.bitrateBps) / 1000)} kbit/s` : ''
+								]
+									.filter(Boolean)
+									.join(' · ')
+							: undefined
+					]
+				])
+			},
+			{
+				title: 'Processing',
+				rows: pairs([
+					['Status', p?.processingStatus],
+					[
+						'Progress',
+						p?.processingProgress?.partsTotal
+							? `${p.processingProgress.partsProcessed ?? 0} of ${p.processingProgress.partsTotal}`
+							: undefined
+					],
+					['Failure', p?.processingFailureReason],
+					['Errors', sg?.processingErrors?.join(', ')],
+					['Warnings', sg?.processingWarnings?.join(', ')],
+					['Hints', sg?.processingHints?.join(', ')],
+					['Suggested tags', sg?.tagSuggestions?.map((t) => t.tag).join(', ')],
+					['Editor suggestions', sg?.editorSuggestions?.join(', ')]
+				])
+			},
+			{
+				title: 'Live stream',
+				rows: pairs(Object.entries(d.liveStreamingDetails ?? {}).map(([k, v]) => [k, String(v)]))
+			}
+		];
+		return groups.filter((g) => g.rows.length > 0);
+	}
 </script>
 
 <div class="page">
 	<header class="head">
 		<div>
 			<h1>Analytics</h1>
-			<p>Reach and performance land here once the platform APIs are connected.</p>
-		</div>
-		<button class="btn sm" onclick={load} disabled={loading}>Refresh</button>
-	</header>
-
-	<section class="card soon">
-		<div class="sparks" aria-hidden="true">
-			{#each [38, 62, 45, 78, 56, 90, 72] as height, i (i)}
-				<span style="height: {height}%"></span>
-			{/each}
-		</div>
-		<div>
-			<h2>Nothing to measure yet</h2>
 			<p>
-				Views, retention and follower deltas per platform will go here. It needs the same API
-				credentials that publishing does, so it stays empty until those exist.
+				The newest videos on the channel, as YouTube reports them. The worker reads them every
+				{status?.intervalSeconds ?? 30} seconds; this page updates as it writes.
 			</p>
 		</div>
-	</section>
+		<button
+			class="btn sm"
+			onclick={() => {
+				void load();
+				void loadStats();
+			}}
+			disabled={loading}>Refresh</button
+		>
+	</header>
+
+	<div class="livehead">
+		<h3 class="section">Live from YouTube</h3>
+		<p class="beat" class:bad={Boolean(status?.error)}>
+			{#if status?.error}
+				{status.error}
+			{:else if status}
+				Read {ago(status.polledAt)} · {status.videos} videos · {num(status.unitsToday)} of {num(
+					status.budget
+				)} units today
+			{:else}
+				The worker has not read the channel yet.
+			{/if}
+		</p>
+	</div>
+
+	{#if statsError}
+		<p class="banner error">{statsError}</p>
+	{:else if sorted.length === 0}
+		<p class="banner">
+			No videos yet. Run the worker (<code>pnpm worker</code>): the newest fifty videos on the
+			channel appear here and refresh every 30 seconds.
+		</p>
+	{:else}
+		<div class="table card">
+			<div class="row cols">
+				<span></span>
+				<span>Video</span>
+				<span>Published</span>
+				<span>Length</span>
+				<span class="num">Views</span>
+				<span class="num">Likes</span>
+				<span class="num">Comments</span>
+				<span class="num">Views/h</span>
+				<span></span>
+			</div>
+			{#each sorted as row (row.id)}
+				<button
+					class="row"
+					class:open={open === row.id}
+					onclick={() => (open = open === row.id ? null : row.id)}
+				>
+					{#if thumb(row)}
+						<img class="thumb" src={thumb(row)} alt="" loading="lazy" />
+					{:else}
+						<span class="thumb"></span>
+					{/if}
+					<span class="vid">
+						<span class="vtitle">{row.title || '(untitled)'}</span>
+						<span class="vmeta">
+							{row.video_id}
+							{#if viaFlock(row)}<span class="dot">·</span><span class="via">flock</span>{/if}
+							<span class="dot">·</span>read {ago(row.fetched_at)}
+						</span>
+					</span>
+					<span class="cell">{ago(row.published_at)}</span>
+					<span class="cell">{formatDuration(row.duration)}</span>
+					<span class="cell num">{num(row.views)}</span>
+					<span class="cell num">{num(row.likes)}</span>
+					<span class="cell num">{num(row.comments)}</span>
+					<span class="cell num rate">{rate(row)}</span>
+					<span class="pill privacy {row.privacy}">{row.privacy || '?'}</span>
+				</button>
+				{#if open === row.id}
+					<div class="details">
+						{#each facts(row) as group (group.title)}
+							<section class="group">
+								<h4>{group.title}</h4>
+								<dl>
+									{#each group.rows as [label, value] (label)}
+										<dt>{label}</dt>
+										<dd>{value}</dd>
+									{/each}
+								</dl>
+							</section>
+						{/each}
+						<details class="raw">
+							<summary>Everything the API returned</summary>
+							<pre>{JSON.stringify(row.data, null, 2)}</pre>
+						</details>
+					</div>
+				{/if}
+			{/each}
+		</div>
+	{/if}
 
 	<h3 class="section">On the NAS</h3>
 
@@ -153,7 +500,7 @@
 
 <style>
 	.page {
-		max-width: 1000px;
+		max-width: 1100px;
 		margin: 0 auto;
 	}
 
@@ -181,44 +528,32 @@
 		font-size: 12px;
 	}
 
-	.soon {
-		display: flex;
-		align-items: center;
-		gap: 22px;
-		padding: 22px 24px;
-	}
-
-	.sparks {
-		flex: none;
-		display: flex;
-		align-items: flex-end;
-		gap: 5px;
-		width: 108px;
-		height: 62px;
-	}
-
-	.sparks span {
-		flex: 1;
-		border-radius: 3px;
-		background: linear-gradient(180deg, var(--pink) 0%, var(--purple) 100%);
-		opacity: 0.32;
-	}
-
-	.soon h2 {
-		font-size: 15.5px;
-	}
-
-	.soon p {
-		margin: 6px 0 0;
-		font-size: 12.5px;
-		color: var(--text-dim);
-		line-height: 1.55;
-		max-width: 64ch;
-	}
-
 	.section {
 		margin: 30px 0 12px;
 		font-size: 14px;
+	}
+
+	.livehead {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 16px;
+		flex-wrap: wrap;
+	}
+
+	.livehead .section {
+		margin: 0 0 12px;
+	}
+
+	.beat {
+		margin: 0 0 12px;
+		font-size: 12px;
+		color: var(--text-faint);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.beat.bad {
+		color: var(--danger);
 	}
 
 	.banner {
@@ -235,6 +570,183 @@
 		border-color: rgba(248, 113, 113, 0.4);
 		color: var(--danger);
 	}
+
+	.banner code {
+		font-family: var(--mono);
+		font-size: 11.5px;
+	}
+
+	/* ---- the live table ---- */
+
+	.table {
+		overflow: hidden;
+	}
+
+	.row {
+		display: grid;
+		grid-template-columns: 72px minmax(0, 1fr) 82px 64px 84px 72px 84px 72px 78px;
+		align-items: center;
+		gap: 12px;
+		width: 100%;
+		padding: 8px 14px;
+		text-align: left;
+		font: inherit;
+		color: inherit;
+		background: none;
+		border: 0;
+		border-top: 1px solid var(--border);
+		cursor: pointer;
+	}
+
+	.row.cols {
+		padding: 10px 14px;
+		border-top: 0;
+		font-size: 10.5px;
+		font-weight: 650;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+		cursor: default;
+	}
+
+	.row:not(.cols):hover,
+	.row.open {
+		background: var(--surface-2);
+	}
+
+	.thumb {
+		display: block;
+		width: 72px;
+		height: 40px;
+		object-fit: cover;
+		border-radius: 6px;
+		background: var(--surface-3);
+	}
+
+	.vid {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		gap: 2px;
+	}
+
+	.vtitle {
+		font-size: 13px;
+		font-weight: 570;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.vmeta {
+		font-size: 11px;
+		color: var(--text-faint);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.via {
+		color: var(--pink-soft);
+		font-weight: 650;
+	}
+
+	.cell {
+		font-size: 12.5px;
+		color: var(--text-dim);
+		white-space: nowrap;
+	}
+
+	.num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.rate {
+		color: var(--text);
+		font-weight: 600;
+	}
+
+	.privacy {
+		justify-self: end;
+		text-transform: capitalize;
+	}
+
+	.privacy.public {
+		background: rgba(52, 211, 153, 0.15);
+		color: var(--ok);
+	}
+
+	.privacy.unlisted {
+		background: rgba(168, 85, 247, 0.16);
+		color: #cfa8fb;
+	}
+
+	.privacy.private {
+		background: rgba(248, 113, 113, 0.15);
+		color: var(--danger);
+	}
+
+	.details {
+		padding: 6px 14px 16px 98px;
+		border-top: 1px dashed var(--border);
+		background: var(--surface-2);
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+		gap: 14px 28px;
+	}
+
+	.group h4 {
+		margin: 10px 0 6px;
+		font-size: 11px;
+		font-weight: 650;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.group dl {
+		margin: 0;
+		display: grid;
+		grid-template-columns: max-content minmax(0, 1fr);
+		gap: 4px 12px;
+		font-size: 12px;
+	}
+
+	.group dt {
+		color: var(--text-dim);
+		white-space: nowrap;
+	}
+
+	.group dd {
+		margin: 0;
+		color: var(--text);
+		overflow-wrap: anywhere;
+	}
+
+	.raw {
+		grid-column: 1 / -1;
+		font-size: 12px;
+		color: var(--text-dim);
+	}
+
+	.raw summary {
+		cursor: pointer;
+	}
+
+	.raw pre {
+		margin: 8px 0 0;
+		padding: 12px;
+		max-height: 420px;
+		overflow: auto;
+		border-radius: var(--radius-sm);
+		background: var(--surface);
+		font-family: var(--mono);
+		font-size: 11px;
+		line-height: 1.45;
+	}
+
+	/* ---- the NAS list ---- */
 
 	.jobs {
 		list-style: none;
@@ -370,10 +882,22 @@
 		color: var(--danger);
 	}
 
-	@media (max-width: 700px) {
-		.soon {
-			flex-direction: column;
-			align-items: flex-start;
+	@media (max-width: 900px) {
+		.row {
+			grid-template-columns: 56px minmax(0, 1fr) 76px 76px 72px;
+		}
+		.row > :nth-child(3),
+		.row > :nth-child(4),
+		.row > :nth-child(6),
+		.row > :nth-child(7) {
+			display: none;
+		}
+		.details {
+			padding-left: 14px;
+		}
+		.thumb {
+			width: 56px;
+			height: 32px;
 		}
 		.who {
 			width: auto;
