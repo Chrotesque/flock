@@ -230,7 +230,20 @@ async function main() {
 	const config = requireConfig({ needToken: !dry, needGoogle: !dry });
 	const pb = makeClient(config.pocketbaseUrl);
 
-	await pb.health();
+	// Started at boot, or straight after a resume, the NAS or the Tailscale link
+	// to it may not be up yet. Waiting beats dying on the first probe; the
+	// one-shot modes fail fast, since there somebody is watching.
+	for (let attempt = 1; ; attempt++) {
+		try {
+			await pb.health();
+			break;
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			if (once || dry || statsOnly || attempt >= 30) throw err;
+			log(`${message} — retrying in 10s (${attempt}/30)`);
+			await new Promise((resolve) => setTimeout(resolve, 10_000));
+		}
+	}
 	log(`PocketBase ok at ${config.pocketbaseUrl}`);
 	log(`adapters: ${Object.keys(ADAPTERS).join(', ')}`);
 

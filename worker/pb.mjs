@@ -11,10 +11,11 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { resolveFolder } from './paths.mjs';
+import { fetchOrExplain } from './net.mjs';
 
 export function makeClient(baseUrl) {
 	async function request(path, options = {}) {
-		const res = await fetch(`${baseUrl}${path}`, {
+		const res = await fetchOrExplain(`${baseUrl}${path}`, {
 			...options,
 			headers: {
 				...(options.body ? { 'Content-Type': 'application/json' } : {}),
@@ -158,7 +159,7 @@ export function makeClient(baseUrl) {
 				return { stream: createReadStream(path), size: info.size, mimeType: 'video/*' };
 			}
 
-			const res = await fetch(this.videoUrl(job));
+			const res = await fetchOrExplain(this.videoUrl(job));
 			if (!res.ok || !res.body) {
 				throw new Error(`Cannot read the stored video (${res.status}) at ${this.videoUrl(job)}`);
 			}

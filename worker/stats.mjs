@@ -11,6 +11,7 @@
 // upload.
 
 import { accessToken, forgetToken } from './google.mjs';
+import { fetchOrExplain } from './net.mjs';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 
@@ -85,7 +86,9 @@ function noteRun(config) {
 
 async function api(config, path, retry = true) {
 	const token = await accessToken(config.google);
-	const res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+	const res = await fetchOrExplain(`${API}${path}`, {
+		headers: { Authorization: `Bearer ${token}` }
+	});
 	const text = await res.text();
 
 	if (res.status === 401 && retry) {

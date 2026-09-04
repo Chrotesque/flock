@@ -164,6 +164,10 @@ Run it:
 pnpm worker
 ```
 
+If it starts with *Cannot reach http://…:8091*, the NAS or the Tailscale link to
+it is not up yet. The worker keeps retrying for five minutes before giving up, so
+it can be started before the connection is.
+
 `pnpm worker:once` does a single pass and exits, which is the easier one to watch
 while testing. `pnpm worker:stats` runs one stats poll on its own, which is the
 quickest way to confirm the read scope works. The config file holds a client

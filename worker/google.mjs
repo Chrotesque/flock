@@ -4,6 +4,8 @@
 // doing this. flock is a static build served out of pb_public, so a client
 // secret placed there would be readable by anyone who opens the page.
 
+import { fetchOrExplain } from './net.mjs';
+
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 /** Cached until a minute before it expires, so a batch of uploads reuses one. */
@@ -12,7 +14,7 @@ let cached = { token: '', expiresAt: 0 };
 export async function accessToken({ clientId, clientSecret, refreshToken }) {
 	if (cached.token && Date.now() < cached.expiresAt) return cached.token;
 
-	const res = await fetch(TOKEN_URL, {
+	const res = await fetchOrExplain(TOKEN_URL, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 		body: new URLSearchParams({

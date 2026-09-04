@@ -8,6 +8,7 @@ import { request as httpsRequest } from 'node:https';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { accessToken, forgetToken } from './google.mjs';
+import { fetchOrExplain } from './net.mjs';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/youtube/v3/videos';
@@ -79,7 +80,7 @@ function buildResource(target, options, release) {
 }
 
 async function api(token, path, options = {}) {
-	const res = await fetch(`${API}${path}`, {
+	const res = await fetchOrExplain(`${API}${path}`, {
 		...options,
 		headers: {
 			Authorization: `Bearer ${token}`,
