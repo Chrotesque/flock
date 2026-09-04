@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { base } from '$app/paths';
 	import VideoPicker from '../VideoPicker.svelte';
+	import ThumbnailPicker from '../ThumbnailPicker.svelte';
 	import PlatformIcon from '../PlatformIcon.svelte';
 	import Checkbox from '../Checkbox.svelte';
 	import TagInput from '../TagInput.svelte';
@@ -15,6 +16,7 @@
 	import { templates, tokenOf } from '$lib/stores/templates.svelte';
 	import {
 		loadWatchIndex,
+		loadPlaylists,
 		loadRecentTags,
 		scoreTitle,
 		suggestTitles,
@@ -25,7 +27,7 @@
 	import { formatBytes, mergeTagGroups, tagListLength, parseTagList } from '$lib/format';
 	import { checkTags } from '$lib/tagcheck';
 	import { portal } from '$lib/portal';
-	import type { PlatformId, TextTemplate, WatchIndex } from '$lib/types';
+	import type { PlatformId, PlaylistIndex, TextTemplate, WatchIndex } from '$lib/types';
 
 	templates.load();
 	general.load();
@@ -102,6 +104,49 @@
 	let scannedLabel = $derived.by(() => {
 		if (!watchIndex?.scannedAt) return 'never';
 		const at = new Date(watchIndex.scannedAt);
+		if (Number.isNaN(at.getTime())) return 'never';
+		const mins = Math.round((Date.now() - at.getTime()) / 60000);
+		if (mins < 1) return 'just now';
+		if (mins < 60) return `${mins} min ago`;
+		return at.toLocaleString();
+	});
+
+	/* ---- YouTube extras: thumbnail and playlist ----
+	 *
+	 * Both YouTube-only, so they only render while YouTube is going to get this
+	 * upload. The playlist list comes from the worker by way of PocketBase,
+	 * exactly like the watch folder: the browser holds no Google credentials.
+	 * The value kept is the playlist's title, which is what the worker has
+	 * always matched on — so a default typed into Settings still works.
+	 */
+
+	let youtubeActive = $derived(draft.activePlatforms.includes('youtube'));
+	let playlists = $state<PlaylistIndex | null>(null);
+	let playlistsLoading = $state(false);
+
+	async function refreshPlaylists() {
+		playlistsLoading = true;
+		try {
+			playlists = await loadPlaylists();
+		} catch {
+			playlists = null;
+		} finally {
+			playlistsLoading = false;
+		}
+	}
+	void refreshPlaylists();
+
+	let playlistValue = $derived(
+		String(draft.overrides.youtube?.playlist ?? settings.defaultsFor('youtube').playlist ?? '')
+	);
+
+	function setPlaylist(name: string) {
+		draft.overrides.youtube = { ...(draft.overrides.youtube ?? {}), playlist: name };
+	}
+
+	let listedLabel = $derived.by(() => {
+		if (!playlists?.fetchedAt) return 'never';
+		const at = new Date(playlists.fetchedAt);
 		if (Number.isNaN(at.getTime())) return 'never';
 		const mins = Math.round((Date.now() - at.getTime()) / 60000);
 		if (mins < 1) return 'just now';
@@ -991,6 +1036,45 @@
 				{/if}
 			</div>
 		</section>
+
+		{#if youtubeActive}
+			<section class="videocard card">
+				<span class="label">Thumbnail <span class="labelnote">YouTube</span></span>
+				<ThumbnailPicker bind:file={draft.thumbnail} />
+			</section>
+
+			<section class="videocard card">
+				<span class="label">Playlist <span class="labelnote">YouTube</span></span>
+				<select
+					class="playlist"
+					value={playlistValue}
+					onchange={(e) => setPlaylist(e.currentTarget.value)}
+				>
+					<option value="">None</option>
+					{#if playlistValue && !playlists?.items.some((p) => p.title === playlistValue)}
+						<option value={playlistValue}>{playlistValue} (not on the channel)</option>
+					{/if}
+					{#each playlists?.items ?? [] as item (item.id)}
+						<option value={item.title}>{item.title} ({item.count})</option>
+					{/each}
+				</select>
+				{#if playlistsLoading}
+					<p class="nasnote">Looking…</p>
+				{:else if !playlists}
+					<p class="nasnote">The worker has not listed the channel's playlists yet.</p>
+				{:else if playlists.error}
+					<p class="nasnote bad">{playlists.error}</p>
+				{:else}
+					<p class="nasnote faint">
+						{playlists.items.length} on the channel, listed {listedLabel}.
+						<button class="relink" onclick={refreshPlaylists}>Refresh</button>
+					</p>
+				{/if}
+				<p class="nasnote faint">
+					Adding needs the worker authorised with <code>--with-playlists</code>.
+				</p>
+			</section>
+		{/if}
 	</div>
 </div>
 
@@ -1860,6 +1944,29 @@
 	.nasmeta {
 		font-size: 10.5px;
 		color: var(--text-faint);
+	}
+
+	.labelnote {
+		margin-left: 6px;
+		font-weight: 500;
+		letter-spacing: 0;
+		text-transform: none;
+		color: var(--text-faint);
+	}
+
+	.playlist {
+		width: 100%;
+		padding: 9px 10px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border);
+		background: var(--bg-elev);
+		color: var(--text);
+		font: inherit;
+		font-size: 13px;
+	}
+
+	.playlist:hover {
+		border-color: var(--border-strong);
 	}
 
 	.videocard {

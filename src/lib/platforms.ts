@@ -9,6 +9,28 @@ import type { PlatformDefinition, PlatformId } from './types';
  * plausible to render; expect to throw most of them away once those APIs are
  * wired up. The character limits and `hasTitle` mirror reality throughout.
  */
+/**
+ * Offered by name; worker/youtube.mjs maps them to the BCP-47 codes the API
+ * takes. Extend both lists together.
+ */
+export const YOUTUBE_LANGUAGES = [
+	'English (US)',
+	'English (UK)',
+	'German',
+	'French',
+	'Spanish',
+	'Italian',
+	'Dutch',
+	'Portuguese (Brazil)',
+	'Japanese',
+	'Korean',
+	'Polish',
+	'Swedish',
+	'Turkish',
+	'Russian',
+	'Chinese (Simplified)'
+];
+
 export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 	youtube: {
 		id: 'youtube',
@@ -32,11 +54,24 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 				choices: ['Gaming', 'Education', 'Entertainment', 'Music', 'Science & Technology', 'People & Blogs']
 			},
 			{
+				key: 'videoLanguage',
+				label: 'Video language',
+				type: 'select',
+				choices: YOUTUBE_LANGUAGES,
+				hint: 'The language spoken in the video.'
+			},
+			{
+				key: 'textLanguage',
+				label: 'Title & description language',
+				type: 'select',
+				choices: YOUTUBE_LANGUAGES
+			},
+			{
 				key: 'playlist',
 				label: 'Add to playlist',
 				type: 'text',
 				placeholder: 'None',
-				hint: 'Matched by name. Needs the worker authorised with --with-playlists.'
+				hint: 'Picked from the channel\'s playlists on the compose screen. Matched by name; adding needs the worker authorised with --with-playlists.'
 			},
 			// Split only for the interface's sake. videos.insert takes one list, and
 			// buildPlan is where these four become it.
@@ -58,6 +93,8 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 		defaults: {
 			visibility: 'Public',
 			category: 'Science & Technology',
+			videoLanguage: 'English (US)',
+			textLanguage: 'English (US)',
 			playlist: '',
 			tagsStandard: [],
 			tagsShorts: [],

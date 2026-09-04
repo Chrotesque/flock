@@ -55,6 +55,15 @@ const collections = [
 			// The video itself, parked on the NAS so publishing no longer needs
 			// this PC to be online.
 			{ type: 'file', name: 'video', maxSelect: 1, maxSize: 5368709120 },
+			// A custom thumbnail for YouTube. The 2 MB cap is YouTube's own for
+			// thumbnails.set, so anything that fits here can be set there.
+			{
+				type: 'file',
+				name: 'thumbnail',
+				maxSelect: 1,
+				maxSize: 2097152,
+				mimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+			},
 			// Set instead of `video` for a file picked out of the watch folder:
 			// the bytes are left on the NAS and only referenced, which is what
 			// makes a video larger than the file field's 5 GiB cap possible.

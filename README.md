@@ -199,7 +199,10 @@ needs its own; the name is stored locally, so opening flock from a different
 address counts as a different browser.
 
 **Upload** is a three-step flow. flock opens on Analytics; Upload lives at `/upload`.
-Tick the platforms you want on the right, choose a video underneath them, then
+Tick the platforms you want on the right and choose a video underneath them. With
+YouTube ticked, two more boxes appear below it: a thumbnail (optional; JPEG, PNG,
+GIF or WebP up to 2 MB) and a playlist dropdown listing the channel's own
+playlists as the worker last read them. Then
 work along the row of platform pills writing the text for each one — a title and a
 description for YouTube and Facebook, a caption for Instagram and TikTok. Continue
 unlocks once every ticked platform has been written for. Clicking a platform in the
@@ -238,7 +241,9 @@ screen they appear under the details, and typing a template's name in braces —
 `{outro}` — swaps it in as you write.
 
 Below those, each platform has its display order, its release timing, its default
-publish options, and its adaptation rules. Release timing is either one fixed time
+publish options, and its adaptation rules. YouTube's defaults include the language
+spoken in the video and the language of the title and description, English (US)
+unless changed. Release timing is either one fixed time
 for that platform, or *Profiles* — named patterns like "Horror", each with an
 optional time and an optional set of weekdays. Choosing Profiles adds a Profiles
 tab to that platform, and the profiles you define there appear as buttons on the

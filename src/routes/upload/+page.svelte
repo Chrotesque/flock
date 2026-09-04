@@ -76,6 +76,7 @@
 					description: draft.primaryText.description,
 					file: draft.file,
 					source: draft.nasFile,
+					thumbnail: draft.thumbnail,
 					duration: draft.duration,
 					destination: general.defaultDestination,
 					targets: plan.map((row) => ({

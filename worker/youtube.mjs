@@ -34,6 +34,28 @@ const CATEGORY_IDS = {
 	'Nonprofits & Activism': '29'
 };
 
+// snippet.defaultLanguage and defaultAudioLanguage take BCP-47 codes; the
+// registry offers names. Keep this in step with YOUTUBE_LANGUAGES there.
+const LANGUAGE_CODES = {
+	'English (US)': 'en-US',
+	'English (UK)': 'en-GB',
+	German: 'de',
+	French: 'fr',
+	Spanish: 'es',
+	Italian: 'it',
+	Dutch: 'nl',
+	'Portuguese (Brazil)': 'pt-BR',
+	Japanese: 'ja',
+	Korean: 'ko',
+	Polish: 'pl',
+	Swedish: 'sv',
+	Turkish: 'tr',
+	Russian: 'ru',
+	'Chinese (Simplified)': 'zh-CN'
+};
+
+const THUMBNAIL_UPLOAD = 'https://www.googleapis.com/upload/youtube/v3/thumbnails/set';
+
 const PRIVACY = { Public: 'public', Unlisted: 'unlisted', Private: 'private' };
 const LICENSE = { 'Standard YouTube License': 'youtube', 'Creative Commons': 'creativeCommon' };
 
@@ -66,17 +88,21 @@ function buildResource(target, options, release) {
 	};
 	if (release.publishAt) status.publishAt = release.publishAt;
 
-	return {
-		snippet: {
-			// The API rejects an empty title outright, and a target with no title
-			// should not take the whole upload down at the last step.
-			title: (target.title || 'Untitled').slice(0, 100),
-			description: (target.description || '').slice(0, 5000),
-			tags: Array.isArray(options.tags) ? options.tags : [],
-			categoryId: CATEGORY_IDS[options.category] ?? '22'
-		},
-		status
+	const snippet = {
+		// The API rejects an empty title outright, and a target with no title
+		// should not take the whole upload down at the last step.
+		title: (target.title || 'Untitled').slice(0, 100),
+		description: (target.description || '').slice(0, 5000),
+		tags: Array.isArray(options.tags) ? options.tags : [],
+		categoryId: CATEGORY_IDS[options.category] ?? '22'
 	};
+	// Two languages: the one written (title and description) and the one spoken.
+	const textLanguage = LANGUAGE_CODES[options.textLanguage];
+	const videoLanguage = LANGUAGE_CODES[options.videoLanguage];
+	if (textLanguage) snippet.defaultLanguage = textLanguage;
+	if (videoLanguage) snippet.defaultAudioLanguage = videoLanguage;
+
+	return { snippet, status };
 }
 
 async function api(token, path, options = {}) {
@@ -203,6 +229,32 @@ async function addToPlaylist(token, videoId, name, log) {
 	log(`added to playlist "${match.snippet.title}"`);
 }
 
+/**
+ * Puts the chosen image on the video. Non-fatal, like the playlist add: the
+ * video is already up, and YouTube picks a frame itself if this fails.
+ * thumbnails.set costs 50 units, takes up to 2 MB, and only works on a channel
+ * YouTube has verified — custom thumbnails are a per-channel feature.
+ */
+async function setThumbnail(token, videoId, job, pb, log) {
+	const image = await pb.openThumbnail(job);
+	const res = await fetchOrExplain(`${THUMBNAIL_UPLOAD}?videoId=${videoId}&uploadType=media`, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': image.mimeType,
+			'Content-Length': String(image.bytes.length)
+		},
+		body: image.bytes
+	});
+	const text = await res.text();
+	if (!res.ok) {
+		const err = new Error(`thumbnails.set -> ${res.status}: ${text.slice(0, 300)}`);
+		err.status = res.status;
+		throw err;
+	}
+	log(`thumbnail set (${Math.round(image.bytes.length / 1024)} KB)`);
+}
+
 export async function publishToYouTube({ target, job, pb, config, log }) {
 	const options = target.options ?? {};
 	const release = resolveRelease(options, target.scheduled_at);
@@ -255,6 +307,19 @@ export async function publishToYouTube({ target, job, pb, config, log }) {
 			`YouTube stored this as private although ${release.wanted} was requested — ` +
 				'that is the unaudited-API-project restriction, not a flock bug.'
 		);
+	}
+
+	if (job.thumbnail) {
+		try {
+			await setThumbnail(token, videoId, job, pb, log);
+		} catch (err) {
+			log(
+				err.status === 403
+					? 'thumbnail skipped: YouTube refused it. Custom thumbnails need a verified ' +
+							'channel (youtube.com/verify). The video is up without it.'
+					: `thumbnail failed (video is still up): ${err.message}`
+			);
+		}
 	}
 
 	if (options.playlist && String(options.playlist).trim()) {

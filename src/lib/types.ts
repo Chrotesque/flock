@@ -114,6 +114,8 @@ export interface UploadJob {
 	title: string;
 	description: string;
 	video: string;
+	/** Optional custom thumbnail for YouTube, capped at YouTube's own 2 MB. */
+	thumbnail?: string;
 	/**
 	 * Set instead of `video` when the file was picked out of the watch folder
 	 * rather than uploaded. The bytes stay where they are — PocketBase holds
@@ -214,6 +216,25 @@ export interface WatchIndex {
 	folder: string;
 	scannedAt: string;
 	files: WatchFile[];
+	error?: string;
+}
+
+/** One of the channel's playlists, as the worker last listed them. */
+export interface YouTubePlaylist {
+	id: string;
+	title: string;
+	count: number;
+}
+
+/**
+ * The worker's listing of the channel's playlists, in `app_settings` under
+ * `youtube_playlists`. Same arrangement as the watch index, for the same
+ * reason: the browser holds no Google credentials, so the worker reads the
+ * list and leaves it where the compose screen can find it.
+ */
+export interface PlaylistIndex {
+	fetchedAt: string;
+	items: YouTubePlaylist[];
 	error?: string;
 }
 

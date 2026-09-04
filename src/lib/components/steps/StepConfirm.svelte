@@ -16,6 +16,7 @@
 	// A still of the video itself, so the last screen before upload shows what is
 	// actually being sent rather than just its file name.
 	let posterUrl = $state('');
+	let thumbUrl = $state('');
 
 	$effect(() => {
 		const file = draft.file;
@@ -25,6 +26,17 @@
 		}
 		const url = URL.createObjectURL(file);
 		posterUrl = url;
+		return () => URL.revokeObjectURL(url);
+	});
+
+	$effect(() => {
+		const image = draft.thumbnail;
+		if (!image) {
+			thumbUrl = '';
+			return;
+		}
+		const url = URL.createObjectURL(image);
+		thumbUrl = url;
 		return () => URL.revokeObjectURL(url);
 	});
 
@@ -68,6 +80,13 @@
 						stroke-linejoin="round"
 					/>
 				</svg>
+			</div>
+		{/if}
+
+		{#if thumbUrl}
+			<div class="thumbwrap">
+				<img class="thumb" src={thumbUrl} alt="Chosen thumbnail" />
+				<span class="thumbnote">Thumbnail for YouTube</span>
 			</div>
 		{/if}
 
@@ -130,6 +149,9 @@
 					</div>
 					<p class="meta">
 						<span class="who">{def.label}</span>
+						{#if row.platform === 'youtube' && row.options.playlist}
+							<span class="dot">·</span>playlist: {row.options.playlist}
+						{/if}
 						{#if row.hits > 0}
 							<span class="dot">·</span><span class="adapted">{row.hits} adapted</span>
 						{/if}
@@ -249,6 +271,27 @@
 		place-items: center;
 		background: var(--bg-elev);
 		color: var(--text-faint);
+	}
+
+	.thumbwrap {
+		width: 80%;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.thumb {
+		width: 128px;
+		aspect-ratio: 16 / 9;
+		object-fit: cover;
+		border-radius: 8px;
+		border: 1px solid var(--border-strong);
+		background: #000;
+	}
+
+	.thumbnote {
+		font-size: 12px;
+		color: var(--text-dim);
 	}
 
 	.file {

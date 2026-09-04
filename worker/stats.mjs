@@ -36,6 +36,10 @@ const ALL_PARTS = [...PUBLIC_PARTS, 'fileDetails', 'processingDetails', 'suggest
 // this is hours of a busy launch or weeks of a quiet back-catalogue entry.
 const HISTORY_CAP = 1000;
 
+// The channel's playlists, for the compose screen's dropdown. They change
+// rarely and the listing costs a unit, so this is how often it is re-read.
+const PLAYLIST_TTL_MS = 30 * 60 * 1000;
+
 let uploadsPlaylist = '';
 let listed = { at: 0, ids: [] };
 let spent = { day: '', units: 0 };
@@ -43,6 +47,8 @@ let paused = false;
 let parts = ALL_PARTS;
 let lastError = '';
 let runs = null;
+let playlistsAt = 0;
+let playlistError = '';
 
 /** Google's quota resets at midnight Pacific, whatever clock the worker runs on. */
 function pacificDay() {
@@ -82,6 +88,35 @@ function noteRun(config) {
 	if (last && gap <= 3 * Math.max(5, config.statsSeconds) * 1000) last.to = now;
 	else runs.push({ from: now, to: now });
 	if (runs.length > 100) runs.splice(0, runs.length - 100);
+}
+
+/**
+ * Publishes the channel's playlists to `app_settings` / `youtube_playlists`,
+ * the same arrangement as the watch index: the browser has no Google
+ * credentials, so the worker lists them and leaves the list where the compose
+ * screen can read it. A failed read keeps the previous list in place.
+ */
+async function refreshPlaylists(pb, config, log) {
+	if (Date.now() - playlistsAt < PLAYLIST_TTL_MS) return;
+	playlistsAt = Date.now();
+	try {
+		const res = await api(config, '/playlists?part=snippet,contentDetails&mine=true&maxResults=50');
+		charge(1);
+		const items = (res?.items ?? []).map((p) => ({
+			id: p.id,
+			title: p.snippet?.title ?? '',
+			count: Number(p.contentDetails?.itemCount ?? 0)
+		}));
+		await pb.setSetting('youtube_playlists', { fetchedAt: new Date().toISOString(), items });
+		if (playlistError) log('playlists: recovered');
+		playlistError = '';
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		if (message !== playlistError) {
+			log(`playlists failed: ${message.split('\n')[0]}`);
+			playlistError = message;
+		}
+	}
 }
 
 async function api(config, path, retry = true) {
@@ -246,6 +281,7 @@ export async function statsPass({ pb, config, log }) {
 
 		const items = await fetchVideos(config, ids);
 		noteRun(config);
+		await refreshPlaylists(pb, config, log);
 		const existing = await pb.listVideoStats();
 		const byVideo = new Map(existing.map((row) => [row.video_id, row]));
 		const now = new Date().toISOString();

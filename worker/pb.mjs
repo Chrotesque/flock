@@ -135,6 +135,20 @@ export function makeClient(baseUrl) {
 			return `${baseUrl}/api/files/upload_jobs/${job.id}/${encodeURIComponent(job.video)}`;
 		},
 
+		thumbnailUrl(job) {
+			return `${baseUrl}/api/files/upload_jobs/${job.id}/${encodeURIComponent(job.thumbnail)}`;
+		},
+
+		/** The chosen thumbnail as bytes. Small enough to hold in memory: YouTube caps it at 2 MB. */
+		async openThumbnail(job) {
+			const res = await fetchOrExplain(this.thumbnailUrl(job));
+			if (!res.ok) throw new Error(`Cannot read the stored thumbnail (${res.status})`);
+			return {
+				bytes: Buffer.from(await res.arrayBuffer()),
+				mimeType: res.headers.get('content-type') || 'image/jpeg'
+			};
+		},
+
 		/**
 		 * Opens a job's video for reading, whichever route it arrived by.
 		 *

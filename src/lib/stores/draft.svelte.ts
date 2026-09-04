@@ -55,6 +55,12 @@ class DraftStore {
 
 	duration = $state(0);
 
+	/**
+	 * A custom thumbnail for YouTube. Optional, and YouTube-only: the other
+	 * platforms take a frame of the video or have no such thing.
+	 */
+	thumbnail = $state<File | null>(null);
+
 	/** Either route counts — the wizard does not care which one was used. */
 	get hasVideo(): boolean {
 		return Boolean(this.file || this.nasFile);
@@ -242,6 +248,7 @@ class DraftStore {
 		this.composing = null;
 		this.file = null;
 		this.nasFile = null;
+		this.thumbnail = null;
 		this.duration = 0;
 		this.selected = allSelected(true);
 		this.overrides = {};

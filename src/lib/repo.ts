@@ -6,6 +6,7 @@ import type {
 	OptionValues,
 	PlatformId,
 	WatchIndex,
+	PlaylistIndex,
 	PlatformScheduling,
 	PlatformSettings,
 	UploadJob,
@@ -186,6 +187,8 @@ export interface CreateJobInput {
 	 */
 	file: File | null;
 	source: { path: string; name: string; size: number } | null;
+	/** Optional custom thumbnail. Only YouTube does anything with it. */
+	thumbnail: File | null;
 	duration: number;
 	/** Where on the NAS this video should end up, snapshotted at confirm time. */
 	destination: { label: string; path: string } | null;
@@ -212,6 +215,7 @@ export async function createJob(
 	form.set('destination_label', input.destination?.label ?? '');
 	form.set('destination_path', input.destination?.path ?? '');
 	form.set('status', 'stored');
+	if (input.thumbnail) form.set('thumbnail', input.thumbnail);
 
 	if (input.file) {
 		form.set('video', input.file);
@@ -263,6 +267,14 @@ export async function loadWatchIndex(): Promise<WatchIndex | null> {
 	const empty: WatchIndex | null = null;
 	const index = await getSetting<WatchIndex | null>('watch_index', empty);
 	if (!index || !Array.isArray(index.files)) return null;
+	return index;
+}
+
+/** The channel's playlists, as the worker last listed them. */
+export async function loadPlaylists(): Promise<PlaylistIndex | null> {
+	const empty: PlaylistIndex | null = null;
+	const index = await getSetting<PlaylistIndex | null>('youtube_playlists', empty);
+	if (!index || !Array.isArray(index.items)) return null;
 	return index;
 }
 
