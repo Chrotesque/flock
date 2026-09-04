@@ -15,6 +15,27 @@
 
 	let destination = $derived(general.defaultDestination);
 
+	/**
+	 * Anything short of public, for the platforms that can be set so here:
+	 * YouTube's Private, and any of TikTok's non-public audiences. Null when
+	 * there is nothing to warn about.
+	 */
+	function visibilityWarning(row: PlanRow): string | null {
+		if (row.platform === 'youtube' && row.options.visibility === 'Private') return 'Private';
+		if (row.platform === 'tiktok') {
+			const privacy = String(row.options.privacy ?? '');
+			if (privacy && privacy !== 'Public') return privacy;
+		}
+		return null;
+	}
+
+	function visibilityHint(row: PlanRow): string {
+		if (row.platform === 'youtube') {
+			return 'Uploaded as private and left private: nothing goes public at the slot.';
+		}
+		return `Posted for ${String(row.options.privacy).toLowerCase()} only; nobody else will see it.`;
+	}
+
 	/** "In 11h - Sat 5 Sep, 09:00", or the immediate wording on its own. */
 	function whenLine(row: PlanRow): string {
 		if (row.immediate) return 'Immediately, as soon as the worker picks it up';
@@ -206,6 +227,7 @@
 		{#each rows as row (row.platform)}
 			{@const def = PLATFORMS[row.platform]}
 			{@const label = def.hasTitle ? row.title : firstLine(row.description)}
+			{@const visibility = visibilityWarning(row)}
 			<li class="card" class:flagged={row.overLimit || row.errors > 0}>
 				<span class="ic"><PlatformIcon platform={row.platform} size={20} /></span>
 
@@ -227,11 +249,8 @@
 						</button>
 						<p class="date">{whenLine(row)}</p>
 					</div>
-					{#if row.platform === 'youtube' && row.options.visibility === 'Private'}
-						<p
-							class="warnline"
-							title="Uploaded as private and left private: nothing goes public at the slot."
-						>
+					{#if visibility}
+						<p class="warnline" title={visibilityHint(row)}>
 							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
 								<path
 									d="M12 3.5 21 19.5H3L12 3.5Z"
@@ -241,7 +260,7 @@
 								/>
 								<path d="M12 10v4M12 16.4v.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
 							</svg>
-							Visibility: Private
+							Visibility: {visibility}
 						</p>
 					{/if}
 					<p class="meta">

@@ -1,4 +1,5 @@
 <script lang="ts" generics="T extends { id: string; date: string; time: string }">
+	import { edgeVelocity } from '$lib/autoscroll';
 	import { untrack, type Snippet } from 'svelte';
 	import { isoDate, startOfWeek, addDays, weekLabel, hourOf, dayLabel } from '$lib/format';
 
@@ -83,7 +84,47 @@
 		const id = event.dataTransfer?.getData('text/plain') || dragging;
 		dragging = null;
 		over = null;
+		stopAutoScroll();
 		if (id) ondropitem?.(id, iso, hour);
+	}
+
+	/* ---- scrolling while dragging ----
+	 *
+	 * The browser swallows wheel events for the length of a native drag, so a
+	 * card could not be dragged to an hour that was off screen. dragover keeps
+	 * firing with the pointer position while a drag is over the grid; within
+	 * the edge zone at the scroller's top or bottom, the grid is scrolled every
+	 * frame at a speed that grows the deeper into the zone the pointer is (the
+	 * maths is in autoscroll.ts, with the tests). The
+	 * loop stops on drop or drag end, and on its own if dragover goes quiet,
+	 * which is what happens when the pointer leaves the grid mid-drag.
+	 */
+	const QUIET_MS = 300;
+	let scrollVelocity = 0;
+	let scrollFrame: number | null = null;
+	let lastDragOver = 0;
+
+	function autoScroll(event: DragEvent) {
+		const el = scroller;
+		if (!el || !dragging) return;
+		lastDragOver = performance.now();
+		const rect = el.getBoundingClientRect();
+		scrollVelocity = edgeVelocity(event.clientY, rect.top, rect.bottom);
+		if (scrollVelocity !== 0 && scrollFrame === null) scrollFrame = requestAnimationFrame(scrollStep);
+	}
+
+	function scrollStep() {
+		scrollFrame = null;
+		const el = scroller;
+		if (!el || !dragging || scrollVelocity === 0 || performance.now() - lastDragOver > QUIET_MS) return;
+		el.scrollTop += scrollVelocity;
+		scrollFrame = requestAnimationFrame(scrollStep);
+	}
+
+	function stopAutoScroll() {
+		scrollVelocity = 0;
+		if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+		scrollFrame = null;
 	}
 
 	/* ---- off-screen tracking ----
@@ -309,7 +350,8 @@
 	</div>
 
 	<div class="scrollwrap">
-		<div class="scroller scroll" bind:this={scroller} onscroll={onScroll}>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="scroller scroll" bind:this={scroller} onscroll={onScroll} ondragover={autoScroll}>
 			<div class="grid" style="--row: {ROW_PX}px">
 				{#each HOURS as hour (hour)}
 					<div class="timelabel"><span>{String(hour).padStart(2, '0')}:00</span></div>
@@ -346,6 +388,7 @@
 										ondragend={() => {
 											dragging = null;
 											over = null;
+											stopAutoScroll();
 										}}
 									>
 										{@render card(item)}
