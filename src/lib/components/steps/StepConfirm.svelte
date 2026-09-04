@@ -66,6 +66,8 @@
 		tab !== 'video' && !rows.some((row) => row.platform === tab) ? 'video' : tab
 	);
 	let paneLabel = $derived(shownTab === 'video' ? '' : PLATFORMS[shownTab].label);
+	// TikTok calls it a cover; the image is the same one.
+	let paneNoun = $derived(shownTab === 'tiktok' ? 'cover' : 'thumbnail');
 
 	// The thumbnail blown up to the whole window, for the last look before it
 	// goes out. Portalled to <body>: a transformed ancestor would otherwise pin
@@ -103,7 +105,7 @@
 						onclick={() => (tab = row.platform)}
 					>
 						<PlatformIcon platform={row.platform} size={14} />
-						Thumbnail
+						{row.platform === 'tiktok' ? 'Cover' : 'Thumbnail'}
 					</button>
 				{/if}
 			{/each}
@@ -143,7 +145,7 @@
 					aria-label="Show the thumbnail at full size"
 					title="Maximise"
 				>
-					<img class="poster" src={thumbUrl} alt="Thumbnail for {paneLabel}" />
+					<img class="poster" src={thumbUrl} alt="{paneLabel} {paneNoun}" />
 				</button>
 				<button
 					class="maximise"
@@ -164,7 +166,7 @@
 			</div>
 		{:else}
 			<div class="poster empty">
-				<p>No thumbnail chosen. {paneLabel} will pick a frame.</p>
+				<p>No {paneNoun} chosen. {paneLabel} will pick a frame.</p>
 			</div>
 		{/if}
 

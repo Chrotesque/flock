@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import PlatformIcon from './PlatformIcon.svelte';
+	import type { PlatformId } from '$lib/types';
 
 	// A side box that folds to one line once its job is done — a file chosen, a
 	// playlist picked — so the finished parts of the compose screen stop taking
@@ -10,11 +12,14 @@
 		label,
 		done = false,
 		summary = '',
+		platforms = [],
 		children
 	}: {
 		label: string;
 		done?: boolean;
 		summary?: string;
+		/** Which platforms this box serves, shown as small icons after the label. */
+		platforms?: PlatformId[];
 		children: Snippet;
 	} = $props();
 
@@ -26,6 +31,19 @@
 		collapsed = done;
 	});
 </script>
+
+{#snippet heading()}
+	<span class="label">
+		{label}
+		{#if platforms.length > 0}
+			<span class="icons">
+				{#each platforms as platform (platform)}
+					<PlatformIcon {platform} size={13} />
+				{/each}
+			</span>
+		{/if}
+	</span>
+{/snippet}
 
 <section class="box card" class:collapsed>
 	{#if done}
@@ -45,7 +63,7 @@
 					stroke-linejoin="round"
 				/>
 			</svg>
-			<span class="label">{label}</span>
+			{@render heading()}
 			<svg class="check" viewBox="0 0 16 16" aria-label="done">
 				<path
 					d="M3 8.5l3.2 3.2L13 5"
@@ -61,7 +79,7 @@
 			{/if}
 		</button>
 	{:else}
-		<span class="label">{label}</span>
+		{@render heading()}
 	{/if}
 
 	{#if !collapsed}
@@ -110,6 +128,14 @@
 
 	.head .label {
 		margin: 0;
+	}
+
+	.icons {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		margin-left: 7px;
+		vertical-align: -2px;
 	}
 
 	.chevron {

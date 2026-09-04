@@ -126,6 +126,10 @@
 	let tiktokActive = $derived(draft.activePlatforms.includes('tiktok'));
 	// The thumbnail and the paid-promotion box serve both of these.
 	let mediaActive = $derived(youtubeActive || tiktokActive);
+	// In the user's display order, for the icons beside the shared boxes.
+	let mediaPlatforms = $derived(
+		draft.activePlatforms.filter((p) => p === 'youtube' || p === 'tiktok')
+	);
 	let playlists = $state<PlaylistIndex | null>(null);
 	let playlistsLoading = $state(false);
 
@@ -1066,7 +1070,14 @@
 
 		{#if mediaActive}
 			<section class="videocard card">
-				<span class="label">Paid promotion</span>
+				<span class="label">
+					Paid promotion
+					<span class="icons">
+						{#each mediaPlatforms as platform (platform)}
+							<PlatformIcon {platform} size={13} />
+						{/each}
+					</span>
+				</span>
 				<Checkbox
 					checked={paidPromotion}
 					label="This video contains paid promotion or commercial content"
@@ -1075,8 +1086,13 @@
 			</section>
 		{/if}
 
-		{#if youtubeActive}
-			<FoldBox label="Playlist" done={Boolean(playlistValue)} summary={playlistValue}>
+		{#if youtubeActive && composing === 'youtube'}
+			<FoldBox
+				label="Playlist"
+				platforms={['youtube']}
+				done={Boolean(playlistValue)}
+				summary={playlistValue}
+			>
 				<select
 					class="playlist"
 					value={playlistValue}
@@ -1164,6 +1180,7 @@
 		{#if mediaActive}
 			<FoldBox
 				label="Thumbnail"
+				platforms={mediaPlatforms}
 				done={Boolean(draft.thumbnail)}
 				summary={draft.thumbnail?.name ?? ''}
 			>
@@ -2131,6 +2148,14 @@
 
 	.cutnote.over {
 		color: #f08b8b;
+	}
+
+	.label .icons {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		margin-left: 7px;
+		vertical-align: -2px;
 	}
 
 	.playlist {

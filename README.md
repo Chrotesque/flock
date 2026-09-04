@@ -214,8 +214,8 @@ unlocks once every ticked platform has been written for. Clicking a platform in 
 right-hand list opens its options and a preview of its adapted text. Next comes a
 week calendar showing a card per platform: drag a card to another day or hour to move
 that release, or use the exact date and time fields underneath. The final screen
-plays the video, with a tab for the YouTube thumbnail at the same size, beside
-what each platform gets and when; confirming is the tick
+plays the video, with tabs for the YouTube thumbnail and the TikTok cover at the
+same size, beside what each platform gets and when; confirming is the tick
 button, pressed once and then again within two seconds while it shows "!!!", and
 the copy to the NAS starts there.
 
