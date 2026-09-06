@@ -12,6 +12,7 @@ import { stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { resolveFolder } from './paths.mjs';
 import { fetchOrExplain } from './net.mjs';
+import { mimeFromName, pbDate } from './upload.mjs';
 
 export function makeClient(baseUrl) {
 	async function request(path, options = {}) {
@@ -40,13 +41,17 @@ export function makeClient(baseUrl) {
 		/**
 		 * Targets waiting to go out for one platform, oldest slot first.
 		 *
-		 * Everything `pending` is picked up immediately rather than at its slot:
-		 * YouTube takes the release time itself via `publishAt`, so uploading
-		 * early is what stops a slow transfer from missing the window. A platform
-		 * that cannot schedule server-side will need a due-time filter here.
+		 * Without `dueBy`, everything `pending` is picked up immediately rather
+		 * than at its slot: YouTube takes the release time itself via
+		 * `publishAt`, so uploading early is what stops a slow transfer from
+		 * missing the window. The platforms that cannot schedule server-side
+		 * pass `dueBy` — an instant, usually now plus their lead — and get only
+		 * the rows whose slot falls on or before it.
 		 */
-		async pendingTargets(platform) {
-			const filter = encodeURIComponent(`platform="${platform}" && status="pending"`);
+		async pendingTargets(platform, dueBy = null) {
+			let clause = `platform="${platform}" && status="pending"`;
+			if (dueBy) clause += ` && scheduled_at <= "${pbDate(dueBy)}"`;
+			const filter = encodeURIComponent(clause);
 			const res = await request(
 				`/api/collections/upload_targets/records?perPage=50&sort=scheduled_at&filter=${filter}`
 			);
@@ -170,7 +175,13 @@ export function makeClient(baseUrl) {
 				if (!info.isFile() || info.size === 0) {
 					throw new Error(`Referenced video is not a readable file: ${job.source_path}`);
 				}
-				return { stream: createReadStream(path), size: info.size, mimeType: 'video/*' };
+				// Typed from the name: YouTube accepts a wildcard, but TikTok and
+				// Instagram refuse one, and a file on disk reports no type itself.
+				return {
+					stream: createReadStream(path),
+					size: info.size,
+					mimeType: mimeFromName(job.video_name || path, 'video/*')
+				};
 			}
 
 			const res = await fetchOrExplain(this.videoUrl(job));

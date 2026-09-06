@@ -1,32 +1,70 @@
 #!/usr/bin/env node
 // The publishing worker.
 //
-//   pnpm worker         poll forever
-//   pnpm worker:once    one pass, then exit
-//   pnpm worker:dry     one pass, reporting what it would do, uploading nothing
-//   pnpm worker:vidiq   check the vidIQ key, spending no credits
-//   pnpm worker:stats   one stats pass over the channel, then exit
+//   pnpm worker             poll forever
+//   pnpm worker:once        one pass, then exit
+//   pnpm worker:dry         one pass, reporting what it would do, uploading nothing
+//   pnpm worker:vidiq       check the vidIQ key, spending no credits
+//   pnpm worker:stats       one stats pass over the channel, then exit
+//   pnpm worker:tiktok      show who the TikTok token posts as, then exit
+//   pnpm worker:instagram   show who the Instagram token posts as, then exit
 //
-// Belongs on the NAS beside PocketBase, not in the SPA: it holds an OAuth
-// client secret, and it has to keep running when no browser is open.
+// Belongs on the NAS beside PocketBase, not in the SPA: it holds the
+// platforms' client secrets, and it has to keep running when no browser is
+// open.
 
-import { requireConfig } from './config.mjs';
+import { requireConfig, hasTikTok, hasInstagram } from './config.mjs';
 import { makeClient } from './pb.mjs';
 import { publishToYouTube } from './youtube.mjs';
+import { publishToTikTok, refreshTikTokCreator, creatorInfo, privacyLabel } from './tiktok.mjs';
+import { publishToInstagram, refreshInstagramAccount, accountInfo } from './instagram.mjs';
 import { copyToDestination } from './archive.mjs';
 import { scanWatchFolder } from './watch.mjs';
 import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
 import { statsPass, unitsToday } from './stats.mjs';
+import { msUntil } from './upload.mjs';
 
-// One entry per platform that can actually publish. The loop iterates this
-// rather than picking up everything `pending`, so the three platforms without
-// an adapter are left alone instead of being marked failed.
-const ADAPTERS = { youtube: publishToYouTube };
+/**
+ * One entry per platform that can actually publish, and how it is timed.
+ *
+ * `now` platforms take the release time themselves, so their rows are picked
+ * up the moment they exist and the platform releases at the slot. `slot`
+ * platforms cannot, so the worker holds each row and starts only when the
+ * slot comes — less `lead` seconds, for one that needs a head start to be
+ * ready on the minute. Facebook has no entry and its rows are left alone.
+ * A platform whose credentials are missing is skipped with a notice rather
+ * than failed: its rows wait in the queue for the day it is set up.
+ */
+const ADAPTERS = {
+	youtube: {
+		publish: publishToYouTube,
+		timing: 'now',
+		lead: () => 0,
+		ready: (config) => Boolean(config.google.refreshToken),
+		setup: 'pnpm worker:auth'
+	},
+	tiktok: {
+		publish: publishToTikTok,
+		timing: 'slot',
+		lead: () => 0,
+		ready: hasTikTok,
+		setup: 'pnpm worker:auth --tiktok'
+	},
+	instagram: {
+		publish: publishToInstagram,
+		timing: 'slot',
+		lead: (config) => Math.max(0, Number(config.instagramLeadSeconds) || 0),
+		ready: hasInstagram,
+		setup: 'pnpm worker:auth --instagram'
+	}
+};
 
 const once = process.argv.includes('--once');
 const dry = process.argv.includes('--dry');
 const checkVidiq = process.argv.includes('--vidiq');
 const statsOnly = process.argv.includes('--stats');
+const checkTikTok = process.argv.includes('--tiktok');
+const checkInstagram = process.argv.includes('--instagram');
 
 function stamp() {
 	return new Date().toLocaleTimeString();
@@ -36,11 +74,29 @@ function log(message) {
 	console.log(`[${stamp()}] ${message}`);
 }
 
+/** "in 12 min", "in 3h 05m" — for the dry run's account of a held row. */
+function inWords(ms) {
+	const minutes = Math.round(ms / 60000);
+	if (minutes < 60) return `in ${minutes} min`;
+	const hours = Math.floor(minutes / 60);
+	return `in ${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
+}
+
 async function handle(pb, config, platform, target) {
+	const adapter = ADAPTERS[platform];
 	const label = `${platform} "${target.title || target.description?.slice(0, 40) || target.id}"`;
 
 	if (dry) {
-		log(`would publish ${label}, scheduled ${target.scheduled_at}`);
+		if (adapter.timing === 'slot') {
+			const wait = msUntil(target.scheduled_at) - adapter.lead(config) * 1000;
+			log(
+				wait > 0
+					? `would hold ${label} until ${target.scheduled_at} (${inWords(wait)})`
+					: `would publish ${label} now — slot ${target.scheduled_at}`
+			);
+		} else {
+			log(`would publish ${label}, scheduled ${target.scheduled_at}`);
+		}
 		return;
 	}
 
@@ -51,7 +107,7 @@ async function handle(pb, config, platform, target) {
 
 	try {
 		const job = await pb.getJob(target.job);
-		const result = await ADAPTERS[platform]({
+		const result = await adapter.publish({
 			target,
 			job,
 			pb,
@@ -183,17 +239,89 @@ async function scorePass(pb, config) {
 	}
 }
 
+const noticed = new Map();
+
+/**
+ * Says, once an hour, that rows are waiting for a platform this worker has no
+ * credentials for. They are left `pending` on purpose — the queue is the
+ * right place for them until the platform's consent flow has been run.
+ */
+async function noteUnready(pb, platform) {
+	if (Date.now() - (noticed.get(platform) ?? 0) < 60 * 60_000) return;
+	const waiting = await pb.pendingTargets(platform);
+	if (waiting.length === 0) return;
+	noticed.set(platform, Date.now());
+	log(
+		`${waiting.length} pending for ${platform}, which is not set up here — ` +
+			`run ${ADAPTERS[platform].setup}. Left in the queue.`
+	);
+}
+
 async function pass(pb, config) {
 	await watchPass(pb);
 	await copyPass(pb);
 
-	for (const platform of Object.keys(ADAPTERS)) {
+	for (const [platform, adapter] of Object.entries(ADAPTERS)) {
+		if (!dry && !adapter.ready(config)) {
+			await noteUnready(pb, platform);
+			continue;
+		}
+		if (adapter.timing !== 'now') continue;
 		const targets = await pb.pendingTargets(platform);
 		if (targets.length === 0) continue;
 		log(`${targets.length} pending for ${platform}`);
 		for (const target of targets) {
 			await handle(pb, config, platform, target);
 		}
+	}
+}
+
+const busy = new Set();
+
+/**
+ * The hold-and-fire platforms, on their own tick.
+ *
+ * Their rows become due at a particular minute, and the main loop can be held
+ * for many minutes by one YouTube upload, so they are checked apart from it.
+ * Each platform works one row at a time; a platform still busy with an upload
+ * is skipped until it is free, so a second row for it waits while a row for
+ * the other platform does not. A dry run lists every pending row, due or not.
+ */
+async function slotPass(pb, config, { wait = false } = {}) {
+	const running = [];
+	for (const [platform, adapter] of Object.entries(ADAPTERS)) {
+		if (adapter.timing !== 'slot') continue;
+		if (!dry && !adapter.ready(config)) continue;
+		if (busy.has(platform)) continue;
+		busy.add(platform);
+
+		const work = (async () => {
+			try {
+				const dueBy = dry ? null : new Date(Date.now() + adapter.lead(config) * 1000);
+				const targets = await pb.pendingTargets(platform, dueBy);
+				if (targets.length === 0) return;
+				log(`${targets.length} ${dry ? 'pending' : 'due'} for ${platform}`);
+				for (const target of targets) {
+					await handle(pb, config, platform, target);
+				}
+			} catch (err) {
+				log(`${platform} pass failed: ${err instanceof Error ? err.message : err}`);
+			} finally {
+				busy.delete(platform);
+			}
+		})();
+		running.push(work);
+	}
+	if (wait) await Promise.all(running);
+}
+
+/** The account details the compose screen shows, each on its own timer. */
+async function accountPass(pb, config) {
+	if (hasTikTok(config)) {
+		await refreshTikTokCreator(pb, config, log).catch((err) => log(`tiktok: ${err.message}`));
+	}
+	if (hasInstagram(config)) {
+		await refreshInstagramAccount(pb, config, log).catch((err) => log(`instagram: ${err.message}`));
 	}
 }
 
@@ -215,6 +343,29 @@ async function recoverStale(pb) {
 	}
 }
 
+/** Who the TikTok and Instagram tokens post as — the check that a setup worked. */
+async function showAccounts(config) {
+	if (checkTikTok) {
+		if (!hasTikTok(config)) throw new Error('TikTok is not set up. Run:  pnpm worker:auth --tiktok');
+		const creator = await creatorInfo(config);
+		log(`TikTok posts as ${creator.nickname} (@${creator.username})`);
+		log(`audiences offered: ${creator.privacyOptions.map(privacyLabel).join(', ') || 'none reported'}`);
+		log(
+			`comments ${creator.commentDisabled ? 'off' : 'on'}, duet ${creator.duetDisabled ? 'off' : 'on'}, ` +
+				`stitch ${creator.stitchDisabled ? 'off' : 'on'}; videos up to ${creator.maxDurationSeconds || '?'}s`
+		);
+	}
+	if (checkInstagram) {
+		if (!hasInstagram(config)) {
+			throw new Error('Instagram is not set up. Run:  pnpm worker:auth --instagram');
+		}
+		const account = await accountInfo(config);
+		log(`Instagram posts as @${account.username} (${account.accountType || 'type unknown'}, id ${account.userId})`);
+		if (account.quotaTotal) log(`${account.quotaUsed} of ${account.quotaTotal} posts used in the last 24 hours`);
+		log(`token good until ${config.instagram.tokenExpiresAt || 'unknown'}`);
+	}
+}
+
 async function main() {
 	// The vidIQ check needs neither PocketBase nor Google — it exists to answer
 	// whether the key is any good before anything else is set up.
@@ -224,6 +375,11 @@ async function main() {
 		const tools = await listTools(vidiqKey);
 		log(`vidIQ key works — ${tools.length} tools available`);
 		log(`scoring tool present: ${tools.includes('vidiq_score_title')}`);
+		return;
+	}
+	// Likewise for the other two platforms' checks.
+	if (checkTikTok || checkInstagram) {
+		await showAccounts(requireConfig({ needToken: false, needGoogle: false }));
 		return;
 	}
 
@@ -245,7 +401,12 @@ async function main() {
 		}
 	}
 	log(`PocketBase ok at ${config.pocketbaseUrl}`);
-	log(`adapters: ${Object.keys(ADAPTERS).join(', ')}`);
+	log(
+		'adapters: ' +
+			Object.entries(ADAPTERS)
+				.map(([platform, adapter]) => (adapter.ready(config) ? platform : `${platform} (not set up)`))
+				.join(', ')
+	);
 
 	// Reads only, so it goes before the stale-row recovery: a stats check must
 	// not touch the publishing queue.
@@ -260,12 +421,17 @@ async function main() {
 	if (once || dry) {
 		await scorePass(pb, config);
 		if (!dry && config.statsSeconds > 0) await statsPass({ pb, config, log });
+		if (!dry) await accountPass(pb, config);
 		await pass(pb, config);
+		await slotPass(pb, config, { wait: true });
 		log('single pass complete');
 		return;
 	}
 
-	log(`polling every ${config.pollSeconds}s, scoring every ${config.scoreSeconds}s — ctrl-c to stop`);
+	log(
+		`polling every ${config.pollSeconds}s, slots every ${config.slotSeconds}s, ` +
+			`scoring every ${config.scoreSeconds}s — ctrl-c to stop`
+	);
 
 	// Same reason as scoring: an upload can hold the main loop for many
 	// minutes, and the Analytics screen should not go stale for the duration.
@@ -275,16 +441,16 @@ async function main() {
 			`stats: newest ${config.statsVideos} videos every ${config.statsSeconds}s, ` +
 				`up to ${config.statsBudget} units a day`
 		);
-		let busy = false;
+		let statsBusy = false;
 		const tick = async () => {
-			if (busy) return;
-			busy = true;
+			if (statsBusy) return;
+			statsBusy = true;
 			try {
 				await statsPass({ pb, config, log });
 			} catch (err) {
 				log(`stats pass failed: ${err.message}`);
 			} finally {
-				busy = false;
+				statsBusy = false;
 			}
 		};
 		void tick();
@@ -297,6 +463,16 @@ async function main() {
 	setInterval(() => {
 		void scorePass(pb, config).catch((err) => log(`score pass failed: ${err.message}`));
 	}, Math.max(1, config.scoreSeconds) * 1000);
+
+	// The hold-and-fire platforms, on their own tighter tick — see slotPass.
+	// The account refreshes ride on it too; each keeps its own half-hour timer.
+	const slotTick = () => {
+		void accountPass(pb, config);
+		void slotPass(pb, config);
+	};
+	slotTick();
+	setInterval(slotTick, Math.max(5, config.slotSeconds) * 1000);
+
 	for (;;) {
 		try {
 			await pass(pb, config);

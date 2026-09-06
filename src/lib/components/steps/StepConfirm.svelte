@@ -8,12 +8,46 @@
 	import { general } from '$lib/stores/general.svelte';
 	import { formatSchedule, formatBytes, formatDuration, firstLine } from '$lib/format';
 	import { portal } from '$lib/portal';
+	import { loadTikTokCreator, loadInstagramAccount } from '$lib/repo';
+	import { TIKTOK_PRIVACY_LEVELS, TIKTOK_PRIVACY_LABELS } from '$lib/platforms';
 	import type { PlanRow } from '$lib/plan';
-	import type { PlatformId } from '$lib/types';
+	import type { PlatformId, TikTokCreator, InstagramAccount } from '$lib/types';
 
 	let { rows }: { rows: PlanRow[] } = $props();
 
 	let destination = $derived(general.defaultDestination);
+
+	/**
+	 * Who the post goes out as, as the worker last read it. TikTok's rules
+	 * ask for the creator's name wherever a post is confirmed; Instagram's is
+	 * shown for the same reason. Absent until the worker has run with that
+	 * platform set up, in which case nothing is shown rather than a guess.
+	 */
+	let tiktok = $state<TikTokCreator | null>(null);
+	let instagram = $state<InstagramAccount | null>(null);
+	void loadTikTokCreator().then((creator) => (tiktok = creator));
+	void loadInstagramAccount().then((account) => (instagram = account));
+
+	function accountFor(platform: PlatformId): string {
+		if (platform === 'tiktok') return tiktok?.username ?? '';
+		if (platform === 'instagram') return instagram?.username ?? '';
+		return '';
+	}
+
+	/**
+	 * A TikTok audience the account does not offer — a private account has no
+	 * Public, a public one no Followers. The worker refuses such a post rather
+	 * than quietly posting at another level, so it is better said here, while
+	 * the audience can still be changed.
+	 */
+	function audienceProblem(row: PlanRow): string | null {
+		if (row.platform !== 'tiktok' || !tiktok || tiktok.privacyOptions.length === 0) return null;
+		const wanted = String(row.options.privacy ?? 'Public');
+		const level = TIKTOK_PRIVACY_LEVELS[wanted];
+		if (!level || tiktok.privacyOptions.includes(level)) return null;
+		const offered = tiktok.privacyOptions.map((l) => TIKTOK_PRIVACY_LABELS[l] ?? l).join(', ');
+		return `TikTok does not offer "${wanted}" on @${tiktok.username}; it offers ${offered}. The worker will refuse this one.`;
+	}
 
 	/**
 	 * Anything short of public, for the platforms that can be set so here:
@@ -87,8 +121,9 @@
 		tab !== 'video' && !rows.some((row) => row.platform === tab) ? 'video' : tab
 	);
 	let paneLabel = $derived(shownTab === 'video' ? '' : PLATFORMS[shownTab].label);
-	// TikTok calls it a cover; the image is the same one.
-	let paneNoun = $derived(shownTab === 'tiktok' ? 'cover' : 'thumbnail');
+	// Only YouTube takes an image. TikTok and Instagram take a cover *time*
+	// (their `coverFrame` option), so neither gets a tab here.
+	const paneNoun = 'thumbnail';
 
 	// The thumbnail blown up to the whole window, for the last look before it
 	// goes out. Portalled to <body>: a transformed ancestor would otherwise pin
@@ -117,7 +152,7 @@
 				Video
 			</button>
 			{#each rows as row (row.platform)}
-				{#if row.platform === 'youtube' || row.platform === 'tiktok'}
+				{#if row.platform === 'youtube'}
 					<button
 						class="tab"
 						class:active={shownTab === row.platform}
@@ -126,7 +161,7 @@
 						onclick={() => (tab = row.platform)}
 					>
 						<PlatformIcon platform={row.platform} size={14} />
-						{row.platform === 'tiktok' ? 'Cover' : 'Thumbnail'}
+						Thumbnail
 					</button>
 				{/if}
 			{/each}
@@ -228,6 +263,8 @@
 			{@const def = PLATFORMS[row.platform]}
 			{@const label = def.hasTitle ? row.title : firstLine(row.description)}
 			{@const visibility = visibilityWarning(row)}
+			{@const audience = audienceProblem(row)}
+			{@const account = accountFor(row.platform)}
 			<li class="card" class:flagged={row.overLimit || row.errors > 0}>
 				<span class="ic"><PlatformIcon platform={row.platform} size={20} /></span>
 
@@ -263,7 +300,24 @@
 							Visibility: {visibility}
 						</p>
 					{/if}
+					{#if audience}
+						<p class="warnline">
+							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+								<path
+									d="M12 3.5 21 19.5H3L12 3.5Z"
+									stroke="currentColor"
+									stroke-width="1.8"
+									stroke-linejoin="round"
+								/>
+								<path d="M12 10v4M12 16.4v.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+							</svg>
+							{audience}
+						</p>
+					{/if}
 					<p class="meta">
+						{#if account}
+							<span class="dot">·</span>as @{account}
+						{/if}
 						{#if row.platform === 'youtube' && row.options.playlist}
 							<span class="dot">·</span>playlist: {row.options.playlist}
 						{/if}

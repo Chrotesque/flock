@@ -15,11 +15,13 @@ On confirmation the video is uploaded to a PocketBase instance on the NAS, along
 with one scheduled entry per platform. The idea is that publishing happens later
 from the NAS, so this machine does not need to be online at release time.
 
-**YouTube is connected; the other three are not.** A worker process picks up
-scheduled YouTube releases and uploads them for real — see *The worker* below.
-Instagram, TikTok and Facebook publish nowhere, and their per-platform options are
-invented placeholders that exist so the interface can be judged before those APIs
-are wired up. Uploads to the NAS, the schedules and the adaptation rules are real
+**YouTube, TikTok and Instagram are connected; Facebook is not.** A worker
+process picks up scheduled releases and publishes them for real — see *The
+worker* below. YouTube is handed the video early and releases it itself at the
+slot; TikTok and Instagram cannot do that, so the worker holds each of those
+until its slot and posts then. Facebook publishes nowhere, and its options are
+invented placeholders that exist so the interface can be judged before that API
+is wired up. Uploads to the NAS, the schedules and the adaptation rules are real
 for every platform.
 
 ## Requirements
@@ -94,7 +96,9 @@ screen shows when it last looked.
 
 Confirming an upload only queues it. A separate process does the publishing, and
 it has to keep running when no browser is open — so it belongs on the NAS beside
-PocketBase, not in the app. Today it handles YouTube only.
+PocketBase, not in the app. It handles YouTube, TikTok and Instagram; each is
+set up separately below, and a platform that is not set up simply leaves its
+releases waiting in the queue, with a note in the worker's log.
 
 It also scans the watch folder and copies finished videos into their NAS
 destination, both of which happen regardless of which platforms a job is bound
@@ -189,6 +193,74 @@ happen — private, scheduled-public and immediately-public all worked. The
 worker still reports the locked case if it ever appears, since the behaviour
 being relied on is not the documented one.
 
+### TikTok
+
+TikTok cannot hold a video for a release time, so the worker holds it: at the
+slot it uploads the file, and TikTok posts it the moment its processing
+finishes, usually a minute or two later. It needs an app on the
+[TikTok for Developers](https://developers.tiktok.com) portal:
+
+1. Create an app, add the **Login Kit** and **Content Posting API** products,
+   and tick the `user.info.basic` and `video.publish` scopes.
+2. Under Login Kit, register a **redirect URI**. TikTok wants one on a domain
+   you have verified there; the page behind it need not exist. Put exactly
+   that URI in the worker config as `tiktok.redirectUri`.
+3. Copy the app's **client key** and **client secret** into the config as
+   `tiktok.clientKey` and `tiktok.clientSecret`.
+
+Then authorise once, signed in to the TikTok account that will post:
+
+```bash
+pnpm worker:auth --tiktok
+```
+
+If the redirect URI is not on this machine, the browser lands on a page that
+may not load; paste its full address into the terminal and the code is read
+out of it. The worker keeps the refresh token current on its own.
+
+Until TikTok has audited the app, it can only post to a TikTok account set to
+**private**, and *Who can view* has to be Friends, Followers or Private —
+Public is refused, and once the worker has read the account the confirm screen
+says so before you upload. Videos must be MP4, MOV or WebM and under 4 GB;
+the cover is the frame at the *Cover frame* time, not the thumbnail image.
+
+```bash
+pnpm worker:tiktok
+```
+
+shows who the token posts as and which audiences the account offers.
+
+### Instagram
+
+Instagram publishes in two steps, so the worker uploads a reel ten minutes
+ahead of its slot (`instagramLeadSeconds` in the config) and publishes it on
+the minute. Every video goes out as a Reel — that is the only kind of video
+Instagram's API still publishes — MP4 or MOV, under 1 GB, between 3 seconds
+and 15 minutes. It needs a Meta app with the **Instagram** product and a
+**professional** (Business or Creator) Instagram account:
+
+1. In the [Meta app dashboard](https://developers.facebook.com/apps), add the
+   Instagram product and choose *API setup with Instagram login*.
+2. Add the account as an **Instagram tester** there, and accept the invite in
+   the Instagram app under *Settings → Apps and websites → Tester invites*.
+3. Press **Generate token** beside the account, copy the token, and run:
+
+```bash
+pnpm worker:auth --instagram --token <paste>
+```
+
+Or fill in `instagram.appId`, `instagram.appSecret` and a registered
+`instagram.redirectUri` in the config and run `pnpm worker:auth --instagram`
+for the consent flow instead. Either way the token lasts sixty days, and the
+worker renews it by itself as long as it runs at least once a month.
+
+```bash
+pnpm worker:instagram
+```
+
+shows who the token posts as and how much of the day's allowance (100 posts)
+is used.
+
 ## Using it
 
 **Name the browser first.** Nothing can be uploaded or changed until you do — the
@@ -200,9 +272,10 @@ address counts as a different browser.
 
 **Upload** is a three-step flow. flock opens on Analytics; Upload lives at `/upload`.
 Tick the platforms you want on the right and choose a video underneath them. With
-YouTube or TikTok ticked, two more boxes appear: a thumbnail (optional; JPEG, PNG,
-GIF or WebP up to 2 MB) and a paid-promotion checkbox that is off on every new
-upload and covers both platforms' disclosures at once. YouTube adds a playlist
+YouTube ticked, a thumbnail box appears (optional; JPEG, PNG, GIF or WebP up to
+2 MB) — TikTok and Instagram take a cover *time* in their options instead. With
+YouTube or TikTok ticked there is a paid-promotion checkbox, off on every new
+upload, that covers both platforms' disclosures at once. YouTube adds a playlist
 dropdown listing the channel's own playlists as the worker last read them. While
 writing a TikTok caption, everything past roughly the first hundred characters
 turns red: that is the part TikTok hides behind "more" under the video. The whole
@@ -218,8 +291,9 @@ the grid scrolls with the wheel, or on its own near the top and bottom edges. A
 dropdown above the time column shows a second zone's clock beside the local one —
 US West, US East, or any zone added under Settings → Other — and the night and
 evening hours are tinted. The final screen
-plays the video, with tabs for the YouTube thumbnail and the TikTok cover at the
-same size, beside what each platform gets and when; confirming is the tick
+plays the video, with a tab for the YouTube thumbnail at the same size, beside
+what each platform gets and when — and, once the worker has read the accounts,
+which TikTok and Instagram account each goes out as; confirming is the tick
 button, pressed once and then again within two seconds while it shows "!!!", and
 the copy to the NAS starts there.
 

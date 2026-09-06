@@ -3,12 +3,31 @@ import type { PlatformDefinition, PlatformId } from './types';
 /**
  * The platform registry.
  *
- * YouTube's set is REAL — every field below maps to something videos.insert
- * actually accepts, and worker/youtube.mjs is what maps it. The other three
- * platforms are still INVENTED placeholders that exist to give the UI something
- * plausible to render; expect to throw most of them away once those APIs are
- * wired up. The character limits and `hasTitle` mirror reality throughout.
+ * YouTube's, Instagram's and TikTok's sets are REAL — every field maps to
+ * something the platform's publish call actually accepts, and the matching
+ * worker adapter (worker/youtube.mjs, instagram.mjs, tiktok.mjs) is what maps
+ * it. Facebook's is still an INVENTED placeholder that exists to give the UI
+ * something plausible to render; expect to throw most of it away once that
+ * API is wired up. The character limits and `hasTitle` mirror reality
+ * throughout.
  */
+
+/**
+ * TikTok's audiences by the name the registry shows them under, against the
+ * level TikTok calls them. worker/tiktok.mjs holds the same table for the
+ * wire; keep the two together. Which of these an account actually offers
+ * comes from the worker's creator row, not from here — Followers exists only
+ * on a private account, Public only on a public one.
+ */
+export const TIKTOK_PRIVACY_LEVELS: Record<string, string> = {
+	Public: 'PUBLIC_TO_EVERYONE',
+	Friends: 'MUTUAL_FOLLOW_FRIENDS',
+	Followers: 'FOLLOWER_OF_CREATOR',
+	Private: 'SELF_ONLY'
+};
+export const TIKTOK_PRIVACY_LABELS: Record<string, string> = Object.fromEntries(
+	Object.entries(TIKTOK_PRIVACY_LEVELS).map(([label, level]) => [level, label])
+);
 /**
  * Offered by name; worker/youtube.mjs maps them to the BCP-47 codes the API
  * takes. Extend both lists together.
@@ -111,26 +130,47 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 		hasTitle: false,
 		titleLimit: 125,
 		descriptionLimit: 2200,
-		fieldNote: 'Caption only — Instagram has no separate title.',
+		fieldNote: 'Caption only — published as a Reel.',
+		// Every field maps to a parameter of the Graph API's media container;
+		// worker/instagram.mjs does the mapping. A Reel is the only kind of video
+		// the API still publishes, which is why there is no surface to pick.
 		fields: [
-			{ key: 'surface', label: 'Share to', type: 'select', choices: ['Reels', 'Reels + Feed', 'Feed only'] },
-			{ key: 'coverFrame', label: 'Cover frame', type: 'number', min: 0, max: 60, step: 0.5, unit: 's' },
-			{ key: 'collaborators', label: 'Collaborators', type: 'tags', placeholder: '@handle' },
-			{ key: 'locationTag', label: 'Location tag', type: 'text', placeholder: 'None' },
-			{ key: 'altText', label: 'Alt text', type: 'text', placeholder: 'Describe the video' },
-			{ key: 'hideLikeCounts', label: 'Hide like counts', type: 'bool' },
-			{ key: 'disableComments', label: 'Turn off commenting', type: 'bool' },
-			{ key: 'shareToStory', label: 'Also share to Story', type: 'bool' }
+			{
+				key: 'shareToFeed',
+				label: 'Show in the profile feed',
+				type: 'bool',
+				hint: 'Off keeps the reel to the Reels tab.'
+			},
+			{
+				key: 'coverFrame',
+				label: 'Cover frame',
+				type: 'number',
+				min: 0,
+				max: 900,
+				step: 0.5,
+				unit: 's',
+				hint: 'The frame used as the cover. Instagram takes a cover image only from a public URL, so the thumbnail box does not apply here.'
+			},
+			{
+				key: 'collaborators',
+				label: 'Collaborators',
+				type: 'tags',
+				placeholder: 'username',
+				hint: 'Up to three. Each gets an invite to accept.'
+			},
+			{
+				key: 'audioName',
+				label: 'Audio name',
+				type: 'text',
+				placeholder: 'Original audio',
+				hint: 'Renames the original audio.'
+			}
 		],
 		defaults: {
-			surface: 'Reels + Feed',
+			shareToFeed: true,
 			coverFrame: 1,
 			collaborators: [],
-			locationTag: '',
-			altText: '',
-			hideLikeCounts: false,
-			disableComments: false,
-			shareToStory: false
+			audioName: ''
 		}
 	},
 
@@ -145,14 +185,26 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 		// TikTok shows roughly the first hundred characters of a caption under
 		// the video before "…more". A guess, not an API value: adjust here.
 		visibleCaption: 100,
+		// Every field maps to a field of the Content Posting API's init call;
+		// worker/tiktok.mjs does the mapping, and checks the audience against
+		// what the account offers before posting.
 		fields: [
-			{ key: 'privacy', label: 'Who can view', type: 'select', choices: ['Public', 'Friends', 'Private'] },
-			{ key: 'coverFrame', label: 'Cover frame', type: 'number', min: 0, max: 60, step: 0.5, unit: 's' },
 			{
-				key: 'hdUpload',
-				label: 'High quality uploads',
-				type: 'bool',
-				hint: 'HD by default, as TikTok Studio does from the web.'
+				key: 'privacy',
+				label: 'Who can view',
+				type: 'select',
+				choices: ['Public', 'Friends', 'Followers', 'Private'],
+				hint: 'Followers exists on a private account only, Public on a public one. The worker checks before posting.'
+			},
+			{
+				key: 'coverFrame',
+				label: 'Cover frame',
+				type: 'number',
+				min: 0,
+				max: 600,
+				step: 0.5,
+				unit: 's',
+				hint: 'The frame used as the cover. TikTok takes a time, not an image, so the thumbnail box does not apply here.'
 			},
 			{ key: 'allowComments', label: 'Allow comments', type: 'bool' },
 			{ key: 'allowDuet', label: 'Allow Duet', type: 'bool' },
@@ -162,22 +214,27 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 			// lands in the target's options as `discloseContent`. This is what
 			// kind, once it is disclosed.
 			{
-				key: 'brandedContent',
-				label: 'Content disclosure',
+				key: 'disclosure',
+				label: 'Disclose as',
 				type: 'select',
-				choices: ['None', 'Your brand', 'Branded content']
+				choices: ['Branded content', 'Your brand', 'Both'],
+				hint: 'Applies when the paid promotion box is ticked. Branded content is a paid partnership and cannot be posted for only you; Your brand promotes your own business.'
 			},
-			{ key: 'autoAddMusic', label: 'Auto-add trending sound', type: 'bool' }
+			{
+				key: 'aiGenerated',
+				label: 'AI-generated content',
+				type: 'bool',
+				hint: 'Labels the video as made with AI.'
+			}
 		],
 		defaults: {
 			privacy: 'Public',
 			coverFrame: 1,
-			hdUpload: true,
 			allowComments: true,
 			allowDuet: true,
 			allowStitch: true,
-			brandedContent: 'None',
-			autoAddMusic: false
+			disclosure: 'Branded content',
+			aiGenerated: false
 		}
 	},
 

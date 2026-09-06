@@ -8,8 +8,9 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"test": "svelte-kit sync && vitest run",
+		"test": "svelte-kit sync && vitest run && node --test \"worker/**/*.test.mjs\"",
 		"test:watch": "svelte-kit sync && vitest",
+		"test:worker": "node --test \"worker/**/*.test.mjs\"",
 		"setup-pb": "node scripts/runpb.mjs setup-pb.mjs",
 		"deploy": "node scripts/deploy.mjs",
 		"deploy:dry": "node scripts/deploy.mjs --dry",
@@ -17,8 +18,12 @@
 		"worker:once": "node worker/index.mjs --once",
 		"worker:dry": "node worker/index.mjs --dry",
 		"worker:auth": "node worker/authorize.mjs",
+		"worker:auth:tiktok": "node worker/authorize.mjs --tiktok",
+		"worker:auth:instagram": "node worker/authorize.mjs --instagram",
 		"worker:vidiq": "node worker/index.mjs --vidiq",
-		"worker:stats": "node worker/index.mjs --stats"
+		"worker:stats": "node worker/index.mjs --stats",
+		"worker:tiktok": "node worker/index.mjs --tiktok",
+		"worker:instagram": "node worker/index.mjs --instagram"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.0",

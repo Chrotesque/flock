@@ -124,7 +124,9 @@
 
 	let youtubeActive = $derived(draft.activePlatforms.includes('youtube'));
 	let tiktokActive = $derived(draft.activePlatforms.includes('tiktok'));
-	// The thumbnail and the paid-promotion box serve both of these.
+	// The paid-promotion box serves both of these. The thumbnail does not:
+	// TikTok and Instagram take a cover *time* (their `coverFrame` option),
+	// not an image, so the picker is YouTube's alone.
 	let mediaActive = $derived(youtubeActive || tiktokActive);
 	// In the user's display order, for the icons beside the shared boxes.
 	let mediaPlatforms = $derived(
@@ -1177,10 +1179,10 @@
 			</div>
 		</FoldBox>
 
-		{#if mediaActive}
+		{#if youtubeActive}
 			<FoldBox
 				label="Thumbnail"
-				platforms={mediaPlatforms}
+				platforms={['youtube']}
 				done={Boolean(draft.thumbnail)}
 				summary={draft.thumbnail?.name ?? ''}
 			>

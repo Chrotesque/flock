@@ -12,7 +12,9 @@ import type {
 	UploadJob,
 	UploadTarget,
 	VideoStats,
-	StatsStatus
+	StatsStatus,
+	TikTokCreator,
+	InstagramAccount
 } from './types';
 
 /* ------------------------------------------------------------------ */
@@ -290,6 +292,25 @@ export async function loadPlaylists(): Promise<PlaylistIndex | null> {
 	const index = await getSetting<PlaylistIndex | null>('youtube_playlists', empty);
 	if (!index || !Array.isArray(index.items)) return null;
 	return index;
+}
+
+/**
+ * The TikTok account the worker posts as, as it last read it. Null until the
+ * worker has run with TikTok set up; the same arrangement as the playlists.
+ */
+export async function loadTikTokCreator(): Promise<TikTokCreator | null> {
+	const empty: TikTokCreator | null = null;
+	const creator = await getSetting<TikTokCreator | null>('tiktok_creator', empty);
+	if (!creator || typeof creator.username !== 'string') return null;
+	return { ...creator, privacyOptions: Array.isArray(creator.privacyOptions) ? creator.privacyOptions : [] };
+}
+
+/** The Instagram account the worker posts as, as it last read it. */
+export async function loadInstagramAccount(): Promise<InstagramAccount | null> {
+	const empty: InstagramAccount | null = null;
+	const account = await getSetting<InstagramAccount | null>('instagram_account', empty);
+	if (!account || typeof account.username !== 'string') return null;
+	return account;
 }
 
 /**

@@ -1,6 +1,8 @@
 {
   "pocketbaseUrl": "http://<pocketbase-host>:8091",
   "pollSeconds": 60,
+  "slotSeconds": 15,
+  "instagramLeadSeconds": 600,
   "scoreSeconds": 3,
   "statsSeconds": 30,
   "statsVideos": 50,
@@ -10,5 +12,17 @@
     "clientId": "PASTE-CLIENT-ID.apps.googleusercontent.com",
     "clientSecret": "PASTE-CLIENT-SECRET",
     "refreshToken": ""
+  },
+  "tiktok": {
+    "clientKey": "PASTE-CLIENT-KEY",
+    "clientSecret": "PASTE-CLIENT-SECRET",
+    "redirectUri": "https://example.com/flock/tiktok",
+    "refreshToken": ""
+  },
+  "instagram": {
+    "appId": "PASTE-INSTAGRAM-APP-ID",
+    "appSecret": "PASTE-INSTAGRAM-APP-SECRET",
+    "redirectUri": "https://example.com/flock/instagram",
+    "accessToken": ""
   }
 }

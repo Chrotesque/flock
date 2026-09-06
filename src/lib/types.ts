@@ -253,6 +253,42 @@ export interface PlaylistIndex {
 }
 
 /**
+ * The TikTok account the worker posts as, in `app_settings` under
+ * `tiktok_creator` — the same arrangement as the playlists. TikTok's rules
+ * ask that the creator's name be shown wherever a post is confirmed, and its
+ * creator_info call is the only source of which audiences the account
+ * offers. `error` is set when the last read failed; the other fields then
+ * hold the last good read.
+ */
+export interface TikTokCreator {
+	fetchedAt: string;
+	username: string;
+	nickname: string;
+	avatar: string;
+	/** TikTok's own level names, e.g. PUBLIC_TO_EVERYONE. */
+	privacyOptions: string[];
+	commentDisabled: boolean;
+	duetDisabled: boolean;
+	stitchDisabled: boolean;
+	maxDurationSeconds: number;
+	error?: string;
+}
+
+/** The Instagram account the worker posts as, in `app_settings` under `instagram_account`. */
+export interface InstagramAccount {
+	fetchedAt: string;
+	userId: string;
+	username: string;
+	accountType: string;
+	name: string;
+	/** Posts made in the last day against the API's allowance, when known. */
+	quotaUsed: number | null;
+	quotaTotal: number | null;
+	tokenExpiresAt: string;
+	error?: string;
+}
+
+/**
  * A named release pattern for one platform — "Horror goes out Friday at 21:00".
  * Both halves are independently switchable: a profile may set only a time, only
  * a set of days, or both.

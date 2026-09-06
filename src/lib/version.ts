@@ -1,3 +1,3 @@
 // MAJOR.FEATURE.ITERATION — see the versioning rules in CLAUDE.md.
 // Displayed in the footer of the Settings screen.
-export const VERSION = '0.7.3';
+export const VERSION = '0.8.0';
