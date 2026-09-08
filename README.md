@@ -340,6 +340,13 @@ the bottom to try them against sample text. Unticking a platform removes it from
 new uploads entirely — it stops being listed on the compose screen, though its
 defaults and rules are kept.
 
+## The policy pages
+
+`site/` holds the privacy policy and terms of service that the Google and
+TikTok developer portals link to, as three plain HTML pages. They are uploaded
+by hand to a static host that can serve a file at its root, which is what
+TikTok's URL-prefix verification needs; edit them here and upload again.
+
 ## Where things live
 
 Videos and schedules live in PocketBase on the NAS, in the collections

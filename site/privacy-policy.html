@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy - flock</title>
+<style>
+  body { margin: 0; padding: 3rem 1.25rem; font: 16px/1.6 system-ui, sans-serif; color: #1c1c1e; background: #fafafa; }
+  main { max-width: 38rem; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin: 0 0 0.25rem; }
+  h2 { font-size: 1.05rem; margin: 2rem 0 0.5rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  nav a { margin-right: 1.25rem; }
+  a { color: #7a3fd4; }
+  .updated { color: #666; margin: 0 0 1.5rem; }
+  ul { padding-left: 1.25rem; }
+</style>
+</head>
+<body>
+<main>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/privacy-policy.html">Privacy Policy</a>
+    <a href="/terms-of-service.html">Terms of Service</a>
+  </nav>
+
+  <h1>Privacy Policy</h1>
+  <p class="updated">flock — last updated 08-09-2026</p>
+
+  <h2>What flock is</h2>
+  <p>flock is a private tool built by one person for their own use. It schedules
+  and publishes videos to that person's own YouTube channel and TikTok account.
+  It runs only on the author's own hardware and is reachable only on the
+  author's private network.</p>
+
+  <h2>Use of YouTube API Services</h2>
+  <p>flock uses YouTube API Services to upload videos to the author's channel.
+  That use is subject to the
+  <a href="https://www.youtube.com/t/terms">YouTube Terms of Service</a>.
+  Google's handling of data is described in the
+  <a href="http://www.google.com/policies/privacy">Google Privacy Policy</a>.</p>
+
+  <h2>Use of TikTok's APIs</h2>
+  <p>flock uses TikTok's Login Kit and Content Posting API to publish videos to
+  its author's own TikTok account. Content published this way is subject to
+  <a href="https://www.tiktok.com/legal/page/eea/terms-of-service/en">TikTok's Terms of Service</a>
+  and <a href="https://www.tiktok.com/community-guidelines/en/">Community Guidelines</a>.
+  TikTok's own handling of data is described in
+  <a href="https://www.tiktok.com/legal/page/eea/privacy-policy/en">TikTok's Privacy Policy</a>.</p>
+  <p>flock uses what it receives from TikTok for one purpose: posting the videos
+  its author chooses, at the time its author chooses. It does not read the
+  account's videos, followers, statistics or messages, and it presents no
+  TikTok content anywhere.</p>
+
+  <h2>What flock accesses</h2>
+  <p>From Google, flock asks for:</p>
+  <ul>
+    <li><code>youtube.upload</code> — uploading videos to the author's channel</li>
+    <li><code>youtube.readonly</code> — reading the channel's own videos and their public counters</li>
+    <li><code>youtube</code> — only if enabled, for adding a video to a playlist</li>
+  </ul>
+  <p>From TikTok, flock asks for:</p>
+  <ul>
+    <li><code>user.info.basic</code> — the account's identifier, display name and avatar, so flock can show which account a post will go to</li>
+    <li><code>video.publish</code> — posting a video directly to that account</li>
+  </ul>
+  <p>Before each post, flock also reads what TikTok calls creator information:
+  the account's display name, which audiences it may post to, whether comments,
+  duets and stitches are switched off in its settings, and the longest video it
+  may post. That is used only to build the post the way TikTok requires, and
+  only the most recent copy is kept, replaced on the next read.</p>
+  <p>flock does not read, collect or store information about any other channel
+  or account, any other user, or any viewer.</p>
+
+  <h2>What flock stores, and where</h2>
+  <p>Everything flock stores stays on the author's own equipment:</p>
+  <ul>
+    <li>the video files, or references to where they are kept</li>
+    <li>the text written for each video: titles, descriptions, tags and publishing settings</li>
+    <li>the chosen release times</li>
+    <li>confirmation of what was uploaded and where</li>
+    <li>a log of actions taken in flock</li>
+    <li>a name for each browser that uses it, stored in that browser under <code>flock.device</code></li>
+    <li>the Google refresh token, in a configuration file</li>
+    <li>TikTok's access and refresh tokens, in the same configuration file</li>
+    <li>the most recent creator information read from TikTok, as described above</li>
+  </ul>
+  <p>Data leaves the author's machines only to publish a video, to Google or to
+  TikTok, and only while that is happening. Between the author's own machines it
+  travels over a private network.</p>
+
+  <h2>How long it is kept</h2>
+  <p>Everything flock stores stays until its author deletes it. Nothing expires
+  on its own, nothing is copied anywhere else, and the tokens are kept until they
+  are revoked or replaced.</p>
+
+  <h2>Cookies and device data</h2>
+  <p>flock sets no cookies and uses no analytics, telemetry or tracking of any
+  kind. This website is a set of static pages and sets no cookies either.</p>
+
+  <h2>Sharing</h2>
+  <p>flock shares no data with anyone. There are no third parties, no service
+  providers, no advertising, and no sale or transfer of data.</p>
+
+  <h2>Deleting data</h2>
+  <p>The author can remove anything flock holds by:</p>
+  <ul>
+    <li>deleting the entry in flock</li>
+    <li>deleting flock's data directory</li>
+    <li>deleting the configuration file that holds the tokens</li>
+    <li>revoking flock's access to the Google account at
+      <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>
+      or <a href="https://security.google.com/settings/security/permissions">security.google.com/settings/security/permissions</a></li>
+    <li>revoking flock's access in the TikTok app, under Settings and privacy,
+      then Security and permissions, then the list of connected apps; that stops
+      every further request, and the stored tokens stop working</li>
+    <li>deleting a published video on YouTube or TikTok itself; flock keeps no copy of what those services hold</li>
+  </ul>
+
+  <h2>Changes</h2>
+  <p>Any change to this policy appears on this page.</p>
+
+  <h2>Contact</h2>
+  <p>ayarea2@gmail.com. Questions about Google or TikTok data are answered from
+  the same address.</p>
+</main>
+</body>
+</html>
