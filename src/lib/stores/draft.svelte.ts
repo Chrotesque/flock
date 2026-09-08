@@ -1,6 +1,8 @@
 import { PLATFORMS, PLATFORM_IDS } from '../platforms';
 import { isoDate, nextDayMatching } from '../format';
+import { tiktokProblems } from '../tiktok';
 import { settings } from './settings.svelte';
+import { accounts } from './accounts.svelte';
 import { DEFAULT_SCHEDULING } from '../types';
 import type {
 	OptionValues,
@@ -114,11 +116,24 @@ class DraftStore {
 	 * A platform is composed once it has a description — plus a title, but only
 	 * if it is a platform that takes one. Requiring a title from Instagram or
 	 * TikTok would make Continue unreachable, since neither renders the field.
+	 * TikTok additionally has to pass its posting rules (see `tiktokProblems`):
+	 * an audience chosen by hand, a disclosure that says what kind, nothing
+	 * TikTok itself would refuse.
 	 */
 	isComplete(platform: PlatformId): boolean {
 		const text = this.textFor(platform);
 		if (!text.description.trim()) return false;
+		if (platform === 'tiktok' && this.tiktokProblems.length > 0) return false;
 		return PLATFORMS[platform].hasTitle ? Boolean(text.title.trim()) : true;
+	}
+
+	/**
+	 * What still stops a TikTok post, in the words the compose box shows. The
+	 * audience list comes from the worker's creator row, which is why this
+	 * reads the accounts store — the draft reads from stores, never back.
+	 */
+	get tiktokProblems(): string[] {
+		return tiktokProblems(this.overrides.tiktok ?? {}, accounts.tiktok, this.duration);
 	}
 
 	/**

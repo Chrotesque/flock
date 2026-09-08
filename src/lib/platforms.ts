@@ -186,16 +186,16 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 		// the video before "…more". A guess, not an API value: adjust here.
 		visibleCaption: 100,
 		// Every field maps to a field of the Content Posting API's init call;
-		// worker/tiktok.mjs does the mapping, and checks the audience against
-		// what the account offers before posting.
+		// worker/tiktok.mjs does the mapping. Most of TikTok's per-post choices
+		// are deliberately NOT here: their Content Sharing Guidelines require
+		// the audience to be picked by hand from what the account offers with
+		// nothing preselected, and comments, Duet and Stitch to be off until
+		// ticked — so those, and the disclosure kind, are per-upload controls
+		// in the TikTok box on the compose screen (`src/lib/tiktok.ts` holds the
+		// rules) and land in the target's options as `privacy`, `allowComments`,
+		// `allowDuet`, `allowStitch`, `discloseContent`, `brandOrganic` and
+		// `brandContent`. Only what may carry a saved default is listed.
 		fields: [
-			{
-				key: 'privacy',
-				label: 'Who can view',
-				type: 'select',
-				choices: ['Public', 'Friends', 'Followers', 'Private'],
-				hint: 'Followers exists on a private account only, Public on a public one. The worker checks before posting.'
-			},
 			{
 				key: 'coverFrame',
 				label: 'Cover frame',
@@ -206,20 +206,6 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 				unit: 's',
 				hint: 'The frame used as the cover. TikTok takes a time, not an image, so the thumbnail box does not apply here.'
 			},
-			{ key: 'allowComments', label: 'Allow comments', type: 'bool' },
-			{ key: 'allowDuet', label: 'Allow Duet', type: 'bool' },
-			{ key: 'allowStitch', label: 'Allow Stitch', type: 'bool' },
-			// The commercial-content disclosure itself is per upload — the paid
-			// promotion box on the compose screen, shared with YouTube — and
-			// lands in the target's options as `discloseContent`. This is what
-			// kind, once it is disclosed.
-			{
-				key: 'disclosure',
-				label: 'Disclose as',
-				type: 'select',
-				choices: ['Branded content', 'Your brand', 'Both'],
-				hint: 'Applies when the paid promotion box is ticked. Branded content is a paid partnership and cannot be posted for only you; Your brand promotes your own business.'
-			},
 			{
 				key: 'aiGenerated',
 				label: 'AI-generated content',
@@ -228,12 +214,7 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 			}
 		],
 		defaults: {
-			privacy: 'Public',
 			coverFrame: 1,
-			allowComments: true,
-			allowDuet: true,
-			allowStitch: true,
-			disclosure: 'Branded content',
 			aiGenerated: false
 		}
 	},

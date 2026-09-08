@@ -8,10 +8,16 @@
 	import { general } from '$lib/stores/general.svelte';
 	import { formatSchedule, formatBytes, formatDuration, firstLine } from '$lib/format';
 	import { portal } from '$lib/portal';
-	import { loadTikTokCreator, loadInstagramAccount } from '$lib/repo';
-	import { TIKTOK_PRIVACY_LEVELS, TIKTOK_PRIVACY_LABELS } from '$lib/platforms';
+	import { accounts } from '$lib/stores/accounts.svelte';
+	import {
+		tiktokProblems,
+		readDisclosure,
+		disclosureLabel,
+		consentLinks,
+		CONSENT_PREFIX
+	} from '$lib/tiktok';
 	import type { PlanRow } from '$lib/plan';
-	import type { PlatformId, TikTokCreator, InstagramAccount } from '$lib/types';
+	import type { PlatformId } from '$lib/types';
 
 	let { rows }: { rows: PlanRow[] } = $props();
 
@@ -19,34 +25,30 @@
 
 	/**
 	 * Who the post goes out as, as the worker last read it. TikTok's rules
-	 * ask for the creator's name wherever a post is confirmed; Instagram's is
-	 * shown for the same reason. Absent until the worker has run with that
-	 * platform set up, in which case nothing is shown rather than a guess.
+	 * ask for the creator's display name wherever a post is confirmed;
+	 * Instagram's account is shown for the same reason. Absent until the
+	 * worker has run with that platform set up, in which case nothing is shown
+	 * rather than a guess.
 	 */
-	let tiktok = $state<TikTokCreator | null>(null);
-	let instagram = $state<InstagramAccount | null>(null);
-	void loadTikTokCreator().then((creator) => (tiktok = creator));
-	void loadInstagramAccount().then((account) => (instagram = account));
+	accounts.load();
 
 	function accountFor(platform: PlatformId): string {
-		if (platform === 'tiktok') return tiktok?.username ?? '';
-		if (platform === 'instagram') return instagram?.username ?? '';
+		if (platform === 'tiktok' && accounts.tiktok) {
+			const creator = accounts.tiktok;
+			return creator.nickname ? `${creator.nickname} (@${creator.username})` : `@${creator.username}`;
+		}
+		if (platform === 'instagram' && accounts.instagram) return `@${accounts.instagram.username}`;
 		return '';
 	}
 
 	/**
-	 * A TikTok audience the account does not offer — a private account has no
-	 * Public, a public one no Followers. The worker refuses such a post rather
-	 * than quietly posting at another level, so it is better said here, while
-	 * the audience can still be changed.
+	 * TikTok's own rules, checked once more on the resolved options: the
+	 * worker refuses such a post rather than quietly posting another way, so
+	 * it is better said here, while it can still be changed.
 	 */
-	function audienceProblem(row: PlanRow): string | null {
-		if (row.platform !== 'tiktok' || !tiktok || tiktok.privacyOptions.length === 0) return null;
-		const wanted = String(row.options.privacy ?? 'Public');
-		const level = TIKTOK_PRIVACY_LEVELS[wanted];
-		if (!level || tiktok.privacyOptions.includes(level)) return null;
-		const offered = tiktok.privacyOptions.map((l) => TIKTOK_PRIVACY_LABELS[l] ?? l).join(', ');
-		return `TikTok does not offer "${wanted}" on @${tiktok.username}; it offers ${offered}. The worker will refuse this one.`;
+	function tiktokIssues(row: PlanRow): string[] {
+		if (row.platform !== 'tiktok') return [];
+		return tiktokProblems(row.options, accounts.tiktok, draft.duration);
 	}
 
 	/**
@@ -263,8 +265,9 @@
 			{@const def = PLATFORMS[row.platform]}
 			{@const label = def.hasTitle ? row.title : firstLine(row.description)}
 			{@const visibility = visibilityWarning(row)}
-			{@const audience = audienceProblem(row)}
+			{@const issues = tiktokIssues(row)}
 			{@const account = accountFor(row.platform)}
+			{@const disclosure = row.platform === 'tiktok' ? readDisclosure(row.options) : null}
 			<li class="card" class:flagged={row.overLimit || row.errors > 0}>
 				<span class="ic"><PlatformIcon platform={row.platform} size={20} /></span>
 
@@ -300,7 +303,7 @@
 							Visibility: {visibility}
 						</p>
 					{/if}
-					{#if audience}
+					{#each issues as issue (issue)}
 						<p class="warnline">
 							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
 								<path
@@ -311,12 +314,20 @@
 								/>
 								<path d="M12 10v4M12 16.4v.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
 							</svg>
-							{audience}
+							{issue}
+						</p>
+					{/each}
+					{#if disclosure}
+						<!-- TikTok's declaration line, worded as their guidelines require. -->
+						<p class="consent">
+							{#if disclosureLabel(disclosure)}{disclosureLabel(disclosure)} {/if}{CONSENT_PREFIX}{#each consentLinks(disclosure) as link, i (link.url)}{#if i > 0}
+									and
+								{/if}<a href={link.url} target="_blank" rel="noopener">{link.label}</a>{/each}.
 						</p>
 					{/if}
 					<p class="meta">
 						{#if account}
-							<span class="dot">·</span>as @{account}
+							<span class="dot">·</span>as {account}
 						{/if}
 						{#if row.platform === 'youtube' && row.options.playlist}
 							<span class="dot">·</span>playlist: {row.options.playlist}
@@ -569,6 +580,18 @@
 		object-fit: contain;
 		border-radius: 8px;
 		box-shadow: 0 24px 70px rgba(0, 0, 0, 0.7);
+	}
+
+	/* TikTok's declaration line: quiet, but present on every post. */
+	.consent {
+		margin: 4px 0 0;
+		font-size: 11.5px;
+		color: var(--text-faint);
+	}
+
+	.consent a {
+		color: inherit;
+		font-weight: 600;
 	}
 
 	.warnline {

@@ -213,9 +213,13 @@ function resolvePrivacy(wanted, creator) {
 /** The request body for the init call, from the target's options. */
 function buildPostInfo(target, options, creator, level, durationSeconds) {
 	const disclose = Boolean(options.discloseContent);
-	const kind = String(options.disclosure || 'Branded content');
-	const brandOrganic = disclose && (kind === 'Your brand' || kind === 'Both');
-	const brandContent = disclose && (kind === 'Branded content' || kind === 'Both');
+	// The compose screen writes the two kinds as booleans; a row from before it
+	// did carries the old `disclosure` select instead.
+	const legacy = String(options.disclosure || '');
+	const brandOrganic =
+		disclose && (options.brandOrganic === true || legacy === 'Your brand' || legacy === 'Both');
+	const brandContent =
+		disclose && (options.brandContent === true || legacy === 'Branded content' || legacy === 'Both');
 	if (brandContent && level === 'SELF_ONLY') {
 		throw new Error(
 			'TikTok does not allow branded content on a post only you can see. ' +
@@ -231,11 +235,12 @@ function buildPostInfo(target, options, creator, level, durationSeconds) {
 	const info = {
 		title: (target.description || target.title || '').slice(0, CAPTION_LIMIT),
 		privacy_level: level,
-		// The account's own settings win: TikTok refuses a post that switches on
-		// what the creator has switched off.
-		disable_comment: options.allowComments === false || creator.commentDisabled,
-		disable_duet: options.allowDuet === false || creator.duetDisabled,
-		disable_stitch: options.allowStitch === false || creator.stitchDisabled,
+		// Off unless ticked — TikTok's own default, and where the compose
+		// screen's boxes start — and the account's own settings win either way:
+		// TikTok refuses a post that switches on what the creator switched off.
+		disable_comment: options.allowComments !== true || creator.commentDisabled,
+		disable_duet: options.allowDuet !== true || creator.duetDisabled,
+		disable_stitch: options.allowStitch !== true || creator.stitchDisabled,
 		video_cover_timestamp_ms: coverMs,
 		brand_content_toggle: brandContent,
 		brand_organic_toggle: brandOrganic

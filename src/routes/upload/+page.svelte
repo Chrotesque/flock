@@ -160,9 +160,16 @@
 						</li>
 					{/each}
 				</ul>
-				<p class="caveat">
-					Queued only — no platform API is connected yet, so nothing will actually be published.
-				</p>
+				{#if plan.some((row) => row.platform === 'tiktok')}
+					<!-- TikTok's guidelines ask for this notice after every post. -->
+					<p class="caveat">
+						After the worker posts to TikTok, it may take a few minutes for the video to be
+						processed and become visible on the profile.
+					</p>
+				{/if}
+				{#if plan.some((row) => row.platform === 'facebook')}
+					<p class="caveat">Facebook is not connected yet, so that release stays queued.</p>
+				{/if}
 				<button class="btn btn-primary" onclick={startOver}>New upload</button>
 			</section>
 		{:else}

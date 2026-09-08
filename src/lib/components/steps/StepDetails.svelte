@@ -25,8 +25,18 @@
 		type TitleSuggestion
 	} from '$lib/repo';
 	import { tagSets } from '$lib/stores/tagsets.svelte';
+	import { accounts } from '$lib/stores/accounts.svelte';
 	import { formatBytes, mergeTagGroups, tagListLength, parseTagList } from '$lib/format';
 	import { checkTags } from '$lib/tagcheck';
+	import {
+		audienceChoices,
+		readDisclosure,
+		disclosureLabel,
+		consentLinks,
+		CONSENT_PREFIX,
+		PRIVATE_BLOCKS_BRANDED,
+		BRANDED_BLOCKS_PRIVATE
+	} from '$lib/tiktok';
 	import { portal } from '$lib/portal';
 	import type { PlatformId, PlaylistIndex, TextTemplate, WatchIndex } from '$lib/types';
 
@@ -168,6 +178,35 @@
 		if (tiktokActive) {
 			draft.overrides.tiktok = { ...(draft.overrides.tiktok ?? {}), discloseContent: on };
 		}
+	}
+
+	/* ---- TikTok's per-post rules ----
+	 *
+	 * TikTok's Content Sharing Guidelines are what its Direct Post review
+	 * grades, word for word: the audience picked by hand from what the account
+	 * offers with nothing preselected, comments, Duet and Stitch off until
+	 * ticked and greyed out where the account has them off, the disclosure kind
+	 * with TikTok's own label text, and the declaration line. Hence a box of
+	 * per-upload controls here rather than saved defaults in Settings. The
+	 * rules and the wording live in $lib/tiktok; the account comes from the
+	 * worker's creator row.
+	 */
+	accounts.load();
+	let tiktokOptions = $derived(draft.overrides.tiktok ?? {});
+	let tiktokAudience = $derived(String(tiktokOptions.privacy ?? ''));
+	let tiktokDisclosure = $derived(readDisclosure(tiktokOptions));
+	let tiktokLabel = $derived(disclosureLabel(tiktokDisclosure));
+	let tiktokConsent = $derived(consentLinks(tiktokDisclosure));
+	let tiktokAudiences = $derived(audienceChoices(accounts.tiktok));
+	let tiktokBranded = $derived(tiktokDisclosure.disclosed && tiktokDisclosure.brandedContent);
+	let tiktokLocked = $derived(
+		Boolean(
+			accounts.tiktok?.commentDisabled || accounts.tiktok?.duetDisabled || accounts.tiktok?.stitchDisabled
+		)
+	);
+
+	function setTikTok(key: string, value: string | boolean) {
+		draft.overrides.tiktok = { ...(draft.overrides.tiktok ?? {}), [key]: value };
 	}
 
 	/* ---- TikTok's caption cut-off ----
@@ -1085,6 +1124,106 @@
 					label="This video contains paid promotion or commercial content"
 					onchange={setPaidPromotion}
 				/>
+			</section>
+		{/if}
+
+		{#if tiktokActive}
+			<section class="videocard card tiktokbox">
+				<span class="label">
+					Post to TikTok
+					<span class="icons"><PlatformIcon platform="tiktok" size={13} /></span>
+				</span>
+
+				{#if accounts.tiktok}
+					<p class="ttline">
+						Posting as <strong>{accounts.tiktok.nickname || accounts.tiktok.username}</strong>
+						<span class="ttfaint">@{accounts.tiktok.username}</span>
+					</p>
+				{:else}
+					<p class="ttline ttfaint">
+						The worker has not read the TikTok account yet. Once it runs, the account and
+						the audiences it offers appear here.
+					</p>
+				{/if}
+
+				<label class="ttfield">
+					<span class="ttlabel">Who can view this video</span>
+					<select
+						class="playlist"
+						value={tiktokAudience}
+						onchange={(e) => setTikTok('privacy', e.currentTarget.value)}
+					>
+						<option value="">Choose…</option>
+						{#each tiktokAudiences as choice (choice)}
+							<option value={choice} disabled={choice === 'Private' && tiktokBranded}>
+								{choice}
+							</option>
+						{/each}
+					</select>
+				</label>
+				{#if tiktokBranded}
+					<p class="ttnote">{BRANDED_BLOCKS_PRIVATE}</p>
+				{/if}
+
+				<span class="ttlabel">Allow users to</span>
+				<div class="ttchecks">
+					<Checkbox
+						checked={tiktokOptions.allowComments === true}
+						label="Comment"
+						disabled={accounts.tiktok?.commentDisabled ?? false}
+						onchange={(next) => setTikTok('allowComments', next)}
+					/>
+					<Checkbox
+						checked={tiktokOptions.allowDuet === true}
+						label="Duet"
+						disabled={accounts.tiktok?.duetDisabled ?? false}
+						onchange={(next) => setTikTok('allowDuet', next)}
+					/>
+					<Checkbox
+						checked={tiktokOptions.allowStitch === true}
+						label="Stitch"
+						disabled={accounts.tiktok?.stitchDisabled ?? false}
+						onchange={(next) => setTikTok('allowStitch', next)}
+					/>
+				</div>
+				{#if tiktokLocked}
+					<p class="ttnote ttfaint">Greyed-out options are switched off in the account's own settings.</p>
+				{/if}
+
+				{#if tiktokDisclosure.disclosed}
+					<span class="ttlabel">Disclose video content</span>
+					<div class="ttchecks">
+						<Checkbox
+							checked={tiktokDisclosure.yourBrand}
+							label="Your brand"
+							onchange={(next) => setTikTok('brandOrganic', next)}
+						/>
+						<Checkbox
+							checked={tiktokDisclosure.brandedContent}
+							label="Branded content"
+							disabled={tiktokAudience === 'Private'}
+							onchange={(next) => setTikTok('brandContent', next)}
+						/>
+					</div>
+					{#if tiktokAudience === 'Private'}
+						<p class="ttnote">{PRIVATE_BLOCKS_BRANDED}</p>
+					{/if}
+					{#if tiktokLabel}
+						<p class="ttnote">{tiktokLabel}</p>
+					{/if}
+				{/if}
+
+				<p class="ttconsent">
+					{CONSENT_PREFIX}{#each tiktokConsent as link, i (link.url)}{#if i > 0} and {/if}<a
+							href={link.url}
+							target="_blank"
+							rel="noopener">{link.label}</a
+						>{/each}.
+				</p>
+
+				{#each draft.tiktokProblems as problem (problem)}
+					<p class="warnbox tt">{problem}</p>
+				{/each}
 			</section>
 		{/if}
 
@@ -2182,6 +2321,63 @@
 		/* Grid items default to min-width: auto, which let a long file name push
 		   this card straight out of its 320px track. */
 		min-width: 0;
+	}
+
+	/* TikTok's per-post controls, worded as their guidelines require. */
+	.tiktokbox {
+		gap: 8px;
+	}
+
+	.ttline {
+		margin: 0;
+		font-size: 12.5px;
+	}
+
+	.ttline strong {
+		font-weight: 600;
+	}
+
+	.ttfaint {
+		color: var(--text-faint);
+	}
+
+	.ttfield {
+		display: grid;
+		gap: 5px;
+	}
+
+	.ttlabel {
+		margin-top: 4px;
+		font-size: 11px;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.ttchecks {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px 16px;
+	}
+
+	.ttnote {
+		margin: 0;
+		font-size: 11.5px;
+	}
+
+	.ttconsent {
+		margin: 6px 0 0;
+		font-size: 11.5px;
+		color: var(--text-faint);
+	}
+
+	.ttconsent a {
+		color: inherit;
+		font-weight: 600;
+	}
+
+	.warnbox.tt {
+		margin-top: 4px;
 	}
 
 	@media (max-width: 1440px) {

@@ -219,10 +219,10 @@ may not load; paste its full address into the terminal and the code is read
 out of it. The worker keeps the refresh token current on its own.
 
 Until TikTok has audited the app, it can only post to a TikTok account set to
-**private**, and *Who can view* has to be Friends, Followers or Private —
-Public is refused, and once the worker has read the account the confirm screen
-says so before you upload. Videos must be MP4, MOV or WebM and under 4 GB;
-the cover is the frame at the *Cover frame* time, not the thumbnail image.
+**private**, whose audiences are Friends, Followers and Private — the *Post to
+TikTok* box on the compose screen offers exactly what the account offers, so a
+public choice cannot be made for it. Videos must be MP4, MOV or WebM and under
+4 GB; the cover is the frame at the *Cover frame* time, not the thumbnail image.
 
 ```bash
 pnpm worker:tiktok
@@ -275,7 +275,15 @@ Tick the platforms you want on the right and choose a video underneath them. Wit
 YouTube ticked, a thumbnail box appears (optional; JPEG, PNG, GIF or WebP up to
 2 MB) — TikTok and Instagram take a cover *time* in their options instead. With
 YouTube or TikTok ticked there is a paid-promotion checkbox, off on every new
-upload, that covers both platforms' disclosures at once. YouTube adds a playlist
+upload, that covers both platforms' disclosures at once. With TikTok ticked, a
+*Post to TikTok* box names the account the worker posts as and holds the choices
+TikTok insists are made per post rather than saved: who can view the video,
+picked from the audiences that account offers with nothing preselected; whether
+viewers may comment, Duet or Stitch, all off until ticked and greyed out where
+the account forbids them; and, once the paid-promotion box is on, whether it is
+your brand or branded content, with TikTok's own wording for how the post will
+be labelled. The line TikTok requires about its Music Usage Confirmation sits
+underneath, and Continue stays off until the box is complete. YouTube adds a playlist
 dropdown listing the channel's own playlists as the worker last read them. While
 writing a TikTok caption, everything past roughly the first hundred characters
 turns red: that is the part TikTok hides behind "more" under the video. The whole
