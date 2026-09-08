@@ -9,7 +9,7 @@
 // that can hit it. Everything read out of `options` is a parameter the
 // container call actually takes.
 
-import { fetchOrExplain } from './net.mjs';
+import { fetchOrExplain, isNetworkError } from './net.mjs';
 import { saveSection } from './config.mjs';
 import { streamRequest, videoMime, sleep, msUntil, MiB } from './upload.mjs';
 
@@ -28,9 +28,13 @@ const CAPTION_LIMIT = 2200;
 const MAX_COLLABORATORS = 3;
 
 // The container is polled this often and for this long. Instagram suggests
-// once a minute for five minutes; a long reel can take more.
+// once a minute for five minutes; a long reel can take more. A poll that
+// cannot reach Instagram is a missed poll, not a failed reel; this many in a
+// row, with the wait growing to three intervals, is when it stops.
 const STATUS_EVERY_MS = 10_000;
 const STATUS_TIMEOUT_MS = 30 * 60_000;
+const MAX_STATUS_MISSES = 12;
+const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
 
 // How often the account's details are re-read for the compose screen.
 const ACCOUNT_TTL_MS = 30 * 60_000;
@@ -283,12 +287,37 @@ async function uploadBytes(config, container, video, log) {
 	}
 }
 
-/** Polls the container until Instagram has processed the video. */
+/**
+ * Polls the container until Instagram has processed the video.
+ *
+ * A poll that cannot reach Instagram, or gets a server error or a rate
+ * limit, is a missed poll rather than a failed reel: the container is
+ * Instagram's to finish. Only a definite answer, too many misses in a row,
+ * or the overall cap ends the wait. Nothing is published until the publish
+ * call, so giving up here leaves no stray post behind.
+ */
 async function waitForContainer(config, id, log) {
 	const started = Date.now();
 	let last = '';
+	let misses = 0;
 	while (Date.now() - started < STATUS_TIMEOUT_MS) {
-		const container = await graph(config, `/${id}`, { params: { fields: 'status_code,status' } });
+		let container;
+		try {
+			container = await graph(config, `/${id}`, { params: { fields: 'status_code,status' } });
+			misses = 0;
+		} catch (err) {
+			const transient =
+				isNetworkError(err) ||
+				(err instanceof GraphError && (err.status >= 500 || RATE_LIMIT_CODES.has(err.code)));
+			if (!transient) throw err;
+			misses += 1;
+			if (misses > MAX_STATUS_MISSES) {
+				throw new Error(`Lost Instagram while it was processing container ${id}: ${err.message.split('\n')[0]}`);
+			}
+			log(`status poll failed (${err.message.split('\n')[0]}) — retrying`);
+			await sleep(STATUS_EVERY_MS * Math.min(misses, 3));
+			continue;
+		}
 		const code = String(container.status_code || '');
 		if (code !== last) {
 			log(`Instagram: ${code.toLowerCase().replace(/_/g, ' ') || 'no status yet'}`);
@@ -321,7 +350,9 @@ async function publishContainer(config, id) {
 			const notReady =
 				err instanceof GraphError &&
 				(err.subcode === 2207027 || /not ready|try again|in progress/i.test(err.message));
-			if (!notReady) throw err;
+			// A lost network at the minute is retried the same way: nothing has
+			// been published, so a second call is safe.
+			if (!notReady && !isNetworkError(err)) throw err;
 			await sleep(15_000);
 		}
 	}

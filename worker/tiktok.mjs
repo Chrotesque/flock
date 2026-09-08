@@ -9,7 +9,7 @@
 // takes; the mapping lives here so the registry stays a description of the
 // interface rather than of TikTok's wire format.
 
-import { fetchOrExplain } from './net.mjs';
+import { fetchOrExplain, isNetworkError } from './net.mjs';
 import { saveSection } from './config.mjs';
 import { planChunks, readChunks, videoMime, sleep, MiB } from './upload.mjs';
 
@@ -44,8 +44,11 @@ const CAPTION_LIMIT = 2200;
 
 // Status is polled this often (their limit is thirty a minute) and for this
 // long before the row is given up on. Processing normally takes a minute.
+// A poll that cannot reach TikTok is a missed poll, not a failed post; this
+// many in a row, with the wait growing to three intervals, is when it stops.
 const STATUS_EVERY_MS = 10_000;
 const STATUS_TIMEOUT_MS = 30 * 60_000;
+const MAX_STATUS_MISSES = 12;
 
 // How often the creator's details are re-read for the compose screen.
 const CREATOR_TTL_MS = 30 * 60_000;
@@ -317,12 +320,44 @@ async function putChunk(uploadUrl, chunk, range, total, mime) {
 	throw last;
 }
 
-/** Polls the publish until TikTok says it is live, or says why it is not. */
-async function waitForPublish(config, publishId, log) {
+/**
+ * Polls the publish until TikTok says it is live, or says why it is not.
+ *
+ * Once the bytes are up, the post is TikTok's to finish whether or not this
+ * side can see it. So a poll that cannot reach TikTok, or gets a server
+ * error or a rate limit, is a missed poll rather than a failed post — only
+ * a definite answer, too many misses in a row, or the overall cap ends the
+ * wait, and the last two say so, because the post may still appear.
+ */
+async function waitForPublish(config, publishId, username, log) {
 	const started = Date.now();
 	let lastStatus = '';
+	let misses = 0;
+	const unsure = (what) =>
+		new Error(
+			`${what} The upload itself completed (publish ${publishId}), so the post may still ` +
+				`appear on @${username} — check there before uploading again.`
+		);
+
 	while (Date.now() - started < STATUS_TIMEOUT_MS) {
-		const data = await api(config, '/post/publish/status/fetch/', { publish_id: publishId });
+		let data;
+		try {
+			data = await api(config, '/post/publish/status/fetch/', { publish_id: publishId });
+			misses = 0;
+		} catch (err) {
+			const transient =
+				isNetworkError(err) ||
+				(err instanceof TikTokError && (err.status >= 500 || err.code === 'rate_limit_exceeded'));
+			if (!transient) throw err;
+			misses += 1;
+			if (misses > MAX_STATUS_MISSES) {
+				throw unsure(`Lost TikTok while it was processing: ${err.message.split('\n')[0]}.`);
+			}
+			log(`status poll failed (${err.message.split('\n')[0]}) — retrying`);
+			await sleep(STATUS_EVERY_MS * Math.min(misses, 3));
+			continue;
+		}
+
 		const status = String(data.status || '');
 		if (status !== lastStatus) {
 			log(`TikTok: ${status.toLowerCase().replace(/_/g, ' ') || 'no status yet'}`);
@@ -336,10 +371,7 @@ async function waitForPublish(config, publishId, log) {
 		if (status === 'FAILED') throw new Error(explainFailure(data.fail_reason));
 		await sleep(STATUS_EVERY_MS);
 	}
-	throw new Error(
-		`TikTok was still processing publish ${publishId} after ${STATUS_TIMEOUT_MS / 60000} minutes. ` +
-			'It may yet appear on the account; check there before uploading again.'
-	);
+	throw unsure(`TikTok was still processing after ${STATUS_TIMEOUT_MS / 60000} minutes.`);
 }
 
 export async function publishToTikTok({ target, job, pb, config, log }) {
@@ -398,6 +430,9 @@ export async function publishToTikTok({ target, job, pb, config, log }) {
 		video.stream.destroy();
 		throw new Error('TikTok accepted the post but returned no upload URL.');
 	}
+	// Logged before a byte goes up: it is the only handle on the post if the
+	// worker loses sight of it afterwards.
+	log(`TikTok accepted the post as publish ${init.publish_id}`);
 
 	// The upload URL is short-lived (TikTok says about an hour), which a very
 	// large file over a slow uplink can outrun; the chunk error then names it.
@@ -413,7 +448,7 @@ export async function publishToTikTok({ target, job, pb, config, log }) {
 		}
 	}
 
-	const outcome = await waitForPublish(config, init.publish_id, log);
+	const outcome = await waitForPublish(config, init.publish_id, creator.username, log);
 	const postId = outcome.postIds[0] ?? '';
 	const url = postId
 		? `https://www.tiktok.com/@${creator.username}/video/${postId}`

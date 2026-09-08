@@ -19,6 +19,15 @@ export function describeFetchError(url, err) {
 	return error;
 }
 
+/**
+ * True for a failure that never reached the host — DNS, refused, reset, a
+ * Tailscale link that is down. The kind worth retrying, as opposed to an
+ * answer from the host that says no.
+ */
+export function isNetworkError(err) {
+	return err instanceof Error && err.cause !== undefined && /^Cannot reach /.test(err.message);
+}
+
 /** fetch, with a network failure rethrown as a readable error. */
 export async function fetchOrExplain(url, options) {
 	try {
