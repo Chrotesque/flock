@@ -348,12 +348,15 @@ the bottom to try them against sample text. Unticking a platform removes it from
 new uploads entirely — it stops being listed on the compose screen, though its
 defaults and rules are kept.
 
-## The policy pages
+## The website
 
-`site/` holds the privacy policy and terms of service that the Google and
-TikTok developer portals link to, as three plain HTML pages. They are uploaded
-by hand to a static host that can serve a file at its root, which is what
-TikTok's URL-prefix verification needs; edit them here and upload again.
+`site/` is the public website the Google and TikTok developer portals link to:
+an overview with screenshots, a how-it-works page, the privacy policy and the
+terms of service, plus the app icon as the site's favicon. Plain HTML and one
+stylesheet, uploaded by hand to a static host that can serve a file at its
+root, which is what TikTok's URL-prefix verification needs; edit here and
+upload the folder again. The screenshots are frames cut from the review
+recordings; replace the files in `site/img/` to update them.
 
 ## Where things live
 

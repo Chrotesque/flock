@@ -3,38 +3,177 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>flock</title>
-<style>
-  body { margin: 0; padding: 3rem 1.25rem; font: 16px/1.6 system-ui, sans-serif; color: #1c1c1e; background: #fafafa; }
-  main { max-width: 38rem; margin: 0 auto; }
-  h1 { font-size: 1.6rem; margin: 0 0 1rem; }
-  nav a { margin-right: 1.25rem; }
-  a { color: #7a3fd4; }
-  footer { margin-top: 3rem; font-size: 0.9rem; color: #666; }
-</style>
+<title>flock — multi-platform video publishing</title>
+<meta name="description" content="flock is a self-hosted scheduler that publishes one video to YouTube, TikTok and Instagram, each with its own text and its own release time.">
+<link rel="icon" href="favicon.ico" sizes="48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main>
-  <h1>flock</h1>
-  <nav>
-    <a href="/">Home</a>
-    <a href="/privacy-policy.html">Privacy Policy</a>
-    <a href="/terms-of-service.html">Terms of Service</a>
-  </nav>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="icon.png" alt="flock icon"><span>flock</span></a>
+    <nav class="main">
+      <a href="index.html" aria-current="page">Overview</a>
+      <a href="how-it-works.html">How it works</a>
+      <a href="privacy-policy.html">Privacy Policy</a>
+      <a href="terms-of-service.html">Terms of Service</a>
+    </nav>
+  </div>
+</header>
 
-  <p>flock is a private scheduling tool, written by one person for their own use.
-  It publishes videos to that person's own YouTube channel and TikTok account at
-  times chosen in advance, through YouTube API Services and TikTok's Content
-  Posting API.</p>
+<main class="wrap">
+  <div class="hero">
+    <div>
+      <h1>One video, every platform, each on its own schedule.</h1>
+      <p class="lead">flock is a self-hosted publishing tool. You write the text for each platform separately,
+      choose a video and a release time per platform, and a worker on your own storage publishes it to
+      YouTube, TikTok and Instagram when the time comes.</p>
+      <div class="pills">
+        <span class="pill">YouTube</span>
+        <span class="pill">TikTok</span>
+        <span class="pill">Instagram</span>
+        <span class="pill">Self-hosted</span>
+        <span class="pill">Single user</span>
+      </div>
+      <div class="actions">
+        <a class="btn btn-primary" href="how-it-works.html">How it works</a>
+        <a class="btn btn-ghost" href="#screens">See the screens</a>
+      </div>
+    </div>
+    <img class="icon" src="icon.png" alt="The flock icon: a bird over a rising bar chart">
+  </div>
 
-  <p>It is not a product. It is not distributed, sold or offered to anyone else,
-  and it has no users other than its author. It runs on private hardware that is
-  not reachable from the public internet.</p>
+  <section>
+    <h2>What flock is</h2>
+    <p>flock was written by one person for their own use. It runs on private hardware, a small database and
+    a worker process on a NAS, and is reachable only on that person's own network. It is not offered as a
+    service and has no accounts to sign up for. This site exists because YouTube API Services and TikTok's
+    developer terms require every API client to publish what it does and how it handles data.</p>
+  </section>
 
-  <p>These pages exist because YouTube API Services and TikTok's developer terms
-  require every API client to publish a privacy policy and terms of service.</p>
+  <section>
+    <h2>What it does</h2>
+    <p class="sub">Every platform reads differently, so flock treats each one as its own post.</p>
+    <div class="grid">
+      <div class="card">
+        <h3>Text per platform</h3>
+        <p>Titles, captions and tags are written separately for each platform, because a link or a hashtag
+        style that works on one reads badly on another. Adaptation rules can rewrite text automatically
+        before it is published.</p>
+      </div>
+      <div class="card">
+        <h3>A release time per platform</h3>
+        <p>Each platform gets its own day and hour on a week grid. Drag a card to move it, type an exact
+        time, or pick a saved pattern such as "Fridays at 21:00".</p>
+      </div>
+      <div class="card">
+        <h3>Publishing from the NAS</h3>
+        <p>Confirming an upload only queues it. A worker beside the database publishes at the scheduled
+        time, so the computer that composed the post can be switched off.</p>
+      </div>
+      <div class="card">
+        <h3>Posting to TikTok, TikTok's way</h3>
+        <p>Audience, comments, duets, stitches and the commercial-content disclosure are chosen per post,
+        from what the account offers, with nothing preselected.</p>
+      </div>
+      <div class="card">
+        <h3>Video from the browser or the NAS</h3>
+        <p>A video can be uploaded through the browser, or picked from a watch folder on the NAS, which is
+        how files above the browser's size limit are published.</p>
+      </div>
+      <div class="card">
+        <h3>Analytics and a log</h3>
+        <p>Live counters for the newest videos on the YouTube channel, and a log of every change with the
+        machine that made it.</p>
+      </div>
+    </div>
+  </section>
 
-  <footer>Contact: ayarea2@gmail.com</footer>
+  <section id="screens">
+    <h2>The screens</h2>
+    <p class="sub">An upload is three steps: compose, schedule, confirm.</p>
+
+    <figure class="shot">
+      <img src="img/compose.jpg" alt="The compose step with TikTok selected and its caption empty">
+      <figcaption>Compose: the text for the selected platform, the platforms this upload goes to, and the video.
+      With TikTok ticked, the <em>Post to TikTok</em> box asks who can view the video, with nothing preselected.</figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="img/compose-tiktok.jpg" alt="The compose step with every TikTok choice made">
+      <figcaption>The same screen with every TikTok choice made: audience Private, comments allowed, the post
+      disclosed as promoting the author's own brand, and TikTok's declaration line underneath.</figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="img/schedule.jpg" alt="The schedule step: a week grid with one card per platform">
+      <figcaption>Schedule: one card per platform on a week grid, dragged to its day and hour, or released
+      immediately.</figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="img/confirm.jpg" alt="The confirm step: the video beside what each platform will receive">
+      <figcaption>Confirm: the video, what each platform will receive, the account it goes out as, and the
+      declaration, before anything is uploaded.</figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="img/queued.jpg" alt="The queued screen after confirming">
+      <figcaption>After confirming: the video is stored and the release queued. The worker takes it from here,
+      and the notice says a TikTok post may take a few minutes to appear on the profile.</figcaption>
+    </figure>
+  </section>
+
+  <section id="tiktok">
+    <h2>Posting to TikTok</h2>
+    <p class="sub">flock uses TikTok's Login Kit and the Content Posting API's Direct Post. The post screen follows
+    TikTok's content sharing guidelines.</p>
+    <div class="split">
+      <div>
+        <ul class="checks">
+          <li><strong>Who posts is shown.</strong> The account's display name and handle, read from TikTok before
+          every post.</li>
+          <li><strong>The audience is chosen per post.</strong> The list holds exactly the options TikTok reports
+          for the account, and nothing is preselected.</li>
+          <li><strong>Interactions are off until switched on.</strong> Comments, Duet and Stitch start unticked,
+          and are greyed out where the account has them disabled.</li>
+          <li><strong>Commercial content is disclosed.</strong> "Your brand" and "Branded content" can be declared,
+          with TikTok's own note on how the post will be labelled. Branded content cannot be posted privately.</li>
+          <li><strong>The declaration is on every post.</strong> "By posting, you agree to TikTok's Music Usage
+          Confirmation", with the Branded Content Policy added for branded content.</li>
+          <li><strong>The post is TikTok's to finish.</strong> The file is uploaded in chunks, the status is polled
+          until TikTok reports the post published, and the notice says it may take a few minutes to appear.</li>
+        </ul>
+        <p>Permissions requested: <code>user.info.basic</code>, to show which account a post goes to, and
+        <code>video.publish</code>, to post it. Nothing else is read from the account.</p>
+      </div>
+      <img src="img/tiktok-box.png" alt="The Post to TikTok box: account, audience, interactions, disclosure and declaration">
+    </div>
+  </section>
+
+  <section>
+    <h2>How it runs</h2>
+    <p>There is no hosted service and nothing to log in to. flock is a static web app served by its own
+    PocketBase instance, a worker process on the same machine, and the author's browser. Setting it up means
+    installing Node and PocketBase, and connecting each platform once through that platform's consent page.
+    The tokens stay in a configuration file on the author's hardware, and revoking access on the platform ends it.</p>
+    <p><a href="how-it-works.html">Read how it works, step by step.</a></p>
+  </section>
 </main>
+
+<footer class="bottom">
+  <div class="wrap">
+    <img src="icon.png" alt="">
+    <span>flock, version 0.8.2. Contact: ayarea2@gmail.com</span>
+    <nav>
+      <a href="how-it-works.html">How it works</a>
+      <a href="privacy-policy.html">Privacy Policy</a>
+      <a href="terms-of-service.html">Terms of Service</a>
+    </nav>
+  </div>
+</footer>
 </body>
 </html>
