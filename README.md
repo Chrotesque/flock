@@ -76,6 +76,12 @@ That builds and mirrors `build/` into flock's PocketBase at
 share. `pnpm deploy:dry` shows what would change without touching anything.
 PocketBase serves the files straight from disk, so there is no restart.
 
+To show flock inside Nexus (https://nexus.example.com), copy
+`pb_hooks/strip_xframe.pb.js` into flock's PocketBase directory's `pb_hooks/`,
+which the container has to mount at `/pb/pb_hooks`, and restart PocketBase. Only
+Nexus and its local dev server may embed flock; every other site is refused.
+Deploy does not do this for you.
+
 ## Two ways to give flock a video
 
 **Upload it in the browser.** Drop a file on the picker. Simple, and fine up to a
