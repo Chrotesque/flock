@@ -138,6 +138,13 @@
 	// TikTok and Instagram take a cover *time* (their `coverFrame` option),
 	// not an image, so the picker is YouTube's alone.
 	let mediaActive = $derived(youtubeActive || tiktokActive);
+	// The boxes follow the pill being composed, like the playlist box: the
+	// paid-promotion box shows only for a platform it serves, the TikTok box
+	// only for TikTok. Both still apply to every platform they serve.
+	let showPaidPromotion = $derived(
+		mediaActive && (composing === 'youtube' || composing === 'tiktok')
+	);
+	let showTiktokBox = $derived(tiktokActive && composing === 'tiktok');
 	// In the user's display order, for the icons beside the shared boxes.
 	let mediaPlatforms = $derived(
 		draft.activePlatforms.filter((p) => p === 'youtube' || p === 'tiktok')
@@ -1109,7 +1116,7 @@
 			{/if}
 		</aside>
 
-		{#if mediaActive}
+		{#if showPaidPromotion}
 			<section class="videocard card">
 				<span class="label">
 					Paid promotion
@@ -1127,7 +1134,7 @@
 			</section>
 		{/if}
 
-		{#if tiktokActive}
+		{#if showTiktokBox}
 			<section class="videocard card tiktokbox">
 				<span class="label">
 					Post to TikTok
