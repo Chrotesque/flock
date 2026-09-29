@@ -124,16 +124,19 @@ class DraftStore {
 	}
 
 	/**
-	 * The videos this upload needs, each with the active platforms it serves:
-	 * the shared one first (omitted once every platform has its own), then the
-	 * split-off platforms in display order.
+	 * The videos this upload needs, each with the active platforms it serves,
+	 * in the display order from Settings: a slot sits where its first platform
+	 * does, so the shared one moves down when the platform above it is split
+	 * off. The shared slot is omitted once every platform has its own.
 	 */
 	get slots(): { slot: VideoSlot; platforms: PlatformId[] }[] {
 		const active = this.activePlatforms;
 		const shared = active.filter((id) => !this.split.includes(id));
 		const out: { slot: VideoSlot; platforms: PlatformId[] }[] = [];
-		if (shared.length > 0) out.push({ slot: 'all', platforms: shared });
-		for (const id of active) if (this.split.includes(id)) out.push({ slot: id, platforms: [id] });
+		for (const id of active) {
+			if (this.split.includes(id)) out.push({ slot: id, platforms: [id] });
+			else if (id === shared[0]) out.push({ slot: 'all', platforms: shared });
+		}
 		return out;
 	}
 

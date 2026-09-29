@@ -278,11 +278,12 @@ address counts as a different browser.
 
 **Upload** is a four-step flow: Upload, Details, Schedule, Review. flock opens
 on Analytics; Upload lives at `/upload`. The first step takes the video: drop
-one on the picker on the left, or pick one from the NAS list on the right. By
+one on the picker on the left, or drag one from the NAS list on the right onto
+a video box. By
 default one video goes to every platform. Press a platform under *Own file* to
 give it a video of its own — the rest keep sharing one — and repeat for as many
-as need a different cut; clicking a video box makes it the one a NAS pick
-fills. That arrangement is remembered for the next upload until you change it.
+as need a different cut. The boxes follow the platform order from Settings.
+That arrangement is remembered for the next upload until you change it.
 
 On Details, the platform icons centred in the top bar switch which platform you
 are writing for — a title and a description for YouTube and Facebook, a caption

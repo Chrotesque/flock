@@ -26,19 +26,64 @@
 		return slots.length === 1 ? 'Every platform' : platforms.map((id) => PLATFORMS[id].label).join(', ');
 	}
 
-	/**
-	 * Which slot a click in the NAS list fills. Falls back to the first slot
-	 * when the one picked stops existing (merged back, or unticked).
-	 */
-	let target = $state<VideoSlot>('all');
-	let shownTarget = $derived(
-		slots.some((entry) => entry.slot === target) ? target : (slots[0]?.slot ?? 'all')
-	);
-
 	function split(platform: PlatformId, own: boolean) {
 		draft.setSplit(platform, own);
-		// The new slot is the one that needs a file next.
-		target = own ? platform : 'all';
+	}
+
+	/* ---- dragging a NAS file onto a video box ----
+	 *
+	 * The NAS list is a set of drag sources, not a picker: a file is dragged
+	 * onto the box it belongs in. The payload is the file's path under a type
+	 * of flock's own, so a drag from anywhere else is never mistaken for one.
+	 * An OS file dropped on a box is still the VideoPicker's business; the
+	 * slot only takes files itself while it shows a NAS pick instead.
+	 */
+
+	const NAS_TYPE = 'application/x-flock-nas';
+
+	/** The slot a drag is currently over, for the highlight. */
+	let over = $state<VideoSlot | null>(null);
+
+	function carriesNas(event: DragEvent): boolean {
+		return event.dataTransfer?.types.includes(NAS_TYPE) ?? false;
+	}
+
+	function onDragStart(event: DragEvent, path: string) {
+		event.dataTransfer?.setData(NAS_TYPE, path);
+		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+	}
+
+	function onDragOver(event: DragEvent, slot: VideoSlot) {
+		const files = event.dataTransfer?.types.includes('Files') ?? false;
+		if (!carriesNas(event) && !(files && draft.videos[slot].nasFile)) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+		over = slot;
+	}
+
+	function onDragLeave(event: DragEvent, slot: VideoSlot) {
+		// Leaving for a child of the same box is not leaving the box.
+		const into = event.relatedTarget as Node | null;
+		if (into && (event.currentTarget as HTMLElement).contains(into)) return;
+		if (over === slot) over = null;
+	}
+
+	function onDrop(event: DragEvent, slot: VideoSlot) {
+		over = null;
+		const path = event.dataTransfer?.getData(NAS_TYPE);
+		if (path) {
+			event.preventDefault();
+			const entry = watchIndex?.files.find((file) => file.path === path);
+			if (entry) draft.chooseNasFile(slot, entry);
+			return;
+		}
+		// The picker is not rendered while a NAS file is shown, so a real file
+		// dropped here replaces that pick. Otherwise the picker already took it.
+		if (!draft.videos[slot].nasFile) return;
+		const file = event.dataTransfer?.files?.[0];
+		if (!file || !file.type.startsWith('video/')) return;
+		event.preventDefault();
+		draft.chooseFile(slot, file);
 	}
 
 	/* ---- videos already sitting on the NAS ----
@@ -86,8 +131,6 @@
 			.filter((entry) => draft.videos[entry.slot].nasFile?.path === path)
 			.flatMap((entry) => entry.platforms);
 	}
-
-	let targetPlatforms = $derived(slots.find((entry) => entry.slot === shownTarget)?.platforms ?? []);
 </script>
 
 <div class="stage">
@@ -125,11 +168,13 @@
 
 			{#each slots as entry (entry.slot)}
 				{@const video = draft.videos[entry.slot]}
-				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 				<section
 					class="card slot"
-					class:target={slots.length > 1 && shownTarget === entry.slot}
-					onclick={() => (target = entry.slot)}
+					class:over={over === entry.slot}
+					aria-label="Video for {slotLabel(entry.slot, entry.platforms)}"
+					ondragover={(e) => onDragOver(e, entry.slot)}
+					ondragleave={(e) => onDragLeave(e, entry.slot)}
+					ondrop={(e) => onDrop(e, entry.slot)}
 				>
 					<header>
 						<span class="icons">
@@ -139,13 +184,7 @@
 						</span>
 						<span class="slotname">{slotLabel(entry.slot, entry.platforms)}</span>
 						{#if entry.slot !== 'all'}
-							<button
-								class="relink"
-								onclick={(e) => {
-									e.stopPropagation();
-									split(entry.slot as PlatformId, false);
-								}}
-							>
+							<button class="relink" onclick={() => split(entry.slot as PlatformId, false)}>
 								Use the shared file
 							</button>
 						{/if}
@@ -165,13 +204,7 @@
 								<p class="pickedname">{video.nasFile.name}</p>
 								<p class="sub">{formatBytes(video.nasFile.size)} · already on the NAS</p>
 							</div>
-							<button
-								class="btn btn-ghost sm"
-								onclick={(e) => {
-									e.stopPropagation();
-									draft.chooseNasFile(entry.slot, null);
-								}}
-							>
+							<button class="btn btn-ghost sm" onclick={() => draft.chooseNasFile(entry.slot, null)}>
 								Remove
 							</button>
 						</div>
@@ -190,14 +223,7 @@
 	<section class="card nas">
 		<header class="nashead">
 			<span class="label">On the NAS</span>
-			{#if slots.length > 1 && targetPlatforms.length > 0}
-				<span class="for">
-					picking for
-					{#each targetPlatforms as id (id)}
-						<PlatformIcon platform={id} size={13} />
-					{/each}
-				</span>
-			{/if}
+			<span class="for">drag onto a video box</span>
 		</header>
 
 		{#if !general.value.watchFolder}
@@ -220,11 +246,13 @@
 				{#each watchIndex.files as file (file.path)}
 					{@const users = usedBy(file.path)}
 					<li>
-						<button
+						<div
 							class="nasitem"
 							class:on={users.length > 0}
-							disabled={slots.length === 0}
-							onclick={() => draft.chooseNasFile(shownTarget, file)}
+							draggable="true"
+							role="listitem"
+							title="Drag onto a video box"
+							ondragstart={(e) => onDragStart(e, file.path)}
 						>
 							<span class="nasname">{file.name}</span>
 							<span class="nasmeta">
@@ -237,7 +265,7 @@
 									</span>
 								{/if}
 							</span>
-						</button>
+						</div>
 					</li>
 				{/each}
 			</ul>
@@ -325,8 +353,9 @@
 		transition: border-color 0.14s;
 	}
 
-	.slot.target {
+	.slot.over {
 		border-color: var(--pink);
+		background: rgba(255, 77, 158, 0.06);
 	}
 
 	.slot header {
@@ -449,7 +478,13 @@
 		border: 1px solid var(--border);
 		background: var(--bg-elev);
 		text-align: left;
+		cursor: grab;
+		user-select: none;
 		transition: border-color 0.14s, background 0.14s;
+	}
+
+	.nasitem:active {
+		cursor: grabbing;
 	}
 
 	.nasitem:hover {
