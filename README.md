@@ -5,7 +5,7 @@ YouTube, Instagram, TikTok and Facebook — each with its own release day and ti
 
 Every platform reads differently: a link that works on one gets a post buried on
 another, a hashtag style that looks fine here looks broken there. So you compose for
-them one at a time, switching between them with a row of pills — YouTube and Facebook
+them one at a time, switching between them with a row of platform icons — YouTube and Facebook
 take a title and a description, Instagram and TikTok are caption-only. On top of that
 each platform can carry a list of "replace X with Y" rules for the edits you would
 otherwise make every single time. flock shows you exactly what each platform will
@@ -89,13 +89,13 @@ few hundred megabytes — but it is one HTTP request with no resume, and PocketB
 caps a stored file at 5 GB.
 
 **Or drop it on the NAS.** Set a *watch folder* in Settings, copy videos into it
-over SMB, and the compose screen lists what is there. Picking one references the
+over SMB, and the Upload step lists what is there. Picking one references the
 file where it lies rather than transferring it, so nothing goes through the
 browser and the 5 GB cap does not apply. This is the only route for a large
 video, and the transfer is a normal file copy you can resume or retry.
 
 The listing comes from the worker, which scans the folder each time it polls — so
-nothing appears there until the worker has run at least once, and the compose
+nothing appears there until the worker has run at least once, and the Upload step
 screen shows when it last looked.
 
 ## The worker
@@ -276,36 +276,45 @@ cannot be changed afterwards, so pick one you will recognise later. Each browser
 needs its own; the name is stored locally, so opening flock from a different
 address counts as a different browser.
 
-**Upload** is a three-step flow. flock opens on Analytics; Upload lives at `/upload`.
-Tick the platforms you want on the right and choose a video underneath them. With
-YouTube ticked, a thumbnail box appears (optional; JPEG, PNG, GIF or WebP up to
-2 MB) — TikTok and Instagram take a cover *time* in their options instead. With
-YouTube or TikTok ticked there is a paid-promotion checkbox, off on every new
-upload, that covers both platforms' disclosures at once. With TikTok ticked, a
-*Post to TikTok* box names the account the worker posts as and holds the choices
-TikTok insists are made per post rather than saved: who can view the video,
-picked from the audiences that account offers with nothing preselected; whether
-viewers may comment, Duet or Stitch, all off until ticked and greyed out where
-the account forbids them; and, once the paid-promotion box is on, whether it is
-your brand or branded content, with TikTok's own wording for how the post will
-be labelled. The line TikTok requires about its Music Usage Confirmation sits
-underneath, and Continue stays off until the box is complete. YouTube adds a playlist
-dropdown listing the channel's own playlists as the worker last read them. While
-writing a TikTok caption, everything past roughly the first hundred characters
-turns red: that is the part TikTok hides behind "more" under the video. The whole
-caption is still published. The video, thumbnail and playlist boxes fold to a single line with
-a green check once they are done; click the line to open one again. Then
-work along the row of platform pills writing the text for each one — a title and a
-description for YouTube and Facebook, a caption for Instagram and TikTok. Continue
-unlocks once every ticked platform has been written for. Clicking a platform in the
+**Upload** is a four-step flow: Upload, Details, Schedule, Review. flock opens
+on Analytics; Upload lives at `/upload`. The first step takes the video: drop
+one on the picker on the left, or pick one from the NAS list on the right. By
+default one video goes to every platform. Press a platform under *Own file* to
+give it a video of its own — the rest keep sharing one — and repeat for as many
+as need a different cut; clicking a video box makes it the one a NAS pick
+fills. That arrangement is remembered for the next upload until you change it.
+
+On Details, the platform icons centred in the top bar switch which platform you
+are writing for — a title and a description for YouTube and Facebook, a caption
+for Instagram and TikTok; a green check on an icon means that platform is done.
+Tick the platforms you want in the list on the right. The boxes under it follow
+the platform being written for. For YouTube, a thumbnail (optional; JPEG, PNG,
+GIF or WebP up to 2 MB — TikTok and Instagram take a cover *time* in their
+options instead) and a playlist dropdown listing the channel's own playlists as
+the worker last read them. For YouTube and TikTok, a paid-promotion checkbox,
+off on every new upload, that covers both platforms' disclosures at once. For
+TikTok, a *Post to TikTok* box names the account the worker posts as and holds
+the choices TikTok insists are made per post rather than saved: who can view the
+video, picked from the audiences that account offers with nothing preselected;
+whether viewers may comment, Duet or Stitch, all off until ticked and greyed out
+where the account forbids them; and, once the paid-promotion box is on, whether
+it is your brand or branded content, with TikTok's own wording for how the post
+will be labelled. The line TikTok requires about its Music Usage Confirmation
+sits underneath, and Continue stays off until the box is complete. While writing
+a TikTok caption, everything past roughly the first hundred characters turns
+red: that is the part TikTok hides behind "more" under the video. The whole
+caption is still published. The thumbnail and playlist boxes fold to a single
+line with a green check once they are done; click the line to open one again.
+Continue unlocks once every ticked platform has been written for and has a
+video. Clicking a platform in the
 right-hand list opens its options and a preview of its adapted text. Next comes a
 week calendar showing a card per platform: drag a card to another day or hour to move
 that release, or use the exact date and time fields underneath. While a card is held
 the grid scrolls with the wheel, or on its own near the top and bottom edges. A
 dropdown above the time column shows a second zone's clock beside the local one —
 US West, US East, or any zone added under Settings → Other — and the night and
-evening hours are tinted. The final screen
-plays the video, with a tab for the YouTube thumbnail at the same size, beside
+evening hours are tinted. The review screen
+plays the video — a tab per video when platforms have their own — with a tab for the YouTube thumbnail at the same size, beside
 what each platform gets and when — and, once the worker has read the accounts,
 which TikTok and Instagram account each goes out as; confirming is the tick
 button, pressed once and then again within two seconds while it shows "!!!", and
@@ -371,4 +380,6 @@ Videos and schedules live in PocketBase on the NAS, in the collections
 `activity_log`, `devices` and `video_stats`. The chosen destination is recorded on each upload, so
 changing the destination list later never redirects something already queued —
 and the file is copied there, never moved. Nothing is written until you confirm an
-upload; the only thing kept in the browser is this device's name.
+upload; the only things kept in the browser are this device's name and which
+platforms get a video of their own. A split upload is stored as one upload per
+video.

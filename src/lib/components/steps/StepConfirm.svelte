@@ -18,6 +18,7 @@
 	} from '$lib/tiktok';
 	import type { PlanRow } from '$lib/plan';
 	import type { PlatformId } from '$lib/types';
+	import type { VideoSlot } from '$lib/stores/draft.svelte';
 
 	let { rows }: { rows: PlanRow[] } = $props();
 
@@ -48,7 +49,7 @@
 	 */
 	function tiktokIssues(row: PlanRow): string[] {
 		if (row.platform !== 'tiktok') return [];
-		return tiktokProblems(row.options, accounts.tiktok, draft.duration);
+		return tiktokProblems(row.options, accounts.tiktok, draft.videoFor('tiktok').duration);
 	}
 
 	/**
@@ -81,11 +82,32 @@
 
 	// A still of the video itself, so the last screen before upload shows what is
 	// actually being sent rather than just its file name.
-	let posterUrl = $state('');
 	let thumbUrl = $state('');
 
+	/**
+	 * The videos going out, one per slot that still serves a row of the plan:
+	 * a single entry unless platforms were given files of their own.
+	 */
+	let videos = $derived(
+		draft.slots
+			.map((entry) => ({
+				...entry,
+				platforms: entry.platforms.filter((id) => rows.some((row) => row.platform === id))
+			}))
+			.filter((entry) => entry.platforms.length > 0)
+	);
+
+	// Which video the stage shows, when there is more than one.
+	let videoTab = $state<VideoSlot>('all');
+	let shownVideo = $derived(
+		videos.find((entry) => entry.slot === videoTab) ?? videos[0] ?? null
+	);
+	let shownFile = $derived(shownVideo ? draft.videos[shownVideo.slot] : null);
+
+	let posterUrl = $state('');
+
 	$effect(() => {
-		const file = draft.file;
+		const file = shownFile?.file;
 		if (!file) {
 			posterUrl = '';
 			return;
@@ -144,15 +166,26 @@
 <div class="wrap">
 	<section class="card summary">
 		<div class="tabs" role="tablist">
-			<button
-				class="tab"
-				class:active={shownTab === 'video'}
-				role="tab"
-				aria-selected={shownTab === 'video'}
-				onclick={() => (tab = 'video')}
-			>
-				Video
-			</button>
+			{#each videos as entry (entry.slot)}
+				{@const on = shownTab === 'video' && shownVideo?.slot === entry.slot}
+				<button
+					class="tab"
+					class:active={on}
+					role="tab"
+					aria-selected={on}
+					onclick={() => {
+						tab = 'video';
+						videoTab = entry.slot;
+					}}
+				>
+					{#if videos.length > 1}
+						{#each entry.platforms as id (id)}
+							<PlatformIcon platform={id} size={14} />
+						{/each}
+					{/if}
+					Video
+				</button>
+			{/each}
 			{#each rows as row (row.platform)}
 				{#if row.platform === 'youtube'}
 					<button
@@ -190,7 +223,7 @@
 							stroke-linejoin="round"
 						/>
 					</svg>
-					{#if draft.nasFile}
+					{#if shownFile?.nasFile}
 						<p>Picked off the NAS, so there is nothing to play here.</p>
 					{/if}
 				</div>
@@ -230,25 +263,25 @@
 
 		<div class="file">
 			<div class="filemeta">
-				<p class="name">{draft.videoName || 'No file'}</p>
+				<p class="name">{(shownVideo && draft.slotName(shownVideo.slot)) || 'No file'}</p>
 				<p class="sub">
 					<!--
 						Both routes have to report here. A watch-folder pick has a name and a
 						size but no bytes in the browser, so it has no duration and no poster
-						frame — reading only `draft.file` left this screen claiming "No file"
+						frame — reading only the uploaded file left this screen claiming "No file"
 						for a video that was in fact chosen.
 					-->
-					{#if draft.file}
-						{formatBytes(draft.file.size)}
-						{#if draft.duration}<span class="dot">·</span>{formatDuration(draft.duration)}{/if}
+					{#if shownFile?.file}
+						{formatBytes(shownFile.file.size)}
+						{#if shownFile.duration}<span class="dot">·</span>{formatDuration(shownFile.duration)}{/if}
 						<span class="dot">·</span>
 						{#if destination}
 							will be copied to <span class="dest">{destination.label || destination.path || 'unnamed'}</span>
 						{:else}
 							uploads to the NAS on confirm
 						{/if}
-					{:else if draft.nasFile}
-						{formatBytes(draft.nasFile.size)}
+					{:else if shownFile?.nasFile}
+						{formatBytes(shownFile.nasFile.size)}
 						<span class="dot">·</span>already on the NAS, nothing to transfer
 						{#if destination}
 							<span class="dot">·</span>will be copied to
@@ -326,6 +359,9 @@
 						</p>
 					{/if}
 					<p class="meta">
+						{#if videos.length > 1}
+							<span class="dot">·</span>file: {draft.slotName(draft.slotFor(row.platform))}
+						{/if}
 						{#if account}
 							<span class="dot">·</span>as {account}
 						{/if}

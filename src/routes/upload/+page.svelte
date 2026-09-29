@@ -1,10 +1,11 @@
 <script lang="ts">
 	import Stepper from '$lib/components/Stepper.svelte';
+	import StepUpload from '$lib/components/steps/StepUpload.svelte';
 	import StepDetails from '$lib/components/steps/StepDetails.svelte';
 	import StepSchedule from '$lib/components/steps/StepSchedule.svelte';
 	import StepConfirm from '$lib/components/steps/StepConfirm.svelte';
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
-	import { draft, type Step } from '$lib/stores/draft.svelte';
+	import { draft, type Step, type VideoSlot } from '$lib/stores/draft.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { buildPlan } from '$lib/plan';
@@ -16,7 +17,7 @@
 	settings.load();
 	general.load();
 
-	let plan = $derived(draft.step === 2 ? buildPlan() : []);
+	let plan = $derived(draft.step === 3 ? buildPlan() : []);
 
 	// The confirm button deliberately takes two clicks, the second within two
 	// seconds of the first: this is the point where a multi-GB upload and four
@@ -40,10 +41,28 @@
 	});
 
 	const HEADINGS = [
-		{ title: 'New upload', sub: 'Compose each platform in turn, then pick the file.' },
+		{ title: 'New upload', sub: 'Pick the video — one for every platform, or one each.' },
+		{ title: 'Details', sub: 'Compose each platform in turn.' },
 		{ title: 'Schedule', sub: 'Pick a release day and time for each platform.' },
-		{ title: 'Confirm', sub: 'Review exactly what will be published, and when.' }
+		{ title: 'Review', sub: 'Review exactly what will be published, and when.' }
 	];
+
+	/* ---- the platform switch, centred in the header on the details step ---- */
+
+	let pills = $derived(
+		draft.activePlatforms.map((platform) => ({
+			platform,
+			complete: draft.isComplete(platform)
+		}))
+	);
+	let composing = $derived(
+		draft.composing && draft.activePlatforms.includes(draft.composing) ? draft.composing : null
+	);
+
+	/** Platforms ticked since the upload step whose video slot is still empty. */
+	let missingVideo = $derived(
+		draft.slots.filter((entry) => !draft.slotHasVideo(entry.slot)).flatMap((entry) => entry.platforms)
+	);
 
 	function goto(step: Step) {
 		draft.step = step;
@@ -51,7 +70,7 @@
 	}
 
 	function next() {
-		if (draft.step < 2) goto((draft.step + 1) as Step);
+		if (draft.step < 3) goto((draft.step + 1) as Step);
 	}
 
 	function back() {
@@ -60,11 +79,22 @@
 
 	let canContinue = $derived(
 		draft.step === 0
-			? draft.canLeaveDetails
+			? draft.canLeaveUpload
 			: draft.step === 1
-				? draft.scheduleComplete && draft.pastPlatforms.length === 0
-				: true
+				? draft.canLeaveDetails && draft.hasVideo
+				: draft.step === 2
+					? draft.scheduleComplete && draft.pastPlatforms.length === 0
+					: true
 	);
+
+	/**
+	 * Slots already written by an earlier press that failed part-way. Confirming
+	 * again sends only the rest, so a failure on the second video never queues
+	 * the first one twice. Cleared by starting over.
+	 */
+	let queued = $state<VideoSlot[]>([]);
+	/** The video being sent right now, for the progress line. */
+	let sending = $state<{ name: string; size: number; transfer: boolean } | null>(null);
 
 	async function confirm() {
 		if (!armed) {
@@ -79,27 +109,54 @@
 		progress = 0;
 		failure = '';
 
+		// One job per distinct video, each carrying the targets it serves. The
+		// worker publishes a target from its own job's file, so it needs no idea
+		// that the platforms were ever split.
+		const groups = draft.slots
+			.map((entry) => ({
+				...entry,
+				video: draft.videos[entry.slot],
+				rows: plan.filter((row) => entry.platforms.includes(row.platform))
+			}))
+			.filter((group) => group.rows.length > 0 && !queued.includes(group.slot));
+		// Progress is by bytes actually transferred; a watch-folder pick sends none.
+		const total = groups.reduce((sum, g) => sum + (g.video.file?.size ?? 0), 0);
+		let sent = 0;
+
 		try {
-			await createJob(
-				{
-					title: draft.primaryText.title,
-					description: draft.primaryText.description,
-					file: draft.file,
-					source: draft.nasFile,
-					thumbnail: draft.thumbnail,
-					duration: draft.duration,
-					destination: general.defaultDestination,
-					targets: plan.map((row) => ({
-						platform: row.platform,
-						title: row.title,
-						description: row.description,
-						options: row.options,
-						date: row.date,
-						time: row.time
-					}))
-				},
-				(fraction) => (progress = fraction)
-			);
+			for (const group of groups) {
+				const { file, nasFile, duration } = group.video;
+				const size = file?.size ?? 0;
+				const label = draft.labelFor(group.platforms);
+				sending = {
+					name: file?.name ?? nasFile?.name ?? '',
+					size: file?.size ?? nasFile?.size ?? 0,
+					transfer: Boolean(file)
+				};
+				await createJob(
+					{
+						title: label.title,
+						description: label.description,
+						file,
+						source: nasFile,
+						thumbnail: group.platforms.includes('youtube') ? draft.thumbnail : null,
+						duration,
+						destination: general.defaultDestination,
+						targets: group.rows.map((row) => ({
+							platform: row.platform,
+							title: row.title,
+							description: row.description,
+							options: row.options,
+							date: row.date,
+							time: row.time
+						}))
+					},
+					(fraction) => (progress = total > 0 ? (sent + fraction * size) / total : fraction)
+				);
+				sent += size;
+				queued = [...queued, group.slot];
+			}
+			sending = null;
 			// Remembered from the plan rather than the draft, so what is stored is
 			// what actually went out — overrides and saved defaults included.
 			rememberTags(
@@ -118,13 +175,19 @@
 			);
 			phase = 'done';
 		} catch (err) {
-			failure = err instanceof Error ? err.message : String(err);
+			const message = err instanceof Error ? err.message : String(err);
+			failure =
+				queued.length > 0
+					? `${message} — ${queued.length} video${queued.length === 1 ? ' is' : 's are'} already queued; confirming again sends only the rest.`
+					: message;
+			sending = null;
 			phase = 'error';
 		}
 	}
 
 	function startOver() {
 		draft.reset();
+		queued = [];
 		phase = 'idle';
 		disarm();
 		progress = 0;
@@ -148,7 +211,7 @@
 				</div>
 				<h2>On the NAS</h2>
 				<p>
-					The video is stored and {plan.length}
+					{queued.length === 1 ? 'The video is' : `${queued.length} videos are`} stored and {plan.length}
 					{plan.length === 1 ? 'release is' : 'releases are'} queued. You can close this machine down —
 					publishing happens from the NAS at each scheduled time.
 				</p>
@@ -177,6 +240,43 @@
 				<div class="titling">
 					<h1>{HEADINGS[draft.step].title}</h1>
 					<p>{HEADINGS[draft.step].sub}</p>
+				</div>
+
+				<!--
+					Which platform the details step is composing: icons only, centred in
+					the bar. A check marks one that is ready, a hollow dot one that is not.
+				-->
+				<div class="switch">
+					{#if draft.step === 1 && pills.length > 0}
+						<div class="pills" role="tablist" aria-label="Platform being composed">
+							{#each pills as pill (pill.platform)}
+								<button
+									class="pilltab"
+									class:on={composing === pill.platform}
+									role="tab"
+									aria-selected={composing === pill.platform}
+									aria-label={PLATFORMS[pill.platform].label}
+									title={PLATFORMS[pill.platform].label}
+									onclick={() => (draft.composing = pill.platform)}
+								>
+									<PlatformIcon platform={pill.platform} size={20} />
+									{#if pill.complete}
+										<svg class="mark" viewBox="0 0 24 24" width="11" height="11" fill="none">
+											<path
+												d="M4 12.5 9.5 18 20 6.5"
+												stroke="currentColor"
+												stroke-width="3.2"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+											/>
+										</svg>
+									{:else}
+										<span class="dot" aria-hidden="true"></span>
+									{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
 				</div>
 
 				<!--
@@ -210,7 +310,7 @@
 						<Stepper step={draft.step} onjump={(index) => goto(index as Step)} />
 					</div>
 
-					{#if draft.step < 2}
+					{#if draft.step < 3}
 						<button
 							class="btn btn-primary nav"
 							onclick={next}
@@ -257,12 +357,19 @@
 				</nav>
 			</header>
 
-			{#if phase === 'error' || (draft.step === 1 && draft.pastPlatforms.length > 0)}
+			{#if phase === 'error' || (draft.step === 2 && draft.pastPlatforms.length > 0) || (draft.step === 1 && missingVideo.length > 0)}
 				<div class="notes">
 					{#if phase === 'error'}
 						<span class="failure">{failure}</span>
 					{/if}
-					{#if draft.step === 1 && draft.pastPlatforms.length > 0}
+					{#if draft.step === 1 && missingVideo.length > 0}
+						<span class="blocked">
+							{missingVideo.map((id) => PLATFORMS[id].label).join(', ')}
+							{missingVideo.length === 1 ? 'has' : 'have'} no video yet —
+							<button class="relink" onclick={() => goto(0)}>pick one</button>.
+						</span>
+					{/if}
+					{#if draft.step === 2 && draft.pastPlatforms.length > 0}
 						<span class="blocked">
 							{draft.pastPlatforms.map((id) => PLATFORMS[id].label).join(', ')}
 							{draft.pastPlatforms.length === 1 ? 'is' : 'are'} scheduled in the past.
@@ -278,8 +385,10 @@
 			{#if settings.loading}
 				<p class="banner">Loading platform settings…</p>
 			{:else if draft.step === 0}
-				<StepDetails />
+				<StepUpload />
 			{:else if draft.step === 1}
+				<StepDetails />
+			{:else if draft.step === 2}
 				<StepSchedule />
 			{:else}
 				<StepConfirm rows={plan} />
@@ -289,18 +398,18 @@
 			{#if phase === 'uploading'}
 				<div class="uploading card">
 					<div class="bar"><span style="width: {progress * 100}%"></span></div>
-					{#if draft.file}
+					{#if sending?.transfer}
 						<p>
-							Sending <strong>{draft.file.name}</strong>
-							({formatBytes(draft.file.size)}) to the NAS — keep this tab open until it finishes.
+							Sending <strong>{sending.name}</strong>
+							({formatBytes(sending.size)}) to the NAS — keep this tab open until it finishes.
 						</p>
-					{:else}
+					{:else if sending}
 						<!-- A file picked off the NAS is already there; only the job rows are
 						     being written, so there is nothing to keep the tab open for. -->
 						<p>
-							Queueing <strong>{draft.nasFile?.name}</strong>
-							{#if draft.nasFile}({formatBytes(draft.nasFile.size)}){/if} — already on the NAS, so
-							there is nothing to transfer.
+							Queueing <strong>{sending.name}</strong>
+							({formatBytes(sending.size)}) — already on the NAS, so there is nothing to
+							transfer.
 						</p>
 					{/if}
 				</div>
@@ -317,10 +426,12 @@
 		margin: 0;
 	}
 
+	/* Three tracks with equal outer ones, so the platform switch sits at the
+	   true centre of the bar whatever the heading and stepper measure. */
 	.head {
-		display: flex;
-		align-items: flex-end;
-		justify-content: space-between;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+		align-items: end;
 		gap: 30px;
 		margin-bottom: 22px;
 		padding-bottom: 18px;
@@ -342,12 +453,72 @@
 	.progress {
 		display: flex;
 		align-items: center;
+		justify-content: flex-end;
 		gap: 22px;
-		flex: none;
+	}
+
+	.switch {
+		align-self: center;
+	}
+
+	.pills {
+		display: flex;
+		gap: 8px;
+	}
+
+	.pilltab {
+		position: relative;
+		width: 44px;
+		height: 38px;
+		display: grid;
+		place-items: center;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--bg-elev);
+		transition: background 0.14s, border-color 0.14s;
+	}
+
+	.pilltab:hover {
+		border-color: var(--pink-soft);
+	}
+
+	.pilltab.on {
+		border-color: var(--pink);
+		background: var(--accent-grad-soft);
+	}
+
+	/* Ready or not, as a badge on the pill's corner. */
+	.mark,
+	.dot {
+		position: absolute;
+		top: -3px;
+		right: -3px;
+	}
+
+	.mark {
+		padding: 2px;
+		box-sizing: content-box;
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--ok);
+	}
+
+	.dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 999px;
+		border: 1.5px solid var(--text-faint);
+		background: var(--surface);
+	}
+
+	.relink {
+		color: inherit;
+		font-size: inherit;
+		text-decoration: underline;
 	}
 
 	.steps {
-		width: min(380px, 40vw);
+		width: min(460px, 40vw);
 	}
 
 	/* Square, so an arrow-only button does not read as a truncated worded one. */
@@ -511,12 +682,18 @@
 		margin-top: 20px;
 	}
 
-	@media (max-width: 860px) {
+	@media (max-width: 1100px) {
 		.head {
-			flex-direction: column;
+			grid-template-columns: 1fr;
 			align-items: stretch;
 			gap: 18px;
 		}
+		.switch {
+			justify-self: center;
+		}
+	}
+
+	@media (max-width: 860px) {
 		.progress {
 			width: 100%;
 			gap: 14px;

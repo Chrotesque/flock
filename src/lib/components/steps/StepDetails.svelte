@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { base } from '$app/paths';
-	import VideoPicker from '../VideoPicker.svelte';
 	import ThumbnailPicker from '../ThumbnailPicker.svelte';
 	import FoldBox from '../FoldBox.svelte';
 	import PlatformIcon from '../PlatformIcon.svelte';
@@ -16,7 +15,6 @@
 	import { general } from '$lib/stores/general.svelte';
 	import { templates, tokenOf } from '$lib/stores/templates.svelte';
 	import {
-		loadWatchIndex,
 		loadPlaylists,
 		loadRecentTags,
 		scoreTitle,
@@ -26,7 +24,7 @@
 	} from '$lib/repo';
 	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
-	import { formatBytes, mergeTagGroups, tagListLength, parseTagList } from '$lib/format';
+	import { mergeTagGroups, tagListLength, parseTagList } from '$lib/format';
 	import { checkTags } from '$lib/tagcheck';
 	import {
 		audienceChoices,
@@ -38,7 +36,7 @@
 		BRANDED_BLOCKS_PRIVATE
 	} from '$lib/tiktok';
 	import { portal } from '$lib/portal';
-	import type { PlatformId, PlaylistIndex, TextTemplate, WatchIndex } from '$lib/types';
+	import type { PlatformId, PlaylistIndex, TextTemplate } from '$lib/types';
 
 	templates.load();
 	general.load();
@@ -74,53 +72,6 @@
 	);
 	let def = $derived(composing ? PLATFORMS[composing] : null);
 	let text = $derived(composing ? draft.textFor(composing) : { title: '', description: '' });
-
-	let pills = $derived(
-		draft.activePlatforms.map((platform) => ({
-			platform,
-			def: PLATFORMS[platform],
-			complete: draft.isComplete(platform)
-		}))
-	);
-
-	/* ---- videos already sitting on the NAS ----
-	 *
-	 * The browser cannot read a filesystem, so the listing comes from the worker
-	 * by way of PocketBase. It is therefore as fresh as the worker's last poll,
-	 * which is why the scan time is shown rather than implied.
-	 */
-
-	let watchIndex = $state<WatchIndex | null>(null);
-	let watchLoading = $state(false);
-
-	async function refreshWatch() {
-		if (!general.value.watchFolder) return;
-		watchLoading = true;
-		try {
-			watchIndex = await loadWatchIndex();
-		} catch {
-			watchIndex = null;
-		} finally {
-			watchLoading = false;
-		}
-	}
-
-	// Depends on the configured folder only: setting one in Settings should make
-	// the list appear without a reload, but nothing here writes what it reads.
-	$effect(() => {
-		void general.value.watchFolder;
-		void refreshWatch();
-	});
-
-	let scannedLabel = $derived.by(() => {
-		if (!watchIndex?.scannedAt) return 'never';
-		const at = new Date(watchIndex.scannedAt);
-		if (Number.isNaN(at.getTime())) return 'never';
-		const mins = Math.round((Date.now() - at.getTime()) / 60000);
-		if (mins < 1) return 'just now';
-		if (mins < 60) return `${mins} min ago`;
-		return at.toLocaleString();
-	});
 
 	/* ---- YouTube extras: thumbnail and playlist ----
 	 *
@@ -339,14 +290,6 @@
 		suggestions = [];
 	}
 
-	function compose(platform: PlatformId) {
-		draft.composing = platform;
-		// The new panel may not render a title at all, and its fields are fresh
-		// anyway — start the caret somewhere that always exists.
-		lastField = 'description';
-		caret = { start: 0, end: 0 };
-	}
-
 	/* ---- the promoted option field ----
 	 *
 	 * A platform may pull one of its options onto this screen via `composeField`
@@ -497,6 +440,15 @@
 	let lastField = $state<Field>('description');
 	let caret = { start: 0, end: 0 };
 
+	// A new panel may not render a title at all, and its fields are fresh
+	// anyway — start the caret somewhere that always exists. Depends on the
+	// composed platform only, and writes nothing it reads.
+	$effect(() => {
+		void composing;
+		lastField = 'description';
+		caret = { start: 0, end: 0 };
+	});
+
 	function elementFor(field: Field) {
 		return field === 'title' ? titleEl : descEl;
 	}
@@ -630,37 +582,6 @@
 <div class="stage">
 	<div class="col">
 		<section class="main card">
-			{#if pills.length > 0}
-				<div class="pills" role="tablist" aria-label="Platform being composed">
-					{#each pills as pill (pill.platform)}
-						<button
-							class="pilltab"
-							class:on={composing === pill.platform}
-							class:done={pill.complete}
-							role="tab"
-							aria-selected={composing === pill.platform}
-							onclick={() => compose(pill.platform)}
-						>
-							<PlatformIcon platform={pill.platform} size={15} />
-							<span class="pillname">{pill.def.label}</span>
-							{#if pill.complete}
-								<svg class="mark" viewBox="0 0 24 24" width="12" height="12" fill="none">
-									<path
-										d="M4 12.5 9.5 18 20 6.5"
-										stroke="currentColor"
-										stroke-width="3"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									/>
-								</svg>
-							{:else}
-								<span class="dot" aria-hidden="true"></span>
-							{/if}
-						</button>
-					{/each}
-				</div>
-			{/if}
-
 			{#if composing && def}
 				{#if def.hasTitle}
 					<div class="field">
@@ -1271,61 +1192,8 @@
 				</p>
 			</FoldBox>
 		{/if}
-	</div>
 
-	<div class="media">
-		<FoldBox label="Video file" done={draft.hasVideo} summary={draft.videoName}>
-			<VideoPicker
-				bind:file={draft.file}
-				bind:duration={draft.duration}
-				onchange={() => draft.chooseNasFile(null)}
-			/>
-
-			<div class="onnas">
-				<span class="label">Or pick one off the NAS</span>
-
-				{#if !general.value.watchFolder}
-					<p class="nasnote">
-						No watch folder set — add one in <a href="{base}/settings">Settings</a> to drop videos
-						straight onto the NAS instead of uploading them here.
-					</p>
-				{:else if watchLoading}
-					<p class="nasnote">Looking…</p>
-				{:else if !watchIndex}
-					<p class="nasnote">
-						The worker has not scanned <code>{general.value.watchFolder}</code> yet.
-					</p>
-				{:else if watchIndex.error}
-					<p class="nasnote bad">{watchIndex.error}</p>
-				{:else if watchIndex.files.length === 0}
-					<p class="nasnote">Nothing in <code>{watchIndex.folder}</code> right now.</p>
-				{:else}
-					<ul class="naslist">
-						{#each watchIndex.files as entry (entry.path)}
-							<li>
-								<button
-									class="nasitem"
-									class:on={draft.nasFile?.path === entry.path}
-									onclick={() => draft.chooseNasFile(entry)}
-								>
-									<span class="nasname">{entry.name}</span>
-									<span class="nasmeta">{formatBytes(entry.size)}</span>
-								</button>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-
-				{#if watchIndex && !watchIndex.error}
-					<p class="nasnote faint">
-						Scanned {scannedLabel}.
-						<button class="relink" onclick={refreshWatch}>Refresh</button>
-					</p>
-				{/if}
-			</div>
-		</FoldBox>
-
-		{#if youtubeActive}
+		{#if youtubeActive && composing === 'youtube'}
 			<FoldBox
 				label="Thumbnail"
 				platforms={['youtube']}
@@ -1361,24 +1229,16 @@
 		align-items: start;
 	}
 
-	/* The two side columns: platforms with the small YouTube boxes, then the
-	   video and its thumbnail. Fixed widths, so only the compose card gives
-	   when the window does; below 1440px they stack into one column, and below
-	   1040px the whole stage does. */
+	/* The side column: platforms, then the per-upload boxes for whichever
+	   platform is being composed. Fixed width, so only the compose card gives
+	   when the window does; below 1040px the whole stage stacks. */
 	.aside {
 		display: grid;
-		grid-template-columns: 270px 310px;
+		grid-template-columns: 300px;
 		gap: 20px;
 		align-items: start;
 		position: sticky;
 		top: 0;
-	}
-
-	.media {
-		min-width: 0;
-		display: grid;
-		gap: 20px;
-		align-content: start;
 	}
 
 	/* The compose card and the boxes under it, as their own column.
@@ -1401,53 +1261,12 @@
 		gap: 20px;
 	}
 
-	.pills {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
-	}
 
-	.pilltab {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 7px 12px 7px 11px;
-		border-radius: 999px;
-		border: 1px solid var(--border-strong);
-		background: var(--bg-elev);
-		color: var(--text-dim);
-		font-size: 12.5px;
-		font-weight: 570;
-		transition: background 0.14s, color 0.14s, border-color 0.14s;
-	}
 
-	.pilltab:hover {
-		border-color: var(--pink-soft);
-		color: var(--text);
-	}
 
-	.pilltab.on {
-		border-color: var(--pink);
-		background: var(--accent-grad-soft);
-		color: var(--text);
-	}
 
-	.pillname {
-		line-height: 1;
-	}
 
-	.mark {
-		flex: none;
-		color: var(--ok);
-	}
 
-	.dot {
-		flex: none;
-		width: 6px;
-		height: 6px;
-		border-radius: 999px;
-		border: 1.5px solid var(--text-faint);
-	}
 
 	.fieldhead {
 		display: flex;
@@ -2165,13 +1984,7 @@
 		flex: none;
 	}
 
-	/* ---- videos already on the NAS ---- */
 
-	.onnas {
-		margin-top: 14px;
-		padding-top: 14px;
-		border-top: 1px solid var(--border);
-	}
 
 	.nasnote {
 		margin: 8px 0 0;
@@ -2184,9 +1997,6 @@
 		color: var(--danger);
 	}
 
-	.nasnote a {
-		color: var(--pink-soft);
-	}
 
 	.nasnote code {
 		font-family: var(--mono);
@@ -2200,49 +2010,11 @@
 		text-decoration: underline;
 	}
 
-	.naslist {
-		list-style: none;
-		margin: 10px 0 0;
-		padding: 0;
-		display: grid;
-		gap: 5px;
-		max-height: 210px;
-		overflow-y: auto;
-	}
 
-	.nasitem {
-		width: 100%;
-		display: grid;
-		gap: 1px;
-		padding: 7px 9px;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--border);
-		background: var(--bg-elev);
-		text-align: left;
-		transition: border-color 0.14s, background 0.14s;
-	}
 
-	.nasitem:hover {
-		border-color: var(--pink-soft);
-	}
 
-	.nasitem.on {
-		border-color: var(--pink);
-		background: var(--accent-grad-soft);
-	}
 
-	.nasname {
-		font-size: 12px;
-		font-weight: 560;
-		color: var(--text);
-		/* File names have no spaces to break at. */
-		overflow-wrap: anywhere;
-	}
 
-	.nasmeta {
-		font-size: 10.5px;
-		color: var(--text-faint);
-	}
 
 	/* ---- caption mirror ---- */
 
@@ -2385,12 +2157,6 @@
 
 	.warnbox.tt {
 		margin-top: 4px;
-	}
-
-	@media (max-width: 1440px) {
-		.aside {
-			grid-template-columns: 320px;
-		}
 	}
 
 	@media (max-width: 1040px) {

@@ -12,8 +12,54 @@ import type {
 	WatchFile
 } from '../types';
 
-export type Step = 0 | 1 | 2;
-export const STEP_LABELS = ['Details', 'Schedule', 'Confirm'] as const;
+export type Step = 0 | 1 | 2 | 3;
+export const STEP_LABELS = ['Upload', 'Details', 'Schedule', 'Review'] as const;
+
+/**
+ * Which video a platform gets: the shared one, or one of its own. A platform
+ * split off keeps its slot until it is merged back, and the split itself is
+ * remembered per browser from one upload to the next.
+ */
+export type VideoSlot = 'all' | PlatformId;
+
+export interface SlotVideo {
+	file: File | null;
+	/**
+	 * A video picked out of the watch folder rather than uploaded through the
+	 * browser. Mutually exclusive with `file`: choosing either clears the other,
+	 * so there is never a question of which one the job gets built from.
+	 */
+	nasFile: WatchFile | null;
+	duration: number;
+}
+
+const SPLIT_KEY = 'flock.upload.split';
+
+function loadSplit(): PlatformId[] {
+	try {
+		const raw = JSON.parse(localStorage.getItem(SPLIT_KEY) ?? '[]');
+		return Array.isArray(raw) ? raw.filter((id) => PLATFORM_IDS.includes(id)) : [];
+	} catch {
+		return [];
+	}
+}
+
+function saveSplit(list: PlatformId[]) {
+	try {
+		localStorage.setItem(SPLIT_KEY, JSON.stringify(list));
+	} catch {
+		// Private windows and blocked site data throw; the split just is not kept.
+	}
+}
+
+function emptyVideos(): Record<VideoSlot, SlotVideo> {
+	return Object.fromEntries(
+		(['all', ...PLATFORM_IDS] as VideoSlot[]).map((slot) => [
+			slot,
+			{ file: null, nasFile: null, duration: 0 }
+		])
+	) as Record<VideoSlot, SlotVideo>;
+}
 
 function allSelected(value: boolean): Record<PlatformId, boolean> {
 	return Object.fromEntries(PLATFORM_IDS.map((id) => [id, value])) as Record<PlatformId, boolean>;
@@ -46,16 +92,14 @@ class DraftStore {
 	/** Which platform the details step is currently composing. */
 	composing = $state<PlatformId | null>(null);
 
-	file = $state<File | null>(null);
-
 	/**
-	 * A video picked out of the watch folder rather than uploaded through the
-	 * browser. Mutually exclusive with `file`: choosing either clears the other,
-	 * so there is never a question of which one the job gets built from.
+	 * One entry per possible slot, all present from the start so the pickers
+	 * can bind straight into them. Only the slots `slots` lists are used.
 	 */
-	nasFile = $state<WatchFile | null>(null);
+	videos = $state<Record<VideoSlot, SlotVideo>>(emptyVideos());
 
-	duration = $state(0);
+	/** Platforms that get a video of their own rather than the shared one. */
+	split = $state<PlatformId[]>(loadSplit());
 
 	/**
 	 * A custom thumbnail for YouTube. Optional, and YouTube-only: the other
@@ -63,22 +107,67 @@ class DraftStore {
 	 */
 	thumbnail = $state<File | null>(null);
 
+	slotFor(platform: PlatformId): VideoSlot {
+		return this.split.includes(platform) ? platform : 'all';
+	}
+
+	videoFor(platform: PlatformId): SlotVideo {
+		return this.videos[this.slotFor(platform)];
+	}
+
+	setSplit(platform: PlatformId, own: boolean) {
+		const next = own
+			? [...new Set([...this.split, platform])]
+			: this.split.filter((id) => id !== platform);
+		this.split = next;
+		saveSplit(next);
+	}
+
+	/**
+	 * The videos this upload needs, each with the active platforms it serves:
+	 * the shared one first (omitted once every platform has its own), then the
+	 * split-off platforms in display order.
+	 */
+	get slots(): { slot: VideoSlot; platforms: PlatformId[] }[] {
+		const active = this.activePlatforms;
+		const shared = active.filter((id) => !this.split.includes(id));
+		const out: { slot: VideoSlot; platforms: PlatformId[] }[] = [];
+		if (shared.length > 0) out.push({ slot: 'all', platforms: shared });
+		for (const id of active) if (this.split.includes(id)) out.push({ slot: id, platforms: [id] });
+		return out;
+	}
+
 	/** Either route counts — the wizard does not care which one was used. */
+	slotHasVideo(slot: VideoSlot): boolean {
+		const video = this.videos[slot];
+		return Boolean(video.file || video.nasFile);
+	}
+
+	/** The name to show for whichever video a slot holds. */
+	slotName(slot: VideoSlot): string {
+		const video = this.videos[slot];
+		return video.file?.name ?? video.nasFile?.name ?? '';
+	}
+
+	/** Every slot in use has a video. */
 	get hasVideo(): boolean {
-		return Boolean(this.file || this.nasFile);
+		const slots = this.slots;
+		return slots.length > 0 && slots.every((entry) => this.slotHasVideo(entry.slot));
 	}
 
-	/** The name to show for whichever video is chosen. */
-	get videoName(): string {
-		return this.file?.name ?? this.nasFile?.name ?? '';
+	chooseFile(slot: VideoSlot, file: File | null) {
+		const video = this.videos[slot];
+		video.file = file;
+		if (file) video.nasFile = null;
 	}
 
-	chooseNasFile(entry: WatchFile | null) {
-		this.nasFile = entry;
+	chooseNasFile(slot: VideoSlot, entry: WatchFile | null) {
+		const video = this.videos[slot];
+		video.nasFile = entry;
 		if (entry) {
-			this.file = null;
+			video.file = null;
 			// A referenced file has no bytes here to read a duration out of.
-			this.duration = 0;
+			video.duration = 0;
 		}
 	}
 
@@ -133,23 +222,23 @@ class DraftStore {
 	 * reads the accounts store — the draft reads from stores, never back.
 	 */
 	get tiktokProblems(): string[] {
-		return tiktokProblems(this.overrides.tiktok ?? {}, accounts.tiktok, this.duration);
+		return tiktokProblems(this.overrides.tiktok ?? {}, accounts.tiktok, this.videoFor('tiktok').duration);
 	}
 
 	/**
 	 * Stand-in text for the job row itself, which has one title/description pair
-	 * and no platform. The description comes from the first active platform; the
-	 * title from the first that actually has one, so a job going only to the
-	 * caption-only platforms still gets a readable label instead of "(untitled)".
+	 * and no platform, over the platforms that job serves (one job per distinct
+	 * video). The description comes from the first of them; the title from the
+	 * first that actually has one, so a job going only to the caption-only
+	 * platforms still gets a readable label instead of "(untitled)".
 	 *
 	 * This is a label, not published text — the real per-platform content is
 	 * written to upload_targets.
 	 */
-	get primaryText(): PlatformText {
-		const active = this.activePlatforms;
-		const first = active[0];
+	labelFor(platforms: PlatformId[]): PlatformText {
+		const first = platforms[0];
 		if (!first) return EMPTY_TEXT;
-		const titled = active.find((id) => this.textFor(id).title.trim());
+		const titled = platforms.find((id) => this.textFor(id).title.trim());
 		return {
 			title: titled ? this.textFor(titled).title : '',
 			description: this.textFor(first).description
@@ -246,10 +335,15 @@ class DraftStore {
 		});
 	}
 
-	/** Every active platform composed, and a file chosen. */
+	/** A video for every slot the active platforms need. */
+	get canLeaveUpload(): boolean {
+		return this.activePlatforms.length > 0 && this.hasVideo;
+	}
+
+	/** Every active platform composed. */
 	get canLeaveDetails(): boolean {
 		const active = this.activePlatforms;
-		return this.hasVideo && active.length > 0 && active.every((id) => this.isComplete(id));
+		return active.length > 0 && active.every((id) => this.isComplete(id));
 	}
 
 	/** Active platforms still missing text, for the "why is Continue off" hint. */
@@ -261,10 +355,9 @@ class DraftStore {
 		this.step = 0;
 		this.texts = {};
 		this.composing = null;
-		this.file = null;
-		this.nasFile = null;
+		// The split is kept on purpose — it is the arrangement, not this video.
+		this.videos = emptyVideos();
 		this.thumbnail = null;
-		this.duration = 0;
 		this.selected = allSelected(true);
 		this.overrides = {};
 		this.schedule = {};
