@@ -18,8 +18,12 @@ import { makeClient } from './pb.mjs';
 import { publishToYouTube } from './youtube.mjs';
 import { publishToTikTok, refreshTikTokCreator, creatorInfo, privacyLabel } from './tiktok.mjs';
 import { publishToInstagram, refreshInstagramAccount, accountInfo } from './instagram.mjs';
-import { copyToDestination } from './archive.mjs';
-import { scanWatchFolder } from './watch.mjs';
+import { copyToDestination, copyInto } from './archive.mjs';
+import { scanWatchFolder, scanLocalFolders } from './watch.mjs';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { basename } from 'node:path';
+import { resolveFolder } from './paths.mjs';
 import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
 import { statsPass, unitsToday } from './stats.mjs';
 import { msUntil } from './upload.mjs';
@@ -82,6 +86,9 @@ function inWords(ms) {
 	return `in ${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
 }
 
+/** Targets already reported as waiting on an import, so that is said once. */
+const waitingImport = new Set();
+
 async function handle(pb, config, platform, target) {
 	const adapter = ADAPTERS[platform];
 	const label = `${platform} "${target.title || target.description?.slice(0, 40) || target.id}"`;
@@ -100,13 +107,22 @@ async function handle(pb, config, platform, target) {
 		return;
 	}
 
+	// A local pick is not on the NAS until importPass has copied it; the row
+	// stays pending until then, whatever its slot says.
+	const job = await pb.getJob(target.job);
+	if (job.source_local) {
+		if (!waitingImport.has(target.id)) log(`holding ${label}: its video is still being copied to the NAS`);
+		waitingImport.add(target.id);
+		return;
+	}
+	waitingImport.delete(target.id);
+
 	// Claim before starting, so a second pass cannot pick up the same row while
 	// its upload is in flight.
 	await pb.updateTarget(target.id, { status: 'publishing', error: '' });
 	log(`claimed ${label}`);
 
 	try {
-		const job = await pb.getJob(target.job);
 		const result = await adapter.publish({
 			target,
 			job,
@@ -177,14 +193,77 @@ async function copyPass(pb) {
 async function watchPass(pb) {
 	const row = await pb.getSetting('general');
 	const folder = row?.value?.watchFolder?.trim() ?? '';
-	if (!folder) return;
+	if (folder) {
+		const index = await scanWatchFolder(folder);
+		if (index) {
+			await pb.setSetting('watch_index', index);
+			if (index.error) log(`watch folder: ${index.error}`);
+			else log(`watch folder: ${index.files.length} video(s) in ${index.folder}`);
+		}
+	}
 
-	const index = await scanWatchFolder(folder);
-	if (!index) return;
+	// The local folders, pooled into one listing for the "Locally" box. Read
+	// from this machine's disks, which is why they only work while the worker
+	// runs on the PC they belong to.
+	const locals = Array.isArray(row?.value?.localFolders)
+		? row.value.localFolders.map((f) => f?.path ?? '').filter((p) => p.trim())
+		: [];
+	if (locals.length > 0) {
+		const index = await scanLocalFolders(locals);
+		await pb.setSetting('local_index', index);
+		for (const entry of index.folders) if (entry.error) log(`local folder: ${entry.error}`);
+		log(`local folders: ${index.files.length} video(s) in ${locals.length} folder(s)`);
+	}
+}
 
-	await pb.setSetting('watch_index', index);
-	if (index.error) log(`watch folder: ${index.error}`);
-	else log(`watch folder: ${index.files.length} video(s) in ${index.folder}`);
+/**
+ * Copies videos picked from a local folder into the NAS watch folder, then
+ * points the job at the copy. Until that happens nothing publishes from the
+ * job and nothing is filed into its destination — see `handle` and
+ * `pendingCopies`. The local original is left alone.
+ */
+async function importPass(pb) {
+	const jobs = await pb.pendingImports();
+	if (jobs.length === 0) return;
+
+	const row = await pb.getSetting('general');
+	const watch = row?.value?.watchFolder?.trim() ?? '';
+
+	for (const job of jobs) {
+		if (dry) {
+			log(`would copy local ${job.source_path} into the watch folder`);
+			continue;
+		}
+		try {
+			if (!watch) throw new Error('No NAS watch folder is set to copy local videos into.');
+			const from = job.source_path;
+			let info;
+			try {
+				info = await stat(from);
+			} catch (err) {
+				throw new Error(`Local video is gone: ${from} (${err.code || err.message})`);
+			}
+			const result = await copyInto({
+				source: { stream: createReadStream(from), size: info.size },
+				dir: await resolveFolder(watch),
+				wanted: job.video_name || basename(from),
+				log: (m) => log(`  ${m}`)
+			});
+			await pb.updateJob(job.id, {
+				source_path: result.path,
+				source_origin: from,
+				source_local: false,
+				error: ''
+			});
+			log(`imported "${job.title}" -> ${result.path}`);
+			pb.log('Copied a local video to the NAS', `${from} -> ${result.path}`);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			// Left marked local so the next pass retries.
+			await pb.updateJob(job.id, { error: message.slice(0, 1900) });
+			log(`import FAILED for "${job.title}": ${message}`);
+		}
+	}
 }
 
 /**
@@ -259,6 +338,7 @@ async function noteUnready(pb, platform) {
 
 async function pass(pb, config) {
 	await watchPass(pb);
+	await importPass(pb);
 	await copyPass(pb);
 
 	for (const [platform, adapter] of Object.entries(ADAPTERS)) {

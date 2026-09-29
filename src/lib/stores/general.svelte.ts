@@ -2,7 +2,7 @@ import { newId } from '../id';
 import { getSetting, setSetting } from '../repo';
 import { logAction } from '../log';
 import { settle, LOG_SETTLE_MS } from '../settle';
-import type { GeneralSettings, NasDestination } from '../types';
+import type { GeneralSettings, LocalFolder, NasDestination } from '../types';
 import type { TimeZoneChoice } from '../timezones';
 
 export const GENERAL_KEY = 'general';
@@ -11,6 +11,7 @@ export const DEFAULT_GENERAL: GeneralSettings = {
 	destinations: [],
 	defaultDestinationId: null,
 	watchFolder: '',
+	localFolders: [],
 	complianceBranding: false,
 	timeZones: []
 };
@@ -48,6 +49,11 @@ class GeneralStore {
 				destinations: Array.isArray(stored.destinations) ? stored.destinations : [],
 				defaultDestinationId: stored.defaultDestinationId ?? null,
 				watchFolder: stored.watchFolder ?? '',
+				localFolders: Array.isArray(stored.localFolders)
+					? stored.localFolders.filter(
+							(f): f is LocalFolder => Boolean(f) && typeof f.id === 'string' && typeof f.path === 'string'
+						)
+					: [],
 				complianceBranding: stored.complianceBranding ?? false,
 				timeZones: Array.isArray(stored.timeZones) ? stored.timeZones : []
 			};
@@ -127,6 +133,23 @@ class GeneralStore {
 				'Changed the watch folder',
 				`${before.watchFolder || '(none)'} → ${after.watchFolder || '(none)'}`
 			);
+		}
+
+		// A new row starts blank, so like a destination it is only "added" once
+		// it has a path.
+		const foldersWere = new Map(before.localFolders.map((f) => [f.id, f.path.trim()]));
+		for (const folder of after.localFolders) {
+			const path = folder.path.trim();
+			const old = foldersWere.get(folder.id);
+			if (!old) {
+				if (path) logAction('settings', 'Added a local folder', path);
+			} else if (old !== path) {
+				logAction('settings', 'Changed a local folder', `${old} → ${path || '(empty)'}`);
+			}
+		}
+		const foldersNow = new Set(after.localFolders.map((f) => f.id));
+		for (const [id, path] of foldersWere) {
+			if (!foldersNow.has(id) && path) logAction('settings', 'Removed a local folder', path);
 		}
 
 		const zonesWere = new Map(before.timeZones.map((z) => [z.id, z]));
@@ -217,6 +240,24 @@ class GeneralStore {
 
 	setWatchFolder(path: string) {
 		this.value.watchFolder = path;
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	addLocalFolder() {
+		this.value.localFolders = [...this.value.localFolders, { id: newId(), path: '' }];
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	setLocalFolder(id: string, path: string) {
+		this.value.localFolders = this.value.localFolders.map((f) => (f.id === id ? { ...f, path } : f));
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	removeLocalFolder(id: string) {
+		this.value.localFolders = this.value.localFolders.filter((f) => f.id !== id);
 		this.queueSave();
 		this.#queueLog();
 	}

@@ -223,7 +223,9 @@
 							stroke-linejoin="round"
 						/>
 					</svg>
-					{#if shownFile?.nasFile}
+					{#if shownFile?.nasFile?.local}
+						<p>Picked from a local folder, so there is nothing to play here.</p>
+					{:else if shownFile?.nasFile}
 						<p>Picked off the NAS, so there is nothing to play here.</p>
 					{/if}
 				</div>
@@ -282,7 +284,9 @@
 						{/if}
 					{:else if shownFile?.nasFile}
 						{formatBytes(shownFile.nasFile.size)}
-						<span class="dot">·</span>already on the NAS, nothing to transfer
+						<span class="dot">·</span>{shownFile.nasFile.local
+							? 'in a local folder, copied to the NAS by the worker'
+							: 'already on the NAS, nothing to transfer'}
 						{#if destination}
 							<span class="dot">·</span>will be copied to
 							<span class="dest">{destination.label || destination.path || 'unnamed'}</span>

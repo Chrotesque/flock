@@ -93,7 +93,20 @@ export function makeClient(baseUrl) {
 		 * displays it — so those two values are free to carry that meaning.
 		 */
 		async pendingCopies() {
-			const filter = encodeURIComponent('destination_path != "" && status = "stored"');
+			// A local pick waits for its import: until then there is nothing on
+			// the NAS to file.
+			const filter = encodeURIComponent(
+				'destination_path != "" && status = "stored" && source_local = false'
+			);
+			const res = await request(
+				`/api/collections/upload_jobs/records?perPage=50&sort=created&filter=${filter}`
+			);
+			return res.items ?? [];
+		},
+
+		/** Jobs whose video is still in a local folder, waiting to be copied to the NAS. */
+		async pendingImports() {
+			const filter = encodeURIComponent('source_local = true');
 			const res = await request(
 				`/api/collections/upload_jobs/records?perPage=50&sort=created&filter=${filter}`
 			);

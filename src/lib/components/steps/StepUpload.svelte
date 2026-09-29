@@ -5,9 +5,15 @@
 	import { PLATFORMS } from '$lib/platforms';
 	import { draft, type VideoSlot } from '$lib/stores/draft.svelte';
 	import { general } from '$lib/stores/general.svelte';
-	import { loadWatchIndex } from '$lib/repo';
+	import {
+		loadWatchIndex,
+		loadLocalIndex,
+		loadUsedSources,
+		isUsed,
+		type UsedIndex
+	} from '$lib/repo';
 	import { formatBytes } from '$lib/format';
-	import type { PlatformId, WatchIndex } from '$lib/types';
+	import type { LocalIndex, PlatformId, WatchFile, WatchIndex } from '$lib/types';
 
 	general.load();
 
@@ -30,32 +36,35 @@
 		draft.setSplit(platform, own);
 	}
 
-	/* ---- dragging a NAS file onto a video box ----
+	/* ---- dragging a listed file onto a video box ----
 	 *
-	 * The NAS list is a set of drag sources, not a picker: a file is dragged
-	 * onto the box it belongs in. The payload is the file's path under a type
-	 * of flock's own, so a drag from anywhere else is never mistaken for one.
-	 * An OS file dropped on a box is still the VideoPicker's business; the
-	 * slot only takes files itself while it shows a NAS pick instead.
+	 * The two file lists are drag sources, not pickers: a file is dragged onto
+	 * the box it belongs in. The payload names the list and the file's path
+	 * under a type of flock's own, so a drag from anywhere else is never
+	 * mistaken for one. An OS file dropped on a box is still the VideoPicker's
+	 * business; the slot only takes files itself while it shows a listed pick
+	 * instead, since the picker is not rendered then.
 	 */
 
-	const NAS_TYPE = 'application/x-flock-nas';
+	const DRAG_TYPE = 'application/x-flock-nas';
+
+	type Source = 'nas' | 'local';
 
 	/** The slot a drag is currently over, for the highlight. */
 	let over = $state<VideoSlot | null>(null);
 
-	function carriesNas(event: DragEvent): boolean {
-		return event.dataTransfer?.types.includes(NAS_TYPE) ?? false;
+	function carriesListed(event: DragEvent): boolean {
+		return event.dataTransfer?.types.includes(DRAG_TYPE) ?? false;
 	}
 
-	function onDragStart(event: DragEvent, path: string) {
-		event.dataTransfer?.setData(NAS_TYPE, path);
+	function onDragStart(event: DragEvent, source: Source, path: string) {
+		event.dataTransfer?.setData(DRAG_TYPE, JSON.stringify({ source, path }));
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
 	}
 
 	function onDragOver(event: DragEvent, slot: VideoSlot) {
 		const files = event.dataTransfer?.types.includes('Files') ?? false;
-		if (!carriesNas(event) && !(files && draft.videos[slot].nasFile)) return;
+		if (!carriesListed(event) && !(files && draft.videos[slot].nasFile)) return;
 		event.preventDefault();
 		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
 		over = slot;
@@ -70,15 +79,20 @@
 
 	function onDrop(event: DragEvent, slot: VideoSlot) {
 		over = null;
-		const path = event.dataTransfer?.getData(NAS_TYPE);
-		if (path) {
+		const payload = event.dataTransfer?.getData(DRAG_TYPE);
+		if (payload) {
 			event.preventDefault();
-			const entry = watchIndex?.files.find((file) => file.path === path);
-			if (entry) draft.chooseNasFile(slot, entry);
+			let drag: { source?: Source; path?: string } = {};
+			try {
+				drag = JSON.parse(payload);
+			} catch {
+				return;
+			}
+			const list = drag.source === 'local' ? localIndex?.files : watchIndex?.files;
+			const entry = list?.find((file) => file.path === drag.path);
+			if (entry) draft.chooseNasFile(slot, drag.source === 'local' ? { ...entry, local: true } : entry);
 			return;
 		}
-		// The picker is not rendered while a NAS file is shown, so a real file
-		// dropped here replaces that pick. Otherwise the picker already took it.
 		if (!draft.videos[slot].nasFile) return;
 		const file = event.dataTransfer?.files?.[0];
 		if (!file || !file.type.startsWith('video/')) return;
@@ -86,51 +100,83 @@
 		draft.chooseFile(slot, file);
 	}
 
-	/* ---- videos already sitting on the NAS ----
+	/* ---- the two listings ----
 	 *
-	 * The browser cannot read a filesystem, so the listing comes from the worker
-	 * by way of PocketBase. It is therefore as fresh as the worker's last poll,
-	 * which is why the scan time is shown rather than implied.
+	 * The browser cannot read a filesystem, so both come from the worker by
+	 * way of PocketBase: the NAS watch folder, and the local folders pooled
+	 * into one list. Each is as fresh as the worker's last poll, which is why
+	 * the scan time is shown rather than implied.
 	 */
 
 	let watchIndex = $state<WatchIndex | null>(null);
-	let watchLoading = $state(false);
+	let localIndex = $state<LocalIndex | null>(null);
+	let loading = $state(false);
 
-	async function refreshWatch() {
-		if (!general.value.watchFolder) return;
-		watchLoading = true;
+	let hasLocal = $derived(general.value.localFolders.some((f) => f.path.trim()));
+
+	async function refresh() {
+		loading = true;
 		try {
-			watchIndex = await loadWatchIndex();
+			const [watch, local, gone] = await Promise.all([
+				general.value.watchFolder ? loadWatchIndex() : Promise.resolve(null),
+				hasLocal ? loadLocalIndex() : Promise.resolve(null),
+				loadUsedSources()
+			]);
+			watchIndex = watch;
+			localIndex = local;
+			used = gone;
 		} catch {
-			watchIndex = null;
+			// Each box says what it is missing.
 		} finally {
-			watchLoading = false;
+			loading = false;
 		}
 	}
 
-	// Depends on the configured folder only: setting one in Settings should make
-	// the list appear without a reload, but nothing here writes what it reads.
+	// Depends on the configured folders only: setting one in Settings should
+	// make its list appear without a reload, and nothing here writes those.
 	$effect(() => {
 		void general.value.watchFolder;
-		void refreshWatch();
+		void hasLocal;
+		void refresh();
 	});
 
-	let scannedLabel = $derived.by(() => {
-		if (!watchIndex?.scannedAt) return 'never';
-		const at = new Date(watchIndex.scannedAt);
+	function scannedAgo(iso: string | undefined): string {
+		if (!iso) return 'never';
+		const at = new Date(iso);
 		if (Number.isNaN(at.getTime())) return 'never';
 		const mins = Math.round((Date.now() - at.getTime()) / 60000);
 		if (mins < 1) return 'just now';
 		if (mins < 60) return `${mins} min ago`;
 		return at.toLocaleString();
-	});
+	}
 
-	/** The platforms whose slot currently holds a given NAS file. */
+	/** The platforms whose slot currently holds a given listed file. */
 	function usedBy(path: string): PlatformId[] {
 		return slots
 			.filter((entry) => draft.videos[entry.slot].nasFile?.path === path)
 			.flatMap((entry) => entry.platforms);
 	}
+
+	/* ---- files that already went out ----
+	 *
+	 * Hidden from both lists (see `loadUsedSources` for what counts), with a
+	 * toggle per list to show them again. A file picked for this upload stays
+	 * visible regardless, so a pick never vanishes from under the pointer.
+	 */
+
+	let used = $state<UsedIndex>({ paths: new Set(), keys: new Set() });
+	let showUsed = $state<Record<Source, boolean>>({ nas: false, local: false });
+
+	function listing(files: WatchFile[], source: Source) {
+		const gone = files.filter((file) => isUsed(used, file));
+		const shown = showUsed[source]
+			? files
+			: files.filter((file) => !isUsed(used, file) || usedBy(file.path).length > 0);
+		return { shown, hidden: gone.length };
+	}
+
+	let nasList = $derived(listing(watchIndex?.files ?? [], 'nas'));
+	let localList = $derived(listing(localIndex?.files ?? [], 'local'));
 </script>
 
 <div class="stage">
@@ -202,7 +248,11 @@
 							</svg>
 							<div class="pickedmeta">
 								<p class="pickedname">{video.nasFile.name}</p>
-								<p class="sub">{formatBytes(video.nasFile.size)} · already on the NAS</p>
+								<p class="sub">
+								{formatBytes(video.nasFile.size)} · {video.nasFile.local
+									? 'local — the worker copies it to the NAS'
+									: 'already on the NAS'}
+							</p>
 							</div>
 							<button class="btn btn-ghost sm" onclick={() => draft.chooseNasFile(entry.slot, null)}>
 								Remove
@@ -220,65 +270,120 @@
 		{/if}
 	</div>
 
-	<section class="card nas">
-		<header class="nashead">
-			<span class="label">On the NAS</span>
-			<span class="for">drag onto a video box</span>
-		</header>
+	<div class="right">
+		<section class="card files">
+			<header class="nashead">
+				<span class="label">Locally</span>
+				<span class="for">drag onto a video box</span>
+			</header>
 
-		{#if !general.value.watchFolder}
-			<p class="nasnote">
-				No watch folder set — add one in <a href="{base}/settings">Settings</a> to drop videos
-				straight onto the NAS instead of uploading them here.
-			</p>
-		{:else if watchLoading && !watchIndex}
-			<p class="nasnote">Looking…</p>
-		{:else if !watchIndex}
-			<p class="nasnote">
-				The worker has not scanned <code>{general.value.watchFolder}</code> yet.
-			</p>
-		{:else if watchIndex.error}
-			<p class="nasnote bad">{watchIndex.error}</p>
-		{:else if watchIndex.files.length === 0}
-			<p class="nasnote">Nothing in <code>{watchIndex.folder}</code> right now.</p>
-		{:else}
-			<ul class="naslist">
-				{#each watchIndex.files as file (file.path)}
-					{@const users = usedBy(file.path)}
-					<li>
-						<div
-							class="nasitem"
-							class:on={users.length > 0}
-							draggable="true"
-							role="listitem"
-							title="Drag onto a video box"
-							ondragstart={(e) => onDragStart(e, file.path)}
-						>
-							<span class="nasname">{file.name}</span>
-							<span class="nasmeta">
-								{formatBytes(file.size)}
-								{#if users.length > 0}
-									<span class="users">
-										{#each users as id (id)}
-											<PlatformIcon platform={id} size={12} />
-										{/each}
-									</span>
-								{/if}
-							</span>
-						</div>
-					</li>
+			{#if !hasLocal}
+				<p class="nasnote">
+					No local folders set — add some in <a href="{base}/settings">Settings</a> to list the
+					videos on this PC here.
+				</p>
+			{:else if loading && !localIndex}
+				<p class="nasnote">Looking…</p>
+			{:else if !localIndex}
+				<p class="nasnote">The worker has not scanned the local folders yet.</p>
+			{:else}
+				{#each localIndex.folders.filter((f) => f.error) as folder (folder.folder)}
+					<p class="nasnote bad">{folder.error}</p>
 				{/each}
-			</ul>
-		{/if}
+				{#if !general.value.watchFolder}
+					<p class="nasnote bad">
+						Local videos are copied into the NAS watch folder, and none is set — add one in
+						<a href="{base}/settings">Settings</a> to use these.
+					</p>
+				{/if}
+				{@render fileList(localList, 'local', Boolean(general.value.watchFolder))}
+				{#if localIndex.files.length === 0}
+					<p class="nasnote">Nothing in the local folders right now.</p>
+				{/if}
+				<p class="nasnote faint">
+					Scanned {scannedAgo(localIndex.scannedAt)}.
+					<button class="relink" onclick={refresh}>Refresh</button>
+				</p>
+			{/if}
+		</section>
 
-		{#if watchIndex && !watchIndex.error}
-			<p class="nasnote faint">
-				Scanned {scannedLabel}.
-				<button class="relink" onclick={refreshWatch}>Refresh</button>
-			</p>
-		{/if}
-	</section>
+		<section class="card files">
+			<header class="nashead">
+				<span class="label">On the NAS</span>
+				<span class="for">drag onto a video box</span>
+			</header>
+
+			{#if !general.value.watchFolder}
+				<p class="nasnote">
+					No watch folder set — add one in <a href="{base}/settings">Settings</a> to drop videos
+					straight onto the NAS instead of uploading them here.
+				</p>
+			{:else if loading && !watchIndex}
+				<p class="nasnote">Looking…</p>
+			{:else if !watchIndex}
+				<p class="nasnote">
+					The worker has not scanned <code>{general.value.watchFolder}</code> yet.
+				</p>
+			{:else if watchIndex.error}
+				<p class="nasnote bad">{watchIndex.error}</p>
+			{:else}
+				{@render fileList(nasList, 'nas', true)}
+				{#if watchIndex.files.length === 0}
+					<p class="nasnote">Nothing in <code>{watchIndex.folder}</code> right now.</p>
+				{/if}
+				<p class="nasnote faint">
+					Scanned {scannedAgo(watchIndex.scannedAt)}.
+					<button class="relink" onclick={refresh}>Refresh</button>
+				</p>
+			{/if}
+		</section>
+	</div>
 </div>
+
+{#snippet fileList(list: { shown: WatchFile[]; hidden: number }, source: Source, usable: boolean)}
+	{#if list.shown.length > 0}
+		<ul class="naslist">
+			{#each list.shown as file (file.path)}
+				{@const users = usedBy(file.path)}
+				{@const gone = isUsed(used, file)}
+				<li>
+					<div
+						class="nasitem"
+						class:on={users.length > 0}
+						class:gone
+						class:locked={!usable}
+						draggable={usable}
+						role="listitem"
+						title={usable ? 'Drag onto a video box' : ''}
+						ondragstart={(e) => onDragStart(e, source, file.path)}
+					>
+						<span class="nasname">{file.name}</span>
+						<span class="nasmeta">
+							{formatBytes(file.size)}
+							{#if gone}<span class="tag">uploaded before</span>{/if}
+							{#if users.length > 0}
+								<span class="users">
+									{#each users as id (id)}
+										<PlatformIcon platform={id} size={12} />
+									{/each}
+								</span>
+							{/if}
+						</span>
+					</div>
+				</li>
+			{/each}
+		</ul>
+	{:else if list.hidden > 0}
+		<p class="nasnote">Everything here has been uploaded before.</p>
+	{/if}
+	{#if list.hidden > 0}
+		<button class="relink toggle" onclick={() => (showUsed[source] = !showUsed[source])}>
+			{showUsed[source]
+				? `Hide ${list.hidden} uploaded before`
+				: `Show ${list.hidden} uploaded before`}
+		</button>
+	{/if}
+{/snippet}
 
 <style>
 	.stage {
@@ -414,7 +519,11 @@
 		font-size: 12px;
 	}
 
-	.nas {
+	.right {
+		min-width: 0;
+		display: grid;
+		gap: 16px;
+		align-content: start;
 		position: sticky;
 		top: 0;
 	}
@@ -465,7 +574,8 @@
 		padding: 0;
 		display: grid;
 		gap: 5px;
-		max-height: calc(100vh - 260px);
+		max-height: calc(50vh - 150px);
+		min-height: 60px;
 		overflow-y: auto;
 	}
 
@@ -485,6 +595,26 @@
 
 	.nasitem:active {
 		cursor: grabbing;
+	}
+
+	.nasitem.gone {
+		opacity: 0.55;
+	}
+
+	.nasitem.locked {
+		cursor: not-allowed;
+	}
+
+	.tag {
+		padding: 0 6px;
+		border-radius: 999px;
+		background: var(--surface-2);
+		color: var(--text-dim);
+	}
+
+	.toggle {
+		display: block;
+		margin-top: 10px;
 	}
 
 	.nasitem:hover {
@@ -526,7 +656,7 @@
 		.stage {
 			grid-template-columns: 1fr;
 		}
-		.nas {
+		.right {
 			position: static;
 		}
 	}

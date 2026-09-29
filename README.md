@@ -94,9 +94,17 @@ file where it lies rather than transferring it, so nothing goes through the
 browser and the 5 GB cap does not apply. This is the only route for a large
 video, and the transfer is a normal file copy you can resume or retry.
 
-The listing comes from the worker, which scans the folder each time it polls — so
-nothing appears there until the worker has run at least once, and the Upload step
-screen shows when it last looked.
+**Or leave it where it is on this PC.** Add any number of *local folders* in
+Settings; their videos are pooled into one *Locally* list above the NAS one. On
+confirm, the worker copies the chosen file into the NAS watch folder and
+publishes from that copy, so it needs a watch folder set and has to run on this
+PC (it does today). The original stays where it was.
+
+Both listings come from the worker, which scans the folders each time it polls —
+so nothing appears until the worker has run at least once, and the Upload step
+shows when it last looked. A file that has gone out in an upload before is
+hidden from both lists from then on; *Show N uploaded before* under a list
+brings those back.
 
 ## The worker
 
@@ -106,8 +114,8 @@ PocketBase, not in the app. It handles YouTube, TikTok and Instagram; each is
 set up separately below, and a platform that is not set up simply leaves its
 releases waiting in the queue, with a note in the worker's log.
 
-It also scans the watch folder and copies finished videos into their NAS
-destination, both of which happen regardless of which platforms a job is bound
+It also scans the watch folder and the local folders, copies local picks into
+the watch folder, and copies finished videos into their NAS destination, both of which happen regardless of which platforms a job is bound
 for.
 
 **vidIQ title scoring** runs through the worker too, because vidIQ has no REST
@@ -278,8 +286,8 @@ address counts as a different browser.
 
 **Upload** is a four-step flow: Upload, Details, Schedule, Review. flock opens
 on Analytics; Upload lives at `/upload`. The first step takes the video: drop
-one on the picker on the left, or drag one from the NAS list on the right onto
-a video box. By
+one on the picker on the left, or drag one from the *Locally* or *On the NAS*
+list on the right onto a video box. By
 default one video goes to every platform. Press a platform under *Own file* to
 give it a video of its own — the rest keep sharing one — and repeat for as many
 as need a different cut. The boxes follow the platform order from Settings.
@@ -344,8 +352,8 @@ the worker running. Below that it lists what is currently stored on the NAS,
 which is where you check that an upload actually landed.
 
 **Settings** has four parts. *Storage and defaults* holds the NAS folders a
-finished video is copied into (the filled circle marks the default) and shows this
-browser's device name. *Templates* holds reusable blocks of text: on the upload
+finished video is copied into (the filled circle marks the default), the NAS watch
+folder, the local folders listed under *Locally*, and this browser's device name. *Templates* holds reusable blocks of text: on the upload
 screen they appear under the details, and typing a template's name in braces —
 `{outro}` — swaps it in as you write. *Other* holds the compliance switch and any
 extra time zones for the calendar's second clock.

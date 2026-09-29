@@ -130,6 +130,10 @@ export interface UploadJob {
 	 * only the reference, which is what lifts the 5 GiB file-field cap.
 	 */
 	source_path: string;
+	/** Picked from a local folder and not yet copied to the NAS by the worker. */
+	source_local?: boolean;
+	/** Where a local pick was copied from, once the worker has imported it. */
+	source_origin?: string;
 	video_name: string;
 	video_size: number;
 	video_duration: number;
@@ -186,6 +190,12 @@ export interface GeneralSettings {
 	 */
 	watchFolder: string;
 	/**
+	 * Folders on the worker's own machine (today the dev PC) whose videos are
+	 * listed under "Locally", all pooled into one list. A pick from one is
+	 * copied into the NAS watch folder by the worker before anything publishes.
+	 */
+	localFolders: LocalFolder[];
+	/**
 	 * Renders YouTube's brand features the way its API branding guidelines
 	 * require: the official mark in official colours, and a clickable logo
 	 * linking back to YouTube wherever the API has a presence.
@@ -204,8 +214,18 @@ export interface GeneralSettings {
 	timeZones: TimeZoneChoice[];
 }
 
+export interface LocalFolder {
+	id: string;
+	path: string;
+}
+
 /** One video sitting in the watch folder, as the worker last saw it. */
 export interface WatchFile {
+	/**
+	 * Set on files from the local folders. They are not on the NAS yet, so the
+	 * job is written for the worker to import first.
+	 */
+	local?: boolean;
 	name: string;
 	size: number;
 	modified: string;
@@ -231,6 +251,30 @@ export interface WatchIndex {
 	scannedAt: string;
 	files: WatchFile[];
 	error?: string;
+}
+
+/**
+ * The worker's listing of every local folder, pooled, written to
+ * `app_settings` under `local_index` — the same arrangement as the watch index.
+ */
+export interface LocalIndex {
+	scannedAt: string;
+	/** One entry per configured folder, with the reason it could not be read. */
+	folders: { folder: string; error?: string }[];
+	files: WatchFile[];
+}
+
+/**
+ * A video that has gone out in an upload, remembered so the file lists can
+ * stop offering it. Kept apart from `upload_jobs` because a job can be
+ * deleted to free the NAS, and that must not bring the file back.
+ */
+export interface UsedSource {
+	/** Absolute path as the worker lists it; absent for a browser upload. */
+	path?: string;
+	name: string;
+	size: number;
+	at: string;
 }
 
 /** One of the channel's playlists, as the worker last listed them. */

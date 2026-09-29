@@ -91,7 +91,7 @@
 				<h4>Watch folder</h4>
 				<p>
 					A folder on the NAS you can drop videos into instead of uploading them through the
-					browser. The compose screen lists what is in it, and picking one references the file
+					browser. The upload step lists what is in it under <em>On the NAS</em>, and picking one references the file
 					where it lies rather than transferring it — which is the only route for a video above the
 					5 GB upload limit.
 				</p>
@@ -108,8 +108,67 @@
 		/>
 		<p class="hint">
 			The worker scans this folder and publishes the listing; the browser cannot read a filesystem
-			itself. Nothing appears on the compose screen until the worker has run at least once.
+			itself. Nothing appears on the upload step until the worker has run at least once.
 		</p>
+	</section>
+
+	<section>
+		<div class="subhead">
+			<div>
+				<h4>Local folders</h4>
+				<p>
+					Folders on the machine the worker runs on — today this PC — whose videos are listed
+					together under <em>Locally</em> on the upload step. A video picked from one is copied into
+					the watch folder above by the worker before anything is published, so the upload no longer
+					depends on this machine afterwards.
+				</p>
+			</div>
+			<button class="btn sm" onclick={() => general.addLocalFolder()}>Add folder</button>
+		</div>
+
+		{#if value.localFolders.length === 0}
+			<p class="empty">
+				No local folders yet. Add one — for example <code>D:\Renders</code> — to list its videos on
+				the upload step.
+			</p>
+		{:else}
+			<ul>
+				{#each value.localFolders as folder (folder.id)}
+					<li>
+						<input
+							class="input path-input"
+							value={folder.path}
+							oninput={(e) => general.setLocalFolder(folder.id, e.currentTarget.value)}
+							placeholder="Folder on the worker's machine"
+							autocomplete="off"
+							spellcheck="false"
+						/>
+						<button
+							class="del"
+							onclick={() => general.removeLocalFolder(folder.id)}
+							aria-label="Remove folder"
+						>
+							<svg viewBox="0 0 16 16" width="13" height="13"
+								><path
+									d="M3 4.5h10M6.5 4.5V3.2h3v1.3M4.4 4.5l.5 8h6.2l.5-8"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="1.4"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/></svg
+							>
+						</button>
+					</li>
+				{/each}
+			</ul>
+			{#if !value.watchFolder.trim()}
+				<p class="hint warn">
+					Set a watch folder above too: local videos are copied into it, and cannot be uploaded
+					without one.
+				</p>
+			{/if}
+		{/if}
 	</section>
 
 	<section>
@@ -245,6 +304,16 @@
 	.fields .input {
 		padding: 7px 10px;
 		font-size: 12.5px;
+	}
+
+	li > .path-input {
+		flex: 1;
+		min-width: 0;
+		padding: 7px 10px;
+	}
+
+	.hint.warn {
+		color: var(--warn);
 	}
 
 	.path-input {

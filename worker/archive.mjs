@@ -39,30 +39,22 @@ async function freeName(dir, filename) {
 }
 
 /**
- * Streams one job's video into its destination folder.
+ * Streams `source` ({ stream, size }) into `dir` under a free version of
+ * `wanted`, creating the folder if it has to.
  *
  * Writes to a .part file and renames on completion, so an interrupted copy
  * cannot leave something that looks like a finished video behind.
  */
-export async function copyToDestination({ job, pb, log }) {
-	const configured = (job.destination_path || '').trim();
-	if (!configured) return { skipped: 'no destination set' };
-	// Resolved so a destination typed as a UNC path on Windows still works once
-	// the worker is running in a container on the NAS.
-	const dir = await resolveFolder(configured);
-
-	// mkdir -p rather than requiring the folder to exist: a destination the user
+export async function copyInto({ source, dir, wanted, log }) {
+	// mkdir -p rather than requiring the folder to exist: a folder the user
 	// typed into Settings has never been checked by anything until now.
 	await mkdir(dir, { recursive: true }).catch((err) => {
-		throw new Error(`Destination is not reachable: ${dir} (${err.code || err.message})`);
+		throw new Error(`Folder is not reachable: ${dir} (${err.code || err.message})`);
 	});
 
-	const wanted = job.video_name || job.video;
 	const filename = await freeName(dir, wanted);
 	const target = join(dir, filename);
 	const partial = `${target}.part`;
-
-	const source = await pb.openVideo(job);
 	log(`copying ${filename} (${(source.size / 1024 / 1024).toFixed(1)} MB) -> ${dir}`);
 
 	try {
@@ -82,4 +74,15 @@ export async function copyToDestination({ job, pb, log }) {
 
 	await rename(partial, target);
 	return { path: target, bytes: written.size, renamed: filename !== wanted };
+}
+
+/** Files one job's video into its destination folder. */
+export async function copyToDestination({ job, pb, log }) {
+	const configured = (job.destination_path || '').trim();
+	if (!configured) return { skipped: 'no destination set' };
+	// Resolved so a destination typed as a UNC path on Windows still works once
+	// the worker is running in a container on the NAS.
+	const dir = await resolveFolder(configured);
+	const source = await pb.openVideo(job);
+	return copyInto({ source, dir, wanted: job.video_name || job.video, log });
 }

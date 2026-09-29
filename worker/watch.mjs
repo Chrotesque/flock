@@ -27,21 +27,23 @@ const VIDEO_EXTENSIONS = new Set([
 	'.ts'
 ]);
 
-export async function scanWatchFolder(configured) {
-	const folder = await resolveFolder(configured);
-	if (!folder) return null;
-
-	const index = { folder, scannedAt: new Date().toISOString(), files: [] };
+/**
+ * The videos in one folder, newest first, or the reason it could not be read.
+ * `label` names the folder in errors, since the resolved path may not be what
+ * the user typed.
+ */
+async function scanFolder(folder, label) {
+	const out = { folder, files: [] };
 
 	let entries;
 	try {
 		entries = await readdir(folder, { withFileTypes: true });
 	} catch (err) {
-		index.error =
+		out.error =
 			err.code === 'ENOENT'
-				? `Watch folder not found: ${configured}`
-				: `Cannot read the watch folder: ${err.code || err.message}`;
-		return index;
+				? `Folder not found: ${label}`
+				: `Cannot read ${label}: ${err.code || err.message}`;
+		return out;
 	}
 
 	for (const entry of entries) {
@@ -56,7 +58,7 @@ export async function scanWatchFolder(configured) {
 			// half-written. Size alone cannot prove it is finished, but zero bytes
 			// definitely is not.
 			if (info.size === 0) continue;
-			index.files.push({
+			out.files.push({
 				name: entry.name,
 				size: info.size,
 				modified: info.mtime.toISOString(),
@@ -67,6 +69,34 @@ export async function scanWatchFolder(configured) {
 		}
 	}
 
-	index.files.sort((a, b) => b.modified.localeCompare(a.modified));
-	return index;
+	out.files.sort((a, b) => b.modified.localeCompare(a.modified));
+	return out;
+}
+
+export async function scanWatchFolder(configured) {
+	const folder = await resolveFolder(configured);
+	if (!folder) return null;
+	const scan = await scanFolder(folder, `the watch folder ${configured}`);
+	return { ...scan, scannedAt: new Date().toISOString() };
+}
+
+/**
+ * Every local folder pooled into one list, newest first. A folder listed twice,
+ * or two folders sharing a file, never offer the same file twice.
+ */
+export async function scanLocalFolders(configured) {
+	const folders = [];
+	const files = new Map();
+	for (const entry of configured) {
+		const typed = (entry || '').trim();
+		if (!typed) continue;
+		const scan = await scanFolder(await resolveFolder(typed), typed);
+		folders.push(scan.error ? { folder: typed, error: scan.error } : { folder: typed });
+		for (const file of scan.files) files.set(file.path, file);
+	}
+	return {
+		scannedAt: new Date().toISOString(),
+		folders,
+		files: [...files.values()].sort((a, b) => b.modified.localeCompare(a.modified))
+	};
 }

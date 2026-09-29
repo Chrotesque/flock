@@ -68,6 +68,12 @@ const collections = [
 			// the bytes are left on the NAS and only referenced, which is what
 			// makes a video larger than the file field's 5 GiB cap possible.
 			{ type: 'text', name: 'source_path', max: 1000 },
+			// A file picked from a local folder on the worker's machine. The
+			// worker first copies it into the NAS watch folder, then points
+			// source_path there, clears this and keeps the old path in
+			// source_origin. Nothing publishes from the job while this is set.
+			{ type: 'bool', name: 'source_local' },
+			{ type: 'text', name: 'source_origin', max: 1000 },
 			{ type: 'text', name: 'video_name', max: 500 },
 			// Where on the NAS this video should end up. Recorded per job rather
 			// than read from settings at publish time, so changing the configured

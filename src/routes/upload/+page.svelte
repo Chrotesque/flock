@@ -9,7 +9,7 @@
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { buildPlan } from '$lib/plan';
-	import { createJob, rememberTags } from '$lib/repo';
+	import { createJob, rememberTags, rememberUsedSources } from '$lib/repo';
 	import { formatBytes } from '$lib/format';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { PLATFORMS } from '$lib/platforms';
@@ -94,7 +94,9 @@
 	 */
 	let queued = $state<VideoSlot[]>([]);
 	/** The video being sent right now, for the progress line. */
-	let sending = $state<{ name: string; size: number; transfer: boolean } | null>(null);
+	let sending = $state<{ name: string; size: number; transfer: boolean; local: boolean } | null>(
+		null
+	);
 
 	async function confirm() {
 		if (!armed) {
@@ -131,7 +133,8 @@
 				sending = {
 					name: file?.name ?? nasFile?.name ?? '',
 					size: file?.size ?? nasFile?.size ?? 0,
-					transfer: Boolean(file)
+					transfer: Boolean(file),
+					local: Boolean(nasFile?.local)
 				};
 				await createJob(
 					{
@@ -155,6 +158,12 @@
 				);
 				sent += size;
 				queued = [...queued, group.slot];
+				// So the file lists stop offering it; see loadUsedSources.
+				rememberUsedSources([
+					file
+						? { name: file.name, size: file.size }
+						: { path: nasFile!.path, name: nasFile!.name, size: nasFile!.size }
+				]);
 			}
 			sending = null;
 			// Remembered from the plan rather than the draft, so what is stored is
@@ -402,6 +411,11 @@
 						<p>
 							Sending <strong>{sending.name}</strong>
 							({formatBytes(sending.size)}) to the NAS — keep this tab open until it finishes.
+						</p>
+					{:else if sending?.local}
+						<p>
+							Queueing <strong>{sending.name}</strong>
+							({formatBytes(sending.size)}) — the worker copies it from the local folder to the NAS.
 						</p>
 					{:else if sending}
 						<!-- A file picked off the NAS is already there; only the job rows are

@@ -6,6 +6,8 @@ import type {
 	OptionValues,
 	PlatformId,
 	WatchIndex,
+	LocalIndex,
+	UsedSource,
 	PlaylistIndex,
 	PlatformScheduling,
 	PlatformSettings,
@@ -202,7 +204,7 @@ export interface CreateJobInput {
 	 * how a video larger than the file field's 5 GiB cap gets published.
 	 */
 	file: File | null;
-	source: { path: string; name: string; size: number } | null;
+	source: { path: string; name: string; size: number; local?: boolean } | null;
 	/** Optional custom thumbnail. Only YouTube does anything with it. */
 	thumbnail: File | null;
 	duration: number;
@@ -242,6 +244,9 @@ export async function createJob(
 		// Nothing to transfer — the video is already on the NAS. The progress
 		// callback still has to reach 1, or the confirm screen sits at 0%.
 		form.set('source_path', input.source.path);
+		// A local-folder pick is not on the NAS yet: the worker copies it into
+		// the watch folder and repoints source_path before anything uses it.
+		form.set('source_local', input.source.local ? 'true' : 'false');
 		form.set('video_name', input.source.name);
 		form.set('video_size', String(input.source.size));
 	}
@@ -264,7 +269,7 @@ export async function createJob(
 	logAction(
 		'upload',
 		`Uploaded "${input.title || 'untitled'}"`,
-		`${sourceName}${input.source ? ' (from the watch folder)' : ''} → ${input.targets.length} ` +
+		`${sourceName}${input.source ? (input.source.local ? ' (from a local folder)' : ' (from the watch folder)') : ''} → ${input.targets.length} ` +
 			`platform(s): ${input.targets.map((t) => t.platform).join(', ')}`
 	);
 
@@ -284,6 +289,85 @@ export async function loadWatchIndex(): Promise<WatchIndex | null> {
 	const index = await getSetting<WatchIndex | null>('watch_index', empty);
 	if (!index || !Array.isArray(index.files)) return null;
 	return index;
+}
+
+/** The worker's pooled listing of the local folders; same arrangement as the watch index. */
+export async function loadLocalIndex(): Promise<LocalIndex | null> {
+	const empty: LocalIndex | null = null;
+	const index = await getSetting<LocalIndex | null>('local_index', empty);
+	if (!index || !Array.isArray(index.files)) return null;
+	return { ...index, folders: Array.isArray(index.folders) ? index.folders : [] };
+}
+
+/**
+ * What the file lists should stop offering: every source that has gone out.
+ *
+ * Two sources, unioned. `used_sources` is written at each confirmation and
+ * survives a job being deleted to free the NAS; the jobs themselves cover
+ * everything uploaded before that list existed, and the NAS copy of a local
+ * pick, whose path is only known once the worker has imported it.
+ *
+ * A file matches by path, or — for one that went through the browser and so
+ * has no path — by name and size together.
+ */
+export interface UsedIndex {
+	paths: Set<string>;
+	keys: Set<string>;
+}
+
+export function usedKey(name: string, size: number): string {
+	return `${name.toLowerCase()}|${size}`;
+}
+
+export function isUsed(used: UsedIndex, file: { path: string; name: string; size: number }): boolean {
+	return used.paths.has(file.path) || used.keys.has(usedKey(file.name, file.size));
+}
+
+export async function loadUsedSources(): Promise<UsedIndex> {
+	const used: UsedIndex = { paths: new Set(), keys: new Set() };
+	const remembered = await getSetting<UsedSource[]>('used_sources', []);
+	for (const entry of Array.isArray(remembered) ? remembered : []) {
+		if (entry?.path) used.paths.add(entry.path);
+		if (entry?.name && entry.size) used.keys.add(usedKey(entry.name, entry.size));
+	}
+	try {
+		const jobs = await pb.collection('upload_jobs').getFullList({
+			fields: 'source_path,source_origin,video_name,video_size'
+		});
+		for (const job of jobs) {
+			if (job.source_path) used.paths.add(job.source_path);
+			if (job.source_origin) used.paths.add(job.source_origin);
+			if (job.video_name && job.video_size) used.keys.add(usedKey(job.video_name, job.video_size));
+		}
+	} catch {
+		// The remembered list alone still hides most of what went out.
+	}
+	return used;
+}
+
+/** Most recent first; old entries fall off so the row stays a sensible size. */
+const USED_CAP = 2000;
+
+/**
+ * Records sources as gone out. Fire-and-forget like `rememberTags`: the
+ * upload has already succeeded, and a failed write only means the file is
+ * offered again.
+ */
+export function rememberUsedSources(entries: Omit<UsedSource, 'at'>[]): void {
+	if (entries.length === 0) return;
+	void (async () => {
+		try {
+			const current = await getSetting<UsedSource[]>('used_sources', []);
+			const at = new Date().toISOString();
+			const next = [
+				...entries.map((entry) => ({ ...entry, at })),
+				...(Array.isArray(current) ? current : [])
+			].slice(0, USED_CAP);
+			await setSetting('used_sources', next);
+		} catch {
+			// Nothing to do — the upload has already succeeded.
+		}
+	})();
 }
 
 /** The channel's playlists, as the worker last listed them. */
