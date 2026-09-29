@@ -1,11 +1,39 @@
 <script lang="ts">
 	import { general } from '$lib/stores/general.svelte';
 	import DeviceInfo from './DeviceInfo.svelte';
+	import { requestFolderPick } from '$lib/repo';
 
 	// App-wide settings. Anything that is not tied to one platform lands here,
 	// which for now means only where finished videos go on the NAS — release
 	// timing moved to the individual platforms.
 	let value = $derived(general.value);
+
+	/*
+	 * Local watch folders are chosen, never typed: the worker opens the Windows
+	 * folder dialog on its own desktop and sends the path back. `picking` is
+	 * 'new' for an addition or the id of the row being changed.
+	 */
+	let picking = $state<string | null>(null);
+	let pickNote = $state('');
+
+	async function choose(replacing?: string) {
+		picking = replacing ?? 'new';
+		pickNote = '';
+		try {
+			const path = await requestFolderPick({
+				onWaiting: () =>
+					(pickNote = 'Waiting for the worker to open the dialog — is it running on this PC?')
+			});
+			pickNote = '';
+			if (!path) return;
+			if (replacing) general.setLocalFolder(replacing, path);
+			else general.addLocalFolder(path);
+		} catch (err) {
+			pickNote = err instanceof Error ? err.message : String(err);
+		} finally {
+			picking = null;
+		}
+	}
 </script>
 
 <div class="general">
@@ -115,7 +143,7 @@
 	<section>
 		<div class="subhead">
 			<div>
-				<h4>Local folders</h4>
+				<h4>Local Watch folders</h4>
 				<p>
 					Folders on the machine the worker runs on — today this PC — whose videos are listed
 					together under <em>Locally</em> on the upload step. A video picked from one is copied into
@@ -123,26 +151,32 @@
 					depends on this machine afterwards.
 				</p>
 			</div>
-			<button class="btn sm" onclick={() => general.addLocalFolder()}>Add folder</button>
+			<button class="btn sm" onclick={() => choose()} disabled={picking !== null}>
+				{picking === 'new' ? 'Waiting…' : 'Add folder…'}
+			</button>
 		</div>
+
+		{#if pickNote}
+			<p class="hint warn pick">{pickNote}</p>
+		{/if}
 
 		{#if value.localFolders.length === 0}
 			<p class="empty">
-				No local folders yet. Add one — for example <code>D:\Renders</code> — to list its videos on
-				the upload step.
+				No local watch folders yet. <em>Add folder…</em> opens the Windows folder dialog on the PC the
+				worker runs on.
 			</p>
 		{:else}
 			<ul>
 				{#each value.localFolders as folder (folder.id)}
 					<li>
-						<input
-							class="input path-input"
-							value={folder.path}
-							oninput={(e) => general.setLocalFolder(folder.id, e.currentTarget.value)}
-							placeholder="Folder on the worker's machine"
-							autocomplete="off"
-							spellcheck="false"
-						/>
+						<span class="path" title={folder.path}>{folder.path}</span>
+						<button
+							class="btn sm ghost"
+							onclick={() => choose(folder.id)}
+							disabled={picking !== null}
+						>
+							{picking === folder.id ? 'Waiting…' : 'Change…'}
+						</button>
 						<button
 							class="del"
 							onclick={() => general.removeLocalFolder(folder.id)}
@@ -306,10 +340,23 @@
 		font-size: 12.5px;
 	}
 
-	li > .path-input {
+	.path {
 		flex: 1;
 		min-width: 0;
-		padding: 7px 10px;
+		font-family: var(--mono);
+		font-size: 12px;
+		color: var(--text);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.ghost {
+		background: transparent;
+	}
+
+	.pick {
+		margin: 0 0 12px;
 	}
 
 	.hint.warn {

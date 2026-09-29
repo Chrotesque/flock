@@ -94,8 +94,9 @@ file where it lies rather than transferring it, so nothing goes through the
 browser and the 5 GB cap does not apply. This is the only route for a large
 video, and the transfer is a normal file copy you can resume or retry.
 
-**Or leave it where it is on this PC.** Add any number of *local folders* in
-Settings; their videos are pooled into one *Locally* list above the NAS one. On
+**Or leave it where it is on this PC.** Add any number of *local watch folders*
+in Settings — *Add folder…* opens the Windows folder dialog on the PC the worker
+runs on, so the worker has to be running; their videos are pooled into one *Locally* list above the NAS one. On
 confirm, the worker copies the chosen file into the NAS watch folder and
 publishes from that copy, so it needs a watch folder set and has to run on this
 PC (it does today). The original stays where it was.
@@ -353,7 +354,7 @@ which is where you check that an upload actually landed.
 
 **Settings** has four parts. *Storage and defaults* holds the NAS folders a
 finished video is copied into (the filled circle marks the default), the NAS watch
-folder, the local folders listed under *Locally*, and this browser's device name. *Templates* holds reusable blocks of text: on the upload
+folder, the local watch folders listed under *Locally*, and this browser's device name. *Templates* holds reusable blocks of text: on the upload
 screen they appear under the details, and typing a template's name in braces —
 `{outro}` — swaps it in as you write. *Other* holds the compliance switch and any
 extra time zones for the calendar's second clock.

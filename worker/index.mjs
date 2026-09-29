@@ -24,6 +24,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { resolveFolder } from './paths.mjs';
+import { pickFolder } from './folderpick.mjs';
 import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
 import { statsPass, unitsToday } from './stats.mjs';
 import { msUntil } from './upload.mjs';
@@ -318,6 +319,45 @@ async function scorePass(pb, config) {
 	}
 }
 
+/**
+ * Answers Settings' "Add folder…" by opening the Windows folder dialog here,
+ * on the worker's own desktop, and writing the chosen path back to
+ * `app_settings` / `folder_pick`. One request at a time; it rides on the
+ * scoring tick because somebody is waiting on it just the same.
+ *
+ * A request left pending while the worker was off is not honoured when it
+ * starts: a dialog springing up minutes after anyone asked for it would only
+ * confuse.
+ */
+let picking = false;
+const PICK_MAX_AGE_MS = 2 * 60_000;
+
+async function folderPickPass(pb) {
+	if (picking || dry) return;
+	const row = await pb.getSetting('folder_pick');
+	const ask = row?.value;
+	if (!ask || ask.status !== 'pending' || !ask.id) return;
+	if (Date.now() - new Date(ask.requestedAt).getTime() > PICK_MAX_AGE_MS) {
+		await pb.setSetting('folder_pick', { ...ask, status: 'expired' });
+		return;
+	}
+
+	picking = true;
+	try {
+		await pb.setSetting('folder_pick', { ...ask, status: 'open' });
+		log('folder dialog opened for Settings');
+		const path = await pickFolder();
+		await pb.setSetting('folder_pick', { ...ask, status: path ? 'done' : 'cancelled', path: path ?? '' });
+		log(path ? `folder chosen: ${path}` : 'folder dialog cancelled');
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		await pb.setSetting('folder_pick', { ...ask, status: 'failed', error: message.slice(0, 1000) });
+		log(`folder dialog failed: ${message}`);
+	} finally {
+		picking = false;
+	}
+}
+
 const noticed = new Map();
 
 /**
@@ -542,6 +582,7 @@ async function main() {
 	// one.
 	setInterval(() => {
 		void scorePass(pb, config).catch((err) => log(`score pass failed: ${err.message}`));
+		void folderPickPass(pb).catch((err) => log(`folder pick failed: ${err.message}`));
 	}, Math.max(1, config.scoreSeconds) * 1000);
 
 	// The hold-and-fire platforms, on their own tighter tick — see slotPass.

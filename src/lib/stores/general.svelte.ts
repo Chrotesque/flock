@@ -244,8 +244,12 @@ class GeneralStore {
 		this.#queueLog();
 	}
 
-	addLocalFolder() {
-		this.value.localFolders = [...this.value.localFolders, { id: newId(), path: '' }];
+	/** Adds a chosen folder; one already listed (case-insensitively) is left as it is. */
+	addLocalFolder(path: string) {
+		const clean = path.trim();
+		if (!clean) return;
+		if (this.value.localFolders.some((f) => f.path.trim().toLowerCase() === clean.toLowerCase())) return;
+		this.value.localFolders = [...this.value.localFolders, { id: newId(), path: clean }];
 		this.queueSave();
 		this.#queueLog();
 	}

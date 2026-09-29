@@ -2,6 +2,7 @@ import { pb, PB_URL } from './pb';
 import { PLATFORMS, PLATFORM_IDS, isPlatformId } from './platforms';
 import { DEFAULT_SCHEDULING } from './types';
 import { logAction, assertDeviceNamed } from './log';
+import { newId } from './id';
 import type {
 	OptionValues,
 	PlatformId,
@@ -368,6 +369,55 @@ export function rememberUsedSources(entries: Omit<UsedSource, 'at'>[]): void {
 			// Nothing to do — the upload has already succeeded.
 		}
 	})();
+}
+
+/**
+ * Asks the worker to open the Windows folder dialog on its machine and waits
+ * for the answer. A browser cannot produce a real path itself, and the local
+ * folders are the worker's to read anyway. Resolves to the chosen path, or
+ * null if the dialog was cancelled; throws if the worker failed, or never
+ * answered within `giveUpMs` — `onWaiting` fires once the ask has sat
+ * unanswered long enough to suggest the worker is not running.
+ */
+export async function requestFolderPick(
+	opts: { signal?: AbortSignal; onWaiting?: () => void; giveUpMs?: number } = {}
+): Promise<string | null> {
+	const id = newId();
+	await setSetting('folder_pick', { id, status: 'pending', requestedAt: new Date().toISOString() });
+
+	const started = Date.now();
+	let warned = false;
+	for (;;) {
+		await new Promise((resolve) => setTimeout(resolve, 700));
+		if (opts.signal?.aborted) {
+			await setSetting('folder_pick', { id, status: 'cancelled' }).catch(() => {});
+			return null;
+		}
+		const answer = await getSetting<{
+			id?: string;
+			status?: string;
+			path?: string;
+			error?: string;
+		} | null>('folder_pick', null);
+		if (answer?.id !== id) throw new Error('Another folder request replaced this one.');
+		if (answer.status === 'done') return answer.path || null;
+		if (answer.status === 'cancelled') return null;
+		if (answer.status === 'failed') throw new Error(answer.error || 'The folder dialog failed.');
+		if (answer.status === 'expired') throw new Error('The worker picked the request up too late.');
+		// Pending means nobody has taken it; open means the dialog is up, and
+		// may stay up as long as it takes.
+		if (answer.status === 'pending') {
+			const waited = Date.now() - started;
+			if (!warned && waited > 8000) {
+				warned = true;
+				opts.onWaiting?.();
+			}
+			if (waited > (opts.giveUpMs ?? 90_000)) {
+				await setSetting('folder_pick', { id, status: 'cancelled' }).catch(() => {});
+				throw new Error('The worker did not answer — it has to be running on the PC with the folders.');
+			}
+		}
+	}
 }
 
 /** The channel's playlists, as the worker last listed them. */
