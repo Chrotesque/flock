@@ -28,6 +28,7 @@ import { pickFolder } from './folderpick.mjs';
 import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
 import { statsPass, unitsToday } from './stats.mjs';
 import { msUntil } from './upload.mjs';
+import { startPreviewServer } from './preview.mjs';
 
 /**
  * One entry per platform that can actually publish, and how it is timed.
@@ -187,6 +188,17 @@ async function copyPass(pb) {
 }
 
 /**
+ * The latest listing of each list, by path: what the preview server may
+ * stream. Replaced wholesale on every scan, so a file that has left a folder
+ * stops being playable at the same moment it stops being listed.
+ */
+const listed = { nas: new Map(), local: new Map() };
+
+function byPath(files) {
+	return new Map(files.map((file) => [file.path, file]));
+}
+
+/**
  * Publishes what is sitting in the watch folder so the compose screen can list
  * it. The folder is configured in the SPA, so it is read back out of settings
  * each pass rather than duplicated into the worker's own config.
@@ -194,14 +206,19 @@ async function copyPass(pb) {
 async function watchPass(pb) {
 	const row = await pb.getSetting('general');
 	const folder = row?.value?.watchFolder?.trim() ?? '';
+	// Swapped in once the scan is done, not emptied before it: a slow share
+	// would otherwise cut off every preview for as long as the scan takes.
+	let nas = new Map();
 	if (folder) {
 		const index = await scanWatchFolder(folder);
 		if (index) {
 			await pb.setSetting('watch_index', index);
+			if (!index.error) nas = byPath(index.files);
 			if (index.error) log(`watch folder: ${index.error}`);
 			else log(`watch folder: ${index.files.length} video(s) in ${index.folder}`);
 		}
 	}
+	listed.nas = nas;
 
 	// The local folders, pooled into one listing for the "Locally" box. Read
 	// from this machine's disks, which is why they only work while the worker
@@ -209,12 +226,15 @@ async function watchPass(pb) {
 	const locals = Array.isArray(row?.value?.localFolders)
 		? row.value.localFolders.map((f) => f?.path ?? '').filter((p) => p.trim())
 		: [];
+	let local = new Map();
 	if (locals.length > 0) {
 		const index = await scanLocalFolders(locals);
 		await pb.setSetting('local_index', index);
+		local = byPath(index.files);
 		for (const entry of index.folders) if (entry.error) log(`local folder: ${entry.error}`);
 		log(`local folders: ${index.files.length} video(s) in ${locals.length} folder(s)`);
 	}
+	listed.local = local;
 }
 
 /**
@@ -552,6 +572,25 @@ async function main() {
 		`polling every ${config.pollSeconds}s, slots every ${config.slotSeconds}s, ` +
 			`scoring every ${config.scoreSeconds}s — ctrl-c to stop`
 	);
+
+	// The Upload step's player — see preview.mjs. Only for a worker that stays
+	// up; the address is published where the page looks for it, and left there
+	// when the worker stops, so the page checks it answers before using it.
+	if (config.previewPort > 0) {
+		startPreviewServer({
+			port: config.previewPort,
+			lookup: (source, path) =>
+				source === 'nas' || source === 'local' ? (listed[source].get(path) ?? null) : null,
+			log,
+			onListening: (port) => {
+				const url = config.previewUrl || `http://127.0.0.1:${port}`;
+				log(`preview: listed videos play from ${url}`);
+				pb.setSetting('preview_server', { url, startedAt: new Date().toISOString() }).catch((err) =>
+					log(`preview: could not publish its address: ${err.message}`)
+				);
+			}
+		});
+	}
 
 	// Same reason as scoring: an upload can hold the main loop for many
 	// minutes, and the Analytics screen should not go stale for the duration.

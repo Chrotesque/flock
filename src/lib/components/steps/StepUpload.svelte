@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	import VideoPicker from '../VideoPicker.svelte';
+	import VideoPreview from '../VideoPreview.svelte';
 	import PlatformIcon from '../PlatformIcon.svelte';
 	import { PLATFORMS } from '$lib/platforms';
 	import { draft, type VideoSlot } from '$lib/stores/draft.svelte';
@@ -177,6 +178,22 @@
 
 	let nasList = $derived(listing(watchIndex?.files ?? [], 'nas'));
 	let localList = $derived(listing(localIndex?.files ?? [], 'local'));
+
+	/* ---- playing a listed file ----
+	 *
+	 * A right-click on either list plays the file in a dialog, so a take can be
+	 * told from the next before it is dragged anywhere. Neither folder is
+	 * readable from a browser, so the worker streams it — see VideoPreview.
+	 */
+
+	let playing = $state<{ file: WatchFile; source: Source } | null>(null);
+	let playerOpen = $state(false);
+
+	function play(event: MouseEvent, source: Source, file: WatchFile) {
+		event.preventDefault();
+		playing = { file, source };
+		playerOpen = true;
+	}
 </script>
 
 <div class="stage">
@@ -274,7 +291,7 @@
 		<section class="card files">
 			<header class="nashead">
 				<span class="label">Locally</span>
-				<span class="for">drag onto a video box</span>
+				<span class="for">drag onto a video box, right-click to play</span>
 			</header>
 
 			{#if !hasLocal}
@@ -310,7 +327,7 @@
 		<section class="card files">
 			<header class="nashead">
 				<span class="label">On the NAS</span>
-				<span class="for">drag onto a video box</span>
+				<span class="for">drag onto a video box, right-click to play</span>
 			</header>
 
 			{#if !general.value.watchFolder}
@@ -340,6 +357,8 @@
 	</div>
 </div>
 
+<VideoPreview bind:open={playerOpen} file={playing?.file ?? null} source={playing?.source ?? 'nas'} />
+
 {#snippet fileList(list: { shown: WatchFile[]; hidden: number }, source: Source, usable: boolean)}
 	{#if list.shown.length > 0}
 		<ul class="naslist">
@@ -354,8 +373,9 @@
 						class:locked={!usable}
 						draggable={usable}
 						role="listitem"
-						title={usable ? 'Drag onto a video box' : ''}
+						title={usable ? 'Drag onto a video box, right-click to play' : 'Right-click to play'}
 						ondragstart={(e) => onDragStart(e, source, file.path)}
+						oncontextmenu={(e) => play(e, source, file)}
 					>
 						<span class="nasname">{file.name}</span>
 						<span class="nasmeta">

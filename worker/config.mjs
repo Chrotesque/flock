@@ -73,6 +73,12 @@ export function loadConfig() {
 		// Scoring is answered on its own, much faster tick: a person is watching
 		// the button spin, where nobody is watching an upload queue.
 		scoreSeconds: Number(process.env.FLOCK_SCORE_SECONDS || file.scoreSeconds || 3),
+		// The Upload step plays listed videos from a loopback server of the
+		// worker's own, on this port; 0 turns it off. `previewUrl` is what the
+		// page is told to use instead of http://127.0.0.1:<port> — for when
+		// something like Tailscale Serve fronts the port.
+		previewPort: Number(process.env.FLOCK_PREVIEW_PORT ?? file.previewPort ?? 8790),
+		previewUrl: (process.env.FLOCK_PREVIEW_URL || file.previewUrl || '').replace(/\/+$/, ''),
 		vidiqKey: process.env.VIDIQ_API_KEY || file.vidiqKey || '',
 		// The stats pass. One videos.list covers fifty videos for one unit, so the
 		// interval alone sets the daily cost: 30s is 2,880 of the 10,000 units

@@ -4,6 +4,7 @@
   "slotSeconds": 15,
   "instagramLeadSeconds": 600,
   "scoreSeconds": 3,
+  "previewPort": 8790,
   "statsSeconds": 30,
   "statsVideos": 50,
   "statsBudget": 6000,

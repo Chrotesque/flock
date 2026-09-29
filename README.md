@@ -107,6 +107,10 @@ shows when it last looked. A file that has gone out in an upload before is
 hidden from both lists from then on; *Show N uploaded before* under a list
 brings those back.
 
+Right-click a file in either list to play it in the page. The worker streams it
+from the PC it runs on (port 8790, reachable from that PC only), so previews
+work while the worker is running and in a browser on the same PC.
+
 ## The worker
 
 Confirming an upload only queues it. A separate process does the publishing, and

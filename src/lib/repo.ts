@@ -8,6 +8,7 @@ import type {
 	PlatformId,
 	WatchIndex,
 	LocalIndex,
+	PreviewServer,
 	UsedSource,
 	PlaylistIndex,
 	PlatformScheduling,
@@ -298,6 +299,13 @@ export async function loadLocalIndex(): Promise<LocalIndex | null> {
 	const index = await getSetting<LocalIndex | null>('local_index', empty);
 	if (!index || !Array.isArray(index.files)) return null;
 	return { ...index, folders: Array.isArray(index.folders) ? index.folders : [] };
+}
+
+/** Where the worker last said it streams listed videos from, if it ever has. */
+export async function loadPreviewServer(): Promise<PreviewServer | null> {
+	const none: PreviewServer | null = null;
+	const server = await getSetting<PreviewServer | null>('preview_server', none);
+	return server && typeof server.url === 'string' && server.url ? server : null;
 }
 
 /**

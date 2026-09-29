@@ -265,6 +265,16 @@ export interface LocalIndex {
 }
 
 /**
+ * Where the worker streams listed videos from, written to `app_settings` under
+ * `preview_server` when its preview server starts. Nothing removes it when the
+ * worker stops, so the player asks the address before trusting it.
+ */
+export interface PreviewServer {
+	url: string;
+	startedAt: string;
+}
+
+/**
  * A video that has gone out in an upload, remembered so the file lists can
  * stop offering it. Kept apart from `upload_jobs` because a job can be
  * deleted to free the NAS, and that must not bring the file back.
