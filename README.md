@@ -396,8 +396,7 @@ screenshots, a how-it-works page, the privacy policy and the terms of service,
 plus the app icon as the site's favicon. Plain HTML and one stylesheet,
 uploaded by hand to a static host that can serve a file at its root, which is
 what TikTok's URL-prefix verification needs; edit here and upload the folder
-again. The screenshots are frames cut from the review recordings; replace the
-files in `site/img/` to update them.
+again. Replace the files in `site/img/` to update the screenshots.
 
 ## Where things live
 
