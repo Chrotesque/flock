@@ -114,7 +114,8 @@ brings those back.
 
 Right-click a file in either list to play it in the page. The worker streams it
 from the PC it runs on (port 8790, reachable from that PC only), so previews
-work while the worker is running and in a browser on the same PC.
+work while the worker is running and in a browser on the same PC. The Review
+step plays a file picked from either list the same way.
 
 ## The worker
 

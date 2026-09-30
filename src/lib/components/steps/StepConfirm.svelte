@@ -8,6 +8,8 @@
 	import { general } from '$lib/stores/general.svelte';
 	import { formatSchedule, formatBytes, formatDuration, firstLine } from '$lib/format';
 	import { portal } from '$lib/portal';
+	import { loadPreviewServer } from '$lib/repo';
+	import { previewCheckUrl, previewVideoUrl, previewProblem, type PreviewSource } from '$lib/preview';
 	import { accounts } from '$lib/stores/accounts.svelte';
 	import {
 		tiktokProblems,
@@ -117,6 +119,49 @@
 		return () => URL.revokeObjectURL(url);
 	});
 
+	/**
+	 * A NAS or local pick has no bytes in the browser, but the worker streams
+	 * exactly those files for the Upload step's right-click player, so the
+	 * review asks it the same way: check first, then point the player there.
+	 * When the worker is not running or has not listed the file, the stage
+	 * says why; the release goes out either way.
+	 */
+	let streamUrl = $state('');
+	let streamNote = $state('');
+
+	$effect(() => {
+		const picked = shownFile?.file ? null : (shownFile?.nasFile ?? null);
+		streamUrl = '';
+		streamNote = '';
+		if (!picked) return;
+		const source: PreviewSource = picked.local ? 'local' : 'nas';
+		const path = picked.path;
+		const controller = new AbortController();
+		void (async () => {
+			const server = await loadPreviewServer();
+			if (controller.signal.aborted) return;
+			if (!server) {
+				streamNote =
+					'The worker is not running, so there is nothing to play here. The file still goes out.';
+				return;
+			}
+			try {
+				const res = await fetch(previewCheckUrl(server.url, source, path), {
+					cache: 'no-store',
+					signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])
+				});
+				const answer: { ok?: boolean; error?: string } = await res.json();
+				if (controller.signal.aborted) return;
+				if (answer.ok) streamUrl = previewVideoUrl(server.url, source, path);
+				else streamNote = previewProblem(answer.error);
+			} catch {
+				if (controller.signal.aborted) return;
+				streamNote = `The worker is not answering at ${server.url}, so there is nothing to play here. The file still goes out.`;
+			}
+		})();
+		return () => controller.abort();
+	});
+
 	$effect(() => {
 		const image = draft.thumbnail;
 		if (!image) {
@@ -203,11 +248,11 @@
 		</div>
 
 		{#if shownTab === 'video'}
-			{#if posterUrl}
+			{#if posterUrl || streamUrl}
 				<!-- svelte-ignore a11y_media_has_caption -->
 				<video
 					class="poster"
-					src={posterUrl}
+					src={posterUrl || streamUrl}
 					controls
 					playsinline
 					preload="metadata"
@@ -223,10 +268,8 @@
 							stroke-linejoin="round"
 						/>
 					</svg>
-					{#if shownFile?.nasFile?.local}
-						<p>Picked from a local folder, so there is nothing to play here.</p>
-					{:else if shownFile?.nasFile}
-						<p>Picked off the NAS, so there is nothing to play here.</p>
+					{#if shownFile?.nasFile}
+						<p>{streamNote || 'Asking the worker for the file…'}</p>
 					{/if}
 				</div>
 			{/if}
