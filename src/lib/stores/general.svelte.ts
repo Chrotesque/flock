@@ -12,7 +12,7 @@ export const DEFAULT_GENERAL: GeneralSettings = {
 	defaultDestinationId: null,
 	watchFolder: '',
 	localFolders: [],
-	complianceBranding: false,
+	complianceBranding: true,
 	timeZones: []
 };
 
@@ -54,7 +54,7 @@ class GeneralStore {
 							(f): f is LocalFolder => Boolean(f) && typeof f.id === 'string' && typeof f.path === 'string'
 						)
 					: [],
-				complianceBranding: stored.complianceBranding ?? false,
+				complianceBranding: stored.complianceBranding ?? true,
 				timeZones: Array.isArray(stored.timeZones) ? stored.timeZones : []
 			};
 			this.#loaded = true;
