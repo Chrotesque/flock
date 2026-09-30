@@ -17,6 +17,7 @@
     <nav class="main">
       <a href="index.html">Overview</a>
       <a href="how-it-works.html">How it works</a>
+      <a href="https://github.com/Chrotesque/flock">GitHub</a>
       <a href="privacy-policy.html" aria-current="page">Privacy Policy</a>
       <a href="terms-of-service.html">Terms of Service</a>
     </nav>
@@ -25,38 +26,41 @@
 
 <main class="wrap doc">
   <h1>Privacy Policy</h1>
-  <p class="updated">flock — last updated 08-09-2026</p>
+  <p class="updated">flock — last updated 30-09-2026</p>
 
   <h2>What flock is</h2>
-  <p>flock is a private tool built by one person for their own use. It schedules
-  and publishes videos to that person's own YouTube channel and TikTok account.
-  It runs only on the author's own hardware and is reachable only on the
-  author's private network.</p>
+  <p>flock is open-source software, published under the MIT license, that you
+  install and run on your own hardware. It schedules and publishes videos to the
+  YouTube channel and TikTok account its operator connects. The author operates
+  no service, hosts nothing for anyone, and receives no data from any
+  installation. This policy describes what the software does with data on the
+  machines it runs on; for the author's own installation it is also the
+  operator's policy.</p>
 
   <h2>Use of YouTube API Services</h2>
-  <p>flock uses YouTube API Services to upload videos to the author's channel.
-  That use is subject to the
+  <p>flock uses YouTube API Services to upload videos to the channel its
+  operator connects. That use is subject to the
   <a href="https://www.youtube.com/t/terms">YouTube Terms of Service</a>.
   Google's handling of data is described in the
   <a href="http://www.google.com/policies/privacy">Google Privacy Policy</a>.</p>
 
   <h2>Use of TikTok's APIs</h2>
   <p>flock uses TikTok's Login Kit and Content Posting API to publish videos to
-  its author's own TikTok account. Content published this way is subject to
+  the TikTok account its operator connects. Content published this way is subject to
   <a href="https://www.tiktok.com/legal/page/eea/terms-of-service/en">TikTok's Terms of Service</a>
   and <a href="https://www.tiktok.com/community-guidelines/en/">Community Guidelines</a>.
   TikTok's own handling of data is described in
   <a href="https://www.tiktok.com/legal/page/eea/privacy-policy/en">TikTok's Privacy Policy</a>.</p>
   <p>flock uses what it receives from TikTok for one purpose: posting the videos
-  its author chooses, at the time its author chooses. It does not read the
+  its operator chooses, at the time its operator chooses. It does not read the
   account's videos, followers, statistics or messages, and it presents no
   TikTok content anywhere.</p>
 
   <h2>What flock accesses</h2>
   <p>From Google, flock asks for:</p>
   <ul>
-    <li><code>youtube.upload</code> — uploading videos to the author's channel</li>
-    <li><code>youtube.readonly</code> — reading the channel's own videos and their public counters</li>
+    <li><code>youtube.upload</code> — uploading videos to the connected channel</li>
+    <li><code>youtube.readonly</code> — reading that channel's own videos and their public counters</li>
     <li><code>youtube</code> — only if enabled, for adding a video to a playlist</li>
   </ul>
   <p>From TikTok, flock asks for:</p>
@@ -73,7 +77,7 @@
   or account, any other user, or any viewer.</p>
 
   <h2>What flock stores, and where</h2>
-  <p>Everything flock stores stays on the author's own equipment:</p>
+  <p>Everything flock stores stays on the operator's own equipment:</p>
   <ul>
     <li>the video files, or references to where they are kept</li>
     <li>the text written for each video: titles, descriptions, tags and publishing settings</li>
@@ -85,12 +89,11 @@
     <li>TikTok's access and refresh tokens, in the same configuration file</li>
     <li>the most recent creator information read from TikTok, as described above</li>
   </ul>
-  <p>Data leaves the author's machines only to publish a video, to Google or to
-  TikTok, and only while that is happening. Between the author's own machines it
-  travels over a private network.</p>
+  <p>Data leaves the operator's machines only to publish a video, to Google or to
+  TikTok, and only while that is happening. Nothing is sent to the author.</p>
 
   <h2>How long it is kept</h2>
-  <p>Everything flock stores stays until its author deletes it. Nothing expires
+  <p>Everything flock stores stays until its operator deletes it. Nothing expires
   on its own, nothing is copied anywhere else, and the tokens are kept until they
   are revoked or replaced.</p>
 
@@ -100,10 +103,11 @@
 
   <h2>Sharing</h2>
   <p>flock shares no data with anyone. There are no third parties, no service
-  providers, no advertising, and no sale or transfer of data.</p>
+  providers, no advertising, and no sale or transfer of data. The author receives
+  nothing from any installation.</p>
 
   <h2>Deleting data</h2>
-  <p>The author can remove anything flock holds by:</p>
+  <p>The operator can remove anything flock holds by:</p>
   <ul>
     <li>deleting the entry in flock</li>
     <li>deleting flock's data directory</li>
@@ -128,10 +132,11 @@
 <footer class="bottom">
   <div class="wrap">
     <img src="icon.png" alt="">
-    <span>flock, version 0.8.2. Contact: ayarea2@gmail.com</span>
+    <span>flock, version 0.8.9. Contact: ayarea2@gmail.com</span>
     <nav>
       <a href="index.html">Overview</a>
       <a href="how-it-works.html">How it works</a>
+      <a href="https://github.com/Chrotesque/flock">GitHub</a>
       <a href="terms-of-service.html">Terms of Service</a>
     </nav>
   </div>

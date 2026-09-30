@@ -18,3 +18,6 @@ scripts/.pb-creds.json
 
 # Google OAuth client secret + refresh token - never commit
 worker/.worker-config.json
+
+# The zipped site folder made for uploading to the static host
+site/*.zip

@@ -12,8 +12,8 @@ import type { TikTokCreator } from './types';
 
 const creator: TikTokCreator = {
 	fetchedAt: '2026-09-08T10:00:00.000Z',
-	username: 'chrotesque',
-	nickname: 'Chrotesque',
+	username: 'creator',
+	nickname: 'Creator',
 	avatar: '',
 	privacyOptions: ['FOLLOWER_OF_CREATOR', 'MUTUAL_FOLLOW_FRIENDS', 'SELF_ONLY'],
 	commentDisabled: false,
@@ -72,7 +72,7 @@ describe('tiktokProblems', () => {
 
 	it('refuses an audience the account does not offer, naming the ones it does', () => {
 		expect(tiktokProblems({ privacy: 'Public' }, creator, 30)).toEqual([
-			'TikTok does not offer "Public" on @chrotesque; it offers Followers, Friends, Private.'
+			'TikTok does not offer "Public" on @creator; it offers Followers, Friends, Private.'
 		]);
 	});
 
@@ -94,7 +94,7 @@ describe('tiktokProblems', () => {
 
 	it("checks the duration against the account's limit when both are known", () => {
 		expect(tiktokProblems({ privacy: 'Friends' }, creator, 4000)).toEqual([
-			'The video runs 4000s; @chrotesque may post up to 3600s.'
+			'The video runs 4000s; @creator may post up to 3600s.'
 		]);
 		expect(tiktokProblems({ privacy: 'Friends' }, creator, 0)).toEqual([]);
 	});

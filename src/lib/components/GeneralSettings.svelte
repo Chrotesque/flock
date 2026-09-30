@@ -130,7 +130,7 @@
 			class="input"
 			value={value.watchFolder}
 			oninput={(e) => general.setWatchFolder(e.currentTarget.value)}
-			placeholder="\\nas\shared\flock-incoming"
+			placeholder="\\nas\videos\incoming"
 			autocomplete="off"
 			spellcheck="false"
 		/>

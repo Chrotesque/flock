@@ -18,7 +18,7 @@ describe('previewVideoUrl', () => {
 
 	it('carries characters that mean something in a URL through intact', () => {
 		for (const path of [
-			'\\\\nas\\shared\\flock-incoming\\a&b=c.mp4',
+			'\\\\nas\\videos\\incoming\\a&b=c.mp4',
 			'/mnt/user/shared/50% off #1?.mp4',
 			'D:\\Echo\\clip+plus.mp4',
 			'D:\\Echo\\ünïcödé ✓.mp4'

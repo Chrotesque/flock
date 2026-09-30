@@ -18,6 +18,7 @@
     <nav class="main">
       <a href="index.html">Overview</a>
       <a href="how-it-works.html" aria-current="page">How it works</a>
+      <a href="https://github.com/Chrotesque/flock">GitHub</a>
       <a href="privacy-policy.html">Privacy Policy</a>
       <a href="terms-of-service.html">Terms of Service</a>
     </nav>
@@ -35,15 +36,16 @@
         Nothing can be uploaded or changed until it has one.</p>
       </li>
       <li>
+        <h3>Pick the video</h3>
+        <p>Drop a file on the picker, or pick one out of a watch folder on the NAS. A NAS file is referenced where
+        it lies rather than transferred through the browser, which is how a large video is published. One video
+        goes to every platform unless a platform is given a cut of its own.</p>
+      </li>
+      <li>
         <h3>Compose, one platform at a time</h3>
         <p>Tick the platforms this video goes to. Each has its own text: a title and a description for YouTube,
         a caption for TikTok and Instagram. Templates drop reusable blocks in, and adaptation rules, replace this
         with that on this platform, run exactly once, at confirmation.</p>
-      </li>
-      <li>
-        <h3>Choose the video</h3>
-        <p>Drop a file on the picker, or pick one out of a watch folder on the NAS. A NAS file is referenced where
-        it lies rather than transferred through the browser, which is how a large video is published.</p>
       </li>
       <li>
         <h3>Make the per-post choices</h3>
@@ -57,7 +59,7 @@
         release pattern, or release immediately.</p>
       </li>
       <li>
-        <h3>Confirm</h3>
+        <h3>Review and confirm</h3>
         <p>The video plays beside what each platform will receive and when. The confirm button has to be pressed
         twice within two seconds. Nothing has left the machine before this point; on confirming, the video is
         stored and one release per platform is queued.</p>
@@ -72,10 +74,10 @@
       </li>
       <li>
         <h3>Connecting an account</h3>
-        <p>Each platform is connected once, from the terminal, through that platform's own consent page: Google's
-        for YouTube, TikTok's Login Kit for TikTok, Instagram Login for Instagram. The resulting tokens are kept in
-        a configuration file on the author's hardware and refreshed by the worker. Revoking access on the platform
-        ends it.</p>
+        <p>Each platform is connected once, from the terminal, through that platform's own consent page, using a
+        developer app you register there: a Google Cloud OAuth client for YouTube, a TikTok for Developers app for
+        TikTok, a Meta app for Instagram. The keys and the resulting tokens are kept in the worker's configuration
+        file on your hardware and refreshed by the worker. Revoking access on the platform ends it.</p>
       </li>
     </ol>
   </section>
@@ -113,18 +115,22 @@
     <ul class="checks">
       <li><strong>Node 22 or newer</strong> and pnpm, for the worker and the build.</li>
       <li><strong>A PocketBase instance</strong> of its own, which stores the videos and the queue and serves the app.</li>
-      <li><strong>A machine that stays on</strong>, a NAS here, for the database and the worker.</li>
-      <li><strong>A browser on the same network.</strong> flock is not reachable from the public internet.</li>
+      <li><strong>A machine that stays on</strong>, a NAS for example, for the database and the worker.</li>
+      <li><strong>A browser on the same network.</strong> flock is not meant to be reachable from the public internet.</li>
     </ul>
+    <p>The code and the full setup walkthrough, portal by portal, are in the
+    <a href="https://github.com/Chrotesque/flock#readme">README on GitHub</a>. flock is released under the
+    MIT license.</p>
   </section>
 </main>
 
 <footer class="bottom">
   <div class="wrap">
     <img src="icon.png" alt="">
-    <span>flock, version 0.8.2. Contact: ayarea2@gmail.com</span>
+    <span>flock, version 0.8.9. Contact: ayarea2@gmail.com</span>
     <nav>
       <a href="index.html">Overview</a>
+      <a href="https://github.com/Chrotesque/flock">GitHub</a>
       <a href="privacy-policy.html">Privacy Policy</a>
       <a href="terms-of-service.html">Terms of Service</a>
     </nav>

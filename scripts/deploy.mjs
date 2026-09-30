@@ -1,13 +1,13 @@
-// Builds flock and mirrors it into its own PocketBase's pb_public.
+// Builds flock and mirrors it into its PocketBase's pb_public.
 //
 //   pnpm deploy        build and sync
 //   pnpm deploy:dry    show what would change, touch nothing
 //
-// The destination is flock's instance (pocketbase_flock), never the one cortex,
-// tandem and tanking share. The guard below refuses any path that is not a
-// pb_public inside a pocketbase_flock directory, because robocopy /MIR deletes
-// whatever it finds in the destination that is not in the source — pointed at
-// the wrong pb_public that erases the sibling apps.
+// The destination comes from FLOCK_DEPLOY_DEST, in the environment or in .env,
+// and must be a pb_public directory. The guard below refuses anything else,
+// because robocopy /MIR deletes whatever it finds in the destination that is
+// not in the source — pointed at a pb_public that other apps share, it erases
+// them.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -17,8 +17,13 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = join(root, 'build');
 
-const DEFAULT_DEST = '\\\\nas\\root\\mnt\\user\\appdata\\pocketbase_flock\\pb_public';
-const dest = process.env.FLOCK_DEPLOY_DEST || DEFAULT_DEST;
+// .env already holds the dev URL, so the deploy destination lives there too.
+try {
+	process.loadEnvFile(join(root, '.env'));
+} catch {
+	// No .env: the environment alone has to say where to deploy.
+}
+const dest = process.env.FLOCK_DEPLOY_DEST || '';
 const dry = process.argv.includes('--dry');
 
 function fail(message) {
@@ -26,13 +31,22 @@ function fail(message) {
 	process.exit(1);
 }
 
+if (!dest) {
+	fail(
+		'FLOCK_DEPLOY_DEST is not set.\n\n' +
+			"Put the pb_public directory of flock's PocketBase in .env, for example\n" +
+			'  FLOCK_DEPLOY_DEST=\\\\nas\\appdata\\pocketbase_flock\\pb_public\n' +
+			'or set it in the environment.'
+	);
+}
+
 const normalised = dest.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '');
-if (!/\/pocketbase_flock\/pb_public$/.test(normalised)) {
+if (!/\/pb_public$/.test(normalised)) {
 	fail(
 		`Refusing to deploy to:\n  ${dest}\n\n` +
-			'The destination must be a pb_public inside a pocketbase_flock directory.\n' +
-			'This guard exists because the sync mirrors — aimed at the shared\n' +
-			"PocketBase's pb_public it would delete the other apps living there."
+			'The destination must be a pb_public directory.\n' +
+			'This guard exists because the sync mirrors — aimed at a pb_public that\n' +
+			'other apps share, it would delete them.'
 	);
 }
 
@@ -51,7 +65,7 @@ if (!existsSync(join(source, 'index.html'))) {
 }
 
 if (!existsSync(dest)) {
-	fail(`Destination is not reachable:\n  ${dest}\n\nIs the NAS share mounted?`);
+	fail(`Destination is not reachable:\n  ${dest}\n\nIs the share mounted?`);
 }
 
 // Fail on permissions before robocopy does, since its exit codes are opaque.
@@ -63,7 +77,7 @@ try {
 	fail(
 		`Cannot write to:\n  ${dest}\n\n${err.message}\n\n` +
 			'The share is mounted read-only for this account. Grant write access to\n' +
-			'the appdata share, or copy build/ across by hand.'
+			'it, or copy build/ across by hand.'
 	);
 }
 

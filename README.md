@@ -27,10 +27,18 @@ for every platform.
 ## Requirements
 
 - Node 22+ and pnpm
-- A PocketBase instance reachable from this machine (flock uses its own, on port
-  8091 — not the one cortex uses)
+- A PocketBase instance of its own, reachable from this machine and from the
+  machine the worker runs on (port 8091 in the examples below)
 
 ## Setup
+
+Get the code and its dependencies:
+
+```bash
+git clone https://github.com/Chrotesque/flock.git
+cd flock
+pnpm install
+```
 
 Put the PocketBase superuser details in `scripts/.pb-creds.json`:
 
@@ -44,16 +52,10 @@ Create the collections (safe to re-run):
 pnpm setup-pb
 ```
 
-Point the app at the same instance in `.env`:
+Point the app at the same instance in `.env` (start from `.env.example`):
 
 ```bash
 PUBLIC_POCKETBASE_URL=http://<host>:8091
-```
-
-Then:
-
-```bash
-pnpm install
 ```
 
 ## Running
@@ -71,16 +73,19 @@ To publish it:
 pnpm deploy
 ```
 
-That builds and mirrors `build/` into flock's PocketBase at
-`\\nas\appdata\pocketbase_flock\pb_public`, which needs write access to that
-share. `pnpm deploy:dry` shows what would change without touching anything.
-PocketBase serves the files straight from disk, so there is no restart.
+That builds and mirrors `build/` into the `pb_public` directory named by
+`FLOCK_DEPLOY_DEST` in `.env`, which needs write access to it. The sync deletes
+whatever is in that directory and not in the build, so point it only at a
+`pb_public` that belongs to flock. `pnpm deploy:dry` shows what would change
+without touching anything. PocketBase serves the files straight from disk, so
+there is no restart.
 
-To show flock inside Nexus (https://nexus.example.com), copy
-`pb_hooks/strip_xframe.pb.js` into flock's PocketBase directory's `pb_hooks/`,
-which the container has to mount at `/pb/pb_hooks`, and restart PocketBase. Only
-Nexus and its local dev server may embed flock; every other site is refused.
-Deploy does not do this for you.
+To show flock inside another site of yours in an iframe, copy
+`pb_hooks/strip_xframe.pb.js` into the PocketBase directory's `pb_hooks/` (a
+container has to mount it at `/pb/pb_hooks`), set `FLOCK_FRAME_ANCESTORS` in
+PocketBase's environment to that site's origin, and restart PocketBase. Without
+the variable only flock itself and a local dev server may embed it. Deploy does
+not do this for you.
 
 ## Two ways to give flock a video
 
@@ -216,16 +221,18 @@ being relied on is not the documented one.
 
 TikTok cannot hold a video for a release time, so the worker holds it: at the
 slot it uploads the file, and TikTok posts it the moment its processing
-finishes, usually a minute or two later. It needs an app on the
+finishes, usually a minute or two later. It needs an app of your own on the
 [TikTok for Developers](https://developers.tiktok.com) portal:
 
 1. Create an app, add the **Login Kit** and **Content Posting API** products,
-   and tick the `user.info.basic` and `video.publish` scopes.
-2. Under Login Kit, register a **redirect URI**. TikTok wants one on a domain
-   you have verified there; the page behind it need not exist. Put exactly
-   that URI in the worker config as `tiktok.redirectUri`.
+   turn on **Direct Post**, and tick the `user.info.basic` and `video.publish`
+   scopes.
+2. Under Login Kit, on the **Desktop** tab, register the redirect URI
+   `http://localhost:8765/tiktok` and put exactly that in the worker config as
+   `tiktok.redirectUri`. The consent script listens there.
 3. Copy the app's **client key** and **client secret** into the config as
-   `tiktok.clientKey` and `tiktok.clientSecret`.
+   `tiktok.clientKey` and `tiktok.clientSecret`. While the app is unreviewed,
+   use its **sandbox** and add your account as a target user.
 
 Then authorise once, signed in to the TikTok account that will post:
 
@@ -237,10 +244,13 @@ If the redirect URI is not on this machine, the browser lands on a page that
 may not load; paste its full address into the terminal and the code is read
 out of it. The worker keeps the refresh token current on its own.
 
-Until TikTok has audited the app, it can only post to a TikTok account set to
+Until TikTok has reviewed the app, it can only post to a TikTok account set to
 **private**, whose audiences are Friends, Followers and Private — the *Post to
 TikTok* box on the compose screen offers exactly what the account offers, so a
-public choice cannot be made for it. Videos must be MP4, MOV or WebM and under
+public choice cannot be made for it. Posting to a public account needs TikTok's
+app review and then its Content Posting API approval, both applied for on the
+app's page with a website and a demo video; TikTok does not approve apps it
+considers personal or internal use. Videos must be MP4, MOV or WebM and under
 4 GB; the cover is the frame at the *Cover frame* time, not the thumbnail image.
 
 ```bash
@@ -379,13 +389,14 @@ defaults and rules are kept.
 
 ## The website
 
-`site/` is the public website the Google and TikTok developer portals link to:
-an overview with screenshots, a how-it-works page, the privacy policy and the
-terms of service, plus the app icon as the site's favicon. Plain HTML and one
-stylesheet, uploaded by hand to a static host that can serve a file at its
-root, which is what TikTok's URL-prefix verification needs; edit here and
-upload the folder again. The screenshots are frames cut from the review
-recordings; replace the files in `site/img/` to update them.
+`site/` is the source of [flock's website](https://flock-scheduler.netlify.app),
+which the Google and TikTok developer portals link to: an overview with
+screenshots, a how-it-works page, the privacy policy and the terms of service,
+plus the app icon as the site's favicon. Plain HTML and one stylesheet,
+uploaded by hand to a static host that can serve a file at its root, which is
+what TikTok's URL-prefix verification needs; edit here and upload the folder
+again. The screenshots are frames cut from the review recordings; replace the
+files in `site/img/` to update them.
 
 ## Where things live
 

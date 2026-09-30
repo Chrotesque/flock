@@ -17,7 +17,7 @@
   "tiktok": {
     "clientKey": "PASTE-CLIENT-KEY",
     "clientSecret": "PASTE-CLIENT-SECRET",
-    "redirectUri": "https://example.com/flock/tiktok",
+    "redirectUri": "http://localhost:8765/tiktok",
     "refreshToken": ""
   },
   "instagram": {
