@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { base } from '$app/paths';
 	import ThumbnailPicker from '../ThumbnailPicker.svelte';
+	import { imageFits, isImagePlatform } from '$lib/coverimage';
 	import FoldBox from '../FoldBox.svelte';
 	import PlatformIcon from '../PlatformIcon.svelte';
 	import Checkbox from '../Checkbox.svelte';
@@ -86,11 +87,15 @@
 	let youtubeActive = $derived(draft.activePlatforms.includes('youtube'));
 	let tiktokActive = $derived(draft.activePlatforms.includes('tiktok'));
 	let instagramActive = $derived(draft.activePlatforms.includes('instagram'));
-	// The paid-promotion box serves both of these. The thumbnail does not:
-	// TikTok takes a cover *time* (its `coverFrame` option), not an image, and
-	// Instagram has a cover box of its own below, since a reel cover is
-	// portrait where a YouTube thumbnail is landscape.
+	// The paid-promotion box serves both of these. The image box serves YouTube
+	// and Instagram instead — one picture, a thumbnail to one and a reel cover
+	// to the other — while TikTok takes a cover *time* (its `coverFrame`
+	// option), not an image.
 	let mediaActive = $derived(youtubeActive || tiktokActive);
+	let imagePlatforms = $derived(draft.activePlatforms.filter(isImagePlatform));
+	let showImageBox = $derived(
+		imagePlatforms.length > 0 && (composing === 'youtube' || composing === 'instagram')
+	);
 	// The boxes follow the pill being composed, like the playlist box: the
 	// paid-promotion box shows only for a platform it serves, the TikTok box
 	// only for TikTok. Both still apply to every platform they serve.
@@ -1195,26 +1200,15 @@
 			</FoldBox>
 		{/if}
 
-		{#if youtubeActive && composing === 'youtube'}
+		{#if showImageBox}
 			<FoldBox
-				label="Thumbnail"
-				platforms={['youtube']}
-				done={Boolean(draft.thumbnail)}
+				label="Thumbnail / Cover"
+				platforms={imagePlatforms}
+				done={imagePlatforms.every((p) => imageFits(draft.thumbnail, p))}
 				summary={draft.thumbnail?.name ?? ''}
 			>
-				<ThumbnailPicker bind:file={draft.thumbnail} />
-			</FoldBox>
-		{/if}
-
-		{#if instagramActive && composing === 'instagram'}
-			<FoldBox
-				label="Cover"
-				platforms={['instagram']}
-				done={Boolean(draft.cover)}
-				summary={draft.cover?.name ?? ''}
-			>
-				<ThumbnailPicker kind="cover" bind:file={draft.cover} />
-				{#if accounts.instagram && !accounts.instagram.coverBase}
+				<ThumbnailPicker platforms={imagePlatforms} bind:file={draft.thumbnail} />
+				{#if instagramActive && accounts.instagram && !accounts.instagram.coverBase}
 					<p class="ttnote ttfaint">
 						The worker has no public address for covers yet, so Instagram will use the frame at the
 						cover time instead. The README says how to give it one.

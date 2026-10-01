@@ -102,18 +102,13 @@ class DraftStore {
 	split = $state<PlatformId[]>(loadSplit());
 
 	/**
-	 * A custom thumbnail for YouTube. Optional, and YouTube-only: TikTok takes
-	 * a frame of the video, and Instagram has its own cover below, because the
-	 * two images are different shapes (16:9 against 9:16).
+	 * The custom image: YouTube's thumbnail and Instagram's reel cover, picked
+	 * once and sent to each that takes it (see coverimage.ts). Optional;
+	 * without one each platform uses a frame. TikTok takes a cover *time*, not
+	 * an image. Instagram fetches its copy from a public address, so the
+	 * worker has to be set up to serve one — see the README.
 	 */
 	thumbnail = $state<File | null>(null);
-
-	/**
-	 * A custom cover for the Instagram reel. Optional; without one Instagram
-	 * uses the frame at the cover time. Instagram fetches a cover from a public
-	 * address, so the worker has to be set up to serve one — see the README.
-	 */
-	cover = $state<File | null>(null);
 
 	slotFor(platform: PlatformId): VideoSlot {
 		return this.split.includes(platform) ? platform : 'all';
@@ -369,7 +364,6 @@ class DraftStore {
 		// The split is kept on purpose — it is the arrangement, not this video.
 		this.videos = emptyVideos();
 		this.thumbnail = null;
-		this.cover = null;
 		this.selected = allSelected(true);
 		this.overrides = {};
 		this.schedule = {};

@@ -1,37 +1,53 @@
 <script lang="ts">
 	import { formatBytes } from '$lib/format';
+	import { PLATFORMS } from '$lib/platforms';
+	import {
+		IMAGE_LIMITS,
+		acceptedTypes,
+		imageProblem,
+		largestAccepted,
+		type ImagePlatform
+	} from '$lib/coverimage';
 
-	// Each platform's own cap, refused here while somebody is looking rather
-	// than at publish time when nobody is: YouTube takes a 2 MB thumbnail in
-	// any of four formats, Instagram an 8 MB JPEG or PNG cover, portrait.
-	const LIMITS = {
-		thumbnail: {
-			bytes: 2 * 1024 * 1024,
-			types: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-			formats: 'JPEG, PNG, GIF or WebP',
-			platform: 'YouTube',
-			hint: 'Optional. 1280×720 works best; up to 2 MB. Without one, YouTube picks a frame.'
-		},
-		cover: {
-			bytes: 8 * 1024 * 1024,
-			types: ['image/jpeg', 'image/png'],
-			formats: 'JPEG or PNG',
-			platform: 'Instagram',
-			hint: 'Optional. 1080×1920 (9:16) works best; up to 8 MB. Without one, Instagram uses the frame at the cover time.'
-		}
-	} as const;
-
+	// One image for every platform that takes one — YouTube's thumbnail and
+	// Instagram's reel cover. The dialog accepts what any of them takes; what
+	// one of them would refuse is said under the preview, per platform, while
+	// somebody is looking rather than at publish time when nobody is.
 	let {
 		file = $bindable<File | null>(null),
-		kind = 'thumbnail'
-	}: { file?: File | null; kind?: 'thumbnail' | 'cover' } = $props();
+		platforms
+	}: { file?: File | null; platforms: ImagePlatform[] } = $props();
 
-	let limit = $derived(LIMITS[kind]);
+	let types = $derived(acceptedTypes(platforms));
+	let largest = $derived(largestAccepted(platforms));
+
+	let hint = $derived.by(() => {
+		const shape = platforms.includes('youtube')
+			? platforms.includes('instagram')
+				? '1280×720 for a video, 1080×1920 for a Short or reel'
+				: '1280×720 works best'
+			: '1080×1920 (9:16) works best';
+		const caps = platforms
+			.map((p) => `${PLATFORMS[p].label} ${IMAGE_LIMITS[p].bytes / 1024 / 1024} MB`)
+			.join(', ');
+		return `Optional. ${shape}; up to ${caps}. Without one, each platform picks a frame.`;
+	});
+
+	/** Platforms this image will not go to, and why. */
+	let misfits = $derived(
+		file
+			? platforms
+					.map((p) => ({ platform: p, why: imageProblem(file!, p) }))
+					.filter((m) => m.why !== '')
+			: []
+	);
 
 	let dragging = $state(false);
 	let input: HTMLInputElement;
 	let previewUrl = $state('');
 	let problem = $state('');
+	// Shown the way it is shaped: a Short's or reel's cover is portrait.
+	let portrait = $state(false);
 
 	$effect(() => {
 		if (!file) {
@@ -46,12 +62,12 @@
 	function accept(list: FileList | null) {
 		const next = list?.[0];
 		if (!next) return;
-		if (!(limit.types as readonly string[]).includes(next.type)) {
-			problem = `${limit.formats} only.`;
+		if (!types.includes(next.type)) {
+			problem = `${platforms.map((p) => IMAGE_LIMITS[p].formats).sort((a, b) => b.length - a.length)[0]} only.`;
 			return;
 		}
-		if (next.size > limit.bytes) {
-			problem = `${formatBytes(next.size)} is over ${limit.platform}'s ${formatBytes(limit.bytes)} limit.`;
+		if (next.size > largest) {
+			problem = `${formatBytes(next.size)} is over the ${formatBytes(largest)} limit.`;
 			return;
 		}
 		problem = '';
@@ -85,14 +101,23 @@
 	<input
 		bind:this={input}
 		type="file"
-		accept={limit.types.join(',')}
+		accept={types.join(',')}
 		hidden
 		onchange={(e) => accept(e.currentTarget.files)}
 	/>
 
 	{#if file}
 		<div class="chosen">
-			<img class="preview" class:portrait={kind === 'cover'} src={previewUrl} alt="" />
+			<img
+				class="preview"
+				class:portrait
+				src={previewUrl}
+				alt=""
+				onload={(e) => {
+					const img = e.currentTarget as HTMLImageElement;
+					portrait = img.naturalHeight > img.naturalWidth;
+				}}
+			/>
 			<div class="meta">
 				<p class="name" title={file.name}>{file.name}</p>
 				<p class="sub">{formatBytes(file.size)}</p>
@@ -116,7 +141,7 @@
 				<circle cx="15.5" cy="9" r="1.3" fill="currentColor" />
 			</svg>
 			<p class="lead">Drop an image here, or click to browse</p>
-			<p class="sub">{limit.hint}</p>
+			<p class="sub">{hint}</p>
 		</div>
 	{/if}
 </div>
@@ -124,6 +149,12 @@
 {#if problem}
 	<p class="problem">{problem}</p>
 {/if}
+{#each misfits as misfit (misfit.platform)}
+	<p class="problem warn">
+		Not sent to {PLATFORMS[misfit.platform].label}: {misfit.why}. It {IMAGE_LIMITS[misfit.platform]
+			.fallback} instead.
+	</p>
+{/each}
 
 <style>
 	.picker {
@@ -234,5 +265,9 @@
 		margin: 6px 2px 0;
 		font-size: 12px;
 		color: var(--danger);
+	}
+
+	.problem.warn {
+		color: var(--warn);
 	}
 </style>

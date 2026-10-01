@@ -11,6 +11,7 @@
 	import { buildPlan } from '$lib/plan';
 	import { createJob, rememberTags, rememberUsedSources } from '$lib/repo';
 	import { formatBytes } from '$lib/format';
+	import { imageFits } from '$lib/coverimage';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { PLATFORMS } from '$lib/platforms';
 
@@ -142,8 +143,16 @@
 						description: label.description,
 						file,
 						source: nasFile,
-						thumbnail: group.platforms.includes('youtube') ? draft.thumbnail : null,
-						cover: group.platforms.includes('instagram') ? draft.cover : null,
+						// One image, sent to each platform it fits; the picker has
+						// already said which it does not.
+						thumbnail:
+							group.platforms.includes('youtube') && imageFits(draft.thumbnail, 'youtube')
+								? draft.thumbnail
+								: null,
+						cover:
+							group.platforms.includes('instagram') && imageFits(draft.thumbnail, 'instagram')
+								? draft.thumbnail
+								: null,
 						duration,
 						destination: general.defaultDestination,
 						targets: group.rows.map((row) => ({

@@ -11,6 +11,7 @@
 	import { loadPreviewServer } from '$lib/repo';
 	import { previewCheckUrl, previewVideoUrl, previewProblem, type PreviewSource } from '$lib/preview';
 	import { accounts } from '$lib/stores/accounts.svelte';
+	import { imageFits, isImagePlatform } from '$lib/coverimage';
 	import {
 		tiktokProblems,
 		readDisclosure,
@@ -85,7 +86,6 @@
 	// A still of the video itself, so the last screen before upload shows what is
 	// actually being sent rather than just its file name.
 	let thumbUrl = $state('');
-	let coverUrl = $state('');
 
 	/**
 	 * The videos going out, one per slot that still serves a row of the plan:
@@ -174,16 +174,6 @@
 		return () => URL.revokeObjectURL(url);
 	});
 
-	$effect(() => {
-		const image = draft.cover;
-		if (!image) {
-			coverUrl = '';
-			return;
-		}
-		const url = URL.createObjectURL(image);
-		coverUrl = url;
-		return () => URL.revokeObjectURL(url);
-	});
 
 	/**
 	 * `preload="metadata"` alone leaves some browsers on a blank first paint.
@@ -194,18 +184,24 @@
 		if (video.currentTime === 0) video.currentTime = 0.1;
 	}
 
-	// Which pane the stage shows: the video, or a platform's thumbnail at the
-	// same size, so the preview is actually judgeable. Falls back to the video
-	// if the platform whose tab was open drops out of the plan.
-	let tab = $state<'video' | PlatformId>('video');
-	let shownTab = $derived(
-		tab !== 'video' && !rows.some((row) => row.platform === tab) ? 'video' : tab
+	// Which pane the stage shows: the video, or the thumbnail at the same size,
+	// so the preview is actually judgeable. One image tab, not one per
+	// platform: YouTube's thumbnail and Instagram's cover are the same picture.
+	// TikTok takes a cover *time* (its `coverFrame` option), so it is not on
+	// the tab. Falls back to the video if neither platform is in the plan.
+	let tab = $state<'video' | 'image'>('video');
+	let imagePlatforms = $derived(
+		rows.map((row) => row.platform).filter(isImagePlatform)
 	);
-	let paneLabel = $derived(shownTab === 'video' ? '' : PLATFORMS[shownTab].label);
-	// YouTube takes a thumbnail and Instagram a cover; TikTok takes a cover
-	// *time* (its `coverFrame` option), so it gets no tab here.
-	let paneNoun = $derived(shownTab === 'instagram' ? 'cover' : 'thumbnail');
-	let stageImage = $derived(shownTab === 'instagram' ? coverUrl : thumbUrl);
+	let shownTab = $derived(tab === 'image' && imagePlatforms.length === 0 ? 'video' : tab);
+	// The platforms that will actually get the image, and those it does not fit.
+	let imageGoesTo = $derived(imagePlatforms.filter((p) => imageFits(draft.thumbnail, p)));
+	let imageMisses = $derived(
+		draft.thumbnail ? imagePlatforms.filter((p) => !imageFits(draft.thumbnail, p)) : []
+	);
+	let paneNoun = 'thumbnail';
+	let stageImage = $derived(shownTab === 'image' ? thumbUrl : '');
+	let portrait = $state(false);
 
 	// The thumbnail blown up to the whole window, for the last look before it
 	// goes out. Portalled to <body>: a transformed ancestor would otherwise pin
@@ -244,20 +240,20 @@
 					Video
 				</button>
 			{/each}
-			{#each rows as row (row.platform)}
-				{#if row.platform === 'youtube' || row.platform === 'instagram'}
-					<button
-						class="tab"
-						class:active={shownTab === row.platform}
-						role="tab"
-						aria-selected={shownTab === row.platform}
-						onclick={() => (tab = row.platform)}
-					>
-						<PlatformIcon platform={row.platform} size={14} />
-						{row.platform === 'instagram' ? 'Cover' : 'Thumbnail'}
-					</button>
-				{/if}
-			{/each}
+			{#if imagePlatforms.length > 0}
+				<button
+					class="tab"
+					class:active={shownTab === 'image'}
+					role="tab"
+					aria-selected={shownTab === 'image'}
+					onclick={() => (tab = 'image')}
+				>
+					{#each imagePlatforms as id (id)}
+						<PlatformIcon platform={id} size={14} />
+					{/each}
+					Thumbnail
+				</button>
+			{/if}
 		</div>
 
 		{#if shownTab === 'video'}
@@ -296,9 +292,13 @@
 				>
 					<img
 						class="poster"
-						class:portrait={shownTab === 'instagram'}
+						class:portrait
 						src={stageImage}
-						alt="{paneLabel} {paneNoun}"
+						alt="The {paneNoun}"
+						onload={(e) => {
+							const img = e.currentTarget as HTMLImageElement;
+							portrait = img.naturalHeight > img.naturalWidth;
+						}}
 					/>
 				</button>
 				<button
@@ -318,9 +318,16 @@
 					</svg>
 				</button>
 			</div>
-		{:else}
+			{#if imageMisses.length > 0}
+				<p class="imagenote">
+					Goes to {imageGoesTo.map((p) => PLATFORMS[p].label).join(' and ') || 'neither platform'};
+					{imageMisses.map((p) => PLATFORMS[p].label).join(' and ')} will pick a frame, because the image
+					is outside its limits.
+				</p>
+			{/if}
+		{:else if shownTab === 'image'}
 			<div class="poster empty">
-				<p>No {paneNoun} chosen. {paneLabel} will pick a frame.</p>
+				<p>No {paneNoun} chosen. Each platform will pick a frame.</p>
 			</div>
 		{/if}
 
@@ -634,7 +641,13 @@
 		max-width: 100%;
 	}
 
-	/* A reel cover is portrait: show the whole image rather than crop it to the stage. */
+	.imagenote {
+		margin: 8px 0 0;
+		font-size: 12px;
+		color: var(--warn);
+	}
+
+	/* A portrait image (a Short's or reel's cover): show it whole rather than crop it to the stage. */
 	.poster.portrait {
 		object-fit: contain;
 		background: #000;
