@@ -414,6 +414,15 @@ export interface LogEntry {
 	created: string;
 }
 
+/** One line of the worker's console, mirrored into `worker_log`. */
+export interface WorkerLine {
+	id: string;
+	message: string;
+	/** Random per worker start. */
+	run: string;
+	created: string;
+}
+
 /**
  * One item from YouTube's videos.list, with every part the owner can ask for.
  * Loosely typed on purpose: the screen shows whatever arrived, and Google adds

@@ -247,6 +247,29 @@ export function makeClient(baseUrl) {
 			});
 		},
 
+		/** One line of the worker's console, for the Log screen — see remotelog.mjs. */
+		async appendWorkerLog(row) {
+			return request('/api/collections/worker_log/records', {
+				method: 'POST',
+				body: JSON.stringify(row)
+			});
+		},
+
+		/** Deletes worker console lines written before `before`, a page at a time. */
+		async pruneWorkerLog(before) {
+			const filter = encodeURIComponent(`created < "${pbDate(before)}"`);
+			for (let round = 0; round < 50; round++) {
+				const res = await request(
+					`/api/collections/worker_log/records?perPage=200&fields=id&skipTotal=1&filter=${filter}`
+				);
+				const items = res.items ?? [];
+				for (const item of items) {
+					await request(`/api/collections/worker_log/records/${item.id}`, { method: 'DELETE' });
+				}
+				if (items.length < 200) return;
+			}
+		},
+
 		/**
 		 * Fire-and-forget, exactly like the SPA's logAction: a failed log write
 		 * must never take down the publish it describes. `device` is the machine

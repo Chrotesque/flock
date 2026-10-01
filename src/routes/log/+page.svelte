@@ -1,43 +1,72 @@
 <script lang="ts">
-	import { listLog, deviceName } from '$lib/log';
-	import type { LogCategory, LogEntry } from '$lib/types';
+	import { listLog, deviceName, listWorkerLog, subscribeWorkerLog } from '$lib/log';
+	import { toneOf, depthOf } from '$lib/workerlog';
+	import type { LogCategory, LogEntry, WorkerLine } from '$lib/types';
 
-	const CATEGORIES: { id: LogCategory | 'all'; label: string }[] = [
+	type Tab = LogCategory | 'all' | 'worker';
+
+	const CATEGORIES: { id: Tab; label: string }[] = [
 		{ id: 'all', label: 'Everything' },
 		{ id: 'upload', label: 'Uploads' },
 		{ id: 'calendar', label: 'Calendar' },
-		{ id: 'settings', label: 'Settings' }
+		{ id: 'settings', label: 'Settings' },
+		{ id: 'worker', label: 'Worker' }
 	];
+
+	/** Lines kept in memory while the page is open and realtime keeps adding. */
+	const WORKER_MAX = 3000;
 
 	let entries = $state<LogEntry[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
-	let category = $state<LogCategory | 'all'>('all');
+	let workerLines = $state<WorkerLine[]>([]);
+	let workerError = $state<string | null>(null);
+
+	let category = $state<Tab>('all');
 	let query = $state('');
 
 	async function load() {
 		loading = true;
 		error = null;
-		try {
-			entries = await listLog();
-		} catch (err) {
-			error = err instanceof Error ? err.message : String(err);
-		} finally {
-			loading = false;
-		}
+		workerError = null;
+		// Separate, so a PocketBase without worker_log yet still shows the log.
+		const [actions, worker] = await Promise.allSettled([listLog(), listWorkerLog()]);
+		if (actions.status === 'fulfilled') entries = actions.value;
+		else error = actions.reason instanceof Error ? actions.reason.message : String(actions.reason);
+		if (worker.status === 'fulfilled') workerLines = worker.value;
+		else
+			workerError = worker.reason instanceof Error ? worker.reason.message : String(worker.reason);
+		loading = false;
 	}
 
 	$effect(() => {
 		void load();
 	});
 
+	// Live: the worker's lines arrive as it prints them.
+	$effect(() =>
+		subscribeWorkerLog((line) => {
+			if (workerLines.some((l) => l.id === line.id)) return;
+			workerLines = [line, ...workerLines].slice(0, WORKER_MAX);
+		})
+	);
+
 	let counts = $derived({
 		all: entries.length,
 		upload: entries.filter((e) => e.category === 'upload').length,
 		calendar: entries.filter((e) => e.category === 'calendar').length,
-		settings: entries.filter((e) => e.category === 'settings').length
+		settings: entries.filter((e) => e.category === 'settings').length,
+		worker: workerLines.length
 	});
+
+	let visibleWorker = $derived.by(() => {
+		const needle = query.trim().toLowerCase();
+		if (!needle) return workerLines;
+		return workerLines.filter((line) => line.message.toLowerCase().includes(needle));
+	});
+
+	let workerDays = $derived(byDay(visibleWorker));
 
 	let visible = $derived.by(() => {
 		const needle = query.trim().toLowerCase();
@@ -52,10 +81,12 @@
 		});
 	});
 
+	let days = $derived(byDay(visible));
+
 	/** Grouped by calendar day, so a long list stays scannable. */
-	let days = $derived.by(() => {
-		const buckets: { key: string; label: string; rows: LogEntry[] }[] = [];
-		for (const entry of visible) {
+	function byDay<T extends { created: string }>(list: T[]) {
+		const buckets: { key: string; label: string; rows: T[] }[] = [];
+		for (const entry of list) {
 			const at = new Date(entry.created);
 			const key = at.toDateString();
 			const last = buckets[buckets.length - 1];
@@ -73,9 +104,9 @@
 				});
 		}
 		return buckets;
-	});
+	}
 
-	function timeOf(entry: LogEntry): string {
+	function timeOf(entry: { created: string }): string {
 		return new Date(entry.created).toLocaleTimeString(undefined, {
 			hour: '2-digit',
 			minute: '2-digit',
@@ -83,7 +114,7 @@
 		});
 	}
 
-	function dateOf(entry: LogEntry): string {
+	function dateOf(entry: { created: string }): string {
 		return new Date(entry.created).toLocaleDateString(undefined, {
 			year: 'numeric',
 			month: '2-digit',
@@ -97,7 +128,11 @@
 	<header class="head">
 		<div>
 			<h1>Log</h1>
-			<p>Every change made through flock, and which machine made it.</p>
+			<p>
+				{category === 'worker'
+					? 'What the worker printed, live, kept for 14 days.'
+					: 'Every change made through flock, and which machine made it.'}
+			</p>
 		</div>
 		<button class="btn sm" onclick={load} disabled={loading}>Refresh</button>
 	</header>
@@ -126,7 +161,7 @@
 				class="input"
 				type="search"
 				bind:value={query}
-				placeholder="Search actions, details, device…"
+				placeholder={category === 'worker' ? 'Search the worker’s lines…' : 'Search actions, details, device…'}
 			/>
 			{#if query}
 				<button class="clearq" onclick={() => (query = '')} aria-label="Clear search">×</button>
@@ -134,7 +169,44 @@
 		</div>
 	</div>
 
-	{#if error}
+	{#if category === 'worker'}
+		{#if workerError}
+			<p class="banner error">
+				Could not read the worker's log — {workerError}. If PocketBase has no
+				<code>worker_log</code> collection yet, run <code>pnpm setup-pb</code>.
+			</p>
+		{:else if loading && workerLines.length === 0}
+			<p class="banner">Loading…</p>
+		{:else if workerLines.length === 0}
+			<p class="banner">
+				Nothing from the worker yet. Its lines appear here as it prints them, from the first start
+				after this was added.
+			</p>
+		{:else if visibleWorker.length === 0}
+			<p class="banner">No lines match that search.</p>
+		{:else}
+			<div class="log">
+				{#each workerDays as day (day.key)}
+					<section class="day">
+						<h2>{day.label}</h2>
+						<ol class="console">
+							{#each day.rows as line (line.id)}
+								<li class={toneOf(line.message)} style:--depth={depthOf(line.message)}>
+									<span class="time">{timeOf(line)}</span>
+									<span class="msg">{line.message.trimStart()}</span>
+								</li>
+							{/each}
+						</ol>
+					</section>
+				{/each}
+			</div>
+
+			<p class="foot">
+				Showing {visibleWorker.length} of {workerLines.length} lines, newest first. A line the
+				worker repeats (the watch-folder count) is kept once an hour.
+			</p>
+		{/if}
+	{:else if error}
 		<p class="banner error">Could not reach PocketBase — {error}</p>
 	{:else if loading && entries.length === 0}
 		<p class="banner">Loading…</p>
@@ -450,6 +522,60 @@
 		background: var(--accent-grad);
 		border-color: transparent;
 		color: #fff;
+	}
+
+	/* The worker's console: one dense monospace line per print, steps of a job
+	   indented under it, tinted by what the wording says happened. */
+	.console {
+		list-style: none;
+		margin: 0;
+		padding: 6px 0;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		background: var(--surface);
+		font-family: var(--mono);
+		font-size: 11.5px;
+	}
+
+	.console li {
+		display: grid;
+		grid-template-columns: 74px minmax(0, 1fr);
+		gap: 12px;
+		padding: 2px 16px;
+		line-height: 1.55;
+	}
+
+	.console li:hover {
+		background: var(--bg-elev);
+	}
+
+	.console .time {
+		color: var(--text-faint);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.console .msg {
+		padding-left: calc(var(--depth, 0) * 18px);
+		color: var(--text-dim);
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+
+	.console li.fail .msg {
+		color: var(--danger);
+	}
+
+	.console li.skip .msg {
+		color: var(--warn);
+	}
+
+	.console li.done .msg {
+		color: var(--ok);
+	}
+
+	.banner code {
+		font-family: var(--mono);
+		font-size: 11.5px;
 	}
 
 	.foot {

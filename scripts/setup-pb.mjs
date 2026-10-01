@@ -226,6 +226,21 @@ const collections = [
 		]
 	},
 	{
+		// The worker's console, line by line, for the Log screen's Worker tab.
+		// Written only by the worker; pruned by it after 14 days, because unlike
+		// activity_log this is diagnostics rather than an audit trail.
+		name: 'worker_log',
+		type: 'base',
+		...RULES,
+		fields: [
+			{ type: 'text', name: 'message', required: true, max: 2000 },
+			// One random id per worker start, to tell runs apart.
+			{ type: 'text', name: 'run', max: 20 },
+			...stamps
+		],
+		indexes: ['CREATE INDEX `idx_worker_log_created` ON `worker_log` (`created`)']
+	},
+	{
 		name: 'app_settings',
 		type: 'base',
 		...RULES,

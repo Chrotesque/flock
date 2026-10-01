@@ -391,7 +391,10 @@ locked either way.
 
 **Log** lists every change — uploads, calendar moves and settings — with the date,
 time and the machine that made it. Filter by category, search, or click a device
-tag to see only that machine. It cannot be edited or cleared.
+tag to see only that machine. It cannot be edited or cleared. The *Worker* tab
+shows what the worker printed, live as it prints it, kept for 14 days — the place to
+look when a thumbnail, playlist or post did not come out as asked. It needs
+`pnpm setup-pb` run once, and fills from the next worker start.
 
 **Analytics** shows the newest fifty videos on the channel as YouTube reports
 them, refreshed every 30 seconds while the worker runs: views, likes and
@@ -440,7 +443,7 @@ again. Replace the files in `site/img/` to update the screenshots.
 
 Videos and schedules live in PocketBase on the NAS, in the collections
 `upload_jobs`, `upload_targets`, `platform_settings`, `app_settings`,
-`activity_log`, `devices` and `video_stats`. The chosen destination is recorded on each upload, so
+`activity_log`, `devices`, `video_stats` and `worker_log`. The chosen destination is recorded on each upload, so
 changing the destination list later never redirects something already queued —
 and the file is copied there, never moved. Nothing is written until you confirm an
 upload; the only things kept in the browser are this device's name and which

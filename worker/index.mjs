@@ -35,6 +35,8 @@ import { statsPass, unitsToday } from './stats.mjs';
 import { msUntil } from './upload.mjs';
 import { startPreviewServer } from './preview.mjs';
 import { startCoverServer } from './covers.mjs';
+import { makeRemoteLog } from './remotelog.mjs';
+import { randomBytes } from 'node:crypto';
 
 /**
  * One entry per platform that can actually publish, and how it is timed.
@@ -82,8 +84,13 @@ function stamp() {
 	return new Date().toLocaleTimeString();
 }
 
+// Everything printed is also copied to the Log screen. `run` tells one start
+// of the worker from the next there.
+const remote = makeRemoteLog({ run: randomBytes(4).toString('hex') });
+
 function log(message) {
 	console.log(`[${stamp()}] ${message}`);
+	remote.push(message);
 }
 
 /** "in 12 min", "in 3h 05m" — for the dry run's account of a held row. */
@@ -531,6 +538,8 @@ async function main() {
 
 	const config = requireConfig({ needToken: !dry, needGoogle: !dry });
 	const pb = makeClient(config.pocketbaseUrl);
+	log(`worker started (${dry ? 'dry run' : once ? 'single pass' : statsOnly ? 'stats only' : 'polling'}, pid ${process.pid})`);
+	remote.attach(pb);
 
 	// Started at boot, or straight after a resume, the NAS or the Tailscale link
 	// to it may not be up yet. Waiting beats dying on the first probe; the
@@ -665,7 +674,14 @@ async function main() {
 	}
 }
 
-main().catch((err) => {
-	console.error(`\n${err instanceof Error ? err.message : err}\n`);
-	process.exit(1);
-});
+// The one-shot modes return from main, and their last lines are still queued
+// for the Log screen; a fatal error is worth seeing there most of all.
+main()
+	.then(() => remote.flush())
+	.catch(async (err) => {
+		const message = err instanceof Error ? err.message : String(err);
+		console.error(`\n${message}\n`);
+		remote.push(`stopped: ${message}`);
+		await remote.flush().catch(() => {});
+		process.exit(1);
+	});

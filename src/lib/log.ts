@@ -1,5 +1,5 @@
 import { pb } from './pb';
-import type { LogCategory, LogEntry } from './types';
+import type { LogCategory, LogEntry, WorkerLine } from './types';
 
 const DEVICE_KEY = 'flock.device';
 
@@ -129,4 +129,23 @@ function trim(text: string, max: number): string {
 export async function listLog(limit = 400): Promise<LogEntry[]> {
 	const res = await pb.collection('activity_log').getList(1, limit, { sort: '-created' });
 	return res.items as unknown as LogEntry[];
+}
+
+/**
+ * The worker's console, newest first. Written by the worker alone and pruned
+ * by it after 14 days — see worker/remotelog.mjs.
+ */
+export async function listWorkerLog(limit = 1500): Promise<WorkerLine[]> {
+	const res = await pb
+		.collection('worker_log')
+		.getList(1, limit, { sort: '-created', skipTotal: true });
+	return res.items as unknown as WorkerLine[];
+}
+
+/** New worker lines as they are written. Returns the unsubscribe. */
+export function subscribeWorkerLog(onLine: (line: WorkerLine) => void): () => void {
+	const sub = pb.collection('worker_log').subscribe('*', (e) => {
+		if (e.action === 'create') onLine(e.record as unknown as WorkerLine);
+	});
+	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
 }
