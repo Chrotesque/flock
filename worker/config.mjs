@@ -10,9 +10,22 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isSea } from 'node:sea';
 
-const here = dirname(fileURLToPath(import.meta.url));
-export const CONFIG_PATH = resolve(here, '.worker-config.json');
+/**
+ * Where the config file lives. Beside this module when the worker runs from
+ * the checkout; beside the program when it runs as the single-file executable
+ * `pnpm build:worker` makes, where there is no module directory to speak of;
+ * or wherever FLOCK_WORKER_CONFIG points, which is what a container will use.
+ */
+function configDir() {
+	if (isSea()) return dirname(process.execPath);
+	return dirname(fileURLToPath(import.meta.url));
+}
+
+export const CONFIG_PATH = process.env.FLOCK_WORKER_CONFIG
+	? resolve(process.env.FLOCK_WORKER_CONFIG)
+	: resolve(configDir(), '.worker-config.json');
 
 function readFile() {
 	if (!existsSync(CONFIG_PATH)) return {};

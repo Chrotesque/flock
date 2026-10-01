@@ -23,12 +23,15 @@
 		"worker:vidiq": "node worker/index.mjs --vidiq",
 		"worker:stats": "node worker/index.mjs --stats",
 		"worker:tiktok": "node worker/index.mjs --tiktok",
-		"worker:instagram": "node worker/index.mjs --instagram"
+		"worker:instagram": "node worker/index.mjs --instagram",
+		"build:worker": "node scripts/build-worker.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.0",
 		"@sveltejs/kit": "^2.0.0",
 		"@sveltejs/vite-plugin-svelte": "^5.0.0",
+		"esbuild": "^0.28.2",
+		"postject": "1.0.0-alpha.6",
 		"svelte": "^5.0.0",
 		"svelte-check": "^4.0.0",
 		"tslib": "^2.0.0",

@@ -197,6 +197,24 @@ If it starts with *Cannot reach http://…:8091*, the NAS or the Tailscale link 
 it is not up yet. The worker keeps retrying for five minutes before giving up, so
 it can be started before the connection is.
 
+**Running the worker on a machine without Node.** On a machine that has the
+checkout, build it once:
+
+```bash
+pnpm build:worker
+```
+
+That writes `dist/worker/flock-worker.exe`, a single program with Node baked
+in, and the example config beside it. Copy the program and your own
+`.worker-config.json` into one folder on the other machine and run it there;
+it takes the same flags as `pnpm worker` (`--once`, `--dry`, `--stats`,
+`--tiktok`, `--instagram`), and `flock-worker auth --tiktok` runs a consent
+flow. It reads the config beside itself, or wherever `FLOCK_WORKER_CONFIG`
+points. It is built for the platform it was built on and is not signed, so
+Windows may show a SmartScreen notice the first time. Local watch folders
+are paths on the machine the worker runs on, so set them again in Settings
+after moving it, and run only one worker at a time.
+
 `pnpm worker:once` does a single pass and exits, which is the easier one to watch
 while testing. `pnpm worker:stats` runs one stats poll on its own, which is the
 quickest way to confirm the read scope works. The config file holds a client
