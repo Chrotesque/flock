@@ -284,23 +284,30 @@ Instagram publishes in two steps, so the worker uploads a reel ten minutes
 ahead of its slot (`instagramLeadSeconds` in the config) and publishes it on
 the minute. Every video goes out as a Reel — that is the only kind of video
 Instagram's API still publishes — MP4 or MOV, under 1 GB, between 3 seconds
-and 15 minutes. It needs a Meta app with the **Instagram** product and a
-**professional** (Business or Creator) Instagram account:
+and 15 minutes. flock signs in with **Facebook Login**, which needs:
 
-1. In the [Meta app dashboard](https://developers.facebook.com/apps), add the
-   Instagram product and choose *API setup with Instagram login*.
-2. Add the account as an **Instagram tester** there, and accept the invite in
-   the Instagram app under *Settings → Apps and websites → Tester invites*.
-3. Press **Generate token** beside the account, copy the token, and run:
+- a **professional** (Business or Creator) Instagram account, **linked to a
+  Facebook Page** you manage (Instagram app: *Settings → Accounts Center*, or
+  the Page's settings under *Linked accounts*);
+- a Meta app of type **Business** with the **Facebook Login for Business**
+  product. While the app is in Development mode, your Facebook account having a
+  role on the app is enough; no App Review is needed. Facebook allows a
+  `localhost` redirect in Development mode, so nothing has to be registered.
+
+Put the app's **App ID** and **App secret** (*App settings → Basic*) into the
+worker config as `instagram.appId` and `instagram.appSecret`, then run:
 
 ```bash
-pnpm worker:auth --instagram --token <paste>
+pnpm worker:auth --instagram
 ```
 
-Or fill in `instagram.appId`, `instagram.appSecret` and a registered
-`instagram.redirectUri` in the config and run `pnpm worker:auth --instagram`
-for the consent flow instead. Either way the token lasts sixty days, and the
-worker renews it by itself as long as it runs at least once a month.
+Sign in, tick the Page and the Instagram account on the consent screen, and the
+worker keeps the Page's token, which does not expire. If you have several Pages
+with an Instagram account it asks which one; `instagram.pageId` fixes the
+choice. If your app uses a Facebook Login for Business *configuration*, put its
+id in `instagram.configId`. Instead of the consent you can paste a user token
+from the [Graph API Explorer](https://developers.facebook.com/tools/explorer)
+with the same permissions: `pnpm worker:auth --instagram --token <paste>`.
 
 ```bash
 pnpm worker:instagram
@@ -311,22 +318,12 @@ is used.
 
 **A custom cover for the reel.** The image in the Details step's *Thumbnail /
 Cover* box is also the reel's cover (portrait JPEG or PNG, up to 8 MB, for
-Instagram); without one, Instagram uses the frame at the *Cover frame* time. Instagram fetches a custom cover from a public
-address rather than taking the image itself, so the worker serves it: a small
-server on the worker's own machine, reachable only from that machine, which you
-expose under one public hostname for Instagram to reach. With Tailscale, allow
-Funnel in your tailnet's access rules, then run once on the worker's machine:
-
-```bash
-tailscale funnel --bg 8791
-```
-
-and put the hostname it prints into the worker config as
-`instagram.coverPublicBase`, for example `https://pc.tailnet-name.ts.net`.
-Each cover is served under a random address only while that reel is being
-published, and nothing else on the machine is exposed. Without the setting the
-cover box still works, but the worker says in its log that it used the cover
-time instead, and the box says so too.
+Instagram); without one, Instagram uses the frame at the *Cover frame* time.
+Instagram only takes a cover as an address it downloads, so the worker puts the
+image on your Page as an **unpublished** photo — it never appears on the Page —
+hands Instagram that photo's address, and deletes the photo once Instagram has
+it. If that fails, the reel still goes out with the frame at the cover time, and
+the worker's log says why.
 
 ## Using it
 

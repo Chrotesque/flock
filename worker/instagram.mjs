@@ -1,5 +1,14 @@
 // The Instagram adapter: one upload_targets row -> one Reel on the account,
-// through the Instagram API with Instagram Login.
+// through the Instagram API with Facebook Login, where the Instagram account
+// is reached through the Facebook Page it is linked to.
+//
+// Facebook Login rather than Instagram Login, because only this flavour takes
+// the video as bytes (the resumable upload on rupload.facebook.com): Instagram
+// Login takes a reel only as a `video_url` it fetches, which needs a public
+// address no self-hosted install should have to provide. The cover is the one
+// thing Instagram still fetches by URL with either login, so the image is
+// put on the linked Page as an unpublished photo, its address on Meta's own
+// image servers handed over as `cover_url`, and the photo deleted afterwards.
 //
 // Instagram cannot schedule either, but its publishing comes in two halves: a
 // container is created and the bytes uploaded and processed first, and a
@@ -10,27 +19,24 @@
 // container call actually takes.
 
 import { fetchOrExplain, isNetworkError } from './net.mjs';
-import { saveSection } from './config.mjs';
 import { streamRequest, videoMime, sleep, msUntil, MiB } from './upload.mjs';
 
-/**
- * The cover server (covers.mjs), when the worker runs one. Instagram takes a
- * custom cover only as a public address it fetches, never as bytes, so a
- * reel's cover image is leased to that server for the length of the publish.
- * Null means no public address is configured, and the frame at the cover
- * time is used instead.
- */
-let covers = null;
-
-export function setCoverServer(server) {
-	covers = server;
-}
-
-const GRAPH = 'https://graph.instagram.com';
+const GRAPH = 'https://graph.facebook.com';
 const UPLOAD = 'https://rupload.facebook.com/ig-api-upload';
 
-/** Reading the account, and publishing to it. Nothing about comments or insights. */
-export const INSTAGRAM_SCOPES = ['instagram_business_basic', 'instagram_business_content_publish'];
+/**
+ * Reading the account and the Page, publishing to the account, and putting
+ * an unpublished photo on the Page for the cover. `business_management` is
+ * what lets /me/accounts list a Page that sits in a business portfolio.
+ */
+export const INSTAGRAM_SCOPES = [
+	'instagram_basic',
+	'instagram_content_publish',
+	'pages_show_list',
+	'pages_read_engagement',
+	'pages_manage_posts',
+	'business_management'
+];
 
 // Instagram's stated limits for a Reel.
 const MAX_BYTES = 1024 * MiB;
@@ -52,74 +58,22 @@ const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
 // How often the account's details are re-read for the compose screen.
 const ACCOUNT_TTL_MS = 30 * 60_000;
 
-// A long-lived token lasts sixty days and can be renewed once it is a day
-// old; renewing at a month leaves a month of slack for a worker left off.
-const DAY_MS = 24 * 60 * 60_000;
-const RENEW_AFTER_MS = 30 * DAY_MS;
-const DEFAULT_LIFE_MS = 60 * DAY_MS;
-
 const REAUTH = 'Re-authorise with:  pnpm worker:auth --instagram';
 
 function base(config) {
 	return `${GRAPH}/${config.instagram.apiVersion}`;
 }
 
-let renewError = '';
-
 /**
- * Renews the long-lived token when it is due, writing the new one back.
- *
- * Instagram will not renew a token under a day old or one already expired,
- * so this runs on the token's age rather than on every call. `force` is for
- * a token the API has just rejected: if that cannot be renewed either, the
- * only way forward is the consent flow again.
+ * The Page token. Derived from a long-lived user token it does not expire,
+ * so there is nothing to renew — it dies only when the grant is revoked, the
+ * password changes or the person loses the Page, and then the consent flow is
+ * the way back.
  */
-export async function renewToken(config, { force = false } = {}) {
-	const ig = config.instagram;
-	if (!ig.accessToken) throw new Error(`No Instagram access token. ${REAUTH}`);
-	const obtained = Date.parse(ig.tokenObtainedAt) || 0;
-	const expires = Date.parse(ig.tokenExpiresAt) || obtained + DEFAULT_LIFE_MS;
-	const age = Date.now() - obtained;
-	if (!force && age < RENEW_AFTER_MS && expires - Date.now() > RENEW_AFTER_MS) return false;
-	if (age < DAY_MS + 5 * 60_000) {
-		if (force) {
-			throw new Error(`Instagram rejected a token under a day old, which cannot be renewed yet. ${REAUTH}`);
-		}
-		return false;
-	}
-
-	const url = new URL(`${GRAPH}/refresh_access_token`);
-	url.searchParams.set('grant_type', 'ig_refresh_token');
-	url.searchParams.set('access_token', ig.accessToken);
-	const res = await fetchOrExplain(url);
-	const text = await res.text();
-	if (!res.ok) {
-		const message = `Instagram would not renew the token (${res.status}): ${text.slice(0, 300)}`;
-		if (force) throw new Error(`${message}\nIt has expired or been revoked. ${REAUTH}`);
-		renewError = message;
-		return false;
-	}
-
-	const body = JSON.parse(text);
-	const now = new Date();
-	ig.accessToken = body.access_token;
-	ig.tokenObtainedAt = now.toISOString();
-	ig.tokenExpiresAt = new Date(
-		now.getTime() + (Number(body.expires_in) || DEFAULT_LIFE_MS / 1000) * 1000
-	).toISOString();
-	saveSection('instagram', {
-		accessToken: ig.accessToken,
-		tokenObtainedAt: ig.tokenObtainedAt,
-		tokenExpiresAt: ig.tokenExpiresAt
-	});
-	renewError = '';
-	return true;
-}
-
-/** The token to use, renewed first if it is time. */
-export async function accessToken(config) {
-	await renewToken(config);
-	return config.instagram.accessToken;
+function token(config) {
+	const t = config.instagram.pageAccessToken;
+	if (!t) throw new Error(`Instagram is not set up. ${REAUTH}`);
+	return t;
 }
 
 class GraphError extends Error {
@@ -134,33 +88,7 @@ class GraphError extends Error {
 	}
 }
 
-/**
- * One Graph API call. Parameters go in the query for a GET and the form body
- * for a POST; objects and arrays are sent as JSON, which is how the API takes
- * a list of collaborators. A token the API has just rejected (code 190) is
- * renewed and the call retried once.
- */
-async function graph(config, path, { method = 'GET', params = {}, retry = true } = {}) {
-	const token = await accessToken(config);
-	const url = new URL(`${base(config)}${path}`);
-	const form = new URLSearchParams();
-	for (const [key, value] of Object.entries(params)) {
-		if (value === undefined || value === null || value === '') continue;
-		form.set(key, typeof value === 'string' ? value : JSON.stringify(value));
-	}
-	form.set('access_token', token);
-
-	let res;
-	if (method === 'GET') {
-		url.search = form.toString();
-		res = await fetchOrExplain(url);
-	} else {
-		res = await fetchOrExplain(url, {
-			method,
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: form
-		});
-	}
+async function parse(res) {
 	const text = await res.text();
 	let json = {};
 	try {
@@ -168,24 +96,44 @@ async function graph(config, path, { method = 'GET', params = {}, retry = true }
 	} catch {
 		// Reported below with the status.
 	}
-	if (!res.ok || json.error) {
-		const err = json.error ?? { message: text.slice(0, 300) };
-		if (Number(err.code) === 190 && retry) {
-			await renewToken(config, { force: true });
-			return graph(config, path, { method, params, retry: false });
-		}
-		throw new GraphError(err, res.status);
-	}
+	if (!res.ok || json.error) throw new GraphError(json.error ?? { message: text.slice(0, 300) }, res.status);
 	return json;
 }
 
+/**
+ * One Graph API call. Parameters go in the query for a GET or DELETE and the
+ * form body for a POST; objects and arrays are sent as JSON, which is how the
+ * API takes a list of collaborators.
+ */
+async function graph(config, path, { method = 'GET', params = {} } = {}) {
+	const url = new URL(`${base(config)}${path}`);
+	const form = new URLSearchParams();
+	for (const [key, value] of Object.entries(params)) {
+		if (value === undefined || value === null || value === '') continue;
+		form.set(key, typeof value === 'string' ? value : JSON.stringify(value));
+	}
+	form.set('access_token', token(config));
+
+	if (method === 'POST') {
+		return parse(
+			await fetchOrExplain(url, {
+				method,
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				body: form
+			})
+		);
+	}
+	url.search = form.toString();
+	return parse(await fetchOrExplain(url, { method }));
+}
+
 /** What a Graph error means for the person reading the log. */
-function explain(err) {
+export function explain(err) {
 	if (!(err instanceof GraphError)) return err;
 	const byCode = {
-		190: `The Instagram token is dead. ${REAUTH}`,
-		10: 'The Instagram grant lacks the permission for this, or the account is not a professional (Business or Creator) account.',
-		200: 'The Instagram grant lacks the permission for this, or the account is not a professional (Business or Creator) account.',
+		190: `The Instagram token is dead (revoked, or the password changed). ${REAUTH}`,
+		10: `The grant lacks a permission this needs. ${REAUTH}`,
+		200: `The grant lacks a permission this needs, or this Facebook account cannot act for the Page. ${REAUTH}`,
 		4: 'Instagram rate limit hit; upload again later.',
 		17: 'Instagram rate limit hit; upload again later.',
 		32: 'Instagram rate limit hit; upload again later.',
@@ -207,22 +155,44 @@ function explain(err) {
 }
 
 /**
+ * Every Page the user token can act for, with the Instagram account linked to
+ * it, if any. Used once, by the consent flow, to find the account and to
+ * take the Page's own token.
+ */
+export async function listPages(apiVersion, userToken) {
+	const url = new URL(`${GRAPH}/${apiVersion}/me/accounts`);
+	url.searchParams.set('fields', 'id,name,access_token,instagram_business_account{id,username}');
+	url.searchParams.set('limit', '100');
+	url.searchParams.set('access_token', userToken);
+	const body = await parse(await fetchOrExplain(url));
+	return (body.data ?? []).map((page) => ({
+		id: String(page.id),
+		name: page.name ?? '',
+		accessToken: page.access_token ?? '',
+		igUserId: page.instagram_business_account ? String(page.instagram_business_account.id) : '',
+		username: page.instagram_business_account?.username ?? ''
+	}));
+}
+
+/**
  * Who the token posts as, plus how much of the day's publishing allowance
  * is used. The allowance is informational — the account itself answering is
  * the check that matters — so a failure there is swallowed.
  */
 export async function accountInfo(config) {
-	const me = await graph(config, '/me', { params: { fields: 'user_id,username,account_type,name' } });
+	const ig = config.instagram;
+	const me = await graph(config, `/${ig.igUserId}`, { params: { fields: 'id,username,name' } });
 	const info = {
-		userId: String(me.user_id ?? me.id ?? ''),
+		userId: String(me.id ?? ig.igUserId),
 		username: me.username ?? '',
-		accountType: me.account_type ?? '',
 		name: me.name ?? '',
+		pageId: ig.pageId,
+		pageName: ig.pageName,
 		quotaUsed: null,
 		quotaTotal: null
 	};
 	try {
-		const limit = await graph(config, '/me/content_publishing_limit', {
+		const limit = await graph(config, `/${ig.igUserId}/content_publishing_limit`, {
 			params: { fields: 'quota_usage,config' }
 		});
 		const row = limit.data?.[0];
@@ -237,7 +207,7 @@ export async function accountInfo(config) {
 }
 
 /** The container's parameters, from the target's options. */
-function buildContainer(target, options, durationSeconds) {
+export function buildContainer(target, options, durationSeconds) {
 	const params = {
 		media_type: 'REELS',
 		upload_type: 'resumable',
@@ -266,18 +236,46 @@ function buildContainer(target, options, durationSeconds) {
 }
 
 /**
+ * Puts the cover on the linked Page as an unpublished photo — it never shows
+ * on the Page — and returns its address on Meta's image servers, which is
+ * public, so Instagram can fetch it as `cover_url`. The caller deletes the
+ * photo once Instagram has processed the container.
+ */
+async function hostCover(config, image, name) {
+	const ig = config.instagram;
+	const form = new FormData();
+	form.set('published', 'false');
+	form.set('source', new Blob([image.bytes], { type: image.mimeType }), name || 'cover');
+	form.set('access_token', token(config));
+	const photo = await parse(
+		await fetchOrExplain(`${base(config)}/${ig.pageId}/photos`, { method: 'POST', body: form })
+	);
+	const id = String(photo.id ?? '');
+	if (!id) throw new Error('the Page returned no photo id');
+	try {
+		const read = await graph(config, `/${id}`, { params: { fields: 'images' } });
+		// The largest rendition; Meta lists several sizes.
+		const best = [...(read.images ?? [])].sort((a, b) => b.width * b.height - a.width * a.height)[0];
+		if (!best?.source) throw new Error('the photo has no image address');
+		return { id, url: best.source };
+	} catch (err) {
+		await graph(config, `/${id}`, { method: 'DELETE' }).catch(() => {});
+		throw err;
+	}
+}
+
+/**
  * Sends the bytes to the container in one declared-length POST, the way the
  * resumable upload endpoint documents it. A byte range resume exists in the
  * protocol; a failure here restarts from zero, as YouTube's does.
  */
 async function uploadBytes(config, container, video, log) {
-	const token = await accessToken(config);
 	const url = container.uri || `${UPLOAD}/${config.instagram.apiVersion}/${container.id}`;
 	const res = await streamRequest({
 		url,
 		method: 'POST',
 		headers: {
-			Authorization: `OAuth ${token}`,
+			Authorization: `OAuth ${token(config)}`,
 			offset: '0',
 			file_size: String(video.size),
 			'Content-Type': 'application/octet-stream'
@@ -357,7 +355,10 @@ async function publishContainer(config, id) {
 	let last;
 	for (let attempt = 1; attempt <= 6; attempt++) {
 		try {
-			return await graph(config, '/me/media_publish', { method: 'POST', params: { creation_id: id } });
+			return await graph(config, `/${config.instagram.igUserId}/media_publish`, {
+				method: 'POST',
+				params: { creation_id: id }
+			});
 		} catch (err) {
 			last = err;
 			const notReady =
@@ -395,36 +396,45 @@ export async function publishToInstagram({ target, job, pb, config, log }) {
 
 	const params = buildContainer(target, options, duration);
 
-	// A custom cover is leased to the cover server for Instagram to fetch while
-	// the container is processed, and released the moment that is over. With
-	// no server configured the frame at the cover time stands in, and the log
+	// A custom cover goes up to the Page as an unpublished photo for Instagram
+	// to fetch while it processes the container, and is deleted once that is
+	// over. If that fails the frame at the cover time stands in, and the log
 	// says so, because the reel still goes out.
-	let lease = null;
+	let hosted = null;
 	if (job.cover) {
-		if (covers) {
-			const image = await pb.openCover(job);
-			lease = covers.lease(image.bytes, image.mimeType);
-			params.cover_url = lease.url;
+		try {
+			hosted = await hostCover(config, await pb.openCover(job), job.cover);
+			params.cover_url = hosted.url;
 			delete params.thumb_offset;
-			log(`cover: ${job.cover} served to Instagram from ${lease.url}`);
-		} else {
+			log(`cover: ${job.cover} put on the Page as unpublished photo ${hosted.id} for Instagram to fetch`);
+		} catch (err) {
 			log(
-				'cover skipped: no instagram.coverPublicBase in the worker config, ' +
+				`cover skipped: could not put it on the Page (${explain(err).message.split('\n')[0]}), ` +
 					'so Instagram uses the frame at the cover time'
 			);
 		}
 	}
+	const dropCover = async () => {
+		if (!hosted) return;
+		const id = hosted.id;
+		hosted = null;
+		try {
+			await graph(config, `/${id}`, { method: 'DELETE' });
+		} catch (err) {
+			log(`cover photo ${id} could not be deleted from the Page — it is unpublished, so nobody sees it (${err.message.split('\n')[0]})`);
+		}
+	};
 
 	let container;
 	try {
-		container = await graph(config, '/me/media', { method: 'POST', params });
+		container = await graph(config, `/${config.instagram.igUserId}/media`, { method: 'POST', params });
 	} catch (err) {
-		lease?.release();
+		await dropCover();
 		video.stream.destroy();
 		throw explain(err);
 	}
 	if (!container.id) {
-		lease?.release();
+		await dropCover();
 		video.stream.destroy();
 		throw new Error('Instagram returned no container id.');
 	}
@@ -436,7 +446,7 @@ export async function publishToInstagram({ target, job, pb, config, log }) {
 	} catch (err) {
 		throw explain(err);
 	} finally {
-		lease?.release();
+		await dropCover();
 	}
 
 	// The container is ready; the publish call is what hits the minute.
@@ -494,15 +504,7 @@ export async function refreshInstagramAccount(pb, config, log, force = false) {
 	const now = new Date().toISOString();
 	try {
 		const account = await accountInfo(config);
-		await pb.setSetting('instagram_account', {
-			fetchedAt: now,
-			...account,
-			tokenExpiresAt: config.instagram.tokenExpiresAt || '',
-			// Whether a custom cover can be served to Instagram at all; the
-			// compose screen says so beside the cover box when it cannot.
-			coverBase: covers?.base ?? '',
-			error: renewError
-		});
+		await pb.setSetting('instagram_account', { fetchedAt: now, ...account, error: '' });
 		if (accountError) log('instagram: recovered');
 		accountError = '';
 	} catch (err) {

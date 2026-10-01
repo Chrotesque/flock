@@ -5,7 +5,6 @@
   "instagramLeadSeconds": 600,
   "scoreSeconds": 3,
   "previewPort": 8790,
-  "coverPort": 8791,
   "statsSeconds": 30,
   "statsVideos": 50,
   "statsBudget": 6000,
@@ -22,10 +21,10 @@
     "refreshToken": ""
   },
   "instagram": {
-    "appId": "PASTE-INSTAGRAM-APP-ID",
-    "appSecret": "PASTE-INSTAGRAM-APP-SECRET",
-    "redirectUri": "https://example.com/flock/instagram",
-    "accessToken": "",
-    "coverPublicBase": ""
+    "appId": "PASTE-META-APP-ID",
+    "appSecret": "PASTE-META-APP-SECRET",
+    "configId": "",
+    "redirectUri": "http://localhost:8766/instagram",
+    "pageId": ""
   }
 }

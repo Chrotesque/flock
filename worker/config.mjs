@@ -60,27 +60,26 @@ export function loadConfig() {
 			openId: tiktok.openId || '',
 			scope: tiktok.scope || ''
 		},
-		// Instagram has no refresh token: the long-lived access token *is* the
-		// credential, good for sixty days and renewable while it is still valid.
-		// The worker renews it on its own once it is older than a month.
+		// Instagram through Facebook Login: the Meta app's own id and secret
+		// (App settings, Basic), and the Facebook Page the Instagram account is
+		// linked to. The consent flow stores the Page's token, which does not
+		// expire, so there is nothing to renew. `configId` is the Facebook
+		// Login for Business configuration, when the app uses one; without it
+		// the consent asks for the scopes directly. `pageId` picks a Page when
+		// the person runs more than one with an Instagram account.
 		instagram: {
 			appId: process.env.INSTAGRAM_APP_ID || instagram.appId || '',
 			appSecret: process.env.INSTAGRAM_APP_SECRET || instagram.appSecret || '',
-			redirectUri: process.env.INSTAGRAM_REDIRECT_URI || instagram.redirectUri || '',
-			accessToken: process.env.INSTAGRAM_ACCESS_TOKEN || instagram.accessToken || '',
-			tokenObtainedAt: instagram.tokenObtainedAt || '',
-			tokenExpiresAt: instagram.tokenExpiresAt || '',
-			userId: instagram.userId || '',
+			configId: process.env.INSTAGRAM_CONFIG_ID || instagram.configId || '',
+			redirectUri:
+				process.env.INSTAGRAM_REDIRECT_URI || instagram.redirectUri || 'http://localhost:8766/instagram',
+			pageId: process.env.INSTAGRAM_PAGE_ID || instagram.pageId || '',
+			pageName: instagram.pageName || '',
+			pageAccessToken: process.env.INSTAGRAM_PAGE_TOKEN || instagram.pageAccessToken || '',
+			igUserId: instagram.igUserId || '',
 			username: instagram.username || '',
-			apiVersion: instagram.apiVersion || 'v23.0',
-			// Instagram fetches a custom cover from a public address, never from
-			// bytes. This is the public hostname (something like Tailscale Funnel)
-			// that forwards to the worker's cover server on `coverPort`; empty
-			// means covers fall back to the frame at the cover time.
-			coverPublicBase: process.env.INSTAGRAM_COVER_PUBLIC_BASE || instagram.coverPublicBase || ''
+			apiVersion: instagram.apiVersion || 'v23.0'
 		},
-		// The loopback port the cover server listens on; 0 turns it off.
-		coverPort: Number(process.env.FLOCK_COVER_PORT ?? file.coverPort ?? 8791),
 		pollSeconds: Number(process.env.FLOCK_POLL_SECONDS || file.pollSeconds || 60),
 		// The hold-and-fire platforms are checked on their own, tighter tick, so
 		// a release lands within seconds of its slot rather than within a poll.
@@ -134,7 +133,8 @@ export function hasTikTok(config) {
 
 /** Whether the Instagram adapter has what it needs to publish. */
 export function hasInstagram(config) {
-	return Boolean(config.instagram.accessToken);
+	const ig = config.instagram;
+	return Boolean(ig.pageAccessToken && ig.igUserId && ig.pageId);
 }
 
 /**

@@ -335,19 +335,13 @@ export interface InstagramAccount {
 	fetchedAt: string;
 	userId: string;
 	username: string;
-	accountType: string;
 	name: string;
+	/** The Facebook Page the account is reached through (Facebook Login). */
+	pageId?: string;
+	pageName?: string;
 	/** Posts made in the last day against the API's allowance, when known. */
 	quotaUsed: number | null;
 	quotaTotal: number | null;
-	tokenExpiresAt: string;
-	/**
-	 * The public address the worker serves reel covers from, empty when it
-	 * has none. Instagram fetches a custom cover from a public address, so
-	 * without one the cover box on the compose screen says the frame at the
-	 * cover time will be used instead.
-	 */
-	coverBase?: string;
 	error?: string;
 }
 

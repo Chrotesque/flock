@@ -17,12 +17,7 @@ import { requireConfig, hasTikTok, hasInstagram } from './config.mjs';
 import { makeClient } from './pb.mjs';
 import { publishToYouTube } from './youtube.mjs';
 import { publishToTikTok, refreshTikTokCreator, creatorInfo, privacyLabel } from './tiktok.mjs';
-import {
-	publishToInstagram,
-	refreshInstagramAccount,
-	accountInfo,
-	setCoverServer
-} from './instagram.mjs';
+import { publishToInstagram, refreshInstagramAccount, accountInfo } from './instagram.mjs';
 import { copyToDestination, copyInto } from './archive.mjs';
 import { scanWatchFolder, scanLocalFolders } from './watch.mjs';
 import { createReadStream } from 'node:fs';
@@ -34,7 +29,6 @@ import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
 import { statsPass, unitsToday } from './stats.mjs';
 import { msUntil } from './upload.mjs';
 import { startPreviewServer } from './preview.mjs';
-import { startCoverServer } from './covers.mjs';
 import { makeRemoteLog } from './remotelog.mjs';
 import { randomBytes } from 'node:crypto';
 
@@ -513,9 +507,8 @@ async function showAccounts(config) {
 			throw new Error('Instagram is not set up. Run:  pnpm worker:auth --instagram');
 		}
 		const account = await accountInfo(config);
-		log(`Instagram posts as @${account.username} (${account.accountType || 'type unknown'}, id ${account.userId})`);
+		log(`Instagram posts as @${account.username} (id ${account.userId}), through the Page "${account.pageName}"`);
 		if (account.quotaTotal) log(`${account.quotaUsed} of ${account.quotaTotal} posts used in the last 24 hours`);
-		log(`token good until ${config.instagram.tokenExpiresAt || 'unknown'}`);
 	}
 }
 
@@ -572,20 +565,6 @@ async function main() {
 	}
 
 	if (!dry) await recoverStale(pb);
-
-	// Instagram fetches a custom reel cover from a public address — see
-	// covers.mjs. Started before the passes so a one-shot run can serve one
-	// too; without a public base configured, covers fall back to the frame at
-	// the cover time and the adapter says so in the log.
-	if (!dry && config.instagram.coverPublicBase && config.coverPort > 0) {
-		const covers = startCoverServer({
-			port: config.coverPort,
-			publicBase: config.instagram.coverPublicBase,
-			log,
-			onListening: (port) => log(`covers: served to Instagram from ${covers.base} (port ${port})`)
-		});
-		setCoverServer(covers);
-	}
 
 	if (once || dry) {
 		await scorePass(pb, config);

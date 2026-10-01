@@ -3,9 +3,9 @@
 //
 //   pnpm worker:auth                    Google, for YouTube
 //   pnpm worker:auth --tiktok           TikTok's Login Kit
-//   pnpm worker:auth --instagram        Instagram Login
+//   pnpm worker:auth --instagram        Facebook Login, for Instagram
 //   pnpm worker:auth --instagram --token <token>
-//                                       a token generated in the Meta dashboard
+//                                       a user token from the Graph API Explorer
 //
 // Each prints a consent URL, collects the code the platform redirects back
 // with, and writes the resulting token into worker/.worker-config.json.
@@ -25,16 +25,14 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { loadConfig, requireConfig, saveRefreshToken, saveSection, CONFIG_PATH } from './config.mjs';
 import { TIKTOK_SCOPES, creatorInfo, privacyLabel } from './tiktok.mjs';
-import { INSTAGRAM_SCOPES, accountInfo } from './instagram.mjs';
+import { INSTAGRAM_SCOPES, accountInfo, listPages } from './instagram.mjs';
 import { fetchOrExplain } from './net.mjs';
 
 const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
 const TIKTOK_AUTH = 'https://www.tiktok.com/v2/auth/authorize/';
 const TIKTOK_TOKEN = 'https://open.tiktokapis.com/v2/oauth/token/';
-const INSTAGRAM_AUTH = 'https://www.instagram.com/oauth/authorize';
-const INSTAGRAM_TOKEN = 'https://api.instagram.com/oauth/access_token';
-const INSTAGRAM_GRAPH = 'https://graph.instagram.com';
+const FACEBOOK_GRAPH = 'https://graph.facebook.com';
 
 /**
  * Google: upload plus read-only by default, deliberately.
@@ -345,116 +343,145 @@ async function tiktok(config) {
 	console.log('Check the queue with:  pnpm worker:dry\n');
 }
 
+/** One Graph call during the consent, with its error spelled out. */
+async function graphGet(url, what) {
+	const res = await fetchOrExplain(url);
+	const text = await res.text();
+	let body = {};
+	try {
+		body = JSON.parse(text);
+	} catch {
+		// Reported below as the raw text.
+	}
+	if (!res.ok || body.error) {
+		throw new Error(`${what} failed (${res.status}): ${body.error?.message || text.slice(0, 300)}`);
+	}
+	return body;
+}
+
+/** A user token good for sixty days, from a short-lived one. Needs the app secret. */
+async function longLivedUserToken(ig, short) {
+	const url = new URL(`${FACEBOOK_GRAPH}/${ig.apiVersion}/oauth/access_token`);
+	url.searchParams.set('grant_type', 'fb_exchange_token');
+	url.searchParams.set('client_id', ig.appId);
+	url.searchParams.set('client_secret', ig.appSecret);
+	url.searchParams.set('fb_exchange_token', short);
+	const body = await graphGet(url, 'Long-lived token exchange');
+	return body.access_token;
+}
+
+/** Picks the Page whose Instagram account flock posts to, asking when there is a choice. */
+async function choosePage(ig, pages) {
+	const linked = pages.filter((page) => page.igUserId);
+	if (ig.pageId) {
+		const page = pages.find((p) => p.id === ig.pageId);
+		if (!page) throw new Error(`instagram.pageId ${ig.pageId} is not among the Pages this account can act for.`);
+		if (!page.igUserId) throw new Error(`The Page "${page.name}" has no Instagram account linked to it.`);
+		return page;
+	}
+	if (linked.length === 0) {
+		const names = pages.map((p) => `"${p.name}"`).join(', ') || 'none';
+		throw new Error(
+			`None of the Pages granted has an Instagram account linked (Pages: ${names}).\n` +
+				'Link the Instagram account to a Facebook Page (Instagram app: Settings, Accounts Center,\n' +
+				'or the Page\'s settings, Linked accounts), make sure that Page was ticked on the consent\n' +
+				'screen, and run this again.'
+		);
+	}
+	if (linked.length === 1) return linked[0];
+
+	console.log('\nMore than one Page has an Instagram account:');
+	linked.forEach((p, i) => console.log(`  ${i + 1}. ${p.name}  ->  @${p.username}`));
+	const rl = createInterface({ input: stdin, output: stdout });
+	try {
+		for (;;) {
+			const n = Number((await rl.question('Which one should flock post to? ')).trim());
+			if (Number.isInteger(n) && n >= 1 && n <= linked.length) return linked[n - 1];
+		}
+	} finally {
+		rl.close();
+	}
+}
+
+/**
+ * Instagram through Facebook Login. The consent yields a user token, which is
+ * swapped for a sixty-day one; the Page token taken from that does not
+ * expire, and it is the only token kept. `--token` takes a user token pasted
+ * from the Graph API Explorer instead of running the consent.
+ */
 async function instagram(config) {
 	const ig = config.instagram;
 	const pasted = valueOf('--token');
 	if (has('--token') && !pasted) throw new Error('--token needs the token after it.');
 
-	let token = pasted;
-	let expiresIn = 60 * 24 * 3600;
-	let userId = '';
+	const missing = ['appId', 'appSecret'].filter((key) => !ig[key]);
+	if (missing.length > 0) {
+		throw new Error(
+			`Missing instagram.${missing.join(', instagram.')} in ${CONFIG_PATH}.\n` +
+				"These are the Meta app's own App ID and App secret (App settings, Basic)."
+		);
+	}
 
-	if (!token) {
-		const missing = ['appId', 'appSecret', 'redirectUri'].filter((key) => !ig[key]);
-		if (missing.length > 0) {
-			throw new Error(
-				`Missing instagram.${missing.join(', instagram.')} in ${CONFIG_PATH}.\n` +
-					'Either fill those in for the consent flow, or generate a token in the Meta app\n' +
-					'dashboard (Instagram, API setup with Instagram login, Generate token) and run:\n' +
-					'  pnpm worker:auth --instagram --token <paste>'
-			);
-		}
-
+	let userToken;
+	if (pasted) {
+		userToken = await longLivedUserToken(ig, pasted);
+	} else {
 		const state = randomBytes(16).toString('hex');
 		const flow = await obtainCode({
 			redirectUri: ig.redirectUri,
 			state,
-			intro: `\nRequesting Instagram scopes: ${INSTAGRAM_SCOPES.join(', ')}`,
+			intro: ig.configId
+				? `\nRequesting the permissions in Facebook Login configuration ${ig.configId}`
+				: `\nRequesting: ${INSTAGRAM_SCOPES.join(', ')}`,
 			buildUrl: (redirectUri) => {
-				const auth = new URL(INSTAGRAM_AUTH);
+				const auth = new URL(`https://www.facebook.com/${ig.apiVersion}/dialog/oauth`);
 				auth.searchParams.set('client_id', ig.appId);
 				auth.searchParams.set('redirect_uri', redirectUri);
-				auth.searchParams.set('scope', INSTAGRAM_SCOPES.join(','));
-				auth.searchParams.set('response_type', 'code');
 				auth.searchParams.set('state', state);
+				auth.searchParams.set('response_type', 'code');
+				if (ig.configId) auth.searchParams.set('config_id', ig.configId);
+				else auth.searchParams.set('scope', INSTAGRAM_SCOPES.join(','));
 				return auth.toString();
 			}
 		});
 
-		// A short-lived token first, good for an hour...
-		const res = await fetchOrExplain(INSTAGRAM_TOKEN, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({
-				client_id: ig.appId,
-				client_secret: ig.appSecret,
-				grant_type: 'authorization_code',
-				redirect_uri: flow.redirectUri,
-				code: flow.code
-			})
-		});
-		const text = await res.text();
-		let body = {};
-		try {
-			body = JSON.parse(text);
-		} catch {
-			// Reported below as the raw text.
-		}
-		if (!res.ok || !body.access_token) {
-			throw new Error(
-				`Instagram code exchange failed (${res.status}): ` +
-					`${body.error_message || body.error?.message || text}`
-			);
-		}
-		userId = String(body.user_id ?? '');
-
-		// ...then the long-lived one, which is the only kind that can be renewed.
-		const long = new URL(`${INSTAGRAM_GRAPH}/access_token`);
-		long.searchParams.set('grant_type', 'ig_exchange_token');
-		long.searchParams.set('client_secret', ig.appSecret);
-		long.searchParams.set('access_token', body.access_token);
-		const res2 = await fetchOrExplain(long);
-		const text2 = await res2.text();
-		let body2 = {};
-		try {
-			body2 = JSON.parse(text2);
-		} catch {
-			// Reported below as the raw text.
-		}
-		if (!res2.ok || !body2.access_token) {
-			throw new Error(
-				`Instagram long-lived exchange failed (${res2.status}): ${body2.error?.message || text2}`
-			);
-		}
-		token = body2.access_token;
-		expiresIn = Number(body2.expires_in) || expiresIn;
+		const exchange = new URL(`${FACEBOOK_GRAPH}/${ig.apiVersion}/oauth/access_token`);
+		exchange.searchParams.set('client_id', ig.appId);
+		exchange.searchParams.set('client_secret', ig.appSecret);
+		exchange.searchParams.set('redirect_uri', flow.redirectUri);
+		exchange.searchParams.set('code', flow.code);
+		const short = (await graphGet(exchange, 'Code exchange')).access_token;
+		userToken = await longLivedUserToken(ig, short);
 	}
 
-	const now = new Date();
+	const page = await choosePage(ig, await listPages(ig.apiVersion, userToken));
+	if (!page.accessToken) {
+		throw new Error(`Facebook returned no token for the Page "${page.name}"; does this account manage it?`);
+	}
+
 	const saved = {
-		accessToken: token,
-		tokenObtainedAt: now.toISOString(),
-		tokenExpiresAt: new Date(now.getTime() + expiresIn * 1000).toISOString(),
-		...(userId ? { userId } : {})
+		pageId: page.id,
+		pageName: page.name,
+		pageAccessToken: page.accessToken,
+		igUserId: page.igUserId,
+		username: page.username,
+		// What the Instagram Login version kept; gone, so they cannot be mistaken
+		// for live credentials.
+		accessToken: undefined,
+		tokenObtainedAt: undefined,
+		tokenExpiresAt: undefined,
+		userId: undefined
 	};
 	saveSection('instagram', saved);
 	Object.assign(config.instagram, saved);
-	console.log(`\nAccess token saved to ${CONFIG_PATH}`);
+	console.log(`\nPage token for "${page.name}" saved to ${CONFIG_PATH} (it does not expire)`);
 
 	try {
 		const account = await accountInfo(config);
-		saveSection('instagram', { userId: account.userId, username: account.username });
 		console.log(
-			`Posting as @${account.username} (${account.accountType || 'account type unknown'}` +
-				(account.quotaTotal ? `; ${account.quotaUsed} of ${account.quotaTotal} posts used today` : '') +
-				')'
+			`Posting as @${account.username}` +
+				(account.quotaTotal ? ` (${account.quotaUsed} of ${account.quotaTotal} posts used today)` : '')
 		);
-		if (account.accountType && !/BUSINESS|CREATOR/i.test(account.accountType)) {
-			console.log(
-				'WARNING: not a professional account. Instagram publishes through the API only for\n' +
-					'Business or Creator accounts; switch it in the Instagram app under Account type.'
-			);
-	}
 	} catch (err) {
 		console.log(`Token saved, but reading the account failed: ${err.message}`);
 	}

@@ -86,7 +86,6 @@
 
 	let youtubeActive = $derived(draft.activePlatforms.includes('youtube'));
 	let tiktokActive = $derived(draft.activePlatforms.includes('tiktok'));
-	let instagramActive = $derived(draft.activePlatforms.includes('instagram'));
 	// The paid-promotion box serves both of these. The image box serves YouTube
 	// and Instagram instead — one picture, a thumbnail to one and a reel cover
 	// to the other — while TikTok takes a cover *time* (its `coverFrame`
@@ -1208,12 +1207,6 @@
 				summary={draft.thumbnail?.name ?? ''}
 			>
 				<ThumbnailPicker platforms={imagePlatforms} bind:file={draft.thumbnail} />
-				{#if instagramActive && accounts.instagram && !accounts.instagram.coverBase}
-					<p class="ttnote ttfaint">
-						The worker has no public address for covers yet, so Instagram will use the frame at the
-						cover time instead. The README says how to give it one.
-					</p>
-				{/if}
 			</FoldBox>
 		{/if}
 	</div>
