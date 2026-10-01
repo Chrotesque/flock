@@ -5,6 +5,7 @@
   "instagramLeadSeconds": 600,
   "scoreSeconds": 3,
   "previewPort": 8790,
+  "coverPort": 8791,
   "statsSeconds": 30,
   "statsVideos": 50,
   "statsBudget": 6000,
@@ -24,6 +25,7 @@
     "appId": "PASTE-INSTAGRAM-APP-ID",
     "appSecret": "PASTE-INSTAGRAM-APP-SECRET",
     "redirectUri": "https://example.com/flock/instagram",
-    "accessToken": ""
+    "accessToken": "",
+    "coverPublicBase": ""
   }
 }

@@ -72,8 +72,15 @@ export function loadConfig() {
 			tokenExpiresAt: instagram.tokenExpiresAt || '',
 			userId: instagram.userId || '',
 			username: instagram.username || '',
-			apiVersion: instagram.apiVersion || 'v23.0'
+			apiVersion: instagram.apiVersion || 'v23.0',
+			// Instagram fetches a custom cover from a public address, never from
+			// bytes. This is the public hostname (something like Tailscale Funnel)
+			// that forwards to the worker's cover server on `coverPort`; empty
+			// means covers fall back to the frame at the cover time.
+			coverPublicBase: process.env.INSTAGRAM_COVER_PUBLIC_BASE || instagram.coverPublicBase || ''
 		},
+		// The loopback port the cover server listens on; 0 turns it off.
+		coverPort: Number(process.env.FLOCK_COVER_PORT ?? file.coverPort ?? 8791),
 		pollSeconds: Number(process.env.FLOCK_POLL_SECONDS || file.pollSeconds || 60),
 		// The hold-and-fire platforms are checked on their own, tighter tick, so
 		// a release lands within seconds of its slot rather than within a poll.

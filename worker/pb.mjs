@@ -167,6 +167,20 @@ export function makeClient(baseUrl) {
 			};
 		},
 
+		coverUrl(job) {
+			return `${baseUrl}/api/files/upload_jobs/${job.id}/${encodeURIComponent(job.cover)}`;
+		},
+
+		/** The chosen reel cover as bytes, capped at Instagram's 8 MB by the schema. */
+		async openCover(job) {
+			const res = await fetchOrExplain(this.coverUrl(job));
+			if (!res.ok) throw new Error(`Cannot read the stored cover (${res.status})`);
+			return {
+				bytes: Buffer.from(await res.arrayBuffer()),
+				mimeType: res.headers.get('content-type') || 'image/jpeg'
+			};
+		},
+
 		/**
 		 * Opens a job's video for reading, whichever route it arrived by.
 		 *

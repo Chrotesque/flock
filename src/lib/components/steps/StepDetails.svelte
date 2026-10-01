@@ -85,9 +85,11 @@
 
 	let youtubeActive = $derived(draft.activePlatforms.includes('youtube'));
 	let tiktokActive = $derived(draft.activePlatforms.includes('tiktok'));
+	let instagramActive = $derived(draft.activePlatforms.includes('instagram'));
 	// The paid-promotion box serves both of these. The thumbnail does not:
-	// TikTok and Instagram take a cover *time* (their `coverFrame` option),
-	// not an image, so the picker is YouTube's alone.
+	// TikTok takes a cover *time* (its `coverFrame` option), not an image, and
+	// Instagram has a cover box of its own below, since a reel cover is
+	// portrait where a YouTube thumbnail is landscape.
 	let mediaActive = $derived(youtubeActive || tiktokActive);
 	// The boxes follow the pill being composed, like the playlist box: the
 	// paid-promotion box shows only for a platform it serves, the TikTok box
@@ -1201,6 +1203,23 @@
 				summary={draft.thumbnail?.name ?? ''}
 			>
 				<ThumbnailPicker bind:file={draft.thumbnail} />
+			</FoldBox>
+		{/if}
+
+		{#if instagramActive && composing === 'instagram'}
+			<FoldBox
+				label="Cover"
+				platforms={['instagram']}
+				done={Boolean(draft.cover)}
+				summary={draft.cover?.name ?? ''}
+			>
+				<ThumbnailPicker kind="cover" bind:file={draft.cover} />
+				{#if accounts.instagram && !accounts.instagram.coverBase}
+					<p class="ttnote ttfaint">
+						The worker has no public address for covers yet, so Instagram will use the frame at the
+						cover time instead. The README says how to give it one.
+					</p>
+				{/if}
 			</FoldBox>
 		{/if}
 	</div>

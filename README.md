@@ -309,6 +309,25 @@ pnpm worker:instagram
 shows who the token posts as and how much of the day's allowance (100 posts)
 is used.
 
+**A custom cover for the reel.** With Instagram ticked, the Details step has a
+*Cover* box (portrait JPEG or PNG, up to 8 MB); without one, Instagram uses the
+frame at the *Cover frame* time. Instagram fetches a custom cover from a public
+address rather than taking the image itself, so the worker serves it: a small
+server on the worker's own machine, reachable only from that machine, which you
+expose under one public hostname for Instagram to reach. With Tailscale, allow
+Funnel in your tailnet's access rules, then run once on the worker's machine:
+
+```bash
+tailscale funnel --bg 8791
+```
+
+and put the hostname it prints into the worker config as
+`instagram.coverPublicBase`, for example `https://pc.tailnet-name.ts.net`.
+Each cover is served under a random address only while that reel is being
+published, and nothing else on the machine is exposed. Without the setting the
+cover box still works, but the worker says in its log that it used the cover
+time instead, and the box says so too.
+
 ## Using it
 
 **Name the browser first.** Nothing can be uploaded or changed until you do — the
@@ -332,9 +351,10 @@ are writing for — a title and a description for YouTube and Facebook, a captio
 for Instagram and TikTok; a green check on an icon means that platform is done.
 Tick the platforms you want in the list on the right. The boxes under it follow
 the platform being written for. For YouTube, a thumbnail (optional; JPEG, PNG,
-GIF or WebP up to 2 MB — TikTok and Instagram take a cover *time* in their
-options instead) and a playlist dropdown listing the channel's own playlists as
-the worker last read them. For YouTube and TikTok, a paid-promotion checkbox,
+GIF or WebP up to 2 MB — TikTok takes a cover *time* in its options instead)
+and a playlist dropdown listing the channel's own playlists as the worker last
+read them. For Instagram, a cover (optional; portrait JPEG or PNG up to 8 MB;
+see *Instagram* under *The worker* for what lets the worker send it). For YouTube and TikTok, a paid-promotion checkbox,
 off on every new upload, that covers both platforms' disclosures at once. For
 TikTok, a *Post to TikTok* box names the account the worker posts as and holds
 the choices TikTok insists are made per post rather than saved: who can view the

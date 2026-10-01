@@ -17,7 +17,12 @@ import { requireConfig, hasTikTok, hasInstagram } from './config.mjs';
 import { makeClient } from './pb.mjs';
 import { publishToYouTube } from './youtube.mjs';
 import { publishToTikTok, refreshTikTokCreator, creatorInfo, privacyLabel } from './tiktok.mjs';
-import { publishToInstagram, refreshInstagramAccount, accountInfo } from './instagram.mjs';
+import {
+	publishToInstagram,
+	refreshInstagramAccount,
+	accountInfo,
+	setCoverServer
+} from './instagram.mjs';
 import { copyToDestination, copyInto } from './archive.mjs';
 import { scanWatchFolder, scanLocalFolders } from './watch.mjs';
 import { createReadStream } from 'node:fs';
@@ -29,6 +34,7 @@ import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
 import { statsPass, unitsToday } from './stats.mjs';
 import { msUntil } from './upload.mjs';
 import { startPreviewServer } from './preview.mjs';
+import { startCoverServer } from './covers.mjs';
 
 /**
  * One entry per platform that can actually publish, and how it is timed.
@@ -557,6 +563,20 @@ async function main() {
 	}
 
 	if (!dry) await recoverStale(pb);
+
+	// Instagram fetches a custom reel cover from a public address — see
+	// covers.mjs. Started before the passes so a one-shot run can serve one
+	// too; without a public base configured, covers fall back to the frame at
+	// the cover time and the adapter says so in the log.
+	if (!dry && config.instagram.coverPublicBase && config.coverPort > 0) {
+		const covers = startCoverServer({
+			port: config.coverPort,
+			publicBase: config.instagram.coverPublicBase,
+			log,
+			onListening: (port) => log(`covers: served to Instagram from ${covers.base} (port ${port})`)
+		});
+		setCoverServer(covers);
+	}
 
 	if (once || dry) {
 		await scorePass(pb, config);

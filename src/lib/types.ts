@@ -124,6 +124,8 @@ export interface UploadJob {
 	video: string;
 	/** Optional custom thumbnail for YouTube, capped at YouTube's own 2 MB. */
 	thumbnail?: string;
+	/** Optional custom cover for the Instagram reel, capped at Instagram's own 8 MB. */
+	cover?: string;
 	/**
 	 * Set instead of `video` when the file was picked out of the watch folder
 	 * rather than uploaded. The bytes stay where they are — PocketBase holds
@@ -339,6 +341,13 @@ export interface InstagramAccount {
 	quotaUsed: number | null;
 	quotaTotal: number | null;
 	tokenExpiresAt: string;
+	/**
+	 * The public address the worker serves reel covers from, empty when it
+	 * has none. Instagram fetches a custom cover from a public address, so
+	 * without one the cover box on the compose screen says the frame at the
+	 * cover time will be used instead.
+	 */
+	coverBase?: string;
 	error?: string;
 }
 

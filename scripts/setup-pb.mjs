@@ -64,6 +64,15 @@ const collections = [
 				maxSize: 2097152,
 				mimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 			},
+			// A custom cover for the Instagram reel, portrait where the thumbnail
+			// is landscape. The 8 MB cap is Instagram's own for cover images.
+			{
+				type: 'file',
+				name: 'cover',
+				maxSelect: 1,
+				maxSize: 8388608,
+				mimeTypes: ['image/jpeg', 'image/png']
+			},
 			// Set instead of `video` for a file picked out of the watch folder:
 			// the bytes are left on the NAS and only referenced, which is what
 			// makes a video larger than the file field's 5 GiB cap possible.

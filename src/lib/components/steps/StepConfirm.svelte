@@ -85,6 +85,7 @@
 	// A still of the video itself, so the last screen before upload shows what is
 	// actually being sent rather than just its file name.
 	let thumbUrl = $state('');
+	let coverUrl = $state('');
 
 	/**
 	 * The videos going out, one per slot that still serves a row of the plan:
@@ -173,6 +174,17 @@
 		return () => URL.revokeObjectURL(url);
 	});
 
+	$effect(() => {
+		const image = draft.cover;
+		if (!image) {
+			coverUrl = '';
+			return;
+		}
+		const url = URL.createObjectURL(image);
+		coverUrl = url;
+		return () => URL.revokeObjectURL(url);
+	});
+
 	/**
 	 * `preload="metadata"` alone leaves some browsers on a blank first paint.
 	 * Nudging past zero forces a frame to be decoded and shown.
@@ -190,9 +202,10 @@
 		tab !== 'video' && !rows.some((row) => row.platform === tab) ? 'video' : tab
 	);
 	let paneLabel = $derived(shownTab === 'video' ? '' : PLATFORMS[shownTab].label);
-	// Only YouTube takes an image. TikTok and Instagram take a cover *time*
-	// (their `coverFrame` option), so neither gets a tab here.
-	const paneNoun = 'thumbnail';
+	// YouTube takes a thumbnail and Instagram a cover; TikTok takes a cover
+	// *time* (its `coverFrame` option), so it gets no tab here.
+	let paneNoun = $derived(shownTab === 'instagram' ? 'cover' : 'thumbnail');
+	let stageImage = $derived(shownTab === 'instagram' ? coverUrl : thumbUrl);
 
 	// The thumbnail blown up to the whole window, for the last look before it
 	// goes out. Portalled to <body>: a transformed ancestor would otherwise pin
@@ -232,7 +245,7 @@
 				</button>
 			{/each}
 			{#each rows as row (row.platform)}
-				{#if row.platform === 'youtube'}
+				{#if row.platform === 'youtube' || row.platform === 'instagram'}
 					<button
 						class="tab"
 						class:active={shownTab === row.platform}
@@ -241,7 +254,7 @@
 						onclick={() => (tab = row.platform)}
 					>
 						<PlatformIcon platform={row.platform} size={14} />
-						Thumbnail
+						{row.platform === 'instagram' ? 'Cover' : 'Thumbnail'}
 					</button>
 				{/if}
 			{/each}
@@ -273,20 +286,25 @@
 					{/if}
 				</div>
 			{/if}
-		{:else if thumbUrl}
+		{:else if stageImage}
 			<div class="stage">
 				<button
 					class="zoomable"
 					onclick={() => (maximised = true)}
-					aria-label="Show the thumbnail at full size"
+					aria-label="Show the {paneNoun} at full size"
 					title="Maximise"
 				>
-					<img class="poster" src={thumbUrl} alt="{paneLabel} {paneNoun}" />
+					<img
+						class="poster"
+						class:portrait={shownTab === 'instagram'}
+						src={stageImage}
+						alt="{paneLabel} {paneNoun}"
+					/>
 				</button>
 				<button
 					class="maximise"
 					onclick={() => (maximised = true)}
-					aria-label="Show the thumbnail at full size"
+					aria-label="Show the {paneNoun} at full size"
 					title="Maximise"
 				>
 					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
@@ -440,14 +458,14 @@
 	}}
 />
 
-{#if maximised && thumbUrl}
+{#if maximised && stageImage}
 	<button
 		class="lightbox"
 		use:portal
 		onclick={() => (maximised = false)}
-		aria-label="Close the full-size thumbnail"
+		aria-label="Close the full-size {paneNoun}"
 	>
-		<img src={thumbUrl} alt="Thumbnail at full size" />
+		<img src={stageImage} alt="{paneNoun} at full size" />
 	</button>
 {/if}
 
@@ -614,6 +632,12 @@
 		display: block;
 		width: 100%;
 		max-width: 100%;
+	}
+
+	/* A reel cover is portrait: show the whole image rather than crop it to the stage. */
+	.poster.portrait {
+		object-fit: contain;
+		background: #000;
 	}
 
 	.zoomable {

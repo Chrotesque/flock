@@ -13,6 +13,19 @@ import { fetchOrExplain, isNetworkError } from './net.mjs';
 import { saveSection } from './config.mjs';
 import { streamRequest, videoMime, sleep, msUntil, MiB } from './upload.mjs';
 
+/**
+ * The cover server (covers.mjs), when the worker runs one. Instagram takes a
+ * custom cover only as a public address it fetches, never as bytes, so a
+ * reel's cover image is leased to that server for the length of the publish.
+ * Null means no public address is configured, and the frame at the cover
+ * time is used instead.
+ */
+let covers = null;
+
+export function setCoverServer(server) {
+	covers = server;
+}
+
 const GRAPH = 'https://graph.instagram.com';
 const UPLOAD = 'https://rupload.facebook.com/ig-api-upload';
 
@@ -381,14 +394,37 @@ export async function publishToInstagram({ target, job, pb, config, log }) {
 	}
 
 	const params = buildContainer(target, options, duration);
+
+	// A custom cover is leased to the cover server for Instagram to fetch while
+	// the container is processed, and released the moment that is over. With
+	// no server configured the frame at the cover time stands in, and the log
+	// says so, because the reel still goes out.
+	let lease = null;
+	if (job.cover) {
+		if (covers) {
+			const image = await pb.openCover(job);
+			lease = covers.lease(image.bytes, image.mimeType);
+			params.cover_url = lease.url;
+			delete params.thumb_offset;
+			log(`cover: ${job.cover} served to Instagram from ${lease.url}`);
+		} else {
+			log(
+				'cover skipped: no instagram.coverPublicBase in the worker config, ' +
+					'so Instagram uses the frame at the cover time'
+			);
+		}
+	}
+
 	let container;
 	try {
 		container = await graph(config, '/me/media', { method: 'POST', params });
 	} catch (err) {
+		lease?.release();
 		video.stream.destroy();
 		throw explain(err);
 	}
 	if (!container.id) {
+		lease?.release();
 		video.stream.destroy();
 		throw new Error('Instagram returned no container id.');
 	}
@@ -399,6 +435,8 @@ export async function publishToInstagram({ target, job, pb, config, log }) {
 		await waitForContainer(config, container.id, log);
 	} catch (err) {
 		throw explain(err);
+	} finally {
+		lease?.release();
 	}
 
 	// The container is ready; the publish call is what hits the minute.
@@ -460,6 +498,9 @@ export async function refreshInstagramAccount(pb, config, log, force = false) {
 			fetchedAt: now,
 			...account,
 			tokenExpiresAt: config.instagram.tokenExpiresAt || '',
+			// Whether a custom cover can be served to Instagram at all; the
+			// compose screen says so beside the cover box when it cannot.
+			coverBase: covers?.base ?? '',
 			error: renewError
 		});
 		if (accountError) log('instagram: recovered');

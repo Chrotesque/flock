@@ -1,12 +1,32 @@
 <script lang="ts">
 	import { formatBytes } from '$lib/format';
 
-	// YouTube's own cap for a custom thumbnail. Refused here, while somebody is
-	// looking, rather than at publish time when nobody is.
-	const MAX_BYTES = 2 * 1024 * 1024;
-	const TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+	// Each platform's own cap, refused here while somebody is looking rather
+	// than at publish time when nobody is: YouTube takes a 2 MB thumbnail in
+	// any of four formats, Instagram an 8 MB JPEG or PNG cover, portrait.
+	const LIMITS = {
+		thumbnail: {
+			bytes: 2 * 1024 * 1024,
+			types: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+			formats: 'JPEG, PNG, GIF or WebP',
+			platform: 'YouTube',
+			hint: 'Optional. 1280×720 works best; up to 2 MB. Without one, YouTube picks a frame.'
+		},
+		cover: {
+			bytes: 8 * 1024 * 1024,
+			types: ['image/jpeg', 'image/png'],
+			formats: 'JPEG or PNG',
+			platform: 'Instagram',
+			hint: 'Optional. 1080×1920 (9:16) works best; up to 8 MB. Without one, Instagram uses the frame at the cover time.'
+		}
+	} as const;
 
-	let { file = $bindable<File | null>(null) }: { file?: File | null } = $props();
+	let {
+		file = $bindable<File | null>(null),
+		kind = 'thumbnail'
+	}: { file?: File | null; kind?: 'thumbnail' | 'cover' } = $props();
+
+	let limit = $derived(LIMITS[kind]);
 
 	let dragging = $state(false);
 	let input: HTMLInputElement;
@@ -26,12 +46,12 @@
 	function accept(list: FileList | null) {
 		const next = list?.[0];
 		if (!next) return;
-		if (!TYPES.includes(next.type)) {
-			problem = 'JPEG, PNG, GIF or WebP only.';
+		if (!(limit.types as readonly string[]).includes(next.type)) {
+			problem = `${limit.formats} only.`;
 			return;
 		}
-		if (next.size > MAX_BYTES) {
-			problem = `${formatBytes(next.size)} is over YouTube's 2 MB limit for thumbnails.`;
+		if (next.size > limit.bytes) {
+			problem = `${formatBytes(next.size)} is over ${limit.platform}'s ${formatBytes(limit.bytes)} limit.`;
 			return;
 		}
 		problem = '';
@@ -65,14 +85,14 @@
 	<input
 		bind:this={input}
 		type="file"
-		accept="image/jpeg,image/png,image/gif,image/webp"
+		accept={limit.types.join(',')}
 		hidden
 		onchange={(e) => accept(e.currentTarget.files)}
 	/>
 
 	{#if file}
 		<div class="chosen">
-			<img class="preview" src={previewUrl} alt="" />
+			<img class="preview" class:portrait={kind === 'cover'} src={previewUrl} alt="" />
 			<div class="meta">
 				<p class="name" title={file.name}>{file.name}</p>
 				<p class="sub">{formatBytes(file.size)}</p>
@@ -96,7 +116,7 @@
 				<circle cx="15.5" cy="9" r="1.3" fill="currentColor" />
 			</svg>
 			<p class="lead">Drop an image here, or click to browse</p>
-			<p class="sub">Optional. 1280×720 works best; up to 2 MB. Without one, the platform picks a frame.</p>
+			<p class="sub">{limit.hint}</p>
 		</div>
 	{/if}
 </div>
@@ -174,6 +194,12 @@
 		border-radius: var(--radius);
 		background: #000;
 		border: 1px solid var(--border);
+	}
+
+	/* A reel cover is portrait; show it the way Instagram will. */
+	.preview.portrait {
+		width: 68px;
+		height: 120px;
 	}
 
 	.meta {

@@ -143,6 +143,7 @@
 						file,
 						source: nasFile,
 						thumbnail: group.platforms.includes('youtube') ? draft.thumbnail : null,
+						cover: group.platforms.includes('instagram') ? draft.cover : null,
 						duration,
 						destination: general.defaultDestination,
 						targets: group.rows.map((row) => ({
