@@ -3,6 +3,7 @@ import { PLATFORMS, PLATFORM_IDS, isPlatformId } from './platforms';
 import { DEFAULT_SCHEDULING } from './types';
 import { logAction, assertDeviceNamed } from './log';
 import { newId } from './id';
+import type { WorkerBeat, WorkerBeats, WorkerRole } from './workerstatus';
 import type {
 	OptionValues,
 	PlatformId,
@@ -695,6 +696,30 @@ export function subscribeStats(handlers: {
 	return () => {
 		for (const sub of [videos, settings]) void sub.then((unsubscribe) => unsubscribe());
 	};
+}
+
+const WORKER_KEYS: Record<string, WorkerRole> = { worker_all: 'all', worker_nas: 'nas', worker_local: 'local' };
+
+/** The workers' heartbeats, by role — see workerstatus.ts. */
+export async function loadWorkerBeats(): Promise<WorkerBeats> {
+	const res = await pb.collection('app_settings').getList(1, 3, {
+		filter: Object.keys(WORKER_KEYS)
+			.map((key) => `key="${key}"`)
+			.join(' || ')
+	});
+	const beats: WorkerBeats = {};
+	for (const row of res.items) beats[WORKER_KEYS[row.key]] = row.value as WorkerBeat;
+	return beats;
+}
+
+/** Each heartbeat as it is written. Returns the unsubscribe. */
+export function subscribeWorkerBeats(onBeat: (role: WorkerRole, beat: WorkerBeat | null) => void): () => void {
+	const sub = pb.collection('app_settings').subscribe('*', (e) => {
+		const role = WORKER_KEYS[e.record.key];
+		if (role) onBeat(role, e.action === 'delete' ? null : (e.record.value as WorkerBeat));
+	});
+	sub.catch(() => {});
+	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
 }
 
 export async function deleteJob(id: string): Promise<void> {

@@ -4,6 +4,18 @@
 	import { base } from '$app/paths';
 	import { VERSION } from '$lib/version';
 	import { device } from '$lib/stores/device.svelte';
+	import { workers } from '$lib/stores/workers.svelte';
+	import { onMount } from 'svelte';
+
+	onMount(() => workers.start());
+
+	/** A held release's slot, as the clock on this machine reads it. */
+	function at(iso: string): string {
+		const date = new Date(iso);
+		return Number.isNaN(date.getTime()) || date.getTime() < Date.now()
+			? ''
+			: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+	}
 
 	let needsDevice = $derived(!device.named);
 	import type { Snippet } from 'svelte';
@@ -75,14 +87,32 @@
 			{/each}
 		</nav>
 
-		{#if needsDevice}
-			<a class="alert" href="{base}/settings" title="This device has no name yet">
-				<span class="bang">!</span>
-				<span class="alerttext">Name this device</span>
-			</a>
-		{/if}
+		<div class="middle">
+			{#if needsDevice}
+				<a class="alert" href="{base}/settings" title="This device has no name yet">
+					<span class="bang">!</span>
+					<span class="alerttext">Name this device</span>
+				</a>
+			{/if}
 
-		<nav class="utility" class:pushed={!needsDevice}>
+			<section class="worker" aria-label="Worker status">
+				<div class="workerhead">
+					<span class="workername">Worker</span>
+					<span class="dots">
+						{#each workers.view.dots as dot (dot.role)}
+							<span class="dot {dot.state}" title={dot.title} aria-label={dot.title}></span>
+						{/each}
+					</span>
+				</div>
+				{#each workers.view.lines as line, i (i)}
+					<p class="doing" title={line.text}>
+						{line.text}{#if line.until && at(line.until)}<span class="until"> · out at {at(line.until)}</span>{/if}
+					</p>
+				{/each}
+			</section>
+		</div>
+
+		<nav class="utility">
 			{#each utilities as link (link.href)}
 				<a href="{base}{link.href}" class="navlink" class:active={isActive(link.href)}>
 					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
@@ -205,21 +235,83 @@
 		gap: 3px;
 	}
 
-	/* Settings and Log sit at the bottom of the rail; .foot's own 30px keeps
-	   them clear of the brand.
-	   The push comes from whichever element owns the free space: normally
-	   .utility's auto margin, but when the alert is present its own pair of
-	   autos absorbs everything instead. Three competing autos would split the
-	   gap in thirds and leave the alert sitting high. */
-	.utility.pushed {
-		margin-top: auto;
+	/* The device alert and the worker status, centred in the empty stretch
+	   between the two nav groups: an auto margin on both sides splits the free
+	   space evenly, which also holds Settings and Log at the bottom of the rail
+	   (.foot's own 30px keeps them clear of the brand). */
+	.middle {
+		margin: auto 0;
+		display: grid;
+		gap: 18px;
+		padding: 18px 0;
 	}
 
-	/* Centred in the empty stretch between the two nav groups: an auto margin on
-	   both sides splits the free space evenly, and .utility's own auto margin
-	   still holds the bottom group down. */
+	.worker {
+		padding: 0 11px;
+		min-width: 0;
+	}
+
+	.workerhead {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-bottom: 4px;
+	}
+
+	.workername {
+		font-size: 17px;
+		font-weight: 650;
+		letter-spacing: -0.01em;
+		color: var(--text);
+	}
+
+	.dots {
+		display: flex;
+		gap: 6px;
+	}
+
+	.dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		cursor: help;
+	}
+
+	.dot.up {
+		background: var(--ok);
+		box-shadow: 0 0 6px rgba(52, 211, 153, 0.55);
+	}
+
+	.dot.down {
+		background: var(--danger);
+		box-shadow: 0 0 6px rgba(248, 113, 113, 0.45);
+	}
+
+	/* The PC worker doing the NAS worker's share as well: amber, and ringed,
+	   so it reads as "carrying more" rather than merely another colour. */
+	.dot.covering {
+		background: var(--warn);
+		box-shadow:
+			0 0 0 2px var(--bg),
+			0 0 0 3.5px var(--warn),
+			0 0 8px rgba(251, 191, 36, 0.6);
+	}
+
+	.doing {
+		margin: 2px 0 0;
+		font-size: 10.5px;
+		line-height: 1.35;
+		color: var(--text-faint);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.until {
+		color: var(--text-dim);
+	}
+
 	.alert {
-		margin: auto 0;
 		display: flex;
 		align-items: center;
 		gap: 9px;
@@ -367,8 +459,15 @@
 			grid-auto-flow: column;
 			gap: 2px;
 		}
-		.alert {
+		.middle {
 			margin: 0;
+			padding: 0;
+			display: flex;
+			align-items: center;
+			gap: 12px;
+		}
+		.doing {
+			display: none;
 		}
 		main {
 			padding: 22px 18px 50px;

@@ -120,8 +120,8 @@ step plays a file picked from either list the same way.
 ## The worker
 
 Confirming an upload only queues it. A separate process does the publishing, and
-it has to keep running when no browser is open — so it belongs on the NAS beside
-PocketBase, not in the app. It handles YouTube, TikTok and Instagram; each is
+it has to keep running when no browser is open — so it runs outside the app,
+on your PC, your NAS or both (see *One worker or two* below). It handles YouTube, TikTok and Instagram; each is
 set up separately below, and a platform that is not set up simply leaves its
 releases waiting in the queue, with a note in the worker's log.
 
@@ -213,7 +213,20 @@ flow. It reads the config beside itself, or wherever `FLOCK_WORKER_CONFIG`
 points. It is built for the platform it was built on and is not signed, so
 Windows may show a SmartScreen notice the first time. Local watch folders
 are paths on the machine the worker runs on, so set them again in Settings
-after moving it, and run only one worker at a time.
+after moving it, and run only one worker at a time — unless you split them as
+below.
+
+**One worker or two.** With no NAS, run one worker on your PC and leave
+`"role"` in its config at `"all"` (the default): it does everything. With a
+NAS, you can run two: one on the NAS with `"role": "nas"` (publishing,
+filing videos into their destinations, stats, title scoring) and one on the
+PC with `"role": "local"` (local watch folders, the folder dialog, video
+previews). `FLOCK_WORKER_ROLE` sets the role too. While the NAS worker is
+down, the PC worker takes over its work, and hands it back once the NAS
+worker returns. The sidebar shows **Worker** with one dot per worker
+(PC left, NAS right): green running, red not, amber with a ring while the PC
+is doing the NAS worker's work as well; underneath, what each is doing.
+Never run an `all` worker beside either of the others.
 
 `pnpm worker:once` does a single pass and exits, which is the easier one to watch
 while testing. `pnpm worker:stats` runs one stats poll on its own, which is the

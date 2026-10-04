@@ -9,9 +9,10 @@
 //   pnpm worker:tiktok      show who the TikTok token posts as, then exit
 //   pnpm worker:instagram   show who the Instagram token posts as, then exit
 //
-// Belongs on the NAS beside PocketBase, not in the SPA: it holds the
-// platforms' client secrets, and it has to keep running when no browser is
-// open.
+// Belongs beside PocketBase, not in the SPA: it holds the platforms' client
+// secrets, and it has to keep running when no browser is open. Its `role`
+// (roles.mjs) splits the work between a NAS and a PC worker; the default,
+// `all`, does everything.
 
 import { requireConfig, hasTikTok, hasInstagram } from './config.mjs';
 import { makeClient } from './pb.mjs';
@@ -22,7 +23,7 @@ import { copyToDestination, copyInto } from './archive.mjs';
 import { scanWatchFolder, scanLocalFolders } from './watch.mjs';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import { resolveFolder } from './paths.mjs';
 import { pickFolder } from './folderpick.mjs';
 import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
@@ -31,6 +32,8 @@ import { msUntil } from './upload.mjs';
 import { startPreviewServer } from './preview.mjs';
 import { makeRemoteLog } from './remotelog.mjs';
 import { randomBytes } from 'node:crypto';
+import { makeHeartbeat } from './heartbeat.mjs';
+import { ownsPublishing } from './roles.mjs';
 
 /**
  * One entry per platform that can actually publish, and how it is timed.
@@ -80,7 +83,8 @@ function stamp() {
 
 // Everything printed is also copied to the Log screen. `run` tells one start
 // of the worker from the next there.
-const remote = makeRemoteLog({ run: randomBytes(4).toString('hex') });
+const run = randomBytes(4).toString('hex');
+const remote = makeRemoteLog({ run });
 
 function log(message) {
 	console.log(`[${stamp()}] ${message}`);
@@ -97,6 +101,14 @@ function inWords(ms) {
 
 /** Targets already reported as waiting on an import, so that is said once. */
 const waitingImport = new Set();
+
+const NAMES = { youtube: 'YouTube', tiktok: 'TikTok', instagram: 'Instagram' };
+
+/**
+ * Who does what, and what is being done — set in main. The one-shot modes get
+ * a heartbeat that writes nothing and does what the role owns.
+ */
+let hb;
 
 async function handle(pb, config, platform, target) {
 	const adapter = ADAPTERS[platform];
@@ -126,11 +138,25 @@ async function handle(pb, config, platform, target) {
 	}
 	waitingImport.delete(target.id);
 
+	// A handover may have begun since this pass listed the row; leave it for
+	// the worker taking over.
+	if (!hb.canPublish()) return;
+
 	// Claim before starting, so a second pass cannot pick up the same row while
 	// its upload is in flight.
 	await pb.updateTarget(target.id, { status: 'publishing', error: '' });
 	log(`claimed ${label}`);
 
+	const name = `${NAMES[platform] ?? platform}: "${target.title || target.description?.slice(0, 60) || target.id}"`;
+	const until = adapter.timing === 'slot' && msUntil(target.scheduled_at) > 0 ? target.scheduled_at : undefined;
+	await hb.track(`Publishing to ${name}`, () => publishOne(pb, config, platform, target, job, label), {
+		publishing: true,
+		until
+	});
+}
+
+async function publishOne(pb, config, platform, target, job, label) {
+	const adapter = ADAPTERS[platform];
 	try {
 		const result = await adapter.publish({
 			target,
@@ -175,8 +201,13 @@ async function copyPass(pb) {
 			log(`would copy "${job.title}" -> ${job.destination_path}`);
 			continue;
 		}
+		if (!hb.canPublish()) return;
 		try {
-			const result = await copyToDestination({ job, pb, log: (m) => log(`  ${m}`) });
+			const result = await hb.track(
+				`Filing "${job.title || job.video_name || job.id}" into its destination`,
+				() => copyToDestination({ job, pb, log: (m) => log(`  ${m}`) }),
+				{ publishing: true }
+			);
 			await pb.updateJob(job.id, { status: 'done', error: '' });
 			log(`copied "${job.title}" -> ${result.path}`);
 			pb.log(
@@ -213,19 +244,24 @@ function byPath(files) {
 async function watchPass(pb) {
 	const row = await pb.getSetting('general');
 	const folder = row?.value?.watchFolder?.trim() ?? '';
+	// The listing is published by whoever publishes; a PC worker that is not
+	// covering still scans it, for the previews it serves.
+	const publish = hb.canPublish();
 	// Swapped in once the scan is done, not emptied before it: a slow share
 	// would otherwise cut off every preview for as long as the scan takes.
 	let nas = new Map();
-	if (folder) {
+	if (folder && (publish || hb.canLocal())) {
 		const index = await scanWatchFolder(folder);
 		if (index) {
-			await pb.setSetting('watch_index', index);
-			if (!index.error) nas = byPath(index.files);
+			if (publish) await pb.setSetting('watch_index', index);
+			// Listed by the path the page knows, opened by the one that works here.
+			if (!index.error) nas = new Map(index.files.map((f) => [f.path, { ...f, path: join(index.folder, f.name) }]));
 			if (index.error) log(`watch folder: ${index.error}`);
 			else log(`watch folder: ${index.files.length} video(s) in ${index.folder}`);
 		}
 	}
 	listed.nas = nas;
+	if (!hb.canLocal()) return;
 
 	// The local folders, pooled into one listing for the "Locally" box. Read
 	// from this machine's disks, which is why they only work while the worker
@@ -251,6 +287,7 @@ async function watchPass(pb) {
  * `pendingCopies`. The local original is left alone.
  */
 async function importPass(pb) {
+	if (!hb.canLocal()) return;
 	const jobs = await pb.pendingImports();
 	if (jobs.length === 0) return;
 
@@ -271,12 +308,15 @@ async function importPass(pb) {
 			} catch (err) {
 				throw new Error(`Local video is gone: ${from} (${err.code || err.message})`);
 			}
-			const result = await copyInto({
-				source: { stream: createReadStream(from), size: info.size },
-				dir: await resolveFolder(watch),
-				wanted: job.video_name || basename(from),
-				log: (m) => log(`  ${m}`)
-			});
+			const dir = await resolveFolder(watch);
+			const result = await hb.track(`Copying "${job.title || basename(from)}" to the NAS`, () =>
+				copyInto({
+					source: { stream: createReadStream(from), size: info.size },
+					dir,
+					wanted: job.video_name || basename(from),
+					log: (m) => log(`  ${m}`)
+				})
+			);
 			await pb.updateJob(job.id, {
 				source_path: result.path,
 				source_origin: from,
@@ -303,6 +343,7 @@ async function importPass(pb) {
  * say why nothing came back.
  */
 async function scorePass(pb, config) {
+	if (!hb.canPublish()) return;
 	const requests = await pb.pendingScores();
 	if (requests.length === 0) return;
 
@@ -360,7 +401,7 @@ let picking = false;
 const PICK_MAX_AGE_MS = 2 * 60_000;
 
 async function folderPickPass(pb) {
-	if (picking || dry) return;
+	if (picking || dry || !hb.canLocal()) return;
 	const row = await pb.getSetting('folder_pick');
 	const ask = row?.value;
 	if (!ask || ask.status !== 'pending' || !ask.id) return;
@@ -373,7 +414,7 @@ async function folderPickPass(pb) {
 	try {
 		await pb.setSetting('folder_pick', { ...ask, status: 'open' });
 		log('folder dialog opened for Settings');
-		const path = await pickFolder();
+		const path = await hb.track('Folder dialog open for Settings', () => pickFolder());
 		await pb.setSetting('folder_pick', { ...ask, status: path ? 'done' : 'cancelled', path: path ?? '' });
 		log(path ? `folder chosen: ${path}` : 'folder dialog cancelled');
 	} catch (err) {
@@ -406,6 +447,7 @@ async function noteUnready(pb, platform) {
 async function pass(pb, config) {
 	await watchPass(pb);
 	await importPass(pb);
+	if (!hb.canPublish()) return;
 	await copyPass(pb);
 
 	for (const [platform, adapter] of Object.entries(ADAPTERS)) {
@@ -435,6 +477,7 @@ const busy = new Set();
  * the other platform does not. A dry run lists every pending row, due or not.
  */
 async function slotPass(pb, config, { wait = false } = {}) {
+	if (!hb.canPublish()) return;
 	const running = [];
 	for (const [platform, adapter] of Object.entries(ADAPTERS)) {
 		if (adapter.timing !== 'slot') continue;
@@ -464,6 +507,7 @@ async function slotPass(pb, config, { wait = false } = {}) {
 
 /** The account details the compose screen shows, each on its own timer. */
 async function accountPass(pb, config) {
+	if (!hb.canPublish()) return;
 	if (hasTikTok(config)) {
 		await refreshTikTokCreator(pb, config, log).catch((err) => log(`tiktok: ${err.message}`));
 	}
@@ -474,8 +518,9 @@ async function accountPass(pb, config) {
 
 /**
  * Rows left `publishing` by a crash would otherwise sit there forever, since
- * nothing polls that state. Safe only at startup, when by definition no upload
- * of ours is in flight — which is also why this assumes a single worker.
+ * nothing polls that state. Safe only when this worker takes the publishing
+ * work up — at startup for `all`, at handover or takeover for the other two —
+ * since then no upload of ours is in flight and the other worker's are over.
  */
 async function recoverStale(pb) {
 	for (const platform of Object.keys(ADAPTERS)) {
@@ -531,8 +576,20 @@ async function main() {
 
 	const config = requireConfig({ needToken: !dry, needGoogle: !dry });
 	const pb = makeClient(config.pocketbaseUrl);
-	log(`worker started (${dry ? 'dry run' : once ? 'single pass' : statsOnly ? 'stats only' : 'polling'}, pid ${process.pid})`);
+	const live = !(once || dry || statsOnly);
+	log(
+		`worker started (${dry ? 'dry run' : once ? 'single pass' : statsOnly ? 'stats only' : 'polling'}, ` +
+			`role ${config.role}, pid ${process.pid})`
+	);
 	remote.attach(pb);
+	hb = makeHeartbeat({
+		pb,
+		role: config.role,
+		run,
+		log,
+		live,
+		onStartPublishing: () => recoverStale(pb).catch((err) => log(`recovery failed: ${err.message}`))
+	});
 
 	// Started at boot, or straight after a resume, the NAS or the Tailscale link
 	// to it may not be up yet. Waiting beats dying on the first probe; the
@@ -564,11 +621,13 @@ async function main() {
 		return;
 	}
 
-	if (!dry) await recoverStale(pb);
+	// The other roles recover when they take the publishing work up — see
+	// heartbeat.mjs.
+	if (!dry && config.role === 'all') await recoverStale(pb);
 
 	if (once || dry) {
 		await scorePass(pb, config);
-		if (!dry && config.statsSeconds > 0) await statsPass({ pb, config, log });
+		if (!dry && config.statsSeconds > 0 && hb.canPublish()) await statsPass({ pb, config, log });
 		if (!dry) await accountPass(pb, config);
 		await pass(pb, config);
 		await slotPass(pb, config, { wait: true });
@@ -581,10 +640,27 @@ async function main() {
 			`scoring every ${config.scoreSeconds}s — ctrl-c to stop`
 	);
 
+	await hb.start();
+	// A last heartbeat on the way out, so the sidebar turns red and a PC worker
+	// takes over at once rather than after the stale window. A second ctrl-c
+	// does not wait for it.
+	let stopping = false;
+	for (const signal of ['SIGINT', 'SIGTERM']) {
+		process.on(signal, () => {
+			if (stopping) process.exit(1);
+			stopping = true;
+			log('stopping');
+			void Promise.race([
+				hb.stop().then(() => remote.flush()),
+				new Promise((resolve) => setTimeout(resolve, 3000))
+			]).finally(() => process.exit(0));
+		});
+	}
+
 	// The Upload step's player — see preview.mjs. Only for a worker that stays
 	// up; the address is published where the page looks for it, and left there
 	// when the worker stops, so the page checks it answers before using it.
-	if (config.previewPort > 0) {
+	if (config.previewPort > 0 && hb.canLocal()) {
 		startPreviewServer({
 			port: config.previewPort,
 			lookup: (source, path) =>
@@ -604,13 +680,14 @@ async function main() {
 	// minutes, and the Analytics screen should not go stale for the duration.
 	// `busy` stops a slow poll overlapping the next tick.
 	if (config.statsSeconds > 0) {
+		if (!ownsPublishing(config.role)) log('stats run here only while covering for the NAS worker');
 		log(
 			`stats: newest ${config.statsVideos} videos every ${config.statsSeconds}s, ` +
 				`up to ${config.statsBudget} units a day`
 		);
 		let statsBusy = false;
 		const tick = async () => {
-			if (statsBusy) return;
+			if (statsBusy || !hb.canPublish()) return;
 			statsBusy = true;
 			try {
 				await statsPass({ pb, config, log });

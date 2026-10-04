@@ -73,10 +73,23 @@ async function scanFolder(folder, label) {
 	return out;
 }
 
+/**
+ * The watch folder's videos, each `path` in the form the folder was typed in
+ * Settings — not the form that resolved here. A NAS worker reads the folder
+ * as /mnt/user/... and a PC worker as \\nas\..., and both publish this
+ * listing, so naming files by the typed form is what keeps a job's
+ * `source_path` the same whichever wrote it; `resolveFolder` translates it
+ * back on whichever machine opens it. `folder` stays the resolved one.
+ */
 export async function scanWatchFolder(configured) {
 	const folder = await resolveFolder(configured);
 	if (!folder) return null;
 	const scan = await scanFolder(folder, `the watch folder ${configured}`);
+	const typed = configured.trim();
+	if (folder !== typed && /^\\\\/.test(typed)) {
+		const base = typed.replace(/\\+$/, '');
+		scan.files = scan.files.map((file) => ({ ...file, path: `${base}\\${file.name}` }));
+	}
 	return { ...scan, scannedAt: new Date().toISOString() };
 }
 

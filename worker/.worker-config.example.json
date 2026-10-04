@@ -1,5 +1,6 @@
 {
   "pocketbaseUrl": "http://<pocketbase-host>:8091",
+  "role": "all",
   "pollSeconds": 60,
   "slotSeconds": 15,
   "instagramLeadSeconds": 600,

@@ -11,6 +11,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isSea } from 'node:sea';
+import { parseRole } from './roles.mjs';
 
 /**
  * Where the config file lives. Beside this module when the worker runs from
@@ -44,6 +45,9 @@ export function loadConfig() {
 	return {
 		// Trailing slashes would double up in every request path.
 		pocketbaseUrl: (process.env.FLOCK_PB_URL || file.pocketbaseUrl || '').replace(/\/+$/, ''),
+		// Which share of the work this worker does — see roles.mjs. `all`, the
+		// default, is everything, which is what a setup without a NAS runs.
+		role: parseRole(process.env.FLOCK_WORKER_ROLE || file.role),
 		google: {
 			clientId: process.env.GOOGLE_CLIENT_ID || google.clientId || '',
 			clientSecret: process.env.GOOGLE_CLIENT_SECRET || google.clientSecret || '',
