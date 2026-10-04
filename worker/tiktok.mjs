@@ -379,7 +379,31 @@ async function waitForPublish(config, publishId, username, log) {
 	throw unsure(`TikTok was still processing after ${STATUS_TIMEOUT_MS / 60000} minutes.`);
 }
 
-export async function publishToTikTok({ target, job, pb, config, log }) {
+/**
+ * Where a post TikTok accepted has got to — the check a worker taking over
+ * makes before posting a row again (see orphans.mjs). PROCESSING_UPLOAD means
+ * the chunks were still going up; anything else short of done or failed is
+ * TikTok finishing the post on its own.
+ */
+export async function probeTikTok(config, handle) {
+	const data = await api(config, '/post/publish/status/fetch/', { publish_id: handle.publishId });
+	const status = String(data.status || '');
+	if (status === 'PUBLISH_COMPLETE') {
+		// Sic: the field is misspelt in the API itself.
+		const ids = data.publicaly_available_post_id ?? data.publicly_available_post_id ?? [];
+		const postId = Array.isArray(ids) && ids.length > 0 ? String(ids[0]) : '';
+		const profile = `https://www.tiktok.com/@${handle.username}`;
+		return {
+			state: 'done',
+			result: { url: postId ? `${profile}/video/${postId}` : profile, scheduled: false, privacyStatus: 'posted' }
+		};
+	}
+	if (status === 'FAILED') return { state: 'gone', reason: explainFailure(data.fail_reason) };
+	if (status === 'PROCESSING_UPLOAD' || status === '') return { state: 'incomplete' };
+	return { state: 'processing' };
+}
+
+export async function publishToTikTok({ target, job, pb, config, log, saveHandle }) {
 	const options = target.options ?? {};
 
 	// Their rules require this before every post: it is where the account's
@@ -438,6 +462,13 @@ export async function publishToTikTok({ target, job, pb, config, log }) {
 	// Logged before a byte goes up: it is the only handle on the post if the
 	// worker loses sight of it afterwards.
 	log(`TikTok accepted the post as publish ${init.publish_id}`);
+	// And recorded, or nothing goes up — see orphans.mjs.
+	try {
+		await saveHandle({ kind: 'tiktok-publish', publishId: init.publish_id, username: creator.username });
+	} catch (err) {
+		video.stream.destroy();
+		throw err;
+	}
 
 	// The upload URL is short-lived (TikTok says about an hour), which a very
 	// large file over a slow uplink can outrun; the chunk error then names it.

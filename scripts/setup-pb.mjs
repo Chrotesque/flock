@@ -124,6 +124,10 @@ const collections = [
 			{ type: 'text', name: 'remote_url', max: 1000 },
 			{ type: 'text', name: 'error', max: 2000 },
 			{ type: 'date', name: 'published_at' },
+			// Which worker run claimed the row, and the platform's own handle on
+			// the upload once there is one — what a worker taking over asks the
+			// platform about before uploading again (worker/orphans.mjs).
+			{ type: 'json', name: 'handle', maxSize: 20000 },
 			...stamps
 		],
 		indexes: [

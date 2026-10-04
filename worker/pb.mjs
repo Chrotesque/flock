@@ -120,6 +120,10 @@ export function makeClient(baseUrl) {
 			});
 		},
 
+		async getTarget(id) {
+			return request(`/api/collections/upload_targets/records/${id}`);
+		},
+
 		async updateTarget(id, data) {
 			return request(`/api/collections/upload_targets/records/${id}`, {
 				method: 'PATCH',

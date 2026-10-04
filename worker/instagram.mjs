@@ -373,7 +373,51 @@ async function publishContainer(config, id) {
 	throw last;
 }
 
-export async function publishToInstagram({ target, job, pb, config, log }) {
+/**
+ * Where a reel's container has got to — the check a worker taking over makes
+ * before uploading a row again (see orphans.mjs). FINISHED is a processed
+ * container nobody has published yet, which `publishReady` can finish.
+ */
+export async function probeInstagram(config, handle) {
+	const container = await graph(config, `/${handle.containerId}`, { params: { fields: 'status_code,status' } });
+	const code = String(container.status_code || '');
+	if (code === 'PUBLISHED') {
+		const profile = config.instagram.username
+			? `https://www.instagram.com/${config.instagram.username}/`
+			: 'https://www.instagram.com/';
+		return { state: 'done', result: { url: profile, scheduled: false, privacyStatus: 'a reel' } };
+	}
+	if (code === 'FINISHED') return { state: 'ready' };
+	if (code === 'IN_PROGRESS' || code === '') return { state: 'incomplete' };
+	return { state: 'gone', reason: `the container is ${code.toLowerCase()}: ${container.status || 'no detail'}` };
+}
+
+/** Publishes a container another worker left processed but unpublished. */
+export async function publishReady(config, handle) {
+	let published;
+	try {
+		published = await publishContainer(config, handle.containerId);
+	} catch (err) {
+		throw explain(err);
+	}
+	let url = config.instagram.username
+		? `https://www.instagram.com/${config.instagram.username}/`
+		: 'https://www.instagram.com/';
+	try {
+		const media = await graph(config, `/${published.id}`, { params: { fields: 'permalink' } });
+		if (media.permalink) url = media.permalink;
+	} catch {
+		// The reel is up; the permalink is a nicety.
+	}
+	return { url, scheduled: false, privacyStatus: 'a reel' };
+}
+
+/** Deletes a cover photo another worker left on the Page. */
+export async function dropHostedCover(config, id) {
+	await graph(config, `/${id}`, { method: 'DELETE' });
+}
+
+export async function publishToInstagram({ target, job, pb, config, log, saveHandle }) {
 	const options = target.options ?? {};
 	const name = job.video_name || job.video;
 	const duration = Number(job.video_duration) || 0;
@@ -437,6 +481,19 @@ export async function publishToInstagram({ target, job, pb, config, log }) {
 		await dropCover();
 		video.stream.destroy();
 		throw new Error('Instagram returned no container id.');
+	}
+
+	// Recorded before a byte goes up, or nothing does — see orphans.mjs.
+	try {
+		await saveHandle({
+			kind: 'instagram-container',
+			containerId: container.id,
+			...(hosted ? { coverPhotoId: hosted.id } : {})
+		});
+	} catch (err) {
+		await dropCover();
+		video.stream.destroy();
+		throw err;
 	}
 
 	log(`uploading ${name} (${(video.size / MiB).toFixed(1)} MB) into container ${container.id}`);

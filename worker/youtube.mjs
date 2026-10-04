@@ -266,7 +266,62 @@ async function setThumbnail(token, videoId, job, pb, log) {
 	log(`thumbnail set (${Math.round(image.bytes.length / 1024)} KB)`);
 }
 
-export async function publishToYouTube({ target, job, pb, config, log }) {
+/**
+ * Asks YouTube how far an upload session got — the check the worker taking
+ * over makes before it uploads a row again (see orphans.mjs). A complete
+ * session answers with the video itself; an incomplete one with 308 and the
+ * bytes received; an expired or unknown one with 404 or 410.
+ */
+export async function probeYouTube(config, handle) {
+	const token = await accessToken(config.google);
+	const url = new URL(handle.uploadUrl);
+	const { status, headers, text } = await new Promise((resolve, reject) => {
+		const req = httpsRequest(
+			{
+				hostname: url.hostname,
+				port: url.port || 443,
+				path: url.pathname + url.search,
+				method: 'PUT',
+				headers: {
+					Authorization: `Bearer ${token}`,
+					'Content-Length': 0,
+					'Content-Range': `bytes */${handle.size}`
+				}
+			},
+			(res) => {
+				let body = '';
+				res.setEncoding('utf8');
+				res.on('data', (chunk) => (body += chunk));
+				res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, text: body }));
+			}
+		);
+		req.on('error', reject);
+		req.end();
+	});
+
+	if (status === 200 || status === 201) {
+		const video = JSON.parse(text);
+		return { state: 'done', result: resultOf(video, Boolean(video.status?.publishAt)) };
+	}
+	if (status === 308) {
+		// "bytes=0-1234" once anything has arrived; no header at all before that.
+		const match = /bytes=\d+-(\d+)/.exec(String(headers.range ?? ''));
+		return { state: 'uploading', bytes: match ? Number(match[1]) + 1 : 0 };
+	}
+	if (status === 404 || status === 410) return { state: 'gone', reason: `the upload session has expired (${status})` };
+	throw new Error(`YouTube upload status -> ${status}: ${text.slice(0, 300)}`);
+}
+
+function resultOf(video, scheduled) {
+	return {
+		videoId: video.id,
+		url: `https://www.youtube.com/watch?v=${video.id}`,
+		scheduled,
+		privacyStatus: video.status?.privacyStatus
+	};
+}
+
+export async function publishToYouTube({ target, job, pb, config, log, saveHandle }) {
 	const options = target.options ?? {};
 	const release = resolveRelease(options, target.scheduled_at);
 
@@ -296,6 +351,15 @@ export async function publishToYouTube({ target, job, pb, config, log }) {
 			mimeType: video.mimeType,
 			notifySubscribers: options.notifySubscribers
 		});
+	}
+
+	// Recorded before a byte goes up, and the upload does not start unless it
+	// was: it is how a worker taking over finds out how far this got.
+	try {
+		await saveHandle({ kind: 'youtube-session', uploadUrl, size: video.size });
+	} catch (err) {
+		video.stream.destroy();
+		throw err;
 	}
 
 	const result = await putVideo(uploadUrl, video.stream, {

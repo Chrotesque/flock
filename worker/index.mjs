@@ -16,9 +16,16 @@
 
 import { requireConfig, hasTikTok, hasInstagram } from './config.mjs';
 import { makeClient } from './pb.mjs';
-import { publishToYouTube } from './youtube.mjs';
-import { publishToTikTok, refreshTikTokCreator, creatorInfo, privacyLabel } from './tiktok.mjs';
-import { publishToInstagram, refreshInstagramAccount, accountInfo } from './instagram.mjs';
+import { publishToYouTube, probeYouTube } from './youtube.mjs';
+import { publishToTikTok, probeTikTok, refreshTikTokCreator, creatorInfo, privacyLabel } from './tiktok.mjs';
+import {
+	publishToInstagram,
+	probeInstagram,
+	publishReady,
+	dropHostedCover,
+	refreshInstagramAccount,
+	accountInfo
+} from './instagram.mjs';
 import { copyToDestination, copyInto } from './archive.mjs';
 import { scanWatchFolder, scanLocalFolders } from './watch.mjs';
 import { createReadStream } from 'node:fs';
@@ -34,6 +41,7 @@ import { makeRemoteLog } from './remotelog.mjs';
 import { randomBytes } from 'node:crypto';
 import { makeHeartbeat } from './heartbeat.mjs';
 import { ownsPublishing } from './roles.mjs';
+import { decide, mayBeAlive } from './orphans.mjs';
 
 /**
  * One entry per platform that can actually publish, and how it is timed.
@@ -49,6 +57,7 @@ import { ownsPublishing } from './roles.mjs';
 const ADAPTERS = {
 	youtube: {
 		publish: publishToYouTube,
+		probe: probeYouTube,
 		timing: 'now',
 		lead: () => 0,
 		ready: (config) => Boolean(config.google.refreshToken),
@@ -56,6 +65,7 @@ const ADAPTERS = {
 	},
 	tiktok: {
 		publish: publishToTikTok,
+		probe: probeTikTok,
 		timing: 'slot',
 		lead: () => 0,
 		ready: hasTikTok,
@@ -63,6 +73,7 @@ const ADAPTERS = {
 	},
 	instagram: {
 		publish: publishToInstagram,
+		probe: probeInstagram,
 		timing: 'slot',
 		lead: (config) => Math.max(0, Number(config.instagramLeadSeconds) || 0),
 		ready: hasInstagram,
@@ -110,6 +121,9 @@ const NAMES = { youtube: 'YouTube', tiktok: 'TikTok', instagram: 'Instagram' };
  */
 let hb;
 
+/** Rows this run is publishing; any other `publishing` row is an orphan. */
+const inHand = new Set();
+
 async function handle(pb, config, platform, target) {
 	const adapter = ADAPTERS[platform];
 	const label = `${platform} "${target.title || target.description?.slice(0, 40) || target.id}"`;
@@ -143,45 +157,94 @@ async function handle(pb, config, platform, target) {
 	if (!hb.canPublish()) return;
 
 	// Claim before starting, so a second pass cannot pick up the same row while
-	// its upload is in flight.
-	await pb.updateTarget(target.id, { status: 'publishing', error: '' });
-	log(`claimed ${label}`);
+	// its upload is in flight. The claim names this run, which is what lets
+	// the platform handle below be refused if the row has been taken over.
+	inHand.add(target.id);
+	try {
+		const claim = { run, role: config.role, claimedAt: new Date().toISOString() };
+		await pb.updateTarget(target.id, { status: 'publishing', error: '', handle: claim });
+		log(`claimed ${label}`);
 
-	const name = `${NAMES[platform] ?? platform}: "${target.title || target.description?.slice(0, 60) || target.id}"`;
-	const until = adapter.timing === 'slot' && msUntil(target.scheduled_at) > 0 ? target.scheduled_at : undefined;
-	await hb.track(`Publishing to ${name}`, () => publishOne(pb, config, platform, target, job, label), {
-		publishing: true,
-		until
-	});
+		const name = `${NAMES[platform] ?? platform}: "${target.title || target.description?.slice(0, 60) || target.id}"`;
+		const until = adapter.timing === 'slot' && msUntil(target.scheduled_at) > 0 ? target.scheduled_at : undefined;
+		await hb.track(`Publishing to ${name}`, () => publishOne(pb, config, platform, target, job, label, claim), {
+			publishing: true,
+			until
+		});
+	} finally {
+		inHand.delete(target.id);
+	}
 }
 
-async function publishOne(pb, config, platform, target, job, label) {
+/** Whether the row is still this run's — another worker may have taken it over. */
+async function stillOurs(pb, id) {
+	const row = await pb.getTarget(id);
+	return row.status === 'publishing' && row.handle?.run === run;
+}
+
+async function publishOne(pb, config, platform, target, job, label, claim) {
 	const adapter = ADAPTERS[platform];
+	// The platform's handle on the upload goes on the row before any bytes do,
+	// and the adapters do not start without it: a worker taking over asks the
+	// platform about it rather than uploading again. See orphans.mjs.
+	const saveHandle = async (handle) => {
+		if (!(await stillOurs(pb, target.id))) {
+			throw new Error('Another worker has taken this row over; not uploading it here as well.');
+		}
+		await pb.updateTarget(target.id, { handle: { ...claim, ...handle } });
+	};
+
+	let result;
+	let failure;
 	try {
-		const result = await adapter.publish({
+		result = await adapter.publish({
 			target,
 			job,
 			pb,
 			config,
+			saveHandle,
 			log: (message) => log(`  ${message}`)
 		});
-
-		await pb.updateTarget(target.id, {
-			status: result.scheduled ? 'scheduled' : 'published',
-			remote_url: result.url,
-			error: result.locked ? 'Stored as private: the API project is not audited yet.' : '',
-			...(result.scheduled ? {} : { published_at: new Date().toISOString() })
-		});
-
-		const how = result.scheduled ? `scheduled for ${target.scheduled_at}` : `live as ${result.privacyStatus}`;
-		log(`done ${label} — ${how}  ${result.url}`);
-		pb.log(`Published to ${platform}`, `${target.title || '(no title)'} -> ${result.url} (${how})`);
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		await pb.updateTarget(target.id, { status: 'failed', error: message.slice(0, 1900) });
-		log(`FAILED ${label}: ${message}`);
-		pb.log(`Failed to publish to ${platform}`, `${target.title || '(no title)'}: ${message}`);
+		failure = err instanceof Error ? err.message : String(err);
 	}
+
+	// Taken over while this ran. If the other worker recorded this very upload
+	// (the row is settled but still carries our claim), there is nothing to
+	// add; if it queued the row again, a finished upload here is a duplicate.
+	// An unreadable row falls through to the write, which reports itself.
+	const now = await pb.getTarget(target.id).catch(() => null);
+	if (now && !(now.status === 'publishing' && now.handle?.run === run)) {
+		if (now.handle?.run === run) {
+			log(`${label} was recorded by the worker that took over, from this same upload`);
+			return;
+		}
+		const what = result ? `finished anyway as ${result.url} — a duplicate to remove` : `ended: ${failure}`;
+		log(`${label} was taken over by another worker while publishing here; this upload ${what}`);
+		if (result) pb.log(`Duplicate upload to ${platform}`, `${target.title || '(no title)'}: ${what}`);
+		return;
+	}
+
+	if (result) {
+		await recordResult(pb, platform, target, result, label);
+		return;
+	}
+	await pb.updateTarget(target.id, { status: 'failed', error: failure.slice(0, 1900) });
+	log(`FAILED ${label}: ${failure}`);
+	pb.log(`Failed to publish to ${platform}`, `${target.title || '(no title)'}: ${failure}`);
+}
+
+async function recordResult(pb, platform, target, result, label) {
+	await pb.updateTarget(target.id, {
+		status: result.scheduled ? 'scheduled' : 'published',
+		remote_url: result.url,
+		error: result.locked ? 'Stored as private: the API project is not audited yet.' : '',
+		...(result.scheduled ? {} : { published_at: new Date().toISOString() })
+	});
+
+	const how = result.scheduled ? `scheduled for ${target.scheduled_at}` : `live as ${result.privacyStatus}`;
+	log(`done ${label} — ${how}  ${result.url}`);
+	pb.log(`Published to ${platform}`, `${target.title || '(no title)'} -> ${result.url} (${how})`);
 }
 
 /**
@@ -516,22 +579,90 @@ async function accountPass(pb, config) {
 	}
 }
 
+/** What each orphan was last seen doing, and which have been reported. */
+const orphanSeen = new Map();
+const orphanSaid = new Map();
+let orphansBusy = false;
+
 /**
- * Rows left `publishing` by a crash would otherwise sit there forever, since
- * nothing polls that state. Safe only when this worker takes the publishing
- * work up — at startup for `all`, at handover or takeover for the other two —
- * since then no upload of ours is in flight and the other worker's are over.
+ * Settles rows left `publishing` by a run that is not handling them any more
+ * — a crash, or a NAS worker this PC is covering for — by asking the platform
+ * how far each got (orphans.mjs) instead of uploading it again blind. Runs
+ * whenever this worker holds the publishing work, so a row the platform is
+ * still busy with is asked about again on the next tick.
  */
-async function recoverStale(pb) {
-	for (const platform of Object.keys(ADAPTERS)) {
-		const stale = await pb.stalePublishing(platform);
-		for (const row of stale) {
+async function orphanPass(pb, config) {
+	if (orphansBusy || dry || !hb.canPublish()) return;
+	orphansBusy = true;
+	try {
+		for (const [platform, adapter] of Object.entries(ADAPTERS)) {
+			if (!adapter.ready(config)) continue;
+			for (const row of await pb.stalePublishing(platform)) {
+				if (inHand.has(row.id) || !hb.canPublish()) continue;
+				await settleOrphan(pb, config, platform, row).catch((err) =>
+					log(`could not check ${platform} ${row.id} with the platform: ${err.message.split('\n')[0]} — asking again later`)
+				);
+			}
+		}
+	} finally {
+		orphansBusy = false;
+	}
+}
+
+async function settleOrphan(pb, config, platform, row) {
+	const adapter = ADAPTERS[platform];
+	const label = `${platform} "${row.title || row.description?.slice(0, 40) || row.id}"`;
+	const handle = row.handle ?? null;
+	const probe = handle?.kind ? await adapter.probe(config, handle) : null;
+	const alive = mayBeAlive(handle, config.role);
+	const verdict = decide({
+		handle,
+		probe,
+		alive,
+		now: Date.now(),
+		slotAt: row.scheduled_at,
+		seen: orphanSeen.get(row.id)
+	});
+
+	if (verdict.action === 'leave') {
+		if (verdict.seen) orphanSeen.set(row.id, verdict.seen);
+		if (orphanSaid.get(row.id) !== verdict.reason) {
+			orphanSaid.set(row.id, verdict.reason);
+			log(`left ${label} from another run: ${verdict.reason}`);
+		}
+		return;
+	}
+	orphanSeen.delete(row.id);
+	orphanSaid.delete(row.id);
+
+	inHand.add(row.id);
+	try {
+		if (verdict.action === 'requeue') {
 			await pb.updateTarget(row.id, {
 				status: 'pending',
-				error: 'Worker restarted mid-upload; queued again.'
+				handle: null,
+				error: `Queued again: ${verdict.reason}.`.slice(0, 1900)
 			});
-			log(`recovered ${platform} ${row.id} from a previous run`);
+			log(`queued ${label} again — ${verdict.reason}`);
+		} else if (verdict.action === 'finish') {
+			log(`${label} had finished on ${NAMES[platform]} under another run — recording it, not uploading again`);
+			if (platform === 'youtube') log('  its thumbnail and playlist, if any, may not have been applied');
+			await recordResult(pb, platform, row, probe.result, label);
+		} else if (verdict.action === 'publish') {
+			log(`${label} was processed but never published — publishing that container`);
+			const result = await hb.track(`Publishing to ${NAMES[platform]}: "${row.title || row.id}"`, () => publishReady(config, handle), {
+				publishing: true
+			});
+			await recordResult(pb, platform, row, result, label);
 		}
+	} finally {
+		inHand.delete(row.id);
+	}
+
+	if (handle?.coverPhotoId) {
+		await dropHostedCover(config, handle.coverPhotoId).catch((err) =>
+			log(`cover photo ${handle.coverPhotoId} could not be deleted from the Page (${err.message.split('\n')[0]})`)
+		);
 	}
 }
 
@@ -588,7 +719,7 @@ async function main() {
 		run,
 		log,
 		live,
-		onStartPublishing: () => recoverStale(pb).catch((err) => log(`recovery failed: ${err.message}`))
+		onStartPublishing: () => orphanPass(pb, config).catch((err) => log(`orphan check failed: ${err.message}`))
 	});
 
 	// Started at boot, or straight after a resume, the NAS or the Tailscale link
@@ -621,9 +752,9 @@ async function main() {
 		return;
 	}
 
-	// The other roles recover when they take the publishing work up — see
-	// heartbeat.mjs.
-	if (!dry && config.role === 'all') await recoverStale(pb);
+	// The other roles check when they take the publishing work up — see
+	// heartbeat.mjs — and every role again on each slot tick.
+	if (!dry && config.role === 'all') await orphanPass(pb, config);
 
 	if (once || dry) {
 		await scorePass(pb, config);
@@ -714,6 +845,7 @@ async function main() {
 	const slotTick = () => {
 		void accountPass(pb, config);
 		void slotPass(pb, config);
+		void orphanPass(pb, config).catch((err) => log(`orphan check failed: ${err.message}`));
 	};
 	slotTick();
 	setInterval(slotTick, Math.max(5, config.slotSeconds) * 1000);
