@@ -1,5 +1,14 @@
 # flock
 
+> [!CAUTION]
+> ## 🚧 In active development — this may be broken at any point 🚧
+>
+> I'm building flock while I use it, and `master` changes daily. Any commit can
+> break uploads, the worker, the database schema or the config, sometimes for a
+> few hours until the next one fixes it, and nothing here is a release. Pin a
+> commit that works for you, read the log before updating, and don't trust it
+> with a post you couldn't make by hand.
+
 Write each platform's text, point it at a video file, and schedule that video out to
 YouTube, Instagram, TikTok and Facebook — each with its own release day and time.
 
