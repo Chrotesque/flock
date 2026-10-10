@@ -1,13 +1,12 @@
 # flock
 
-> [!CAUTION]
-> ## 🚧 In active development — this may be broken at any point 🚧
+> [!IMPORTANT]
+> ## 🚧 In active development 🚧
 >
-> I'm building flock while I use it, and `master` changes daily. Any commit can
-> break uploads, the worker, the database schema or the config, sometimes for a
-> few hours until the next one fixes it, and nothing here is a release. Pin a
-> commit that works for you, read the log before updating, and don't trust it
-> with a post you couldn't make by hand.
+> I use flock every day while I build it, and `master` moves fast. Now and then
+> a commit breaks something. When that happens I'm very likely on it already,
+> and a fix usually follows within hours. If something stops working, check the
+> latest commits or pull again a little later.
 
 Write each platform's text, point it at a video file, and schedule that video out to
 YouTube, Instagram, TikTok and Facebook — each with its own release day and time.
