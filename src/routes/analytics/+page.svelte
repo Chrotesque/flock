@@ -12,7 +12,11 @@
 	} from '$lib/repo';
 	import { formatBytes, formatDuration, relativeTo } from '$lib/format';
 	import { KIND_LABELS, KIND_ORDER, kindOfVideo, type VideoKind } from '$lib/videokind';
+	import { brands } from '$lib/stores/brands.svelte';
 	import type { StatsStatus, UploadJob, UploadTarget, VideoStats, YouTubeVideo } from '$lib/types';
+
+	// Only to name each upload's brand once there is more than one.
+	brands.load();
 
 	// The live half: the newest videos on the channel as the worker reads them.
 	// Loaded once, then kept current by PocketBase realtime — the worker polls
@@ -584,6 +588,12 @@
 						<div class="ident">
 							<p class="title">{job.title || '(untitled)'}</p>
 							<p class="meta">
+								{#if brands.multiple && (job.brand || job.brand_name)}
+									<!-- Current name while the brand exists; the snapshot once deleted. -->
+									<span class="brand">{brands.byId(job.brand ?? '')?.name ?? job.brand_name}</span><span
+										class="dot">·</span
+									>
+								{/if}
 								{job.video_name || 'no file'}
 								{#if job.video_size}
 									<span class="dot">·</span>{formatBytes(job.video_size)}
@@ -1047,6 +1057,11 @@
 	.dot {
 		margin: 0 6px;
 		opacity: 0.5;
+	}
+
+	.meta .brand {
+		font-weight: 620;
+		color: var(--text-dim);
 	}
 
 	.status {

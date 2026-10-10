@@ -17,12 +17,15 @@
 		muted = false,
 		status = '',
 		dim = false,
-		compact = false
+		compact = false,
+		brand = ''
 	}: {
 		platform: PlatformId;
 		time: string;
 		title: string;
 		description?: string;
+		/** The brand it goes out for, where more than one is on screen. */
+		brand?: string;
 		/** Already released (or past due) — greyed back, still legible. */
 		muted?: boolean;
 		status?: string;
@@ -95,7 +98,7 @@
 		>
 			<div class="tiphead">
 				<PlatformIcon {platform} size={13} />
-				<span class="tipwho">{PLATFORMS[platform].label}</span>
+				<span class="tipwho">{PLATFORMS[platform].label}{brand ? ` · ${brand}` : ''}</span>
 				<span class="tiptime">{time}</span>
 			</div>
 			<p class="tiptitle">{title || '(no title)'}</p>
@@ -108,6 +111,9 @@
 	<div class="post {platform}" class:muted class:dim>
 		<div class="posthead">
 			<PlatformIcon {platform} size={14} />
+			{#if brand}
+				<span class="brand" title={brand}>{brand}</span>
+			{/if}
 			<span class="time">{time}</span>
 		</div>
 		<p class="posttitle">{title || '(no title)'}</p>
@@ -287,6 +293,18 @@
 		font-family: var(--mono);
 		font-size: 10px;
 		color: var(--text-faint);
+	}
+
+	/* Between the icon and the time, giving way to both when the cell is narrow. */
+	.brand {
+		flex: 1;
+		min-width: 0;
+		font-size: 9.5px;
+		font-weight: 650;
+		color: var(--text-dim);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.posttitle {

@@ -3,8 +3,17 @@ import { PLATFORMS, PLATFORM_IDS, isPlatformId } from './platforms';
 import { DEFAULT_SCHEDULING } from './types';
 import { logAction, assertDeviceNamed } from './log';
 import { newId } from './id';
+import {
+	FIRST_BRAND_NAME,
+	brandKey,
+	brandSettingKey,
+	orderBrands,
+	rowsToAdopt,
+	type SettingsRowRef
+} from './brands';
 import type { WorkerBeat, WorkerBeats, WorkerRole } from './workerstatus';
 import type {
+	Brand,
 	OptionValues,
 	PlatformId,
 	WatchIndex,
@@ -21,6 +30,155 @@ import type {
 	TikTokCreator,
 	InstagramAccount
 } from './types';
+
+/* ------------------------------------------------------------------ */
+/* brands                                                               */
+/* ------------------------------------------------------------------ */
+
+/** The per-brand `app_settings` areas, by their key before brands existed. */
+const BRAND_SETTINGS = ['templates', 'recent_tags'] as const;
+
+function toBrand(row: Record<string, unknown>): Brand {
+	return {
+		id: String(row.id),
+		name: String(row.name ?? ''),
+		sort_order: Number(row.sort_order ?? 0)
+	};
+}
+
+export async function listBrands(): Promise<Brand[]> {
+	const rows = await pb.collection('brands').getFullList({ sort: 'sort_order,name' });
+	return orderBrands(rows.map(toBrand));
+}
+
+/**
+ * The brands, made sure of. With none yet — the first load after brands
+ * arrived — the settings that already existed become the first brand.
+ * Initialisation, like seeding platform rows, so not device-guarded; and
+ * idempotent, so every load runs it and also takes in anything an older
+ * build of the app wrote without a brand.
+ */
+export async function ensureBrands(): Promise<Brand[]> {
+	let brands = await listBrands();
+	if (brands.length === 0) {
+		try {
+			await pb
+				.collection('brands')
+				.create({ name: FIRST_BRAND_NAME, key: brandKey(FIRST_BRAND_NAME), sort_order: 0 });
+		} catch {
+			// Another browser created it first; the unique key refused this one.
+		}
+		brands = await listBrands();
+		if (brands.length === 0) throw new Error('Could not create the first brand.');
+	}
+	await adoptBrandless(brands[0]);
+	return brands;
+}
+
+/**
+ * Hands the first brand everything that has no brand: settings rows and the
+ * per-brand `app_settings` areas from before brands existed, and jobs that
+ * never had one. A job whose brand was deleted keeps its name snapshot, which
+ * is what tells it apart from one that never had a brand.
+ */
+async function adoptBrandless(first: Brand) {
+	const rows = await pb
+		.collection('platform_settings')
+		.getFullList({ fields: 'id,brand,platform' });
+	for (const row of rowsToAdopt(rows as unknown as SettingsRowRef[], first.id, PLATFORM_IDS)) {
+		await pb.collection('platform_settings').update(row.id, { brand: first.id });
+	}
+
+	for (const base of BRAND_SETTINGS) {
+		const old = await findSetting(base);
+		if (!old) continue;
+		// Renamed rather than copied: one write, and nothing left behind to be
+		// adopted a second time by some later first brand.
+		if (!(await findSetting(brandSettingKey(base, first.id)))) {
+			await pb.collection('app_settings').update(old.id, { key: brandSettingKey(base, first.id) });
+		}
+	}
+
+	const jobs = await pb
+		.collection('upload_jobs')
+		.getFullList({ filter: 'brand = "" && brand_name = ""', fields: 'id' });
+	for (const job of jobs) {
+		await pb.collection('upload_jobs').update(job.id, { brand: first.id, brand_name: first.name });
+	}
+}
+
+/**
+ * A new brand, optionally starting as a copy of another: its platform
+ * settings row for row and its templates. Recent tags are not copied — they
+ * are a memory of what this brand used, and it has used nothing yet.
+ */
+export async function createBrand(name: string, sortOrder: number, copyFrom: Brand | null): Promise<Brand> {
+	assertDeviceNamed();
+	const created = toBrand(
+		await pb
+			.collection('brands')
+			.create({ name: name.trim(), key: brandKey(name), sort_order: sortOrder })
+	);
+
+	if (copyFrom) {
+		const rows = await pb
+			.collection('platform_settings')
+			.getFullList({ filter: `brand="${copyFrom.id}"` });
+		for (const row of rows) {
+			await pb.collection('platform_settings').create({
+				brand: created.id,
+				platform: row.platform,
+				enabled: row.enabled,
+				sort_order: row.sort_order,
+				defaults: row.defaults,
+				filters: row.filters,
+				scheduling: row.scheduling
+			});
+		}
+		const templates = await findSetting(brandSettingKey('templates', copyFrom.id));
+		if (templates) {
+			await pb
+				.collection('app_settings')
+				.create({ key: brandSettingKey('templates', created.id), value: templates.value });
+		}
+	}
+
+	logAction('settings', `Added brand ${created.name}`, copyFrom ? `copied from ${copyFrom.name}` : '');
+	return created;
+}
+
+export async function renameBrand(brand: Brand, name: string): Promise<void> {
+	assertDeviceNamed();
+	await pb.collection('brands').update(brand.id, { name: name.trim(), key: brandKey(name) });
+	logAction('settings', `Renamed brand ${brand.name} to ${name.trim()}`);
+}
+
+/** Writes the order given, renumbered from 0; only rows that moved are sent. */
+export async function reorderBrands(ordered: Brand[]): Promise<void> {
+	assertDeviceNamed();
+	for (const [index, brand] of ordered.entries()) {
+		if (brand.sort_order !== index) {
+			await pb.collection('brands').update(brand.id, { sort_order: index });
+		}
+	}
+	logAction('settings', 'Reordered brands', ordered.map((b) => b.name).join(', '));
+}
+
+/**
+ * Deletes a brand with its settings (the relation cascades) and its
+ * per-brand `app_settings` areas. Its uploads stay: the relation on each job
+ * empties and the name snapshot remains, and anything still queued goes out
+ * as composed — the targets carry everything they need.
+ */
+export async function deleteBrand(brand: Brand): Promise<void> {
+	assertDeviceNamed();
+	for (const base of BRAND_SETTINGS) {
+		const row = await findSetting(brandSettingKey(base, brand.id));
+		if (row) await pb.collection('app_settings').delete(row.id);
+	}
+	await pb.collection('brands').delete(brand.id);
+	logAction('settings', `Deleted brand ${brand.name}`);
+}
 
 /* ------------------------------------------------------------------ */
 /* platform settings                                                    */
@@ -57,27 +215,49 @@ function mergeDefaults(id: PlatformId, stored: unknown): OptionValues {
 }
 
 /**
- * Loads every platform's settings, creating any row that does not exist yet
- * from the registry defaults. Seeding lives here rather than in setup-pb.mjs
- * so the shipped defaults have exactly one source of truth (platforms.ts).
+ * Loads every brand's platform settings, creating any row that does not exist
+ * yet from the registry defaults. Seeding lives here rather than in
+ * setup-pb.mjs so the shipped defaults have exactly one source of truth
+ * (platforms.ts). Rows with no brand are left alone: `ensureBrands`, which
+ * runs first, has already given the first brand the ones it can take.
  */
-export async function loadPlatformSettings(): Promise<PlatformSettings[]> {
+export async function loadPlatformSettings(brands: Brand[]): Promise<PlatformSettings[]> {
 	const rows = await pb.collection('platform_settings').getFullList({ sort: 'sort_order' });
 
-	const byPlatform = new Map<string, (typeof rows)[number]>();
+	const byKey = new Map<string, (typeof rows)[number]>();
 	for (const row of rows) {
 		// Defensive: a unique index protects this, but a stray row for an
 		// unknown platform must not crash the whole app.
-		if (isPlatformId(row.platform)) byPlatform.set(row.platform, row);
+		if (row.brand && isPlatformId(row.platform)) byKey.set(`${row.brand}:${row.platform}`, row);
 	}
 
 	const result: PlatformSettings[] = [];
 
-	for (const [index, id] of PLATFORM_IDS.entries()) {
-		const existing = byPlatform.get(id);
-		if (existing) {
+	const seed = async (brand: Brand, id: PlatformId, index: number) => {
+		try {
+			return await pb.collection('platform_settings').create({
+				brand: brand.id,
+				platform: id,
+				enabled: true,
+				sort_order: index,
+				defaults: PLATFORMS[id].defaults,
+				filters: [],
+				scheduling: DEFAULT_SCHEDULING
+			});
+		} catch {
+			// Another browser seeded it a moment ago; the index refused this one.
+			return await pb
+				.collection('platform_settings')
+				.getFirstListItem(`brand="${brand.id}" && platform="${id}"`);
+		}
+	};
+
+	for (const brand of brands) {
+		for (const [index, id] of PLATFORM_IDS.entries()) {
+			const existing = byKey.get(`${brand.id}:${id}`) ?? (await seed(brand, id, index));
 			result.push({
 				id: existing.id,
+				brand: brand.id,
 				platform: id,
 				enabled: existing.enabled ?? true,
 				sort_order: existing.sort_order ?? index,
@@ -85,26 +265,7 @@ export async function loadPlatformSettings(): Promise<PlatformSettings[]> {
 				filters: Array.isArray(existing.filters) ? existing.filters : [],
 				scheduling: mergeScheduling(existing.scheduling)
 			});
-			continue;
 		}
-
-		const created = await pb.collection('platform_settings').create({
-			platform: id,
-			enabled: true,
-			sort_order: index,
-			defaults: PLATFORMS[id].defaults,
-			filters: [],
-			scheduling: DEFAULT_SCHEDULING
-		});
-		result.push({
-			id: created.id,
-			platform: id,
-			enabled: true,
-			sort_order: index,
-			defaults: { ...PLATFORMS[id].defaults },
-			filters: [],
-			scheduling: { ...DEFAULT_SCHEDULING, profiles: [] }
-		});
 	}
 
 	return result.sort((a, b) => a.sort_order - b.sort_order);
@@ -143,6 +304,32 @@ export async function setSetting(key: string, value: unknown): Promise<void> {
 	} catch {
 		await pb.collection('app_settings').create({ key, value });
 	}
+}
+
+/** The row under a key, or null — where `getSetting` only has the value. */
+async function findSetting(key: string): Promise<{ id: string; value: unknown } | null> {
+	try {
+		const row = await pb.collection('app_settings').getFirstListItem(`key="${key}"`);
+		return { id: row.id, value: row.value };
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Every brand's value of a per-brand area (`templates`, `recent_tags`), by
+ * brand id. One request for all of them, so switching brand needs no load.
+ */
+export async function getBrandSettings<T>(base: string): Promise<Record<string, T>> {
+	const prefix = `${base}:`;
+	const rows = await pb.collection('app_settings').getFullList({ filter: `key ~ "${prefix}%"` });
+	const out: Record<string, T> = {};
+	for (const row of rows) {
+		// LIKE treats `_` as a wildcard, so the prefix is checked again here.
+		const key = String(row.key);
+		if (key.startsWith(prefix)) out[key.slice(prefix.length)] = row.value as T;
+	}
+	return out;
 }
 
 /* ------------------------------------------------------------------ */
@@ -215,6 +402,8 @@ export interface CreateJobInput {
 	duration: number;
 	/** Where on the NAS this video should end up, snapshotted at confirm time. */
 	destination: { label: string; path: string } | null;
+	/** The brand the upload is made for; its name is snapshotted with it. */
+	brand: Brand | null;
 	targets: TargetPlan[];
 }
 
@@ -238,6 +427,10 @@ export async function createJob(
 	form.set('destination_label', input.destination?.label ?? '');
 	form.set('destination_path', input.destination?.path ?? '');
 	form.set('status', 'stored');
+	if (input.brand) {
+		form.set('brand', input.brand.id);
+		form.set('brand_name', input.brand.name);
+	}
 	if (input.thumbnail) form.set('thumbnail', input.thumbnail);
 	if (input.cover) form.set('cover', input.cover);
 
@@ -276,7 +469,8 @@ export async function createJob(
 		'upload',
 		`Uploaded "${input.title || 'untitled'}"`,
 		`${sourceName}${input.source ? (input.source.local ? ' (from a local folder)' : ' (from the watch folder)') : ''} → ${input.targets.length} ` +
-			`platform(s): ${input.targets.map((t) => t.platform).join(', ')}`
+			`platform(s): ${input.targets.map((t) => t.platform).join(', ')}` +
+			(input.brand ? ` · ${input.brand.name}` : '')
 	);
 
 	return job;
@@ -460,7 +654,7 @@ export async function loadInstagramAccount(): Promise<InstagramAccount | null> {
 }
 
 /**
- * The tag list last published for each platform.
+ * The tag list last published for each platform, per brand.
  *
  * Kept apart from `platform_settings.defaults` on purpose: writing it there
  * would mean every upload silently edited the user's saved defaults and logged a
@@ -468,8 +662,8 @@ export async function loadInstagramAccount(): Promise<InstagramAccount | null> {
  */
 export type RecentTags = Partial<Record<PlatformId, Record<string, string[]>>>;
 
-export async function loadRecentTags(): Promise<RecentTags> {
-	const stored = await getSetting<RecentTags>('recent_tags', {});
+export async function loadRecentTags(brandId: string): Promise<RecentTags> {
+	const stored = await getSetting<RecentTags>(brandSettingKey('recent_tags', brandId), {});
 	const clean: RecentTags = {};
 
 	for (const [platform, byField] of Object.entries(stored ?? {})) {
@@ -494,17 +688,17 @@ export async function loadRecentTags(): Promise<RecentTags> {
  * Records the tag lists an upload actually went out with. Fire-and-forget, like
  * the log: failing to remember tags must never fail a finished upload.
  */
-export function rememberTags(used: RecentTags): void {
+export function rememberTags(brandId: string, used: RecentTags): void {
 	void (async () => {
 		try {
-			const current = await loadRecentTags();
+			const current = await loadRecentTags(brandId);
 			const next: RecentTags = { ...current };
 			for (const [platform, byField] of Object.entries(used)) {
 				if (isPlatformId(platform) && byField && Object.keys(byField).length > 0) {
 					next[platform] = byField;
 				}
 			}
-			await setSetting('recent_tags', next);
+			await setSetting(brandSettingKey('recent_tags', brandId), next);
 		} catch {
 			// Nothing to do — the upload has already succeeded.
 		}
@@ -574,16 +768,17 @@ export interface TitleSuggestion {
 }
 
 /**
- * Titles this platform has already had, newest first.
+ * Titles this platform has already had for this brand, newest first.
  *
  * Passed to vidIQ so suggestions do not come back as variations of last week's.
  * The browser extension, sitting on one video page, has no way to know these —
- * it is the one thing flock can bring that vidIQ cannot see for itself.
+ * it is the one thing flock can bring that vidIQ cannot see for itself. Per
+ * brand, because another brand's titles are another channel's history.
  */
-export async function recentTitles(platform: PlatformId, limit = 12): Promise<string[]> {
+export async function recentTitles(platform: PlatformId, brandId: string, limit = 12): Promise<string[]> {
 	try {
 		const res = await pb.collection('upload_targets').getList(1, limit, {
-			filter: `platform="${platform}" && title != ""`,
+			filter: `platform="${platform}" && title != "" && job.brand="${brandId}"`,
 			sort: '-created'
 		});
 		const seen = new Set<string>();
@@ -648,12 +843,22 @@ export async function listJobs(limit = 25): Promise<UploadJob[]> {
 	return res.items as unknown as UploadJob[];
 }
 
+/**
+ * Targets with the brand of the job each belongs to, as `brand` and
+ * `brand_name` — the only parts of the job the screens listing targets need.
+ */
 export async function listTargets(jobId?: string): Promise<UploadTarget[]> {
 	const rows = await pb.collection('upload_targets').getFullList({
 		sort: 'scheduled_at',
+		expand: 'job',
+		fields: '*,expand.job.brand,expand.job.brand_name',
 		...(jobId ? { filter: `job="${jobId}"` } : {})
 	});
-	return rows as unknown as UploadTarget[];
+	return rows.map((row) => {
+		const job = (row.expand?.job ?? {}) as { brand?: string; brand_name?: string };
+		const { expand: _expand, ...rest } = row;
+		return { ...rest, brand: job.brand ?? '', brand_name: job.brand_name ?? '' };
+	}) as unknown as UploadTarget[];
 }
 
 /* ------------------------------------------------------------------ */

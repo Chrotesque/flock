@@ -3,6 +3,7 @@ import { PLATFORMS } from '../platforms';
 import { logAction } from '../log';
 import { settle, LOG_SETTLE_MS } from '../settle';
 import { DEFAULT_SCHEDULING } from '../types';
+import { brands } from './brands.svelte';
 import type {
 	FilterRule,
 	OptionValues,
@@ -13,8 +14,11 @@ import type {
 
 /**
  * Platform settings, loaded once and shared by the compose screen and the
- * settings screen. Writes go straight to PocketBase and are debounced, since
- * the settings screen edits fields on every keystroke.
+ * settings screen. Every brand has its own row per platform; `list` holds all
+ * of them, and every accessor answers for the brand in view
+ * (`brands.currentId`), so switching brand needs no load. Writes go straight
+ * to PocketBase and are debounced, since the settings screen edits fields on
+ * every keystroke.
  */
 class SettingsStore {
 	list = $state<PlatformSettings[]>([]);
@@ -22,10 +26,11 @@ class SettingsStore {
 	error = $state<string | null>(null);
 	saving = $state(false);
 
-	#timers = new Map<PlatformId, ReturnType<typeof setTimeout>>();
+	/** Pending writes and last-logged snapshots, by row id — one per brand and platform. */
+	#timers = new Map<string, ReturnType<typeof setTimeout>>();
 	#loaded = false;
 
-	#logged = new Map<PlatformId, PlatformSettings>();
+	#logged = new Map<string, PlatformSettings>();
 	#logSettle = settle(LOG_SETTLE_MS);
 
 	async load(force = false) {
@@ -33,9 +38,14 @@ class SettingsStore {
 		this.loading = true;
 		this.error = null;
 		try {
-			this.list = await loadPlatformSettings();
+			// The brands first: their first load turns brandless rows into the
+			// first brand's, which seeding below must not race.
+			await brands.load();
+			if (brands.error) throw new Error(brands.error);
+			this.list = await loadPlatformSettings(brands.list);
+			this.#logged.clear();
 			for (const entry of this.list) {
-				this.#logged.set(entry.platform, $state.snapshot(entry) as PlatformSettings);
+				if (entry.id) this.#logged.set(entry.id, $state.snapshot(entry) as PlatformSettings);
 			}
 			this.#loaded = true;
 		} catch (err) {
@@ -45,9 +55,10 @@ class SettingsStore {
 		}
 	}
 
-	/** Every platform, in the user's configured display order. */
+	/** The brand in view's platforms, in its configured display order. */
 	get ordered(): PlatformSettings[] {
-		return [...this.list].sort((a, b) => a.sort_order - b.sort_order);
+		const brand = brands.currentId;
+		return this.list.filter((s) => s.brand === brand).sort((a, b) => a.sort_order - b.sort_order);
 	}
 
 	/**
@@ -60,7 +71,8 @@ class SettingsStore {
 	}
 
 	get(platform: PlatformId): PlatformSettings | undefined {
-		return this.list.find((s) => s.platform === platform);
+		const brand = brands.currentId;
+		return this.list.find((s) => s.platform === platform && s.brand === brand);
 	}
 
 	/** Saved defaults for a platform, falling back to the registry. */
@@ -76,20 +88,21 @@ class SettingsStore {
 		return this.get(platform)?.scheduling ?? { ...DEFAULT_SCHEDULING, profiles: [] };
 	}
 
-	#queueLog(platform: PlatformId) {
-		this.#logSettle.schedule(() => this.#logDiff(platform));
+	#queueLog(entry: PlatformSettings) {
+		this.#logSettle.schedule(() => this.#logDiff(entry));
 	}
 
 	/** Names the setting that moved, rather than restating the whole platform. */
-	#logDiff(platform: PlatformId) {
-		const entry = this.get(platform);
-		if (!entry) return;
-		const before = this.#logged.get(platform);
+	#logDiff(entry: PlatformSettings) {
+		if (!entry.id) return;
+		const before = this.#logged.get(entry.id);
 		const after = $state.snapshot(entry) as PlatformSettings;
-		this.#logged.set(platform, after);
+		this.#logged.set(entry.id, after);
 		if (!before) return;
 
-		const label = PLATFORMS[platform].label;
+		// With more than one brand, which brand's settings moved is half the news.
+		const brand = brands.multiple ? brands.byId(entry.brand)?.name : undefined;
+		const label = brand ? `${brand} ${PLATFORMS[entry.platform].label}` : PLATFORMS[entry.platform].label;
 
 		if (before.enabled !== after.enabled) {
 			logAction('settings', `${after.enabled ? 'Enabled' : 'Disabled'} ${label}`);
@@ -124,23 +137,28 @@ class SettingsStore {
 		}
 	}
 
-	/** Queues a write ~400ms after the last edit to that platform. */
+	/**
+	 * Queues a write ~400ms after the last edit to that platform. The row is
+	 * taken now, not when the timer fires: switching brand in between must not
+	 * send the other brand's row instead.
+	 */
 	queueSave(platform: PlatformId) {
-		this.#queueLog(platform);
-		const existing = this.#timers.get(platform);
+		const entry = this.get(platform);
+		if (!entry?.id) return;
+		const id = entry.id;
+		this.#queueLog(entry);
+		const existing = this.#timers.get(id);
 		if (existing) clearTimeout(existing);
 		this.#timers.set(
-			platform,
+			id,
 			setTimeout(() => {
-				this.#timers.delete(platform);
-				void this.saveNow(platform);
+				this.#timers.delete(id);
+				void this.#save(entry);
 			}, 400)
 		);
 	}
 
-	async saveNow(platform: PlatformId) {
-		const entry = this.get(platform);
-		if (!entry) return;
+	async #save(entry: PlatformSettings) {
 		this.saving = true;
 		try {
 			await savePlatformSettings($state.snapshot(entry) as PlatformSettings);
@@ -152,7 +170,7 @@ class SettingsStore {
 		}
 	}
 
-	/** Moves a platform up or down in the display order and persists both rows. */
+	/** Moves a platform up or down in the brand's display order and persists both rows. */
 	async move(platform: PlatformId, direction: -1 | 1) {
 		const ordered = this.ordered;
 		const index = ordered.findIndex((s) => s.platform === platform);
@@ -168,7 +186,7 @@ class SettingsStore {
 		// Ties would make the order non-deterministic; renumber to be safe.
 		this.ordered.forEach((entry, i) => (entry.sort_order = i));
 
-		await Promise.all([this.saveNow(a.platform), this.saveNow(b.platform)]);
+		await Promise.all([this.#save(a), this.#save(b)]);
 	}
 }
 

@@ -25,6 +25,7 @@
 	} from '$lib/repo';
 	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
+	import { brands } from '$lib/stores/brands.svelte';
 	import { mergeTagGroups, tagListLength, parseTagList } from '$lib/format';
 	import { checkTags } from '$lib/tagcheck';
 	import {
@@ -264,7 +265,7 @@
 		suggestError = '';
 		suggestions = [];
 		try {
-			const previous = await recentTitles(composing);
+			const previous = await recentTitles(composing, brands.currentId);
 			const result = await suggestTitles(title, {
 				platform: composing,
 				description: text.description,
@@ -304,10 +305,19 @@
 	 * full width.
 	 */
 
-	// What the last upload for each platform went out with. Read once: the
-	// compose screen is not where tags are edited between uploads.
+	// What the brand's last upload for each platform went out with. Read once
+	// per brand: the compose screen is not where tags are edited between
+	// uploads, but switching brand switches whose memory this is.
 	let recentTags = $state<Partial<Record<PlatformId, Record<string, string[]>>>>({});
-	void loadRecentTags().then((found) => (recentTags = found));
+	$effect(() => {
+		const brand = brands.currentId;
+		recentTags = {};
+		if (!brand) return;
+		void loadRecentTags(brand).then((found) => {
+			// A slower answer for a brand since switched away from is dropped.
+			if (brand === brands.currentId) recentTags = found;
+		});
+	});
 
 	/** The tag boxes this platform promotes, in registry order. */
 	let tagFields = $derived(

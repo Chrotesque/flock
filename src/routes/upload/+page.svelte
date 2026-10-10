@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import Stepper from '$lib/components/Stepper.svelte';
 	import StepUpload from '$lib/components/steps/StepUpload.svelte';
 	import StepDetails from '$lib/components/steps/StepDetails.svelte';
@@ -8,6 +9,7 @@
 	import { draft, type Step, type VideoSlot } from '$lib/stores/draft.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
+	import { brands } from '$lib/stores/brands.svelte';
 	import { buildPlan } from '$lib/plan';
 	import { createJob, rememberTags, rememberUsedSources } from '$lib/repo';
 	import { formatBytes } from '$lib/format';
@@ -17,6 +19,14 @@
 
 	settings.load();
 	general.load();
+
+	// The draft drops its per-platform choices when the brand changes — here,
+	// or in Settings while the draft waited. Read through untrack, so only the
+	// brand is a dependency.
+	$effect(() => {
+		const brand = brands.currentId;
+		untrack(() => draft.followBrand(brand));
+	});
 
 	let plan = $derived(draft.step === 3 ? buildPlan() : []);
 
@@ -155,6 +165,7 @@
 								: null,
 						duration,
 						destination: general.defaultDestination,
+						brand: brands.current ?? null,
 						targets: group.rows.map((row) => ({
 							platform: row.platform,
 							title: row.title,
@@ -179,6 +190,7 @@
 			// Remembered from the plan rather than the draft, so what is stored is
 			// what actually went out — overrides and saved defaults included.
 			rememberTags(
+				brands.currentId,
 				Object.fromEntries(
 					plan
 						.map((row) => {
@@ -229,6 +241,9 @@
 					</svg>
 				</div>
 				<h2>On the NAS</h2>
+				{#if brands.multiple && brands.current}
+					<p class="forbrand">For {brands.current.name}</p>
+				{/if}
 				<p>
 					{queued.length === 1 ? 'The video is' : `${queued.length} videos are`} stored and {plan.length}
 					{plan.length === 1 ? 'release is' : 'releases are'} queued. You can close this machine down —
@@ -259,6 +274,27 @@
 				<div class="titling">
 					<h1>{HEADINGS[draft.step].title}</h1>
 					<p>{HEADINGS[draft.step].sub}</p>
+					<!--
+						Which brand this upload is for, on every step so it is never in
+						doubt. Switching keeps the video and the text and drops the
+						per-platform choices (see draft.followBrand). Hidden with one brand.
+					-->
+					{#if brands.multiple}
+						<div class="brands" role="radiogroup" aria-label="Brand">
+							{#each brands.ordered as brand (brand.id)}
+								<button
+									class="brandchip"
+									class:on={brand.id === brands.currentId}
+									role="radio"
+									aria-checked={brand.id === brands.currentId}
+									disabled={phase === 'uploading'}
+									onclick={() => brands.select(brand.id)}
+								>
+									{brand.name}
+								</button>
+							{/each}
+						</div>
+					{/if}
 				</div>
 
 				<!--
@@ -470,6 +506,35 @@
 		margin: 5px 0 0;
 		font-size: 13px;
 		color: var(--text-dim);
+	}
+
+	.brands {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: 12px;
+	}
+
+	.brandchip {
+		padding: 5px 13px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--bg-elev);
+		font-size: 12px;
+		font-weight: 560;
+		color: var(--text-dim);
+		transition: border-color 0.14s, background 0.14s, color 0.14s;
+	}
+
+	.brandchip:hover:not(:disabled) {
+		border-color: var(--pink-soft);
+		color: var(--text);
+	}
+
+	.brandchip.on {
+		border-color: var(--pink);
+		background: var(--accent-grad-soft);
+		color: var(--text);
 	}
 
 	/* The arrows sit either side of the stepper with a deliberate gap, so they
@@ -694,6 +759,13 @@
 		border: 1px solid var(--border);
 		font-size: 11.5px;
 		color: var(--text-dim);
+	}
+
+	.result .forbrand {
+		margin-top: 4px;
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--pink-soft);
 	}
 
 	.caveat {

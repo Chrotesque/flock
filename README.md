@@ -46,7 +46,8 @@ Put the PocketBase superuser details in `scripts/.pb-creds.json`:
 { "url": "http://<host>:8091", "email": "you@example.com", "password": "…" }
 ```
 
-Create the collections (safe to re-run):
+Create the collections (safe to re-run, and run it again after updating flock,
+since a new version may add collections or fields):
 
 ```bash
 pnpm setup-pb
@@ -356,6 +357,15 @@ cannot be changed afterwards, so pick one you will recognise later. Each browser
 needs its own; the name is stored locally, so opening flock from a different
 address counts as a different browser.
 
+**Brands.** Everything you set up — platform defaults, adaptation rules, release
+times and templates — belongs to a brand, and every upload is made for one. A
+fresh install has one brand, *My brand*; rename it and add more under Settings →
+Brands, where a new brand starts as a copy of the one in view. With more than
+one, a row of brand buttons sits under the heading of the upload screen and
+above the brand's part of Settings; both are the same choice, remembered per
+browser. Switching brand in the middle of an upload keeps the video and the
+text but resets each platform's options and schedule to that brand's.
+
 **Upload** is a four-step flow: Upload, Details, Schedule, Review. flock opens
 on Analytics; Upload lives at `/upload`. The first step takes the video: drop
 one on the picker on the left, or drag one from the *Locally* or *On the NAS*
@@ -409,7 +419,8 @@ the copy to the NAS starts there.
 released — or whose slot has passed — are greyed out, and there is a toggle to hide
 them. It opens read-only; press *Edit* twice within two seconds to unlock it, then
 drag an upcoming release to another day or hour. Released and past-due posts stay
-locked either way.
+locked either way. With more than one brand, buttons at the top show one brand's
+releases or all of them, and each card names its brand while all are shown.
 
 **Log** lists every change — uploads, calendar moves and settings — with the date,
 time and the machine that made it. Filter by category, search, or click a device
@@ -428,16 +439,21 @@ every choice is remembered. A total row at the top adds up whatever is shown. A
 counter that has moved since you opened the page turns green and shows the
 change beside it, as in `940 (+9)`; Refresh resets those markers. It needs
 the worker running. Below that it lists what is currently stored on the NAS,
-which is where you check that an upload actually landed.
+which is where you check that an upload actually landed, with each upload's
+brand once there is more than one.
 
-**Settings** has four parts. *Storage and defaults* holds the NAS folders a
-finished video is copied into (the filled circle marks the default), the NAS watch
-folder, the local watch folders listed under *Locally*, and this browser's device name. *Templates* holds reusable blocks of text: on the upload
-screen they appear under the details, and typing a template's name in braces —
-`{outro}` — swaps it in as you write. *Other* holds the compliance switch and any
-extra time zones for the calendar's second clock.
+**Settings** comes in two halves. *General* is shared by every brand: *Storage
+and defaults* holds the NAS folders a finished video is copied into (the filled
+circle marks the default), the NAS watch folder, the local watch folders listed
+under *Locally*, and this browser's device name; *Brands* adds, renames, orders
+and deletes brands (deleting one removes its settings and templates, while its
+uploads stay and anything queued still goes out); *Other* holds the compliance
+switch and any extra time zones for the calendar's second clock.
 
-Below those, each platform has its display order, its release timing, its default
+The other half belongs to the brand in view. *Templates* holds reusable blocks of
+text: on the upload screen they appear under the details, and typing a
+template's name in braces — `{outro}` — swaps it in as you write. Below that,
+each platform has its display order, its release timing, its default
 publish options, and its adaptation rules. YouTube's defaults include the language
 spoken in the video and the language of the title and description, English (US)
 unless changed. Release timing is either one fixed time
@@ -464,10 +480,10 @@ again. Replace the files in `site/img/` to update the screenshots.
 ## Where things live
 
 Videos and schedules live in PocketBase on the NAS, in the collections
-`upload_jobs`, `upload_targets`, `platform_settings`, `app_settings`,
+`upload_jobs`, `upload_targets`, `brands`, `platform_settings`, `app_settings`,
 `activity_log`, `devices`, `video_stats` and `worker_log`. The chosen destination is recorded on each upload, so
 changing the destination list later never redirects something already queued —
 and the file is copied there, never moved. Nothing is written until you confirm an
-upload; the only things kept in the browser are this device's name and which
-platforms get a video of their own. A split upload is stored as one upload per
-video.
+upload; the only things kept in the browser are this device's name, the brand in
+view, which platforms get a video of their own, and view choices such as the
+calendar's brand filter. A split upload is stored as one upload per video.

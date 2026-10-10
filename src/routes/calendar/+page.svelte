@@ -6,7 +6,39 @@
 	import { isPlatformId } from '$lib/platforms';
 	import { startOfWeek, isoDate, makeTime, minuteOf } from '$lib/format';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
+	import { brands } from '$lib/stores/brands.svelte';
 	import type { PlatformId, UploadTarget } from '$lib/types';
+
+	brands.load();
+
+	const FILTER_KEY = 'flock.calendar.brand';
+
+	function loadFilter(): string {
+		try {
+			return localStorage.getItem(FILTER_KEY) ?? '';
+		} catch {
+			return '';
+		}
+	}
+
+	/**
+	 * Which brand's releases are shown, '' for all of them. Remembered per
+	 * browser, like the zone, and separate from the brand in view elsewhere:
+	 * looking at every brand's week is the point of a calendar.
+	 */
+	let brandFilter = $state(loadFilter());
+
+	function setFilter(id: string) {
+		brandFilter = id;
+		try {
+			localStorage.setItem(FILTER_KEY, id);
+		} catch {
+			// Private windows and blocked site data throw; the filter just is not kept.
+		}
+	}
+
+	/** A remembered brand that has since been deleted shows everything. */
+	let shownBrand = $derived(brandFilter && brands.byId(brandFilter) ? brandFilter : '');
 
 	// Everything ever scheduled, from PocketBase — not just the upload in
 	// progress. Opens read-only: these rows are already committed, so moving one
@@ -21,6 +53,13 @@
 		status: UploadTarget['status'];
 		/** Released, or past its slot — either way it is history. */
 		done: boolean;
+		/**
+		 * The job's brand; empty once that brand was deleted. The name is the one
+		 * snapshotted with the job, shown only after a deletion — a living
+		 * brand is shown by its current name, so a rename reaches old cards too.
+		 */
+		brand: string;
+		brandName: string;
 	}
 
 	let weekStart = $state(startOfWeek(new Date()));
@@ -117,7 +156,9 @@
 			title: target.title,
 			description: target.description,
 			status: target.status,
-			done
+			done,
+			brand: target.brand ?? '',
+			brandName: target.brand_name ?? ''
 		};
 	}
 
@@ -141,10 +182,15 @@
 		void load();
 	});
 
-	let visible = $derived(showDone ? entries : entries.filter((entry) => !entry.done));
+	let ofBrand = $derived(shownBrand ? entries.filter((entry) => entry.brand === shownBrand) : entries);
 
-	let upcoming = $derived(entries.filter((entry) => !entry.done).length);
-	let released = $derived(entries.filter((entry) => entry.done).length);
+	let visible = $derived(showDone ? ofBrand : ofBrand.filter((entry) => !entry.done));
+
+	let upcoming = $derived(ofBrand.filter((entry) => !entry.done).length);
+	let released = $derived(ofBrand.filter((entry) => entry.done).length);
+
+	/** Named on the card only while cards of several brands share the grid. */
+	let labelBrands = $derived(brands.multiple && !shownBrand);
 
 	function statusLabel(entry: Entry): string {
 		if (entry.status === 'published') return 'released';
@@ -164,6 +210,30 @@
 				<p>Everything scheduled, across every upload.</p>
 			</div>
 			<div class="actions">
+				{#if brands.multiple}
+					<div class="brands" role="radiogroup" aria-label="Brand shown">
+						<button
+							class="brandchip"
+							class:on={!shownBrand}
+							role="radio"
+							aria-checked={!shownBrand}
+							onclick={() => setFilter('')}
+						>
+							All
+						</button>
+						{#each brands.ordered as brand (brand.id)}
+							<button
+								class="brandchip"
+								class:on={shownBrand === brand.id}
+								role="radio"
+								aria-checked={shownBrand === brand.id}
+								onclick={() => setFilter(brand.id)}
+							>
+								{brand.name}
+							</button>
+						{/each}
+					</div>
+				{/if}
 				<button class="btn sm" onclick={load} disabled={loading}>Refresh</button>
 				<button
 					class="btn sm edit"
@@ -225,6 +295,7 @@
 		description={entry.description}
 		muted={entry.done}
 		status={statusLabel(entry)}
+		brand={labelBrands ? (brands.byId(entry.brand)?.name ?? entry.brandName) : ''}
 	/>
 {/snippet}
 
@@ -271,7 +342,37 @@
 
 	.actions {
 		display: flex;
+		align-items: center;
 		gap: 8px;
+	}
+
+	.brands {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 5px;
+		margin-right: 6px;
+	}
+
+	.brandchip {
+		padding: 5px 11px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--bg-elev);
+		font-size: 11.5px;
+		font-weight: 560;
+		color: var(--text-dim);
+		transition: border-color 0.14s, background 0.14s, color 0.14s;
+	}
+
+	.brandchip:hover {
+		border-color: var(--pink-soft);
+		color: var(--text);
+	}
+
+	.brandchip.on {
+		border-color: var(--pink);
+		background: var(--accent-grad-soft);
+		color: var(--text);
 	}
 
 	.edit.armed {

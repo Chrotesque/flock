@@ -10,8 +10,10 @@
 	import TagSetEditor from '$lib/components/TagSetEditor.svelte';
 	import ProfileEditor from '$lib/components/ProfileEditor.svelte';
 	import TemplateEditor from '$lib/components/TemplateEditor.svelte';
+	import BrandEditor from '$lib/components/BrandEditor.svelte';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import { settings } from '$lib/stores/settings.svelte';
+	import { brands } from '$lib/stores/brands.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { templates } from '$lib/stores/templates.svelte';
 	import { tagSets } from '$lib/stores/tagsets.svelte';
@@ -29,15 +31,13 @@
 	templates.load();
 	tagSets.load();
 
-	type Section = 'general' | 'templates' | 'other' | PlatformId;
+	type Section = 'general' | 'brands' | 'templates' | 'other' | PlatformId;
 
 	let active = $state<Section>('general');
 	let tab = $state<'defaults' | 'tags' | 'filters' | 'profiles'>('defaults');
 
 	// Narrowed once here rather than guarded at every use site below.
-	let platform = $derived<PlatformId | null>(
-		active === 'general' || active === 'templates' || active === 'other' ? null : active
-	);
+	let platform = $derived<PlatformId | null>(isPlatformId(active) ? active : null);
 	let entry = $derived(platform ? settings.get(platform) : undefined);
 	let def = $derived(platform ? PLATFORMS[platform] : null);
 
@@ -97,8 +97,13 @@
 		const wantTab = params.get('tab');
 
 		untrack(() => {
-			if (section === 'templates' || section === 'general' || section === 'other') {
-				active = section === 'general' ? 'general' : section;
+			if (
+				section === 'templates' ||
+				section === 'general' ||
+				section === 'other' ||
+				section === 'brands'
+			) {
+				active = section;
 				return;
 			}
 			if (wantPlatform && isPlatformId(wantPlatform)) {
@@ -137,7 +142,7 @@
 			<div class="split">
 				<aside class="card list">
 					<h3>General</h3>
-					<p class="note">Settings that are not tied to one platform.</p>
+					<p class="note">Shared by every brand.</p>
 
 					<ul class="plain">
 						<li class:active={active === 'general'}>
@@ -161,29 +166,30 @@
 								</span>
 							</button>
 						</li>
-						<li class:active={active === 'templates'}>
-							<button class="pick" onclick={() => (active = 'templates')}>
+						<li class:active={active === 'brands'}>
+							<button class="pick" onclick={() => (active = 'brands')}>
 								<span class="ic">
 									<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
 										<path
-											d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"
+											d="M12 4.5 19.5 8 12 11.5 4.5 8 12 4.5Z"
 											stroke="currentColor"
 											stroke-width="1.6"
 											stroke-linejoin="round"
 										/>
 										<path
-											d="M14.5 4v4.5H19M8.5 13h7M8.5 16.5h4.5"
+											d="m4.5 12 7.5 3.5 7.5-3.5M4.5 16l7.5 3.5 7.5-3.5"
 											stroke="currentColor"
-											stroke-width="1.5"
+											stroke-width="1.6"
 											stroke-linecap="round"
+											stroke-linejoin="round"
 										/>
 									</svg>
 								</span>
 								<span class="who">
-									<span class="name">Templates</span>
+									<span class="name">Brands</span>
 									<span class="sub">
-										{templates.items.length}
-										{templates.items.length === 1 ? 'template' : 'templates'}
+										{brands.list.length}
+										{brands.list.length === 1 ? 'brand' : 'brands'}
 									</span>
 								</span>
 							</button>
@@ -211,7 +217,62 @@
 						</li>
 					</ul>
 
-					<h3 class="second">Platforms</h3>
+					<!--
+						Everything from here down belongs to the brand in view. The switch is
+						the same choice as the upload wizard's: what is edited here is what
+						the next upload for that brand starts from.
+					-->
+					<h3 class="second">{brands.multiple ? 'Brand' : (brands.current?.name ?? 'Brand')}</h3>
+					{#if brands.multiple}
+						<div class="brands" role="radiogroup" aria-label="Brand in view">
+							{#each brands.ordered as brand (brand.id)}
+								<button
+									class="brandchip"
+									class:on={brand.id === brands.currentId}
+									role="radio"
+									aria-checked={brand.id === brands.currentId}
+									onclick={() => brands.select(brand.id)}
+								>
+									{brand.name}
+								</button>
+							{/each}
+						</div>
+					{/if}
+					<p class="note">
+						Everything below belongs to {brands.current?.name ?? 'this brand'}.
+					</p>
+
+					<ul class="plain">
+						<li class:active={active === 'templates'}>
+							<button class="pick" onclick={() => (active = 'templates')}>
+								<span class="ic">
+									<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+										<path
+											d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"
+											stroke="currentColor"
+											stroke-width="1.6"
+											stroke-linejoin="round"
+										/>
+										<path
+											d="M14.5 4v4.5H19M8.5 13h7M8.5 16.5h4.5"
+											stroke="currentColor"
+											stroke-width="1.5"
+											stroke-linecap="round"
+										/>
+									</svg>
+								</span>
+								<span class="who">
+									<span class="name">Templates</span>
+									<span class="sub">
+										{templates.items.length}
+										{templates.items.length === 1 ? 'template' : 'templates'}
+									</span>
+								</span>
+							</button>
+						</li>
+					</ul>
+
+					<h4 class="platformshead">Platforms</h4>
 					<p class="note">
 						This order is used everywhere — the compose rail, the schedule list and the confirmation
 						screen.
@@ -326,6 +387,34 @@
 
 							<TimeZoneList />
 						</div>
+					{:else if active === 'brands'}
+						<header class="panelhead">
+							<div class="ident">
+								<span class="ic big">
+									<svg viewBox="0 0 24 24" width="21" height="21" fill="none" aria-hidden="true">
+										<path
+											d="M12 4.5 19.5 8 12 11.5 4.5 8 12 4.5Z"
+											stroke="currentColor"
+											stroke-width="1.6"
+											stroke-linejoin="round"
+										/>
+										<path
+											d="m4.5 12 7.5 3.5 7.5-3.5M4.5 16l7.5 3.5 7.5-3.5"
+											stroke="currentColor"
+											stroke-width="1.6"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										/>
+									</svg>
+								</span>
+								<div>
+									<h2>Brands</h2>
+									<p>The brands you publish as, and the order they are offered in.</p>
+								</div>
+							</div>
+						</header>
+
+						<BrandEditor />
 					{:else if active === 'templates'}
 						<header class="panelhead">
 							<div class="ident">
@@ -346,7 +435,7 @@
 									</svg>
 								</span>
 								<div>
-									<h2>Templates</h2>
+									<h2>Templates{brands.multiple ? ` · ${brands.current?.name ?? ''}` : ''}</h2>
 									<p>Reusable text you can drop into a title or description.</p>
 								</div>
 							</div>
@@ -387,7 +476,7 @@
 							<div class="ident">
 								<span class="ic big"><PlatformIcon {platform} size={22} /></span>
 								<div>
-									<h2>{def.label}</h2>
+									<h2>{def.label}{brands.multiple ? ` · ${brands.current?.name ?? ''}` : ''}</h2>
 									<p>
 										{def.fieldNote}
 										{#if def.hasTitle}Title limit {def.titleLimit.toLocaleString()}, description
@@ -591,6 +680,40 @@
 		margin-top: 20px;
 		padding-top: 16px;
 		border-top: 1px solid var(--border);
+	}
+
+	.platformshead {
+		margin-top: 18px;
+		font-size: 12.5px;
+	}
+
+	.brands {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: 10px;
+	}
+
+	.brandchip {
+		padding: 5px 12px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--bg-elev);
+		font-size: 12px;
+		font-weight: 560;
+		color: var(--text-dim);
+		transition: border-color 0.14s, background 0.14s, color 0.14s;
+	}
+
+	.brandchip:hover {
+		border-color: var(--pink-soft);
+		color: var(--text);
+	}
+
+	.brandchip.on {
+		border-color: var(--pink);
+		background: var(--accent-grad-soft);
+		color: var(--text);
 	}
 
 	/* The General row has no reorder or enable controls, so its button takes

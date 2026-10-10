@@ -1,7 +1,9 @@
 import { newId } from '../id';
-import { getSetting, setSetting } from '../repo';
+import { getBrandSettings, setSetting } from '../repo';
+import { brandSettingKey } from '../brands';
 import { logAction } from '../log';
 import { settle, LOG_SETTLE_MS } from '../settle';
+import { brands } from './brands.svelte';
 import type { TextTemplate } from '../types';
 
 export const TEMPLATES_KEY = 'templates';
@@ -16,30 +18,44 @@ export function tokenOf(name: string): string {
 }
 
 /**
- * Reusable blocks of text, kept under their own `app_settings` key rather than
- * inside the general blob — they are a list that grows, not a handful of
- * settings, and the compose screen loads them on their own.
+ * Reusable blocks of text, per brand, each brand's under its own
+ * `app_settings` key (`templates:<brand id>`) rather than inside the general
+ * blob — they are a list that grows, not a handful of settings. Every brand's
+ * list is loaded at once, and `items` answers for the brand in view.
  */
 class TemplateStore {
-	items = $state<TextTemplate[]>([]);
 	loading = $state(true);
 	saving = $state(false);
 	error = $state<string | null>(null);
 
-	#timer: ReturnType<typeof setTimeout> | null = null;
+	#byBrand = $state<Record<string, TextTemplate[]>>({});
+	#timers = new Map<string, ReturnType<typeof setTimeout>>();
 	#loaded = false;
 
-	#logged: TextTemplate[] | null = null;
+	#logged = new Map<string, TextTemplate[]>();
 	#logSettle = settle(LOG_SETTLE_MS);
+
+	/** The brand in view's templates. */
+	get items(): TextTemplate[] {
+		return this.#byBrand[brands.currentId] ?? [];
+	}
 
 	async load(force = false) {
 		if (this.#loaded && !force) return;
 		this.loading = true;
 		try {
-			const stored = await getSetting<{ items?: TextTemplate[] }>(TEMPLATES_KEY, {});
-			this.items = Array.isArray(stored.items) ? stored.items : [];
+			// After the brands: their first load moves the old single list to the
+			// first brand's key.
+			await brands.load();
+			const stored = await getBrandSettings<{ items?: TextTemplate[] }>(TEMPLATES_KEY);
+			const next: Record<string, TextTemplate[]> = {};
+			this.#logged.clear();
+			for (const [brand, value] of Object.entries(stored)) {
+				next[brand] = Array.isArray(value?.items) ? value.items : [];
+				this.#logged.set(brand, structuredClone(next[brand]));
+			}
+			this.#byBrand = next;
 			this.#loaded = true;
-			this.#logged = $state.snapshot(this.items) as TextTemplate[];
 			this.error = null;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
@@ -48,18 +64,25 @@ class TemplateStore {
 		}
 	}
 
-	queueSave() {
-		if (this.#timer) clearTimeout(this.#timer);
-		this.#timer = setTimeout(() => {
-			this.#timer = null;
-			void this.saveNow();
-		}, 400);
+	/** Writes a brand's list ~400ms after its last edit. */
+	#queueSave(brand: string) {
+		const existing = this.#timers.get(brand);
+		if (existing) clearTimeout(existing);
+		this.#timers.set(
+			brand,
+			setTimeout(() => {
+				this.#timers.delete(brand);
+				void this.#save(brand);
+			}, 400)
+		);
 	}
 
-	async saveNow() {
+	async #save(brand: string) {
 		this.saving = true;
 		try {
-			await setSetting(TEMPLATES_KEY, { items: $state.snapshot(this.items) });
+			await setSetting(brandSettingKey(TEMPLATES_KEY, brand), {
+				items: $state.snapshot(this.#byBrand[brand] ?? [])
+			});
 			this.error = null;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
@@ -68,20 +91,21 @@ class TemplateStore {
 		}
 	}
 
-	#queueLog() {
-		this.#logSettle.schedule(() => this.#logDiff());
+	#queueLog(brand: string) {
+		this.#logSettle.schedule(() => this.#logDiff(brand));
 	}
 
 	/** Reports what actually changed, rather than that something did. */
-	#logDiff() {
-		const before = this.#logged;
-		const after = $state.snapshot(this.items) as TextTemplate[];
-		this.#logged = after;
-		if (!before) return;
+	#logDiff(brand: string) {
+		const before = this.#logged.get(brand) ?? [];
+		const after = $state.snapshot(this.#byBrand[brand] ?? []) as TextTemplate[];
+		this.#logged.set(brand, after);
 
 		const was = new Map(before.map((t) => [t.id, t]));
 		const now = new Map(after.map((t) => [t.id, t]));
 		const name = (t?: TextTemplate) => t?.name.trim() || 'unnamed';
+		// With more than one brand, whose template it was is half the news.
+		const of = brands.multiple ? ` (${brands.byId(brand)?.name ?? 'deleted brand'})` : '';
 
 		for (const [id, tpl] of now) {
 			const old = was.get(id);
@@ -90,24 +114,33 @@ class TemplateStore {
 				// The content rides along so the log records what the template said,
 				// not merely that one appeared.
 				if (tpl.name.trim()) {
-					logAction('settings', `Added template ${name(tpl)}`, tpl.content || '(empty)');
+					logAction('settings', `Added template ${name(tpl)}${of}`, tpl.content || '(empty)');
 				}
 				continue;
 			}
 			if (old.name !== tpl.name) {
-				logAction('settings', `Renamed template ${name(old)} to ${name(tpl)}`);
+				logAction('settings', `Renamed template ${name(old)} to ${name(tpl)}${of}`);
 			}
 			if (old.content !== tpl.content) {
-				logAction('settings', `Edited template ${name(tpl)}`, `${tpl.content.length} characters`);
+				logAction('settings', `Edited template ${name(tpl)}${of}`, `${tpl.content.length} characters`);
 			}
 		}
 
 		for (const [id, tpl] of was) {
 			// Deletion is the only record of what the template held, so keep it.
 			if (!now.has(id)) {
-				logAction('settings', `Deleted template ${name(tpl)}`, tpl.content || '(empty)');
+				logAction('settings', `Deleted template ${name(tpl)}${of}`, tpl.content || '(empty)');
 			}
 		}
+	}
+
+	/** Replaces the brand in view's list, then queues its write and its log line. */
+	#edit(change: (list: TextTemplate[]) => TextTemplate[]) {
+		const brand = brands.currentId;
+		if (!brand) return;
+		this.#byBrand[brand] = change(this.#byBrand[brand] ?? []);
+		this.#queueSave(brand);
+		this.#queueLog(brand);
 	}
 
 	/**
@@ -124,22 +157,16 @@ class TemplateStore {
 	/** Returns the new template's id so the caller can expand it. */
 	add(): string {
 		const entry: TextTemplate = { id: newId(), name: '', content: '' };
-		this.items = [...this.items, entry];
-		this.queueSave();
-		this.#queueLog();
+		this.#edit((list) => [...list, entry]);
 		return entry.id;
 	}
 
 	update(id: string, patch: Partial<TextTemplate>) {
-		this.items = this.items.map((t) => (t.id === id ? { ...t, ...patch } : t));
-		this.queueSave();
-		this.#queueLog();
+		this.#edit((list) => list.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 	}
 
 	remove(id: string) {
-		this.items = this.items.filter((t) => t.id !== id);
-		this.queueSave();
-		this.#queueLog();
+		this.#edit((list) => list.filter((t) => t.id !== id));
 	}
 }
 

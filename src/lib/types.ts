@@ -85,9 +85,22 @@ export interface PlatformDefinition {
 	defaults: OptionValues;
 }
 
+/**
+ * A set of accounts, one per platform, with its own copy of every
+ * per-platform setting and its own templates. An upload is made for one
+ * brand; everything it starts from is that brand's.
+ */
+export interface Brand {
+	id: string;
+	name: string;
+	sort_order: number;
+}
+
 export interface PlatformSettings {
 	/** PocketBase record id, absent until first saved. */
 	id?: string;
+	/** The brand these settings belong to. */
+	brand: string;
 	platform: PlatformId;
 	enabled: boolean;
 	sort_order: number;
@@ -143,6 +156,10 @@ export interface UploadJob {
 	destination_path: string;
 	status: JobStatus;
 	error?: string;
+	/** The brand the upload was made for; empty once that brand is deleted. */
+	brand?: string;
+	/** The brand's name when the upload was made, kept after a deletion. */
+	brand_name?: string;
 	created: string;
 	updated: string;
 }
@@ -159,6 +176,9 @@ export interface UploadTarget {
 	remote_url?: string;
 	error?: string;
 	published_at?: string;
+	/** The job's brand, filled in by `listTargets` — not a column of its own. */
+	brand?: string;
+	brand_name?: string;
 	created: string;
 	updated: string;
 }

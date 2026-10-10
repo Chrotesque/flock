@@ -357,6 +357,27 @@ class DraftStore {
 		return this.activePlatforms.filter((id) => !this.isComplete(id));
 	}
 
+	/** The brand the per-platform choices above were made for. */
+	#brand = '';
+
+	/**
+	 * Called with the brand in view whenever it may have changed. Switching
+	 * brand keeps the video and the text but drops every per-platform choice:
+	 * options, schedule and profile all start from the old brand's settings,
+	 * and TikTok's choices belong to the old brand's account. The draft is
+	 * told rather than reading the brands store, so it still only reads from
+	 * the stores it builds on.
+	 */
+	followBrand(brandId: string) {
+		if (this.#brand && brandId && this.#brand !== brandId) {
+			this.overrides = {};
+			this.schedule = {};
+			this.immediate = {};
+			this.profile = {};
+		}
+		if (brandId) this.#brand = brandId;
+	}
+
 	reset() {
 		this.step = 0;
 		this.texts = {};

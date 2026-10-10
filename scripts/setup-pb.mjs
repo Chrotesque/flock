@@ -25,10 +25,35 @@ const stamps = [
 
 const collections = [
 	{
+		// A brand is a set of accounts, one per platform, with its own copy of
+		// every per-platform setting and its own templates. Declared first:
+		// platform_settings and upload_jobs both point at it.
+		name: 'brands',
+		type: 'base',
+		...RULES,
+		fields: [
+			{ type: 'text', name: 'name', required: true, max: 120 },
+			// Lower-cased form, so "Acme" and "acme" collide — the same trick
+			// as devices.key, and for the same reason: an index, not a check.
+			{ type: 'text', name: 'key', required: true, max: 120 },
+			{ type: 'number', name: 'sort_order' },
+			...stamps
+		],
+		indexes: ['CREATE UNIQUE INDEX `idx_brands_key` ON `brands` (`key`)']
+	},
+	{
 		name: 'platform_settings',
 		type: 'base',
 		...RULES,
 		fields: [
+			// Deleting a brand takes its settings with it.
+			{
+				type: 'relation',
+				name: 'brand',
+				collection: 'brands',
+				maxSelect: 1,
+				cascadeDelete: true
+			},
 			{ type: 'text', name: 'platform', required: true, max: 40 },
 			{ type: 'bool', name: 'enabled' },
 			{ type: 'number', name: 'sort_order' },
@@ -42,7 +67,7 @@ const collections = [
 			...stamps
 		],
 		indexes: [
-			'CREATE UNIQUE INDEX `idx_platform_settings_platform` ON `platform_settings` (`platform`)'
+			'CREATE UNIQUE INDEX `idx_platform_settings_brand_platform` ON `platform_settings` (`brand`, `platform`)'
 		]
 	},
 	{
@@ -98,16 +123,31 @@ const collections = [
 				values: ['draft', 'uploading', 'stored', 'publishing', 'done', 'failed']
 			},
 			{ type: 'text', name: 'error', max: 2000 },
+			// The brand the upload was made for. Not cascading: deleting a brand
+			// must not delete its history, so the relation empties and the name
+			// snapshot below is what the job keeps.
+			{ type: 'relation', name: 'brand', collection: 'brands', maxSelect: 1, cascadeDelete: false },
+			{ type: 'text', name: 'brand_name', max: 120 },
 			...stamps
 		],
-		indexes: ['CREATE INDEX `idx_upload_jobs_status` ON `upload_jobs` (`status`)']
+		indexes: [
+			'CREATE INDEX `idx_upload_jobs_status` ON `upload_jobs` (`status`)',
+			'CREATE INDEX `idx_upload_jobs_brand` ON `upload_jobs` (`brand`)'
+		]
 	},
 	{
 		name: 'upload_targets',
 		type: 'base',
 		...RULES,
 		fields: [
-			{ type: 'relation', name: 'job', required: true, maxSelect: 1, cascadeDelete: true },
+			{
+				type: 'relation',
+				name: 'job',
+				collection: 'upload_jobs',
+				required: true,
+				maxSelect: 1,
+				cascadeDelete: true
+			},
 			{ type: 'text', name: 'platform', required: true, max: 40 },
 			// Title/description are stored *post-filter*, per platform, so the
 			// worker never has to re-run the adaptation rules.
@@ -266,13 +306,15 @@ async function run() {
 	let map = await existing();
 
 	for (const def of collections) {
-		// The relation field needs the *id* of its target collection, which only
-		// exists once that collection has been created.
+		// A relation field needs the *id* of its target collection, which only
+		// exists once that collection has been created — hence the order of the
+		// list above. `collection` names it here and is not sent to PocketBase.
 		const fields = def.fields.map((f) => {
 			if (f.type !== 'relation') return f;
-			const target = map.get('upload_jobs');
-			if (!target) throw new Error('upload_jobs must be created before upload_targets');
-			return { ...f, collectionId: target.id };
+			const { collection, ...rest } = f;
+			const target = map.get(collection);
+			if (!target) throw new Error(`${collection} must be declared before ${def.name}`);
+			return { ...rest, collectionId: target.id };
 		});
 
 		const payload = { ...def, fields };
