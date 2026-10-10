@@ -14,9 +14,9 @@
 // (roles.mjs) splits the work between a NAS and a PC worker; the default,
 // `all`, does everything.
 
-import { requireConfig, hasTikTok, hasInstagram } from './config.mjs';
+import { requireConfig, hasYouTube, hasTikTok, hasInstagram } from './config.mjs';
 import { makeClient } from './pb.mjs';
-import { publishToYouTube, probeYouTube, refreshYouTubeChannel } from './youtube.mjs';
+import { publishToYouTube, probeYouTube, refreshYouTubeChannels, youtubeChannels } from './youtube.mjs';
 import { publishToTikTok, probeTikTok, refreshTikTokCreator, creatorInfo, privacyLabel } from './tiktok.mjs';
 import {
 	publishToInstagram,
@@ -61,7 +61,7 @@ const ADAPTERS = {
 		probe: probeYouTube,
 		timing: 'now',
 		lead: () => 0,
-		ready: (config) => Boolean(config.google.refreshToken),
+		ready: hasYouTube,
 		setup: 'pnpm worker:auth'
 	},
 	tiktok: {
@@ -88,6 +88,7 @@ const checkVidiq = process.argv.includes('--vidiq');
 const statsOnly = process.argv.includes('--stats');
 const checkTikTok = process.argv.includes('--tiktok');
 const checkInstagram = process.argv.includes('--instagram');
+const checkYouTube = process.argv.includes('--youtube');
 
 function stamp() {
 	return new Date().toLocaleTimeString();
@@ -600,8 +601,8 @@ async function slotPass(pb, config, { wait = false } = {}) {
  */
 async function accountPass(pb, config) {
 	if (!hb.canPublish()) return;
-	if (config.google.refreshToken) {
-		await refreshYouTubeChannel(pb, config, log).catch((err) => log(`youtube: ${err.message}`));
+	if (hasYouTube(config)) {
+		await refreshYouTubeChannels(pb, config, log).catch((err) => log(`youtube: ${err.message}`));
 	}
 	if (hasTikTok(config)) {
 		await refreshTikTokCreator(pb, config, log).catch((err) => log(`tiktok: ${err.message}`));
@@ -700,6 +701,16 @@ async function settleOrphan(pb, config, platform, row) {
 
 /** Who the TikTok and Instagram tokens post as — the check that a setup worked. */
 async function showAccounts(config) {
+	if (checkYouTube) {
+		if (!hasYouTube(config)) throw new Error('YouTube is not set up. Run:  pnpm worker:auth');
+		const list = await youtubeChannels(config);
+		for (const account of list) {
+			log(`YouTube uploads to "${account.title}"${account.handle ? ` (${account.handle})` : ''}, channel ${account.channelId}`);
+		}
+		for (const account of config.google.accounts.filter((a) => !a.channelId)) {
+			log(`a Google grant could not be read: ${(account.problem ?? 'unknown').split('\n')[0]}`);
+		}
+	}
 	if (checkTikTok) {
 		if (!hasTikTok(config)) throw new Error('TikTok is not set up. Run:  pnpm worker:auth --tiktok');
 		const creator = await creatorInfo(config);
@@ -740,8 +751,8 @@ async function main() {
 		log(`scoring tool present: ${tools.includes('vidiq_score_title')}`);
 		return;
 	}
-	// Likewise for the other two platforms' checks.
-	if (checkTikTok || checkInstagram) {
+	// Likewise for the platforms' account checks.
+	if (checkYouTube || checkTikTok || checkInstagram) {
 		await showAccounts(requireConfig({ needToken: false, needGoogle: false }));
 		return;
 	}
@@ -788,7 +799,7 @@ async function main() {
 	// Reads only, so it goes before the stale-row recovery: a stats check must
 	// not touch the publishing queue.
 	if (statsOnly) {
-		await statsPass({ pb, config, log });
+		await statsPass({ pb, config, log, every: true });
 		log(`stats pass complete — ${unitsToday()} unit(s) spent`);
 		return;
 	}
@@ -853,8 +864,12 @@ async function main() {
 	// `busy` stops a slow poll overlapping the next tick.
 	if (config.statsSeconds > 0) {
 		if (!ownsPublishing(config.role)) log('stats run here only while covering for the NAS worker');
+		const count = config.google.accounts.length;
 		log(
-			`stats: newest ${config.statsVideos} videos every ${config.statsSeconds}s, ` +
+			`stats: newest ${config.statsVideos} videos ` +
+				(count > 1
+					? `of each of ${count} channels, one every ${config.statsSeconds}s in turn, `
+					: `every ${config.statsSeconds}s, `) +
 				`up to ${config.statsBudget} units a day`
 		);
 		let statsBusy = false;

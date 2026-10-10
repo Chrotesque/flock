@@ -158,7 +158,8 @@ It needs a Google OAuth client. In the [Google Cloud console](https://console.cl
 1. Create a project and enable **YouTube Data API v3** under *APIs & Services →
    Library*.
 2. Under *APIs & Services → OAuth consent screen*, set it up as **External** and
-   add the Google account that owns the channel as a **test user**.
+   add the Google account that owns the channel as a **test user** — every
+   such account, if your channels belong to different Google logins.
 3. Under *Credentials*, create an **OAuth client ID** of type **Desktop app**.
    That gives you a client ID and client secret.
 
@@ -168,12 +169,16 @@ Copy the example config and paste those two values in:
 cp worker/.worker-config.example.json worker/.worker-config.json
 ```
 
-Then authorise once — this opens a consent URL and writes the refresh token back
-into that file:
+Then authorise once per channel — this opens a consent URL and adds the channel
+you pick in Google's account chooser to that file:
 
 ```bash
 pnpm worker:auth
 ```
+
+Run it again for each further channel; a channel connected again just gets its
+new grant. `pnpm worker:youtube` lists the channels the worker can upload to.
+With more than one, each brand picks its channel in Settings → Brands.
 
 That asks for **upload permission plus read-only access** to the channel. Upload
 is all `videos.insert` needs; read-only is what the Analytics screen's stats
@@ -243,14 +248,17 @@ quickest way to confirm the read scope works. The config file holds a client
 secret and is gitignored.
 
 The stats poll reads the newest fifty videos every 30 seconds by default, which
-is about a third of the daily API quota that uploads also draw on. `statsSeconds`,
+is about a third of the daily API quota that uploads also draw on. With several
+channels they take turns, so each is read less often and the cost stays the
+same — the quota belongs to the Google Cloud project, not to a channel. `statsSeconds`,
 `statsVideos` and `statsBudget` in the worker config adjust it; when a day's
 polling reaches the budget it pauses until Google's reset at midnight Pacific,
 so it can never leave an upload without quota.
 
 **One limit worth knowing.** While the OAuth consent screen sits in *Testing*,
 Google expires the refresh token after **7 days**, so you would be re-running
-`pnpm worker:auth` every week. Publishing the consent screen stops that.
+`pnpm worker:auth` every week, once per channel. Publishing the consent screen
+stops that.
 
 Google's docs also say uploads from an API project that has not passed their
 compliance audit are locked to private. That was tested here and does not
@@ -462,8 +470,10 @@ shows what the worker printed, live as it prints it, kept for 14 days — the pl
 look when a thumbnail, playlist or post did not come out as asked. It needs
 `pnpm setup-pb` run once, and fills from the next worker start.
 
-**Analytics** shows the newest fifty videos on the channel as YouTube reports
-them, refreshed every 30 seconds while the worker runs: views, likes and
+**Analytics** shows the newest fifty videos on one channel — the one the brand
+in view uploads to, with the brand buttons on top when there is more than one
+brand — as YouTube reports them, refreshed every 30 seconds while the worker
+runs (less often per channel with several): views, likes and
 comments in a row per video, and everything else the API returns underneath
 when you click one. The buttons on the left narrow it to Shorts (under three
 minutes), long form, live streams, or whatever fits none of those; tick any

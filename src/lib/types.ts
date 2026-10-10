@@ -345,6 +345,8 @@ export interface YouTubePlaylist {
  */
 export interface PlaylistIndex {
 	fetchedAt: string;
+	/** The channel the list belongs to; absent in a list from before channels. */
+	channel?: string;
 	items: YouTubePlaylist[];
 	error?: string;
 }
@@ -469,6 +471,7 @@ export interface YouTubeVideo {
 		title?: string;
 		description?: string;
 		publishedAt?: string;
+		channelId?: string;
 		channelTitle?: string;
 		categoryId?: string;
 		tags?: string[];
@@ -571,7 +574,20 @@ export interface PollRun {
 	to: string;
 }
 
-/** The stats pass's heartbeat, in app_settings under `stats_status`. */
+/** One channel's part of the stats heartbeat. */
+export interface ChannelStatus {
+	title: string;
+	polledAt: string;
+	videos: number;
+	error: string;
+}
+
+/**
+ * The stats pass's heartbeat, in app_settings under `stats_status`. The
+ * top level is the pass as a whole (the quota is the project's); `channels`
+ * is per channel, by channel id, since the channels take turns.
+ * `intervalSeconds` is how often each channel is read.
+ */
 export interface StatsStatus {
 	polledAt: string;
 	unitsToday: number;
@@ -580,4 +596,5 @@ export interface StatsStatus {
 	videos: number;
 	error: string;
 	runs?: PollRun[];
+	channels?: Record<string, ChannelStatus>;
 }

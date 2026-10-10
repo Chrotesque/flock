@@ -2,8 +2,9 @@
 //
 // Credentials are per account and live only in the worker config: Instagram
 // keeps a list there (one entry per Instagram account, with the Facebook Page
-// it is reached through and that Page's token), while YouTube and TikTok hold
-// one account each for now. PocketBase gets the public half of each — id,
+// it is reached through and that Page's token), YouTube one (one entry per
+// channel, with the Google grant that uploads to it), while TikTok holds one
+// account for now. PocketBase gets the public half of each — id,
 // handle, name — in its `accounts` collection, and every post names the
 // account it is for in `upload_targets.account`, so it can only ever go out
 // through that account. Pure, so it is tested (accounts.test.mjs).
@@ -39,6 +40,30 @@ export function instagramAccounts(section = {}, env = {}) {
 		if (target) target.pageAccessToken = env.INSTAGRAM_PAGE_TOKEN;
 	}
 	return list;
+}
+
+const GOOGLE_FIELDS = ['channelId', 'title', 'handle', 'refreshToken', 'scope'];
+
+function cleanGoogle(entry) {
+	const out = {};
+	for (const key of GOOGLE_FIELDS) out[key] = typeof entry?.[key] === 'string' ? entry[key] : '';
+	return out;
+}
+
+/**
+ * The YouTube channels in a config file's `google` section: `accounts`, one
+ * entry per channel with its own refresh token. A section written before
+ * there was a list holds one grant in `refreshToken`; it reads as a list of
+ * one whose channel is not known yet — the worker asks YouTube, and the next
+ * `pnpm worker:auth` writes it down. GOOGLE_REFRESH_TOKEN (for a container)
+ * is that single grant, or the token of the only channel.
+ */
+export function googleAccounts(section = {}, env = {}) {
+	let list = Array.isArray(section.accounts) ? section.accounts.map(cleanGoogle) : [];
+	const flat = env.GOOGLE_REFRESH_TOKEN || section.refreshToken || '';
+	if (list.length === 0 && flat) list = [cleanGoogle({ refreshToken: flat })];
+	else if (list.length === 1 && env.GOOGLE_REFRESH_TOKEN) list[0].refreshToken = env.GOOGLE_REFRESH_TOKEN;
+	return list.filter((account) => account.refreshToken);
 }
 
 /** Whether an Instagram account entry has everything publishing needs. */

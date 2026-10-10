@@ -113,17 +113,24 @@
 	let playlists = $state<PlaylistIndex | null>(null);
 	let playlistsLoading = $state(false);
 
+	// The playlists of the channel the brand in view uploads to.
+	let youtubeChannel = $derived(accounts.for('youtube')?.account_id ?? '');
+
 	async function refreshPlaylists() {
 		playlistsLoading = true;
 		try {
-			playlists = await loadPlaylists();
+			playlists = await loadPlaylists(untrack(() => youtubeChannel));
 		} catch {
 			playlists = null;
 		} finally {
 			playlistsLoading = false;
 		}
 	}
-	void refreshPlaylists();
+	// Re-read when the brand, and with it the channel, changes.
+	$effect(() => {
+		void youtubeChannel;
+		untrack(() => void refreshPlaylists());
+	});
 
 	let playlistValue = $derived(String(draft.overrides.youtube?.playlist ?? ''));
 

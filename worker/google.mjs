@@ -8,11 +8,15 @@ import { fetchOrExplain } from './net.mjs';
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
-/** Cached until a minute before it expires, so a batch of uploads reuses one. */
-let cached = { token: '', expiresAt: 0 };
+/**
+ * Per grant (one per channel), cached until a minute before it expires, so a
+ * batch of uploads reuses one.
+ */
+const cache = new Map();
 
 export async function accessToken({ clientId, clientSecret, refreshToken }) {
-	if (cached.token && Date.now() < cached.expiresAt) return cached.token;
+	const cached = cache.get(refreshToken);
+	if (cached && Date.now() < cached.expiresAt) return cached.token;
 
 	const res = await fetchOrExplain(TOKEN_URL, {
 		method: 'POST',
@@ -43,14 +47,14 @@ export async function accessToken({ clientId, clientSecret, refreshToken }) {
 	}
 
 	const body = JSON.parse(text);
-	cached = {
+	cache.set(refreshToken, {
 		token: body.access_token,
 		expiresAt: Date.now() + Math.max(0, (body.expires_in ?? 3600) - 60) * 1000
-	};
-	return cached.token;
+	});
+	return body.access_token;
 }
 
-/** Drops the cache, so the next call re-refreshes. Used after a 401. */
-export function forgetToken() {
-	cached = { token: '', expiresAt: 0 };
+/** Drops a grant's cached token, so the next call re-refreshes. Used after a 401. */
+export function forgetToken(refreshToken) {
+	cache.delete(refreshToken);
 }

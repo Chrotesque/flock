@@ -672,10 +672,16 @@ export async function requestFolderPick(
 	}
 }
 
-/** The channel's playlists, as the worker last listed them. */
-export async function loadPlaylists(): Promise<PlaylistIndex | null> {
+/**
+ * A channel's playlists, as the worker last listed them — one row per
+ * channel. The plain `youtube_playlists` row a worker from before channels
+ * wrote is not read: it does not say whose channel it lists, and showing one
+ * brand another channel's playlists is worse than a minute without any.
+ */
+export async function loadPlaylists(channelId: string): Promise<PlaylistIndex | null> {
+	if (!channelId) return null;
 	const empty: PlaylistIndex | null = null;
-	const index = await getSetting<PlaylistIndex | null>('youtube_playlists', empty);
+	const index = await getSetting<PlaylistIndex | null>(`youtube_playlists:${channelId}`, empty);
 	if (!index || !Array.isArray(index.items)) return null;
 	return index;
 }

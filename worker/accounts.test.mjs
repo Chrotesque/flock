@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { instagramAccounts, instagramReady, mergeAccounts, pickAccount, parseChoice } from './accounts.mjs';
+import {
+	googleAccounts,
+	instagramAccounts,
+	instagramReady,
+	mergeAccounts,
+	pickAccount,
+	parseChoice
+} from './accounts.mjs';
 
 const ig = (id, extra = {}) => ({
 	igUserId: id,
@@ -73,4 +80,36 @@ test('choices parse from numbers, lists and "all"', () => {
 	assert.equal(parseChoice('4', 3), null);
 	assert.equal(parseChoice('x', 3), null);
 	assert.equal(parseChoice('', 3), null);
+});
+
+const yt = (id, extra = {}) => ({ channelId: id, title: `Channel ${id}`, handle: `@c${id}`, refreshToken: `rt${id}`, ...extra });
+
+test('YouTube channels are a list, cleaned, and a channel needs a token', () => {
+	const list = googleAccounts({ accounts: [yt('A', { junk: 1 }), yt('B', { refreshToken: '' })] });
+	assert.deepEqual(list.map((a) => a.channelId), ['A']);
+	assert.deepEqual(Object.keys(list[0]).sort(), ['channelId', 'handle', 'refreshToken', 'scope', 'title']);
+});
+
+test('the old single refresh token reads as one channel not yet named', () => {
+	const list = googleAccounts({ clientId: 'x', refreshToken: 'old' });
+	assert.equal(list.length, 1);
+	assert.equal(list[0].refreshToken, 'old');
+	assert.equal(list[0].channelId, '');
+});
+
+test('GOOGLE_REFRESH_TOKEN is the single grant, or the only channel\'s token', () => {
+	assert.equal(googleAccounts({}, { GOOGLE_REFRESH_TOKEN: 'env' })[0].refreshToken, 'env');
+	assert.equal(googleAccounts({ accounts: [yt('A')] }, { GOOGLE_REFRESH_TOKEN: 'env' })[0].refreshToken, 'env');
+	const two = googleAccounts({ accounts: [yt('A'), yt('B')] }, { GOOGLE_REFRESH_TOKEN: 'env' });
+	assert.deepEqual(two.map((a) => a.refreshToken), ['rtA', 'rtB']);
+});
+
+test('a list wins over a leftover single token', () => {
+	const list = googleAccounts({ accounts: [yt('A')], refreshToken: 'old' });
+	assert.deepEqual(list.map((a) => a.refreshToken), ['rtA']);
+});
+
+test('a channel connected again replaces its old grant; others stay', () => {
+	const merged = mergeAccounts([yt('A'), yt('B')], [yt('B', { refreshToken: 'new' })], (a) => a.channelId);
+	assert.deepEqual(merged.map((a) => `${a.channelId}:${a.refreshToken}`), ['A:rtA', 'B:new']);
 });

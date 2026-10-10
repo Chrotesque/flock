@@ -12,11 +12,15 @@
 	} from '$lib/repo';
 	import { formatBytes, formatDuration, relativeTo } from '$lib/format';
 	import { KIND_LABELS, KIND_ORDER, kindOfVideo, type VideoKind } from '$lib/videokind';
+	import { base } from '$app/paths';
 	import { brands } from '$lib/stores/brands.svelte';
+	import { accounts } from '$lib/stores/accounts.svelte';
+	import { accountLabel } from '$lib/accounts';
 	import type { StatsStatus, UploadJob, UploadTarget, VideoStats, YouTubeVideo } from '$lib/types';
 
-	// Only to name each upload's brand once there is more than one.
+	// The brand picks the channel shown, and names each upload's brand.
 	brands.load();
+	accounts.load();
 
 	// The live half: the newest videos on the channel as the worker reads them.
 	// Loaded once, then kept current by PocketBase realtime — the worker polls
@@ -107,8 +111,37 @@
 	let error = $state<string | null>(null);
 	let busy = $state<string | null>(null);
 
+	/**
+	 * One channel at a time: the one the brand in view uploads to. YouTube's
+	 * rules forbid adding up figures across channels, so videos of several
+	 * channels are never listed (or totalled) together — with more than one
+	 * channel and none chosen, nothing is shown until one is. A row's channel
+	 * is in YouTube's own item for it.
+	 */
+	const channel = $derived(accounts.for('youtube'));
+	const channelCount = $derived(accounts.forPlatform('youtube').length);
+	const unscoped = $derived(!channel && !brands.multiple && channelCount <= 1);
+	const channelVideos = $derived(
+		channel
+			? videos.filter((row) => row.data?.snippet?.channelId === channel.account_id)
+			: unscoped
+				? videos
+				: []
+	);
+	// The heartbeat for that channel: its own read, the pass's quota and errors.
+	const beat = $derived.by(() => {
+		if (!status) return null;
+		const own = channel ? status.channels?.[channel.account_id] : undefined;
+		return {
+			...status,
+			polledAt: own?.polledAt ?? status.polledAt,
+			videos: own?.videos ?? status.videos,
+			error: own?.error || status.error
+		};
+	});
+
 	const sorted = $derived(
-		[...videos].sort((a, b) => (b.published_at || '').localeCompare(a.published_at || ''))
+		[...channelVideos].sort((a, b) => (b.published_at || '').localeCompare(a.published_at || ''))
 	);
 	// Counts beside the kind boxes respect the unlisted toggle, so they add up
 	// to what the total row shows.
@@ -421,10 +454,28 @@
 		<div>
 			<h1>Analytics</h1>
 			<p>
-				The newest videos on the channel, as YouTube reports them. The worker reads them every
-				{status?.intervalSeconds ?? 30} seconds; this page updates as it writes, and a counter
-				that has moved since you opened it turns green with the change.
+				The newest videos on {channel ? channel.name || accountLabel(channel) : 'the channel'}, as
+				YouTube reports them. The worker reads them every {status?.intervalSeconds ?? 30} seconds;
+				this page updates as it writes, and a counter that has moved since you opened it turns green
+				with the change.
 			</p>
+			{#if brands.multiple}
+				<!-- The same choice as on the upload screen and in Settings. -->
+				<div class="brands" role="radiogroup" aria-labelledby="analyticsbrand">
+					<span class="brandlabel" id="analyticsbrand">Brand</span>
+					{#each brands.ordered as brand (brand.id)}
+						<button
+							class="brandchip"
+							class:on={brand.id === brands.currentId}
+							role="radio"
+							aria-checked={brand.id === brands.currentId}
+							onclick={() => brands.select(brand.id)}
+						>
+							{brand.name}
+						</button>
+					{/each}
+				</div>
+			{/if}
 		</div>
 		<button
 			class="btn sm"
@@ -439,21 +490,29 @@
 
 	<div class="livehead">
 		<h3 class="section">Live from YouTube</h3>
-		<p class="beat" class:bad={Boolean(status?.error)}>
-			{#if status?.error}
-				{status.error}
-			{:else if status}
-				Read {ago(status.polledAt)} · {status.videos} videos · {num(status.unitsToday)} of {num(
-					status.budget
-				)} units today
-			{:else}
-				The worker has not read the channel yet.
-			{/if}
-		</p>
+		<!-- Only for a channel in view: another channel's read would mislead. -->
+		{#if channel || unscoped}
+			<p class="beat" class:bad={Boolean(beat?.error)}>
+				{#if beat?.error}
+					{beat.error}
+				{:else if beat}
+					{channel ? `${channel.name || accountLabel(channel)} · ` : ''}Read {ago(beat.polledAt)} ·
+					{beat.videos} videos · {num(beat.unitsToday)} of {num(beat.budget)} units today
+				{:else}
+					The worker has not read the channel yet.
+				{/if}
+			</p>
+		{/if}
 	</div>
 
 	{#if statsError}
 		<p class="banner error">{statsError}</p>
+	{:else if !channel && !unscoped && accounts.loaded}
+		<p class="banner">
+			{brands.multiple ? `${brands.current?.name ?? 'This brand'} has` : 'There is'} no YouTube channel
+			chosen, so there is nothing to show.
+			<a href="{base}/settings?section=brands">Choose one in Settings → Brands</a>.
+		</p>
 	{:else if sorted.length === 0}
 		<p class="banner">
 			No videos yet. Run the worker (<code>pnpm worker</code>): the newest fifty videos on the
@@ -667,6 +726,45 @@
 		margin: 5px 0 0;
 		font-size: 13px;
 		color: var(--text-dim);
+	}
+
+	.brands {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px;
+		margin-top: 12px;
+	}
+
+	.brandlabel {
+		margin-right: 4px;
+		font-size: 11px;
+		font-weight: 650;
+		letter-spacing: 0.09em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.brandchip {
+		padding: 5px 13px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--bg-elev);
+		font-size: 12px;
+		font-weight: 560;
+		color: var(--text-dim);
+		transition: border-color 0.14s, background 0.14s, color 0.14s;
+	}
+
+	.brandchip:hover {
+		border-color: var(--pink-soft);
+		color: var(--text);
+	}
+
+	.brandchip.on {
+		border-color: var(--pink);
+		background: var(--accent-grad-soft);
+		color: var(--text);
 	}
 
 	.sm {

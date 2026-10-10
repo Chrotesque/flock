@@ -8,6 +8,7 @@ import { request as httpsRequest } from 'node:https';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { accessToken, forgetToken } from './google.mjs';
+import { pickAccount } from './accounts.mjs';
 import { fetchOrExplain } from './net.mjs';
 
 const API = 'https://www.googleapis.com/youtube/v3';
@@ -125,60 +126,124 @@ async function api(token, path, options = {}) {
 	return text ? JSON.parse(text) : null;
 }
 
-// The channel the token uploads to: read once a process for the check before
-// every upload (one unit), and every half hour for the `accounts` row.
-const CHANNEL_TTL_MS = 30 * 60_000;
-let channel = null;
-let channelAt = 0;
-let channelError = '';
+const SETUP = 'pnpm worker:auth';
 
-/** The channel this worker's Google grant uploads to. */
-export async function ownChannel(config, { fresh = false } = {}) {
-	if (channel && !fresh) return channel;
-	const token = await accessToken(config.google);
+/** A channel's grant, in the shape google.mjs refreshes. */
+function grant(config, account) {
+	return {
+		clientId: config.google.clientId,
+		clientSecret: config.google.clientSecret,
+		refreshToken: account.refreshToken
+	};
+}
+
+/** An access token for one channel's grant. */
+export function youtubeToken(config, account) {
+	return accessToken(grant(config, account));
+}
+
+// The channel each grant uploads to: read once a process for the check before
+// every upload (one unit), and every half hour for the `accounts` rows.
+const CHANNEL_TTL_MS = 30 * 60_000;
+const channels = new Map();
+let channelsAt = 0;
+const channelErrors = new Map();
+
+/** The channel a grant uploads to, as YouTube says. */
+export async function ownChannel(config, account, { fresh = false } = {}) {
+	const known = channels.get(account.refreshToken);
+	if (known && !fresh) return known;
+	const token = await youtubeToken(config, account);
 	const body = await api(token, '/channels?part=snippet&mine=true');
 	const item = body?.items?.[0];
 	if (!item) throw new Error('The Google account has no YouTube channel.');
-	channel = {
+	const channel = {
 		id: String(item.id),
 		title: item.snippet?.title ?? '',
 		handle: item.snippet?.customUrl ?? '',
 		thumbnail: item.snippet?.thumbnails?.default?.url ?? ''
 	};
+	channels.set(account.refreshToken, channel);
 	return channel;
 }
 
 /**
- * Publishes the channel to the `accounts` collection, so Settings can offer
- * it to a brand. One channel per worker for now; any other YouTube row is a
- * past one. A failed read is said once and leaves the last good row.
+ * The channels this worker can upload to, each named. A grant from a config
+ * written before the list (one bare refresh token) does not say whose it is,
+ * so YouTube is asked once a process; the next `pnpm worker:auth` writes the
+ * answer down. A grant that cannot be read is left out, with its reason.
  */
-export async function refreshYouTubeChannel(pb, config, log, force = false) {
-	if (!force && Date.now() - channelAt < CHANNEL_TTL_MS) return;
-	channelAt = Date.now();
-	const now = new Date().toISOString();
-	try {
-		const own = await ownChannel(config, { fresh: true });
-		await pb.upsertAccount('youtube', own.id, {
-			handle: own.handle,
-			name: own.title,
-			details: { fetchedAt: now, thumbnail: own.thumbnail },
-			error: '',
-			fetched_at: now
-		});
-		await pb.pruneAccounts('youtube', [own.id]).catch(() => {});
-		if (channelError) log('youtube channel: recovered');
-		channelError = '';
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (message !== channelError) {
-			log(`youtube channel could not be read: ${message.split('\n')[0]}`);
-			channelError = message;
-		}
-		if (channel) {
-			await pb.upsertAccount('youtube', channel.id, { error: message.slice(0, 1900) }).catch(() => {});
+export async function youtubeChannels(config) {
+	for (const account of config.google.accounts) {
+		if (account.channelId) continue;
+		try {
+			const channel = await ownChannel(config, account);
+			Object.assign(account, { channelId: channel.id, title: channel.title, handle: channel.handle });
+		} catch (err) {
+			account.problem = err instanceof Error ? err.message : String(err);
 		}
 	}
+	return config.google.accounts.filter((account) => account.channelId);
+}
+
+/**
+ * The channel a post goes out on: exactly the one it names, or the only one
+ * when it names none — never a guess between several (accounts.mjs).
+ */
+export async function youtubeAccount(config, wanted = '') {
+	// Several grants and a post naming none: refused, even when only one of
+	// them can be read right now — the unreadable one may be the post's.
+	if (!wanted && config.google.accounts.length > 1) {
+		return pickAccount(config.google.accounts, '', (account) => account.channelId, 'YouTube', SETUP);
+	}
+	const list = await youtubeChannels(config);
+	const unreadable = config.google.accounts.find((account) => !account.channelId && account.problem);
+	if (list.length === 0 && unreadable) throw new Error(unreadable.problem);
+	return pickAccount(list, wanted, (account) => account.channelId, 'YouTube', SETUP);
+}
+
+/**
+ * Publishes every channel to the `accounts` collection, so Settings can offer
+ * each to a brand, and drops the rows of channels no longer connected. A
+ * failed read is said once per channel and leaves its last good row.
+ */
+export async function refreshYouTubeChannels(pb, config, log, force = false) {
+	if (!force && Date.now() - channelsAt < CHANNEL_TTL_MS) return;
+	channelsAt = Date.now();
+	const now = new Date().toISOString();
+	const ids = [];
+
+	for (const account of config.google.accounts) {
+		const name = account.title || account.channelId || 'a channel';
+		const said = channelErrors.get(account.refreshToken) ?? '';
+		try {
+			const own = await ownChannel(config, account, { fresh: true });
+			Object.assign(account, { channelId: own.id, title: own.title, handle: own.handle });
+			ids.push(own.id);
+			await pb.upsertAccount('youtube', own.id, {
+				handle: own.handle,
+				name: own.title,
+				details: { fetchedAt: now, thumbnail: own.thumbnail },
+				error: '',
+				fetched_at: now
+			});
+			if (said) log(`youtube ${own.title}: recovered`);
+			channelErrors.delete(account.refreshToken);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			if (message !== said) {
+				log(`youtube ${name} could not be read: ${message.split('\n')[0]}`);
+				channelErrors.set(account.refreshToken, message);
+			}
+			if (account.channelId) {
+				ids.push(account.channelId);
+				await pb
+					.upsertAccount('youtube', account.channelId, { error: message.slice(0, 1900) })
+					.catch(() => {});
+			}
+		}
+	}
+	await pb.pruneAccounts('youtube', ids).catch(() => {});
 }
 
 /** Opens a resumable session and returns the URL the bytes go to. */
@@ -329,7 +394,8 @@ async function setThumbnail(token, videoId, job, pb, log) {
  * bytes received; an expired or unknown one with 404 or 410.
  */
 export async function probeYouTube(config, handle) {
-	const token = await accessToken(config.google);
+	const account = await youtubeAccount(config, handle.account ?? '');
+	const token = await youtubeToken(config, account);
 	const url = new URL(handle.uploadUrl);
 	const { status, headers, text } = await new Promise((resolve, reject) => {
 		const req = httpsRequest(
@@ -381,20 +447,21 @@ export async function publishToYouTube({ target, job, pb, config, log, saveHandl
 	const options = target.options ?? {};
 	const release = resolveRelease(options, target.scheduled_at);
 
-	let token = await accessToken(config.google);
+	// The channel the post's brand chose, or none at all: a post for a channel
+	// this worker holds no grant for is refused before a byte goes anywhere.
+	const account = await youtubeAccount(config, target.account ?? '');
+	let token = await youtubeToken(config, account);
 
-	// A post made for another channel is refused before a byte goes anywhere:
-	// this grant can only upload to its own channel, and that must be the one
-	// the post's brand chose.
-	if (target.account) {
-		const own = await ownChannel(config);
-		if (own.id !== target.account) {
-			throw new Error(
-				`This post is for the YouTube channel ${target.account}, but this worker's Google grant ` +
-					`uploads to "${own.title}" (${own.id}). Not uploading it there.`
-			);
-		}
+	// And the grant must still upload where the config says it does — a
+	// hand-edited list must not send a brand's video to another channel.
+	const own = await ownChannel(config, account);
+	if (own.id !== account.channelId) {
+		throw new Error(
+			`The grant listed for the YouTube channel ${account.channelId} uploads to "${own.title}" ` +
+				`(${own.id}). Not uploading. Re-connect the channel with:  ${SETUP}`
+		);
 	}
+	log(`uploading to the channel ${own.title}${own.handle ? ` (${own.handle})` : ''}`);
 
 	const video = await pb.openVideo(job);
 
@@ -414,8 +481,8 @@ export async function publishToYouTube({ target, job, pb, config, log, saveHandl
 	} catch (err) {
 		// A stale cached token is the one failure worth a single silent retry.
 		if (!String(err.message).includes('401')) throw err;
-		forgetToken();
-		token = await accessToken(config.google);
+		forgetToken(account.refreshToken);
+		token = await youtubeToken(config, account);
 		uploadUrl = await startSession(token, resource, {
 			size: video.size,
 			mimeType: video.mimeType,
@@ -426,7 +493,7 @@ export async function publishToYouTube({ target, job, pb, config, log, saveHandl
 	// Recorded before a byte goes up, and the upload does not start unless it
 	// was: it is how a worker taking over finds out how far this got.
 	try {
-		await saveHandle({ kind: 'youtube-session', uploadUrl, size: video.size });
+		await saveHandle({ kind: 'youtube-session', uploadUrl, size: video.size, account: account.channelId });
 	} catch (err) {
 		video.stream.destroy();
 		throw err;

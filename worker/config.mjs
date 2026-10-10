@@ -12,7 +12,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isSea } from 'node:sea';
 import { parseRole } from './roles.mjs';
-import { instagramAccounts, instagramReady } from './accounts.mjs';
+import { googleAccounts, instagramAccounts, instagramReady } from './accounts.mjs';
 
 /**
  * Where the config file lives. Beside this module when the worker runs from
@@ -49,10 +49,13 @@ export function loadConfig() {
 		// Which share of the work this worker does — see roles.mjs. `all`, the
 		// default, is everything, which is what a setup without a NAS runs.
 		role: parseRole(process.env.FLOCK_WORKER_ROLE || file.role),
+		// One OAuth client (the Google Cloud project's), and `accounts` — one
+		// entry per YouTube channel, each with the refresh token of the grant
+		// that uploads to it. `pnpm worker:auth` adds to the list.
 		google: {
 			clientId: process.env.GOOGLE_CLIENT_ID || google.clientId || '',
 			clientSecret: process.env.GOOGLE_CLIENT_SECRET || google.clientSecret || '',
-			refreshToken: process.env.GOOGLE_REFRESH_TOKEN || google.refreshToken || ''
+			accounts: googleAccounts(google, process.env)
 		},
 		// TikTok's Login Kit issues a refresh token good for a year that may be
 		// rotated on every refresh; the worker writes the new one back itself.
@@ -121,9 +124,13 @@ export function saveSection(section, patch) {
 	writeFileSync(CONFIG_PATH, JSON.stringify(file, null, 2) + '\n');
 }
 
-/** Writes the Google refresh token back, leaving everything else in the file alone. */
-export function saveRefreshToken(token) {
-	saveSection('google', { refreshToken: token });
+/**
+ * Writes the YouTube channel list, and drops the single refresh token the
+ * section held before there was a list, so it cannot be read back as a
+ * second grant.
+ */
+export function saveGoogleAccounts(accounts) {
+	saveSection('google', { accounts, refreshToken: undefined });
 }
 
 /**
@@ -144,6 +151,11 @@ export function saveInstagramAccounts(accounts) {
 		tokenExpiresAt: undefined,
 		userId: undefined
 	});
+}
+
+/** Whether the YouTube adapter has at least one channel to publish to. */
+export function hasYouTube(config) {
+	return config.google.accounts.length > 0;
 }
 
 /** Whether the TikTok adapter has what it needs to publish. */
@@ -169,11 +181,11 @@ export function requireConfig({ needToken = true, needGoogle = true } = {}) {
 	if (!config.pocketbaseUrl) missing.push('pocketbaseUrl');
 	if (needGoogle && !config.google.clientId) missing.push('google.clientId');
 	if (needGoogle && !config.google.clientSecret) missing.push('google.clientSecret');
-	if (needToken && !config.google.refreshToken) missing.push('google.refreshToken');
+	if (needToken && !hasYouTube(config)) missing.push('google.accounts');
 
 	if (missing.length > 0) {
-		const hint = missing.includes('google.refreshToken')
-			? '\n\nFor the refresh token specifically, run:  pnpm worker:auth'
+		const hint = missing.includes('google.accounts')
+			? '\n\nTo connect a YouTube channel, run:  pnpm worker:auth'
 			: '';
 		throw new Error(
 			`Missing worker configuration: ${missing.join(', ')}\n` +

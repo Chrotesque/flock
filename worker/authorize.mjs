@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // One-time consent for each platform, run as:
 //
-//   pnpm worker:auth                    Google, for YouTube
+//   pnpm worker:auth                    Google, for a YouTube channel — each run
+//                                       adds the channel picked in Google's
+//                                       account chooser
 //   pnpm worker:auth --tiktok           TikTok's Login Kit
 //   pnpm worker:auth --instagram --token
 //                                       Instagram, from a user token made in
@@ -34,7 +36,7 @@ import { stdin, stdout } from 'node:process';
 import {
 	loadConfig,
 	requireConfig,
-	saveRefreshToken,
+	saveGoogleAccounts,
 	saveSection,
 	saveInstagramAccounts,
 	CONFIG_PATH
@@ -50,6 +52,7 @@ import {
 	listPages
 } from './instagram.mjs';
 import { fetchOrExplain } from './net.mjs';
+import { accessToken } from './google.mjs';
 
 const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
@@ -273,9 +276,74 @@ async function google(config) {
 		);
 	}
 
-	saveRefreshToken(body.refresh_token);
-	console.log(`\nRefresh token saved to ${CONFIG_PATH}`);
-	console.log('Check it end to end with:  pnpm worker:once\n');
+	// Whose channel this grant uploads to — the one picked in Google's chooser.
+	const channel = await channelOf(body.access_token);
+	const added = {
+		channelId: channel.id,
+		title: channel.title,
+		handle: channel.handle,
+		refreshToken: body.refresh_token,
+		scope: body.scope ?? scopes.join(' ')
+	};
+
+	// A grant from before the list does not say whose it is; ask, so the list
+	// written below names every channel and a repeat of the same channel
+	// replaces its old grant instead of sitting beside it.
+	const existing = [];
+	for (const account of config.google.accounts) {
+		if (account.channelId) {
+			existing.push(account);
+			continue;
+		}
+		try {
+			const token = await accessToken({ ...config.google, refreshToken: account.refreshToken });
+			const known = await channelOf(token);
+			existing.push({ ...account, channelId: known.id, title: known.title, handle: known.handle });
+		} catch (err) {
+			console.log(
+				`\nAn earlier Google grant could not be read (${String(err.message).split('\n')[0]}).\n` +
+					'It is kept as it is; if it stays unreadable, connect its channel again.'
+			);
+			existing.push(account);
+		}
+	}
+
+	const accounts = mergeAccounts(existing, [added], (account) => account.channelId);
+	saveGoogleAccounts(accounts);
+
+	const named = accounts.filter((account) => account.channelId);
+	console.log(
+		`\nSaved to ${CONFIG_PATH} — ${named.length} YouTube channel${named.length === 1 ? '' : 's'} connected:`
+	);
+	for (const account of named) {
+		const mark = account.channelId === added.channelId ? '  (this one)' : '';
+		console.log(`  ${account.title}${account.handle ? ` (${account.handle})` : ''}${mark}`);
+	}
+	console.log(
+		'\nChoose which brand uploads to which channel in Settings → Brands once the worker\n' +
+			'has run (it lists the channels there). Check it with:  pnpm worker:youtube\n'
+	);
+}
+
+/** The channel an access token uploads to. */
+async function channelOf(token) {
+	const res = await fetchOrExplain('https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true', {
+		headers: { Authorization: `Bearer ${token}` }
+	});
+	const text = await res.text();
+	if (!res.ok) throw new Error(`Could not read the channel (${res.status}): ${text.slice(0, 300)}`);
+	const item = JSON.parse(text)?.items?.[0];
+	if (!item) {
+		throw new Error(
+			'That Google account has no YouTube channel. Run this again and pick the channel itself\n' +
+				'(or its brand account) when Google asks which account to use.'
+		);
+	}
+	return {
+		id: String(item.id),
+		title: item.snippet?.title ?? '',
+		handle: item.snippet?.customUrl ?? ''
+	};
 }
 
 async function tiktok(config) {

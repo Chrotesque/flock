@@ -13,7 +13,7 @@
   "google": {
     "clientId": "PASTE-CLIENT-ID.apps.googleusercontent.com",
     "clientSecret": "PASTE-CLIENT-SECRET",
-    "refreshToken": ""
+    "accounts": []
   },
   "tiktok": {
     "clientKey": "PASTE-CLIENT-KEY",
