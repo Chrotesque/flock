@@ -405,11 +405,12 @@ On Details, a row of platform buttons sits in the top bar, level with the
 brands. Click one to write for it — a title and a description for YouTube and
 Facebook, a caption for Instagram and TikTok; a platform that is off gets
 turned on as you open it. A yellow ! on a button means that platform still
-needs something, a green check that it is done. Hover a button for a tick
-above it, which turns the platform on or off for this upload, and a gear below
-it for its options on this upload. Platforms switched off in Settings start
-off and greyed out; one the brand has no account for is shown but cannot be
-used. The boxes on the right follow the platform being written for. For YouTube and Instagram, one *Thumbnail / Cover* image, used as YouTube's
+needs something, a green check that it is done. Hovering a button shows two
+controls above it: a tick on the left, which turns the platform on or off for
+this upload, and a gear on the right for its options on this upload. Platforms
+switched off in Settings start off and greyed out. One the brand has no account
+for cannot be used, and its controls say to choose the account in Settings →
+Brands first. The boxes on the right follow the platform being written for. For YouTube and Instagram, one *Thumbnail / Cover* image, used as YouTube's
 thumbnail and as the reel's cover. The linked-rings switch in that box's corner
 unlinks them, and then YouTube gets a thumbnail and Instagram a cover of their
 own, each picked while writing for that platform (optional;

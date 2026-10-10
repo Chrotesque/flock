@@ -14,9 +14,11 @@
 	// Every platform of the brand is a button with its mark: pressing one
 	// writes for it (ticking it first if it was off). A corner badge says
 	// whether a ticked platform is done (check) or still needs something (!).
-	// Hovering a button shows its tick above it — on or off for this upload,
-	// starting as Settings has it — and a gear below it for its options. A
-	// platform the brand has no account for is shown but cannot be used.
+	// Hovering a button shows, above it, its tick on the left — on or off for
+	// this upload, starting as Settings has it — and a gear on the right for
+	// its options. A platform the brand has no account for shows both too,
+	// greyed out with the reason: it cannot be used until Settings → Brands
+	// chooses its account, which is what keeps a post off another brand's.
 
 	let items = $derived(
 		settings.ordered.map((entry) => {
@@ -55,8 +57,12 @@
 		return platform === 'tiktok' || platform === 'facebook';
 	}
 
+	function noAccount(label: string): string {
+		return `${brands.current?.name ?? 'This brand'} has no ${label} account chosen. Choose one in Settings → Brands to post there.`;
+	}
+
 	function hint(item: (typeof items)[number]): string {
-		if (!item.offered) return `${brands.current?.name ?? 'This brand'} has no ${item.label} account chosen`;
+		if (!item.offered) return noAccount(item.label);
 		if (!item.on) return `${item.label} is off for this upload. Click to turn it on and write for it.`;
 		return item.complete ? `${item.label}: done` : `${item.label}: still to write`;
 	}
@@ -78,23 +84,40 @@
 			class:locked={!item.offered}
 			class:keep={keepsColour(item.platform)}
 		>
-			<span class="tick">
+			<span class="controls" title={item.offered ? '' : noAccount(item.label)}>
 				<Checkbox
 					checked={item.on}
 					disabled={!item.offered}
 					ariaLabel="Post to {item.label} with this upload"
 					onchange={(next) => draft.select(item.platform, next)}
 				/>
+				<button
+					class="gear"
+					disabled={!item.offered}
+					onclick={() => openModal(item.platform)}
+					aria-label="{item.label} options for this upload"
+					title={item.offered ? `${item.label} options for this upload` : noAccount(item.label)}
+				>
+					<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+						<path
+							d="M10.3 3.6a1.7 1.7 0 0 1 3.4 0 1.7 1.7 0 0 0 2.6 1.1 1.7 1.7 0 0 1 2.4 2.4 1.7 1.7 0 0 0 1.1 2.6 1.7 1.7 0 0 1 0 3.4 1.7 1.7 0 0 0-1.1 2.6 1.7 1.7 0 0 1-2.4 2.4 1.7 1.7 0 0 0-2.6 1.1 1.7 1.7 0 0 1-3.4 0 1.7 1.7 0 0 0-2.6-1.1 1.7 1.7 0 0 1-2.4-2.4 1.7 1.7 0 0 0-1.1-2.6 1.7 1.7 0 0 1 0-3.4 1.7 1.7 0 0 0 1.1-2.6 1.7 1.7 0 0 1 2.4-2.4 1.7 1.7 0 0 0 2.6-1.1Z"
+							stroke="currentColor"
+							stroke-width="1.7"
+							stroke-linejoin="round"
+						/>
+						<circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.7" />
+					</svg>
+				</button>
 			</span>
 
 			<button
 				class="mark"
 				class:active={composing === item.platform}
-				disabled={!item.offered}
+				aria-disabled={!item.offered}
 				aria-pressed={composing === item.platform}
 				aria-label="Write for {item.label}"
 				title={hint(item)}
-				onclick={() => compose(item.platform)}
+				onclick={() => item.offered && compose(item.platform)}
 			>
 				<PlatformIcon platform={item.platform} size={20} />
 				{#if item.on}
@@ -115,26 +138,6 @@
 					{/if}
 				{/if}
 			</button>
-
-			<span class="cog">
-				<button
-					class="gear"
-					disabled={!item.offered}
-					onclick={() => openModal(item.platform)}
-					aria-label="{item.label} options for this upload"
-					title="{item.label} options for this upload"
-				>
-					<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
-						<path
-							d="M10.3 3.6a1.7 1.7 0 0 1 3.4 0 1.7 1.7 0 0 0 2.6 1.1 1.7 1.7 0 0 1 2.4 2.4 1.7 1.7 0 0 0 1.1 2.6 1.7 1.7 0 0 1 0 3.4 1.7 1.7 0 0 0-1.1 2.6 1.7 1.7 0 0 1-2.4 2.4 1.7 1.7 0 0 0-2.6 1.1 1.7 1.7 0 0 1-3.4 0 1.7 1.7 0 0 0-2.6-1.1 1.7 1.7 0 0 1-2.4-2.4 1.7 1.7 0 0 0-1.1-2.6 1.7 1.7 0 0 1 0-3.4 1.7 1.7 0 0 0 1.1-2.6 1.7 1.7 0 0 1 2.4-2.4 1.7 1.7 0 0 0 2.6-1.1Z"
-							stroke="currentColor"
-							stroke-width="1.7"
-							stroke-linejoin="round"
-						/>
-						<circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.7" />
-					</svg>
-				</button>
-			</span>
 		</div>
 	{/each}
 </div>
@@ -147,49 +150,38 @@
 		gap: 10px;
 	}
 
-	/* The tick above and the gear below are laid over the header rather than
-	   taking room in it, so the row keeps the height of the buttons. Each
-	   reaches the button's edge through its own padding, so moving the
-	   pointer onto it never leaves the hover. */
+	/* The tick and the gear sit above the button, laid over the header
+	   rather than taking room in it, so the row keeps the height of the
+	   buttons. Their padding reaches down to the button, so moving the
+	   pointer up onto them never leaves the hover. */
 	.plat {
 		position: relative;
 	}
 
-	.tick,
-	.cog {
+	.controls {
 		position: absolute;
+		bottom: 100%;
 		left: 50%;
 		z-index: 2;
-		display: grid;
-		place-items: center;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding-bottom: 7px;
 		transform: translateX(-50%);
 		opacity: 0;
 		pointer-events: none;
 		transition: opacity 0.14s;
 	}
 
-	.tick {
-		bottom: 100%;
-		padding-bottom: 5px;
-	}
-
-	.cog {
-		top: 100%;
-		padding-top: 5px;
-	}
-
-	.plat:hover:not(.locked) .tick,
-	.plat:hover:not(.locked) .cog,
-	.plat:focus-within .tick,
-	.plat:focus-within .cog {
+	.plat:hover .controls,
+	.plat:focus-within .controls {
 		opacity: 1;
 		pointer-events: auto;
 	}
 
-	/* No hover on a touch screen: keep both in view. */
+	/* No hover on a touch screen: keep them in view. */
 	@media (hover: none) {
-		.plat:not(.locked) .tick,
-		.plat:not(.locked) .cog {
+		.controls {
 			opacity: 1;
 			pointer-events: auto;
 		}
@@ -207,19 +199,13 @@
 		transition: background 0.14s, border-color 0.14s;
 	}
 
-	.mark:hover:not(:disabled) {
+	.mark:hover:not([aria-disabled='true']) {
 		border-color: var(--pink-soft);
 	}
 
 	.mark.active {
 		border-color: var(--pink);
 		background: var(--accent-grad-soft);
-	}
-
-	/* A locked mark is dimmed below like any off one, not by the global
-	   disabled fade, which would fade the protected marks too. */
-	.mark:disabled {
-		opacity: 1;
 	}
 
 	.off .mark {
@@ -232,8 +218,11 @@
 		opacity: 0.45;
 	}
 
+	/* Dimmed like any off one, not faded as a whole: that would fade the
+	   protected marks too. */
 	.locked .mark {
 		border-color: var(--border);
+		cursor: not-allowed;
 	}
 
 	/* Done or not, as a badge on the button's corner. */
@@ -275,7 +264,7 @@
 		transition: color 0.14s, border-color 0.14s;
 	}
 
-	.gear:hover {
+	.gear:hover:not(:disabled) {
 		color: var(--pink);
 		border-color: var(--pink-soft);
 	}

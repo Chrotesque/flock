@@ -734,9 +734,9 @@
 		.progress {
 			grid-column: 1;
 		}
-		/* Room for the tick that appears above a button on hover. */
+		/* Room for the tick and gear that appear above a button on hover. */
 		.switch {
-			margin-top: 18px;
+			margin-top: 32px;
 		}
 	}
 
