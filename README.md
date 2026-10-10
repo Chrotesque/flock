@@ -13,7 +13,7 @@ YouTube, Instagram, TikTok and Facebook — each with its own release day and ti
 
 Every platform reads differently: a link that works on one gets a post buried on
 another, a hashtag style that looks fine here looks broken there. So you compose for
-them one at a time, switching between them in a list of platforms — YouTube and Facebook
+them one at a time, switching between them with a row of platform buttons — YouTube and Facebook
 take a title and a description, Instagram and TikTok are caption-only. On top of that
 each platform can carry a list of "replace X with Y" rules for the edits you would
 otherwise make every single time. flock shows you exactly what each platform will
@@ -401,14 +401,15 @@ give it a video of its own — the rest keep sharing one — and repeat for as m
 as need a different cut. The boxes follow the platform order from Settings.
 That arrangement is remembered for the next upload until you change it.
 
-On Details, the *Platforms* list on the right lists every platform. Click one to
-write for it — a title and a description for YouTube and Facebook, a caption for
-Instagram and TikTok; a platform that is still off gets ticked as you open it.
-The tick beside the icon turns a platform on or off for this upload, and the
-gear at the end opens its options for this upload. Platforms switched off in
-Settings start unticked and greyed out; one the brand has no account for is
-listed but locked. The boxes under the list follow the platform being written
-for. For YouTube and Instagram, one *Thumbnail / Cover* image, used as YouTube's
+On Details, a row of platform buttons sits in the top bar, level with the
+brands. Click one to write for it — a title and a description for YouTube and
+Facebook, a caption for Instagram and TikTok; a platform that is off gets
+turned on as you open it. A yellow ! on a button means that platform still
+needs something, a green check that it is done. Hover a button for a tick
+above it, which turns the platform on or off for this upload, and a gear below
+it for its options on this upload. Platforms switched off in Settings start
+off and greyed out; one the brand has no account for is shown but cannot be
+used. The boxes on the right follow the platform being written for. For YouTube and Instagram, one *Thumbnail / Cover* image, used as YouTube's
 thumbnail and as the reel's cover. The linked-rings switch in that box's corner
 unlinks them, and then YouTube gets a thumbnail and Instagram a cover of their
 own, each picked while writing for that platform (optional;

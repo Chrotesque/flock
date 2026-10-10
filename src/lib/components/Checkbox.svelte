@@ -3,11 +3,14 @@
 		checked = $bindable(false),
 		label = '',
 		disabled = false,
+		ariaLabel,
 		onchange
 	}: {
 		checked?: boolean;
 		label?: string;
 		disabled?: boolean;
+		/** The accessible name when there is no visible label. */
+		ariaLabel?: string;
 		onchange?: (next: boolean) => void;
 	} = $props();
 </script>
@@ -17,6 +20,7 @@
 		type="checkbox"
 		{checked}
 		{disabled}
+		aria-label={ariaLabel}
 		onchange={(e) => {
 			checked = e.currentTarget.checked;
 			onchange?.(checked);

@@ -7,10 +7,8 @@
 	import PlatformIcon from '../PlatformIcon.svelte';
 	import Checkbox from '../Checkbox.svelte';
 	import TagInput from '../TagInput.svelte';
-	import PlatformModal from '../PlatformModal.svelte';
 	import CharCount from '../CharCount.svelte';
 	import { PLATFORMS } from '$lib/platforms';
-	import { adapt } from '$lib/filters';
 	import { draft } from '$lib/stores/draft.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
@@ -43,14 +41,6 @@
 	templates.load();
 	general.load();
 	tagSets.load();
-
-	let modalOpen = $state(false);
-	let modalPlatform = $state<PlatformId | null>(null);
-
-	function openModal(platform: PlatformId) {
-		modalPlatform = platform;
-		modalOpen = true;
-	}
 
 	/* ---- which platform is being composed ---- */
 
@@ -572,57 +562,6 @@
 	$effect(() => () => {
 		if (hoverTimer) clearTimeout(hoverTimer);
 	});
-
-	// One adaptation pass per platform, over that platform's own text, so the
-	// rail can show at a glance what the rules will still do to what was typed.
-	// Every platform of the brand is listed: one switched off in Settings just
-	// starts unticked, and one the brand has no account for is listed locked.
-	let summaries = $derived(
-		settings.ordered.map((entry) => {
-			const platform = entry.platform;
-			const offered = accounts.offer(platform).offered;
-			const on = offered && draft.isSelected(platform);
-			const own = draft.textFor(platform);
-			const platformDef = PLATFORMS[platform];
-			const result = adapt(own.title, own.description, entry.filters);
-			return {
-				platform,
-				def: platformDef,
-				hits: result.totalHits,
-				errors: result.errors,
-				overLimit:
-					result.title.output.length > platformDef.titleLimit ||
-					result.description.output.length > platformDef.descriptionLimit,
-				overridden: Object.keys(draft.overrides[platform] ?? {}).length > 0,
-				needsText: on && !draft.isComplete(platform),
-				offered,
-				on
-			};
-		})
-	);
-
-	/**
-	 * Clicking a platform composes it, ticking it first if it was off. The
-	 * tick itself is its own control, so a platform can still be turned off
-	 * without being opened.
-	 */
-	function compose(platform: PlatformId) {
-		if (!draft.isSelected(platform)) draft.select(platform, true);
-		draft.composing = platform;
-	}
-
-	/**
-	 * Whether a platform's mark must keep its colour when its row is off. An
-	 * unticked row goes grey, but YouTube (with the compliance switch on),
-	 * TikTok (its black or white only) and Facebook (its blue or white) forbid
-	 * any other colour — fading white TikTok to grey is a recolour too — so
-	 * their marks stay as they are and only the rest of the row dims.
-	 * Instagram allows any solid colour, grey included.
-	 */
-	function keepsColour(platform: PlatformId): boolean {
-		if (platform === 'youtube') return general.value.complianceBranding;
-		return platform === 'tiktok' || platform === 'facebook';
-	}
 </script>
 
 {#snippet linkSwitch()}
@@ -858,7 +797,7 @@
 					{/if}
 				</div>
 			{:else}
-				<p class="emptypanel">Pick a platform on the right to start writing.</p>
+				<p class="emptypanel">Pick a platform above to start writing.</p>
 			{/if}
 		</section>
 
@@ -1058,100 +997,6 @@
 
 	<div class="aside">
 	<div class="side">
-		<aside class="rail card">
-			<header>
-				<h3>Platforms</h3>
-				<span class="pill">{draft.activePlatforms.length} of {summaries.length}</span>
-			</header>
-
-			<!--
-				The one place a platform is picked: the row composes it (ticking it
-				if it was off), the tick turns it on or off for this upload, and the
-				gear opens its options for this upload. The row's own button lies
-				under the tick and the gear, so neither nests inside it.
-			-->
-			<ul>
-				{#each summaries as item (item.platform)}
-					<li
-						class:off={!item.on}
-						class:locked={!item.offered}
-						class:keep={keepsColour(item.platform)}
-						class:active={composing === item.platform}
-						title={item.offered
-							? ''
-							: `${brands.current?.name ?? 'This brand'} has no ${item.def.label} account chosen`}
-					>
-						<button
-							class="pick"
-							disabled={!item.offered}
-							aria-pressed={composing === item.platform}
-							aria-label="Write for {item.def.label}"
-							onclick={() => compose(item.platform)}
-						></button>
-						<span class="ic"><PlatformIcon platform={item.platform} size={19} /></span>
-						<span class="check">
-							<Checkbox
-								checked={item.on}
-								disabled={!item.offered}
-								onchange={(next) => draft.select(item.platform, next)}
-							/>
-						</span>
-						<span class="who">
-							<span class="name">{item.def.label}</span>
-							<span class="tags">
-								{#if !item.offered}
-									<span class="tag warn">no account</span>
-								{/if}
-								{#if item.needsText}
-									<span class="tag warn">needs text</span>
-								{/if}
-								{#if item.errors > 0}
-									<span class="tag bad">rule error</span>
-								{:else if item.hits > 0}
-									<span class="tag">{item.hits} adapted</span>
-								{/if}
-								{#if item.overLimit}
-									<span class="tag warn">over limit</span>
-								{/if}
-								{#if item.overridden}
-									<span class="tag alt">custom</span>
-								{/if}
-							</span>
-						</span>
-						<button
-							class="gear"
-							disabled={!item.offered}
-							onclick={() => openModal(item.platform)}
-							aria-label="{item.def.label} options for this upload"
-							title="{item.def.label} options for this upload"
-						>
-							<svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
-								<path
-									d="M10.3 3.6a1.7 1.7 0 0 1 3.4 0 1.7 1.7 0 0 0 2.6 1.1 1.7 1.7 0 0 1 2.4 2.4 1.7 1.7 0 0 0 1.1 2.6 1.7 1.7 0 0 1 0 3.4 1.7 1.7 0 0 0-1.1 2.6 1.7 1.7 0 0 1-2.4 2.4 1.7 1.7 0 0 0-2.6 1.1 1.7 1.7 0 0 1-3.4 0 1.7 1.7 0 0 0-2.6-1.1 1.7 1.7 0 0 1-2.4-2.4 1.7 1.7 0 0 0-1.1-2.6 1.7 1.7 0 0 1 0-3.4 1.7 1.7 0 0 0 1.1-2.6 1.7 1.7 0 0 1 2.4-2.4 1.7 1.7 0 0 0 2.6-1.1Z"
-									stroke="currentColor"
-									stroke-width="1.6"
-									stroke-linejoin="round"
-								/>
-								<circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.6" />
-							</svg>
-						</button>
-					</li>
-				{/each}
-			</ul>
-
-			{#if draft.activePlatforms.length === 0}
-				<p class="warnbox">Select at least one platform to continue.</p>
-			{:else if draft.incompletePlatforms.length > 0}
-				<div class="warnbox still">
-					<span>Still to write</span>
-					<span class="stillicons">
-						{#each draft.incompletePlatforms as id (id)}
-							<PlatformIcon platform={id} size={15} />
-						{/each}
-					</span>
-				</div>
-			{/if}
-		</aside>
 
 		{#if showPaidPromotion}
 			<section class="videocard card">
@@ -1342,7 +1187,6 @@
 	</div>
 {/if}
 
-<PlatformModal bind:open={modalOpen} platform={modalPlatform} />
 
 <style>
 	.stage {
@@ -1742,6 +1586,7 @@
 	   material rather than a different kind of thing. */
 	.finaltags .tag {
 		display: inline-flex;
+		font-weight: 600;
 		align-items: center;
 		gap: 5px;
 		padding: 3px 6px 3px 9px;
@@ -1948,7 +1793,7 @@
 		overflow: hidden;
 	}
 
-	/* ---- middle column: platforms, then the small YouTube boxes ---- */
+	/* ---- side column: the per-upload boxes for the platform being written ---- */
 
 	.side {
 		min-width: 0;
@@ -1957,124 +1802,12 @@
 		align-content: start;
 	}
 
-	.rail {
-		padding: 18px 16px;
-	}
-
-	.rail header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 12px;
-	}
-
-	h3 {
-		font-size: 14px;
-	}
-
-
 	ul {
 		list-style: none;
 		margin: 0;
 		padding: 0;
 		display: grid;
 		gap: 7px;
-	}
-
-	/* Icon, tick, name, gear. The row's own button (.pick) is stretched
-	   underneath; the spans let clicks through to it, while the tick and the
-	   gear sit above it as controls of their own. */
-	.rail li {
-		position: relative;
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 8px 6px 8px 8px;
-		border-radius: var(--radius);
-		background: var(--bg-elev);
-		border: 1px solid var(--border);
-		transition: border-color 0.16s, background 0.16s;
-	}
-
-	.rail li:hover:not(.locked) {
-		border-color: var(--border-strong);
-	}
-
-	.rail li.active {
-		border-color: var(--pink);
-		background: var(--accent-grad-soft);
-	}
-
-	.pick {
-		position: absolute;
-		inset: 0;
-		border-radius: inherit;
-		cursor: pointer;
-	}
-
-	.pick:disabled {
-		cursor: not-allowed;
-	}
-
-	.pick:focus-visible {
-		outline: 2px solid var(--pink-soft);
-		outline-offset: 1px;
-	}
-
-	.rail li .ic,
-	.rail li .who {
-		pointer-events: none;
-	}
-
-	.rail li .check,
-	.gear {
-		position: relative;
-		z-index: 1;
-	}
-
-	/* Off for this upload: the row dims, and the mark goes grey where its
-	   brand allows that (see keepsColour) — elsewhere it keeps its colour. */
-	.rail li.off .who,
-	.rail li.off .gear {
-		opacity: 0.45;
-	}
-
-	.rail li.off .check {
-		opacity: 0.75;
-	}
-
-	.rail li.off .ic {
-		background: transparent;
-	}
-
-	.rail li.off:not(.keep) .ic :global(svg) {
-		filter: grayscale(1);
-		opacity: 0.5;
-	}
-
-	.rail li.locked .who {
-		opacity: 0.6;
-	}
-
-	.gear {
-		flex: none;
-		width: 30px;
-		height: 30px;
-		display: grid;
-		place-items: center;
-		border-radius: 8px;
-		color: var(--text-faint);
-		transition: background 0.14s, color 0.14s;
-	}
-
-	.gear:hover:not(:disabled) {
-		background: var(--surface-3);
-		color: var(--pink);
-	}
-
-	.gear:disabled {
-		opacity: 0.3;
-		cursor: not-allowed;
 	}
 
 	/* Linked rings or broken ones, then the switch itself. */
@@ -2125,64 +1858,6 @@
 		border-color: var(--pink-soft);
 	}
 
-	.ic {
-		flex: none;
-		width: 30px;
-		height: 30px;
-		display: grid;
-		place-items: center;
-		border-radius: 9px;
-		background: var(--surface-2);
-		border: 1px solid var(--border);
-	}
-
-	.who {
-		min-width: 0;
-		flex: 1;
-	}
-
-	.name {
-		display: block;
-		font-size: 13px;
-		font-weight: 570;
-		color: var(--text);
-	}
-
-	.tags {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px;
-		margin-top: 2px;
-	}
-
-	.tag {
-		font-size: 10px;
-		font-weight: 600;
-		padding: 1px 6px;
-		border-radius: 999px;
-		background: rgba(168, 85, 247, 0.16);
-		color: #cfa8fb;
-	}
-
-	.tag.alt {
-		background: rgba(255, 77, 158, 0.16);
-		color: var(--pink-soft);
-	}
-
-	.tag.warn {
-		background: rgba(251, 191, 36, 0.16);
-		color: var(--warn);
-	}
-
-	.tag.bad {
-		background: rgba(248, 113, 113, 0.16);
-		color: var(--danger);
-	}
-
-	.check {
-		flex: none;
-	}
-
 	.warnbox {
 		margin: 14px 0 0;
 		padding: 9px 11px;
@@ -2192,23 +1867,6 @@
 		color: var(--warn);
 		font-size: 11.5px;
 	}
-
-	/* Which platforms are outstanding, as icons pushed to the right edge. */
-	.still {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 10px;
-	}
-
-	.stillicons {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		flex: none;
-	}
-
-
 
 	.nasnote {
 		margin: 8px 0 0;
@@ -2390,8 +2048,6 @@
 		.aside {
 			grid-template-columns: 1fr;
 			position: static;
-			/* The platform list picks what is written, so it comes first. */
-			order: -1;
 		}
 	}
 </style>

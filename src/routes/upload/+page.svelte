@@ -6,6 +6,7 @@
 	import StepSchedule from '$lib/components/steps/StepSchedule.svelte';
 	import StepConfirm from '$lib/components/steps/StepConfirm.svelte';
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
+	import PlatformSwitch from '$lib/components/PlatformSwitch.svelte';
 	import { draft, type Step, type VideoSlot } from '$lib/stores/draft.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
@@ -291,6 +292,16 @@
 				</div>
 
 				<!--
+					Which platform the Details step writes for, and which go out at
+					all: one button per platform, level with the brand row.
+				-->
+				{#if draft.step === 1}
+					<div class="switch">
+						<PlatformSwitch />
+					</div>
+				{/if}
+
+				<!--
 					Back and forward flank the stepper on its own row, so moving through
 					the wizard is one cluster rather than a header and a separate bar.
 					On the confirm step the forward button is the tick that starts the
@@ -452,11 +463,13 @@
 		margin: 0;
 	}
 
-	/* The heading (and brand) on the left, the stepper on the right. Which
-	   platform is being written is picked in the Details step's own list. */
+	/* The heading (and brand) on the left, the stepper on the right, and on
+	   the Details step the platform buttons centred in the space between,
+	   bottom-aligned so they sit level with the brand row. Columns are
+	   placed by hand because the middle one is absent on the other steps. */
 	.head {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-columns: fit-content(45%) minmax(max-content, 1fr) auto;
 		align-items: end;
 		gap: 30px;
 		margin-bottom: 22px;
@@ -513,9 +526,19 @@
 		color: var(--text);
 	}
 
+	.titling {
+		grid-column: 1;
+	}
+
+	.switch {
+		grid-column: 2;
+		justify-self: center;
+	}
+
 	/* The arrows sit either side of the stepper with a deliberate gap, so they
 	   read as "leave this step" rather than as part of the step labels. */
 	.progress {
+		grid-column: 3;
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
@@ -705,6 +728,15 @@
 			grid-template-columns: 1fr;
 			align-items: stretch;
 			gap: 18px;
+		}
+		.titling,
+		.switch,
+		.progress {
+			grid-column: 1;
+		}
+		/* Room for the tick that appears above a button on hover. */
+		.switch {
+			margin-top: 18px;
 		}
 	}
 
