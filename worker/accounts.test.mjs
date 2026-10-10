@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
 	googleAccounts,
+	tiktokAccounts,
+	rotatedTokenPatch,
 	instagramAccounts,
 	instagramReady,
 	mergeAccounts,
@@ -112,4 +114,45 @@ test('a list wins over a leftover single token', () => {
 test('a channel connected again replaces its old grant; others stay', () => {
 	const merged = mergeAccounts([yt('A'), yt('B')], [yt('B', { refreshToken: 'new' })], (a) => a.channelId);
 	assert.deepEqual(merged.map((a) => `${a.channelId}:${a.refreshToken}`), ['A:rtA', 'B:new']);
+});
+
+const tt = (id, extra = {}) => ({ openId: id, username: `u${id}`, nickname: `N${id}`, refreshToken: `rt${id}`, scope: 's', ...extra });
+
+test('TikTok accounts are a list; the old flat keys read as one account', () => {
+	assert.deepEqual(tiktokAccounts({ accounts: [tt('a'), tt('b', { refreshToken: '' })] }).map((a) => a.openId), ['a']);
+	const old = tiktokAccounts({ clientKey: 'k', refreshToken: 'flat', openId: 'o1', scope: 'video.publish' });
+	assert.equal(old.length, 1);
+	assert.deepEqual([old[0].openId, old[0].refreshToken, old[0].scope], ['o1', 'flat', 'video.publish']);
+});
+
+test('TIKTOK_REFRESH_TOKEN is the single account, or the only account\'s token', () => {
+	assert.equal(tiktokAccounts({}, { TIKTOK_REFRESH_TOKEN: 'env' })[0].refreshToken, 'env');
+	assert.equal(tiktokAccounts({ accounts: [tt('a')] }, { TIKTOK_REFRESH_TOKEN: 'env' })[0].refreshToken, 'env');
+	const two = tiktokAccounts({ accounts: [tt('a'), tt('b')] }, { TIKTOK_REFRESH_TOKEN: 'env' });
+	assert.deepEqual(two.map((a) => a.refreshToken), ['rta', 'rtb']);
+});
+
+test('a rotated TikTok token lands on its own entry and nowhere else', () => {
+	const section = { clientKey: 'k', accounts: [tt('a'), tt('b')] };
+	const patch = rotatedTokenPatch(section, tt('b'), 'new');
+	assert.deepEqual(patch.accounts.map((a) => a.refreshToken), ['rta', 'new']);
+	assert.equal(patch.accounts[0], section.accounts[0]);
+});
+
+test('a rotated token with no open id is matched by the token it replaces', () => {
+	const section = { accounts: [tt('', { refreshToken: 'old' }), tt('b')] };
+	const patch = rotatedTokenPatch(section, { openId: '', refreshToken: 'old' }, 'new');
+	assert.deepEqual(patch.accounts.map((a) => a.refreshToken), ['new', 'rtb']);
+});
+
+test('a rotated token goes to the flat key of a section from before the list', () => {
+	assert.deepEqual(rotatedTokenPatch({ refreshToken: 'old', openId: 'o1' }, { openId: 'o1', refreshToken: 'old' }, 'new'), {
+		refreshToken: 'new',
+		openId: 'o1'
+	});
+});
+
+test('a rotated token for an account the file does not hold writes nothing', () => {
+	assert.equal(rotatedTokenPatch({ accounts: [tt('a')] }, tt('z'), 'new'), null);
+	assert.equal(rotatedTokenPatch({ clientKey: 'k' }, tt('z'), 'new'), null);
 });

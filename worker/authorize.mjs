@@ -4,7 +4,8 @@
 //   pnpm worker:auth                    Google, for a YouTube channel — each run
 //                                       adds the channel picked in Google's
 //                                       account chooser
-//   pnpm worker:auth --tiktok           TikTok's Login Kit
+//   pnpm worker:auth --tiktok           TikTok's Login Kit — each run adds the
+//                                       account signed in at TikTok
 //   pnpm worker:auth --instagram --token
 //                                       Instagram, from a user token made in
 //                                       the Graph API Explorer and pasted at
@@ -37,7 +38,7 @@ import {
 	loadConfig,
 	requireConfig,
 	saveGoogleAccounts,
-	saveSection,
+	saveTikTokAccounts,
 	saveInstagramAccounts,
 	CONFIG_PATH
 } from './config.mjs';
@@ -410,28 +411,47 @@ async function tiktok(config) {
 	}
 	if (!body.refresh_token) throw new Error('TikTok returned no refresh token.');
 
-	saveSection('tiktok', {
-		refreshToken: body.refresh_token,
-		openId: body.open_id ?? '',
-		scope: body.scope ?? ''
-	});
-	config.tiktok.refreshToken = body.refresh_token;
-	console.log(`\nRefresh token saved to ${CONFIG_PATH} (scopes: ${body.scope || 'not reported'})`);
-	if (!String(body.scope ?? '').includes('video.publish')) {
-		console.log('WARNING: video.publish was not granted — posting will fail until it is.');
-	}
+	if (!body.open_id) throw new Error('TikTok returned no open id for the account.');
 
+	// The account just signed in, named by its open id, added to the list —
+	// or replacing its own older entry when it was connected before.
+	const added = {
+		openId: body.open_id,
+		username: '',
+		nickname: '',
+		refreshToken: body.refresh_token,
+		scope: body.scope ?? ''
+	};
+	if (!String(body.scope ?? '').includes('video.publish')) {
+		console.log('\nWARNING: video.publish was not granted — posting will fail until it is.');
+	}
 	try {
-		const creator = await creatorInfo(config);
+		const creator = await creatorInfo(config, added);
+		added.username = creator.username;
+		added.nickname = creator.nickname;
 		const audiences = creator.privacyOptions.map(privacyLabel).join(', ') || 'none reported';
 		console.log(
-			`Posting as ${creator.nickname} (@${creator.username}); audiences offered: ${audiences}` +
+			`\nSigned in as ${creator.nickname} (@${creator.username}); audiences offered: ${audiences}` +
 				(creator.maxDurationSeconds ? `; videos up to ${creator.maxDurationSeconds}s` : '')
 		);
 	} catch (err) {
-		console.log(`Token saved, but reading the creator failed: ${err.message}`);
+		console.log(`\nSigned in, but reading the creator failed: ${err.message}`);
 	}
-	console.log('Check the queue with:  pnpm worker:dry\n');
+
+	const accounts = mergeAccounts(config.tiktok.accounts, [added], (account) => account.openId);
+	saveTikTokAccounts(accounts);
+	console.log(
+		`\nSaved to ${CONFIG_PATH} — ${accounts.length} TikTok account${accounts.length === 1 ? '' : 's'} connected:`
+	);
+	for (const account of accounts) {
+		const who = account.username ? `@${account.username}` : `open id ${account.openId}`;
+		console.log(`  ${who}${account.openId === added.openId ? '  (this one)' : ''}`);
+	}
+	console.log(
+		'\nTo add another account, sign out of TikTok in that browser (or switch accounts) and run\n' +
+			'this again. Choose which brand posts as which account in Settings → Brands once the\n' +
+			'worker has run. Check them with:  pnpm worker:tiktok\n'
+	);
 }
 
 /** One Graph call during the consent, with its error spelled out. */

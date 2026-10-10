@@ -10,8 +10,11 @@
 // interface rather than of TikTok's wire format.
 
 import { fetchOrExplain, isNetworkError } from './net.mjs';
-import { saveSection } from './config.mjs';
+import { saveTikTokToken } from './config.mjs';
+import { pickAccount } from './accounts.mjs';
 import { planChunks, readChunks, videoMime, sleep, MiB } from './upload.mjs';
+
+const SETUP = 'pnpm worker:auth --tiktok';
 
 const TOKEN_URL = 'https://open.tiktokapis.com/v2/oauth/token/';
 const API = 'https://open.tiktokapis.com/v2';
@@ -53,20 +56,23 @@ const MAX_STATUS_MISSES = 12;
 // How often the creator's details are re-read for the compose screen.
 const CREATOR_TTL_MS = 30 * 60_000;
 
-/** Cached until a minute before it expires — TikTok's last a day. */
-let cached = { token: '', expiresAt: 0 };
+/** Per account, cached until a minute before it expires — TikTok's last a day. */
+const cache = new Map();
+const keyOf = (account) => account.openId || account.refreshToken;
 
 /**
- * Turns the stored refresh token into an access token.
+ * Turns an account's stored refresh token into an access token.
  *
  * TikTok may hand back a *new* refresh token with every refresh. It is written
- * straight back into the config file when that happens: the old one may stop
- * working, and losing it means going through the consent flow again.
+ * straight back onto that account's entry in the config file when that
+ * happens: the old one may stop working, and losing it means going through the
+ * consent flow again.
  */
-export async function accessToken(config) {
-	if (cached.token && Date.now() < cached.expiresAt) return cached.token;
+export async function accessToken(config, account) {
+	const cached = cache.get(keyOf(account));
+	if (cached && Date.now() < cached.expiresAt) return cached.token;
 	const t = config.tiktok;
-	if (!t.refreshToken) throw new Error('No TikTok refresh token. Run:  pnpm worker:auth --tiktok');
+	if (!account.refreshToken) throw new Error(`No TikTok refresh token. Run:  ${SETUP}`);
 
 	const res = await fetchOrExplain(TOKEN_URL, {
 		method: 'POST',
@@ -75,7 +81,7 @@ export async function accessToken(config) {
 			client_key: t.clientKey,
 			client_secret: t.clientSecret,
 			grant_type: 'refresh_token',
-			refresh_token: t.refreshToken
+			refresh_token: account.refreshToken
 		})
 	});
 	const text = await res.text();
@@ -93,29 +99,36 @@ export async function accessToken(config) {
 			throw new Error(
 				`TikTok rejected the refresh token (${code}: ${why}).\n` +
 					'It has expired, been revoked, or was rotated and the new one lost.\n' +
-					'Re-authorise with:  pnpm worker:auth --tiktok'
+					`Re-authorise${account.username ? ` @${account.username}` : ''} with:  ${SETUP}`
 			);
 		}
 		throw new Error(`TikTok token refresh failed (${code}): ${why}`);
 	}
 
-	cached = {
+	if (!account.openId && body.open_id) account.openId = body.open_id;
+	cache.set(keyOf(account), {
 		token: body.access_token,
 		expiresAt: Date.now() + Math.max(0, (body.expires_in ?? 86400) - 60) * 1000
-	};
-	if (body.refresh_token && body.refresh_token !== t.refreshToken) {
-		t.refreshToken = body.refresh_token;
-		saveSection('tiktok', {
-			refreshToken: body.refresh_token,
-			...(body.open_id ? { openId: body.open_id } : {})
-		});
+	});
+	if (body.refresh_token && body.refresh_token !== account.refreshToken) {
+		// Written for the token being replaced, then remembered in memory.
+		saveTikTokToken(account, body.refresh_token);
+		account.refreshToken = body.refresh_token;
 	}
-	return cached.token;
+	return body.access_token;
 }
 
-/** Drops the cache, so the next call re-refreshes. Used after a rejected token. */
-export function forgetToken() {
-	cached = { token: '', expiresAt: 0 };
+/** Drops an account's cached token, so the next call re-refreshes. Used after a rejected token. */
+export function forgetToken(account) {
+	cache.delete(keyOf(account));
+}
+
+/**
+ * The account a post goes out as: exactly the one it names, or the only one
+ * when it names none — never a guess between several (accounts.mjs).
+ */
+export function tiktokAccount(config, wanted = '') {
+	return pickAccount(config.tiktok.accounts, wanted, (account) => account.openId, 'TikTok', SETUP);
 }
 
 class TikTokError extends Error {
@@ -131,8 +144,8 @@ class TikTokError extends Error {
  * come back as HTTP 200 with an error code in the body, so the body's code is
  * what decides. A rejected access token is retried once with a fresh one.
  */
-async function api(config, path, body, retry = true) {
-	const token = await accessToken(config);
+async function api(config, account, path, body, retry = true) {
+	const token = await accessToken(config, account);
 	const res = await fetchOrExplain(`${API}${path}`, {
 		method: 'POST',
 		headers: {
@@ -150,8 +163,8 @@ async function api(config, path, body, retry = true) {
 	}
 	const code = json.error?.code ?? (res.ok ? 'ok' : `http_${res.status}`);
 	if (code === 'access_token_invalid' && retry) {
-		forgetToken();
-		return api(config, path, body, false);
+		forgetToken(account);
+		return api(config, account, path, body, false);
 	}
 	if (code !== 'ok') {
 		throw new TikTokError(code, json.error?.message || text.slice(0, 300), json.error?.log_id, res.status);
@@ -167,8 +180,8 @@ async function api(config, path, body, retry = true) {
  * comments, duets and stitches are switched off in its settings (in which
  * case a post may not switch them on), and the longest video it may post.
  */
-export async function creatorInfo(config) {
-	const data = await api(config, '/post/publish/creator_info/query/');
+export async function creatorInfo(config, account) {
+	const data = await api(config, account, '/post/publish/creator_info/query/');
 	return {
 		username: data.creator_username ?? '',
 		nickname: data.creator_nickname ?? '',
@@ -334,7 +347,7 @@ async function putChunk(uploadUrl, chunk, range, total, mime) {
  * a definite answer, too many misses in a row, or the overall cap ends the
  * wait, and the last two say so, because the post may still appear.
  */
-async function waitForPublish(config, publishId, username, log) {
+async function waitForPublish(config, account, publishId, username, log) {
 	const started = Date.now();
 	let lastStatus = '';
 	let misses = 0;
@@ -347,7 +360,7 @@ async function waitForPublish(config, publishId, username, log) {
 	while (Date.now() - started < STATUS_TIMEOUT_MS) {
 		let data;
 		try {
-			data = await api(config, '/post/publish/status/fetch/', { publish_id: publishId });
+			data = await api(config, account, '/post/publish/status/fetch/', { publish_id: publishId });
 			misses = 0;
 		} catch (err) {
 			const transient =
@@ -386,7 +399,14 @@ async function waitForPublish(config, publishId, username, log) {
  * TikTok finishing the post on its own.
  */
 export async function probeTikTok(config, handle) {
-	const data = await api(config, '/post/publish/status/fetch/', { publish_id: handle.publishId });
+	// A handle from before accounts names the username only.
+	const wanted =
+		handle.account ||
+		config.tiktok.accounts.find((account) => account.username && account.username === handle.username)
+			?.openId ||
+		'';
+	const account = tiktokAccount(config, wanted);
+	const data = await api(config, account, '/post/publish/status/fetch/', { publish_id: handle.publishId });
 	const status = String(data.status || '');
 	if (status === 'PUBLISH_COMPLETE') {
 		// Sic: the field is misspelt in the API itself.
@@ -406,17 +426,12 @@ export async function probeTikTok(config, handle) {
 export async function publishToTikTok({ target, job, pb, config, log, saveHandle }) {
 	const options = target.options ?? {};
 
+	// The account the post's brand chose; a post for an account this worker
+	// holds no token for is refused, never posted as another one.
+	const account = tiktokAccount(config, target.account ?? '');
 	// Their rules require this before every post: it is where the account's
 	// privacy levels and interaction settings come from.
-	const creator = await creatorInfo(config);
-	// A post made for another TikTok account is refused, never posted here.
-	const holding = tiktokAccountId(config, creator);
-	if (target.account && target.account !== holding) {
-		throw new Error(
-			`This post is for the TikTok account ${target.account}, but this worker posts as ` +
-				`@${creator.username}. Connect that account, or choose @${creator.username} for the brand.`
-		);
-	}
+	const creator = await creatorInfo(config, account);
 	const level = resolvePrivacy(options.privacy, creator);
 	const duration = Number(job.video_duration) || 0;
 	const postInfo = buildPostInfo(target, options, creator, level, duration);
@@ -450,7 +465,7 @@ export async function publishToTikTok({ target, job, pb, config, log, saveHandle
 
 	let init;
 	try {
-		init = await api(config, '/post/publish/video/init/', {
+		init = await api(config, account, '/post/publish/video/init/', {
 			post_info: postInfo,
 			source_info: {
 				source: 'FILE_UPLOAD',
@@ -472,7 +487,12 @@ export async function publishToTikTok({ target, job, pb, config, log, saveHandle
 	log(`TikTok accepted the post as publish ${init.publish_id}`);
 	// And recorded, or nothing goes up — see orphans.mjs.
 	try {
-		await saveHandle({ kind: 'tiktok-publish', publishId: init.publish_id, username: creator.username });
+		await saveHandle({
+			kind: 'tiktok-publish',
+			publishId: init.publish_id,
+			username: creator.username,
+			account: account.openId
+		});
 	} catch (err) {
 		video.stream.destroy();
 		throw err;
@@ -492,7 +512,7 @@ export async function publishToTikTok({ target, job, pb, config, log, saveHandle
 		}
 	}
 
-	const outcome = await waitForPublish(config, init.publish_id, creator.username, log);
+	const outcome = await waitForPublish(config, account, init.publish_id, creator.username, log);
 	const postId = outcome.postIds[0] ?? '';
 	const url = postId
 		? `https://www.tiktok.com/@${creator.username}/video/${postId}`
@@ -507,49 +527,53 @@ export async function publishToTikTok({ target, job, pb, config, log, saveHandle
 	};
 }
 
-/**
- * The id this worker's TikTok account is known by in `accounts` and on the
- * posts made for it: the open id the consent stored, else the username.
- */
-export function tiktokAccountId(config, creator) {
-	return config.tiktok.openId || creator?.username || '';
-}
-
-let creatorAt = 0;
-let creatorError = '';
+let creatorsAt = 0;
+const creatorErrors = new Map();
 
 /**
- * Publishes the creator's details to the `accounts` collection: the browser
- * holds no TikTok credentials, so the worker reads them and leaves them where
- * Settings can offer the account to a brand and the compose screen can show
- * who the post goes out as and which audiences exist (`details`). A failed
- * read keeps the last good details and records the error beside them.
+ * Publishes every account's creator details to the `accounts` collection,
+ * keyed by its open id: the browser holds no TikTok credentials, so the worker
+ * reads them and leaves them where Settings can offer each account to a brand
+ * and the compose screen can show who the post goes out as and which
+ * audiences exist (`details`). A failed read keeps the last good details and
+ * records the error beside them, said once per account; a row of an account
+ * no longer connected goes.
  */
-export async function refreshTikTokCreator(pb, config, log, force = false) {
-	if (!force && Date.now() - creatorAt < CREATOR_TTL_MS) return;
-	creatorAt = Date.now();
+export async function refreshTikTokCreators(pb, config, log, force = false) {
+	if (!force && Date.now() - creatorsAt < CREATOR_TTL_MS) return;
+	creatorsAt = Date.now();
 	const now = new Date().toISOString();
-	try {
-		const creator = await creatorInfo(config);
-		const id = tiktokAccountId(config, creator);
-		await pb.upsertAccount('tiktok', id, {
-			handle: creator.username,
-			name: creator.nickname,
-			details: { fetchedAt: now, ...creator, error: '' },
-			error: '',
-			fetched_at: now
-		});
-		// One TikTok account per worker for now: any other row is a past one.
-		await pb.pruneAccounts('tiktok', [id]).catch(() => {});
-		if (creatorError) log('tiktok: recovered');
-		creatorError = '';
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (message !== creatorError) {
-			log(`tiktok creator info failed: ${message.split('\n')[0]}`);
-			creatorError = message;
+	const ids = [];
+
+	for (const account of config.tiktok.accounts) {
+		const name = account.username ? `@${account.username}` : account.openId || 'an account';
+		const said = creatorErrors.get(keyOf(account)) ?? '';
+		try {
+			const creator = await creatorInfo(config, account);
+			account.username = creator.username || account.username;
+			account.nickname = creator.nickname || account.nickname;
+			const id = account.openId || creator.username;
+			ids.push(id);
+			await pb.upsertAccount('tiktok', id, {
+				handle: creator.username,
+				name: creator.nickname,
+				details: { fetchedAt: now, ...creator, error: '' },
+				error: '',
+				fetched_at: now
+			});
+			if (said) log(`tiktok ${name}: recovered`);
+			creatorErrors.delete(keyOf(account));
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			if (message !== said) {
+				log(`tiktok ${name} creator info failed: ${message.split('\n')[0]}`);
+				creatorErrors.set(keyOf(account), message);
+			}
+			if (account.openId) {
+				ids.push(account.openId);
+				await pb.upsertAccount('tiktok', account.openId, { error: message.slice(0, 1900) }).catch(() => {});
+			}
 		}
-		const id = config.tiktok.openId;
-		if (id) await pb.upsertAccount('tiktok', id, { error: message.slice(0, 1900) }).catch(() => {});
 	}
+	await pb.pruneAccounts('tiktok', ids).catch(() => {});
 }

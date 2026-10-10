@@ -1,10 +1,9 @@
 // The accounts a worker posts as, and which of them a post goes out through.
 //
-// Credentials are per account and live only in the worker config: Instagram
-// keeps a list there (one entry per Instagram account, with the Facebook Page
-// it is reached through and that Page's token), YouTube one (one entry per
-// channel, with the Google grant that uploads to it), while TikTok holds one
-// account for now. PocketBase gets the public half of each — id,
+// Credentials are per account and live only in the worker config, as a list
+// per platform: Instagram's entries carry the Facebook Page each account is
+// reached through and that Page's token, YouTube's the Google grant that
+// uploads to each channel, TikTok's each account's own refresh token. PocketBase gets the public half of each — id,
 // handle, name — in its `accounts` collection, and every post names the
 // account it is for in `upload_targets.account`, so it can only ever go out
 // through that account. Pure, so it is tested (accounts.test.mjs).
@@ -64,6 +63,58 @@ export function googleAccounts(section = {}, env = {}) {
 	if (list.length === 0 && flat) list = [cleanGoogle({ refreshToken: flat })];
 	else if (list.length === 1 && env.GOOGLE_REFRESH_TOKEN) list[0].refreshToken = env.GOOGLE_REFRESH_TOKEN;
 	return list.filter((account) => account.refreshToken);
+}
+
+const TIKTOK_FIELDS = ['openId', 'username', 'nickname', 'refreshToken', 'scope'];
+
+function cleanTikTok(entry) {
+	const out = {};
+	for (const key of TIKTOK_FIELDS) out[key] = typeof entry?.[key] === 'string' ? entry[key] : '';
+	return out;
+}
+
+/**
+ * The TikTok accounts in a config file's `tiktok` section: `accounts`, one
+ * entry per account (its open id, the handle it last had, and its refresh
+ * token). A section written before there was a list holds one account in
+ * flat keys (`refreshToken`, `openId`, `scope`), read as a list of one.
+ * TIKTOK_REFRESH_TOKEN (for a container) is that single account's token, or
+ * the only account's.
+ */
+export function tiktokAccounts(section = {}, env = {}) {
+	let list = Array.isArray(section.accounts) ? section.accounts.map(cleanTikTok) : [];
+	const flat = env.TIKTOK_REFRESH_TOKEN || section.refreshToken || '';
+	if (list.length === 0 && flat) {
+		list = [cleanTikTok({ openId: section.openId, scope: section.scope, refreshToken: flat })];
+	} else if (list.length === 1 && env.TIKTOK_REFRESH_TOKEN) {
+		list[0].refreshToken = env.TIKTOK_REFRESH_TOKEN;
+	}
+	return list.filter((account) => account.refreshToken);
+}
+
+/**
+ * The patch to the file's `tiktok` section that records a refresh token
+ * TikTok rotated: on the entry it belongs to (by open id, else by the token
+ * it replaces), or in the flat key of a section from before the list. Null
+ * when the section holds no such account — a token from the environment, say.
+ * Losing a rotated token means signing the account in again, so it has to
+ * land on exactly its own entry.
+ */
+export function rotatedTokenPatch(section = {}, account, newToken) {
+	if (Array.isArray(section.accounts) && section.accounts.length > 0) {
+		const at = section.accounts.findIndex(
+			(entry) =>
+				(account.openId && entry?.openId === account.openId) ||
+				(!account.openId && entry?.refreshToken === account.refreshToken)
+		);
+		if (at < 0) return null;
+		const accounts = section.accounts.map((entry, i) => (i === at ? { ...entry, refreshToken: newToken } : entry));
+		return { accounts };
+	}
+	if (section.refreshToken !== undefined || section.openId === account.openId) {
+		return { refreshToken: newToken, ...(account.openId ? { openId: account.openId } : {}) };
+	}
+	return null;
 }
 
 /** Whether an Instagram account entry has everything publishing needs. */

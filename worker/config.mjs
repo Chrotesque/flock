@@ -12,7 +12,13 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isSea } from 'node:sea';
 import { parseRole } from './roles.mjs';
-import { googleAccounts, instagramAccounts, instagramReady } from './accounts.mjs';
+import {
+	googleAccounts,
+	instagramAccounts,
+	instagramReady,
+	rotatedTokenPatch,
+	tiktokAccounts
+} from './accounts.mjs';
 
 /**
  * Where the config file lives. Beside this module when the worker runs from
@@ -57,16 +63,16 @@ export function loadConfig() {
 			clientSecret: process.env.GOOGLE_CLIENT_SECRET || google.clientSecret || '',
 			accounts: googleAccounts(google, process.env)
 		},
-		// TikTok's Login Kit issues a refresh token good for a year that may be
-		// rotated on every refresh; the worker writes the new one back itself.
+		// TikTok's Login Kit issues each account a refresh token good for a
+		// year that may be rotated on every refresh; the worker writes the new
+		// one back onto that account's entry itself. `accounts` is one entry per
+		// account; `pnpm worker:auth --tiktok` adds to it.
 		tiktok: {
 			clientKey: process.env.TIKTOK_CLIENT_KEY || tiktok.clientKey || '',
 			clientSecret: process.env.TIKTOK_CLIENT_SECRET || tiktok.clientSecret || '',
 			// Must be byte-identical to a redirect URI registered on the app.
 			redirectUri: process.env.TIKTOK_REDIRECT_URI || tiktok.redirectUri || '',
-			refreshToken: process.env.TIKTOK_REFRESH_TOKEN || tiktok.refreshToken || '',
-			openId: tiktok.openId || '',
-			scope: tiktok.scope || ''
+			accounts: tiktokAccounts(tiktok, process.env)
 		},
 		// Instagram through Facebook Login: the Meta app's own id and secret
 		// (App settings, Basic), shared by every account, and `accounts` — one
@@ -153,6 +159,21 @@ export function saveInstagramAccounts(accounts) {
 	});
 }
 
+/**
+ * Writes the TikTok account list, and drops the flat keys one account was
+ * kept in before there was a list, so they cannot be read back as a second
+ * account.
+ */
+export function saveTikTokAccounts(accounts) {
+	saveSection('tiktok', { accounts, refreshToken: undefined, openId: undefined, scope: undefined });
+}
+
+/** Records a refresh token TikTok rotated, on the entry it belongs to. */
+export function saveTikTokToken(account, newToken) {
+	const patch = rotatedTokenPatch(readFile().tiktok ?? {}, account, newToken);
+	if (patch) saveSection('tiktok', patch);
+}
+
 /** Whether the YouTube adapter has at least one channel to publish to. */
 export function hasYouTube(config) {
 	return config.google.accounts.length > 0;
@@ -161,7 +182,7 @@ export function hasYouTube(config) {
 /** Whether the TikTok adapter has what it needs to publish. */
 export function hasTikTok(config) {
 	const t = config.tiktok;
-	return Boolean(t.clientKey && t.clientSecret && t.refreshToken);
+	return Boolean(t.clientKey && t.clientSecret && t.accounts.length > 0);
 }
 
 /** Whether the Instagram adapter has at least one account it can publish to. */

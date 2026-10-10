@@ -17,7 +17,7 @@
 import { requireConfig, hasYouTube, hasTikTok, hasInstagram } from './config.mjs';
 import { makeClient } from './pb.mjs';
 import { publishToYouTube, probeYouTube, refreshYouTubeChannels, youtubeChannels } from './youtube.mjs';
-import { publishToTikTok, probeTikTok, refreshTikTokCreator, creatorInfo, privacyLabel } from './tiktok.mjs';
+import { publishToTikTok, probeTikTok, refreshTikTokCreators, creatorInfo, privacyLabel } from './tiktok.mjs';
 import {
 	publishToInstagram,
 	probeInstagram,
@@ -605,7 +605,7 @@ async function accountPass(pb, config) {
 		await refreshYouTubeChannels(pb, config, log).catch((err) => log(`youtube: ${err.message}`));
 	}
 	if (hasTikTok(config)) {
-		await refreshTikTokCreator(pb, config, log).catch((err) => log(`tiktok: ${err.message}`));
+		await refreshTikTokCreators(pb, config, log).catch((err) => log(`tiktok: ${err.message}`));
 	}
 	if (hasInstagram(config)) {
 		await refreshInstagramAccounts(pb, config, log).catch((err) => log(`instagram: ${err.message}`));
@@ -713,13 +713,19 @@ async function showAccounts(config) {
 	}
 	if (checkTikTok) {
 		if (!hasTikTok(config)) throw new Error('TikTok is not set up. Run:  pnpm worker:auth --tiktok');
-		const creator = await creatorInfo(config);
-		log(`TikTok posts as ${creator.nickname} (@${creator.username})`);
-		log(`audiences offered: ${creator.privacyOptions.map(privacyLabel).join(', ') || 'none reported'}`);
-		log(
-			`comments ${creator.commentDisabled ? 'off' : 'on'}, duet ${creator.duetDisabled ? 'off' : 'on'}, ` +
-				`stitch ${creator.stitchDisabled ? 'off' : 'on'}; videos up to ${creator.maxDurationSeconds || '?'}s`
-		);
+		for (const account of config.tiktok.accounts) {
+			try {
+				const creator = await creatorInfo(config, account);
+				log(`TikTok posts as ${creator.nickname} (@${creator.username}), open id ${account.openId}`);
+				log(`  audiences offered: ${creator.privacyOptions.map(privacyLabel).join(', ') || 'none reported'}`);
+				log(
+					`  comments ${creator.commentDisabled ? 'off' : 'on'}, duet ${creator.duetDisabled ? 'off' : 'on'}, ` +
+						`stitch ${creator.stitchDisabled ? 'off' : 'on'}; videos up to ${creator.maxDurationSeconds || '?'}s`
+				);
+			} catch (err) {
+				log(`TikTok ${account.username ? `@${account.username}` : account.openId}: ${err.message.split('\n')[0]}`);
+			}
+		}
 	}
 	if (checkInstagram) {
 		if (!hasInstagram(config)) {

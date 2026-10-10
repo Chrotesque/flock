@@ -291,7 +291,13 @@ pnpm worker:auth --tiktok
 
 If the redirect URI is not on this machine, the browser lands on a page that
 may not load; paste its full address into the terminal and the code is read
-out of it. The worker keeps the refresh token current on its own.
+out of it. The worker keeps each account's refresh token current on its own.
+
+Each run adds the TikTok account signed in at TikTok to the worker. To connect
+another, sign out of TikTok in that browser (or switch accounts) and run it
+again; with more than one, each brand picks its account in Settings → Brands.
+While the app uses its sandbox, only the sandbox's **target users** can sign in
+(the app's page → Sandbox settings → Target users, up to ten).
 
 Until TikTok has reviewed the app, it can only post to a TikTok account set to
 **private**, whose audiences are Friends, Followers and Private — the *Post to
@@ -306,7 +312,7 @@ considers personal or internal use. Videos must be MP4, MOV or WebM and under
 pnpm worker:tiktok
 ```
 
-shows who the token posts as and which audiences the account offers.
+shows who each account posts as and which audiences it offers.
 
 ### Instagram
 

@@ -19,7 +19,7 @@
     "clientKey": "PASTE-CLIENT-KEY",
     "clientSecret": "PASTE-CLIENT-SECRET",
     "redirectUri": "http://localhost:8765/tiktok",
-    "refreshToken": ""
+    "accounts": []
   },
   "instagram": {
     "appId": "PASTE-META-APP-ID",
