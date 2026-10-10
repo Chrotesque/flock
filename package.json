@@ -19,7 +19,7 @@
 		"worker:dry": "node worker/index.mjs --dry",
 		"worker:auth": "node worker/authorize.mjs",
 		"worker:auth:tiktok": "node worker/authorize.mjs --tiktok",
-		"worker:auth:instagram": "node worker/authorize.mjs --instagram",
+		"worker:auth:instagram": "node worker/authorize.mjs --instagram --token",
 		"worker:vidiq": "node worker/index.mjs --vidiq",
 		"worker:stats": "node worker/index.mjs --stats",
 		"worker:tiktok": "node worker/index.mjs --tiktok",

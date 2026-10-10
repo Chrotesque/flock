@@ -77,7 +77,7 @@ const ADAPTERS = {
 		timing: 'slot',
 		lead: (config) => Math.max(0, Number(config.instagramLeadSeconds) || 0),
 		ready: hasInstagram,
-		setup: 'pnpm worker:auth --instagram'
+		setup: 'pnpm worker:auth --instagram --token'
 	}
 };
 
@@ -680,7 +680,7 @@ async function showAccounts(config) {
 	}
 	if (checkInstagram) {
 		if (!hasInstagram(config)) {
-			throw new Error('Instagram is not set up. Run:  pnpm worker:auth --instagram');
+			throw new Error('Instagram is not set up. Run:  pnpm worker:auth --instagram --token');
 		}
 		const account = await accountInfo(config);
 		log(`Instagram posts as @${account.username} (id ${account.userId}), through the Page "${account.pageName}"`);

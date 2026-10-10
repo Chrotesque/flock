@@ -28,15 +28,44 @@ const UPLOAD = 'https://rupload.facebook.com/ig-api-upload';
  * Reading the account and the Page, publishing to the account, and putting
  * an unpublished photo on the Page for the cover. `business_management` is
  * what lets /me/accounts list a Page that sits in a business portfolio.
+ *
+ * The consent screen and the Graph API Explorer both let a permission be left
+ * out, so each one says what goes missing without it: a required one stops
+ * the setup, an optional one only costs what `without` names.
  */
-export const INSTAGRAM_SCOPES = [
-	'instagram_basic',
-	'instagram_content_publish',
-	'pages_show_list',
-	'pages_read_engagement',
-	'pages_manage_posts',
-	'business_management'
+export const INSTAGRAM_PERMISSIONS = [
+	{ name: 'instagram_basic', use: 'reading the Instagram account', required: true },
+	{ name: 'instagram_content_publish', use: 'publishing reels to it', required: true },
+	{ name: 'pages_show_list', use: 'finding the Page it is linked to', required: true },
+	{ name: 'pages_read_engagement', use: 'reading that Page and taking its token', required: true },
+	{
+		name: 'pages_manage_posts',
+		use: 'putting the cover on the Page as an unpublished photo',
+		required: false,
+		without: 'no custom cover; every reel takes the frame at its Cover frame time'
+	},
+	{
+		name: 'business_management',
+		use: 'finding a Page that sits in a business portfolio',
+		required: false,
+		without: 'a Page held in a business portfolio may not be found'
+	}
 ];
+
+export const INSTAGRAM_SCOPES = INSTAGRAM_PERMISSIONS.map((p) => p.name);
+
+/**
+ * Which of flock's permissions a token lacks, from /me/permissions rows
+ * (`{ permission, status }`). Only `granted` counts; `declined` and `expired`
+ * are as good as absent.
+ */
+export function checkGrant(rows) {
+	const granted = new Set(
+		(rows ?? []).filter((row) => row.status === 'granted').map((row) => row.permission)
+	);
+	const absent = INSTAGRAM_PERMISSIONS.filter((p) => !granted.has(p.name));
+	return { missing: absent.filter((p) => p.required), optional: absent.filter((p) => !p.required) };
+}
 
 // Instagram's stated limits for a Reel.
 const MAX_BYTES = 1024 * MiB;
@@ -58,7 +87,7 @@ const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
 // How often the account's details are re-read for the compose screen.
 const ACCOUNT_TTL_MS = 30 * 60_000;
 
-const REAUTH = 'Re-authorise with:  pnpm worker:auth --instagram';
+const REAUTH = 'Re-authorise with:  pnpm worker:auth --instagram --token';
 
 function base(config) {
 	return `${GRAPH}/${config.instagram.apiVersion}`;
@@ -152,6 +181,14 @@ export function explain(err) {
 	};
 	const hint = bySubcode[err.subcode] ?? byCode[err.code];
 	return hint ? new Error(`${hint} (${err.message})`) : err;
+}
+
+/** What a user token was actually granted, as /me/permissions rows. */
+export async function grantedPermissions(apiVersion, userToken) {
+	const url = new URL(`${GRAPH}/${apiVersion}/me/permissions`);
+	url.searchParams.set('access_token', userToken);
+	const body = await parse(await fetchOrExplain(url));
+	return body.data ?? [];
 }
 
 /**

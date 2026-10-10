@@ -3,12 +3,20 @@
 //
 //   pnpm worker:auth                    Google, for YouTube
 //   pnpm worker:auth --tiktok           TikTok's Login Kit
-//   pnpm worker:auth --instagram        Facebook Login, for Instagram
-//   pnpm worker:auth --instagram --token <token>
-//                                       a user token from the Graph API Explorer
+//   pnpm worker:auth --instagram --token
+//                                       Instagram, from a user token made in
+//                                       the Graph API Explorer and pasted at
+//                                       the prompt (or given after --token)
+//   pnpm worker:auth --instagram        Instagram through the Facebook Login
+//                                       for Business consent instead
 //
 // Each prints a consent URL, collects the code the platform redirects back
 // with, and writes the resulting token into worker/.worker-config.json.
+//
+// For Instagram the Explorer is the usual route: Facebook Login for Business
+// asks for Advanced Access on public_profile, which Meta ties to Business
+// Verification, while the Explorer works for anyone with a role on the app
+// and ends in the same Page token.
 //
 // Google's out-of-band flow is long gone, so a Desktop-app client with a
 // localhost redirect is the supported route there — that client type does
@@ -25,7 +33,14 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { loadConfig, requireConfig, saveRefreshToken, saveSection, CONFIG_PATH } from './config.mjs';
 import { TIKTOK_SCOPES, creatorInfo, privacyLabel } from './tiktok.mjs';
-import { INSTAGRAM_SCOPES, accountInfo, listPages } from './instagram.mjs';
+import {
+	INSTAGRAM_PERMISSIONS,
+	INSTAGRAM_SCOPES,
+	accountInfo,
+	checkGrant,
+	grantedPermissions,
+	listPages
+} from './instagram.mjs';
 import { fetchOrExplain } from './net.mjs';
 
 const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -370,6 +385,62 @@ async function longLivedUserToken(ig, short) {
 	return body.access_token;
 }
 
+/**
+ * Walks through making a user token in the Graph API Explorer and asks for it.
+ * Asked for rather than taken from the command line, so the token stays out
+ * of the shell's history.
+ */
+async function askForExplorerToken() {
+	const width = Math.max(...INSTAGRAM_PERMISSIONS.map((p) => p.name.length));
+	console.log('\nMake a user token in the Graph API Explorer:\n');
+	console.log('  1. Open https://developers.facebook.com/tools/explorer');
+	console.log('  2. On the right, set "Meta App" to your app and choose "User Token".');
+	console.log('  3. Under "Permissions", add each of these:\n');
+	for (const p of INSTAGRAM_PERMISSIONS) {
+		console.log(`       ${p.name.padEnd(width)}  ${p.use}${p.required ? '' : ' (optional)'}`);
+	}
+	console.log('\n  4. Click "Generate Access Token" and allow the Page and the Instagram account.');
+	console.log('  5. Copy the token from the "Access Token" field and paste it here.');
+	console.log('\n  If instagram_content_publish is not in the list, the app lacks the Instagram');
+	console.log('  product set up for Facebook login.');
+
+	const rl = createInterface({ input: stdin, output: stdout });
+	try {
+		for (;;) {
+			const answer = (await rl.question('\nToken: ')).trim();
+			if (answer) return answer;
+		}
+	} finally {
+		rl.close();
+	}
+}
+
+/**
+ * Stops before anything is saved when the token lacks a permission flock
+ * cannot post without, and says what an optional one's absence will cost.
+ * A failed check is reported and passed: Instagram's own answers later name
+ * any missing permission too.
+ */
+async function checkInstagramGrant(ig, userToken, fromExplorer) {
+	let grant;
+	try {
+		grant = checkGrant(await grantedPermissions(ig.apiVersion, userToken));
+	} catch (err) {
+		console.log(`Could not read which permissions were granted: ${err.message}`);
+		return;
+	}
+	for (const p of grant.optional) console.log(`Not granted: ${p.name} — ${p.without}.`);
+	if (grant.missing.length > 0) {
+		throw new Error(
+			`The token lacks ${grant.missing.map((p) => p.name).join(', ')}, which flock cannot post without. ` +
+				'Nothing was saved.\n' +
+				(fromExplorer
+					? 'Generate a new token in the Graph API Explorer with them added, and run this again.'
+					: 'Run this again and leave them ticked on the consent screen.')
+		);
+	}
+}
+
 /** Picks the Page whose Instagram account flock posts to, asking when there is a choice. */
 async function choosePage(ig, pages) {
 	const linked = pages.filter((page) => page.igUserId);
@@ -404,15 +475,15 @@ async function choosePage(ig, pages) {
 }
 
 /**
- * Instagram through Facebook Login. The consent yields a user token, which is
- * swapped for a sixty-day one; the Page token taken from that does not
- * expire, and it is the only token kept. `--token` takes a user token pasted
- * from the Graph API Explorer instead of running the consent.
+ * Instagram through Facebook Login. A user token — made in the Graph API
+ * Explorer with `--token`, or from the Facebook Login for Business consent
+ * without it — is swapped for a sixty-day one; the Page token taken from that
+ * does not expire, and it is the only token kept.
  */
 async function instagram(config) {
 	const ig = config.instagram;
-	const pasted = valueOf('--token');
-	if (has('--token') && !pasted) throw new Error('--token needs the token after it.');
+	const fromExplorer = has('--token');
+	const given = valueOf('--token');
 
 	const missing = ['appId', 'appSecret'].filter((key) => !ig[key]);
 	if (missing.length > 0) {
@@ -423,7 +494,9 @@ async function instagram(config) {
 	}
 
 	let userToken;
-	if (pasted) {
+	if (fromExplorer) {
+		// A value after --token is taken as it is; the next flag is not a token.
+		const pasted = given && !given.startsWith('--') ? given : await askForExplorerToken();
 		userToken = await longLivedUserToken(ig, pasted);
 	} else {
 		const state = randomBytes(16).toString('hex');
@@ -454,6 +527,7 @@ async function instagram(config) {
 		userToken = await longLivedUserToken(ig, short);
 	}
 
+	await checkInstagramGrant(ig, userToken, fromExplorer);
 	const page = await choosePage(ig, await listPages(ig.apiVersion, userToken));
 	if (!page.accessToken) {
 		throw new Error(`Facebook returned no token for the Page "${page.name}"; does this account manage it?`);
@@ -494,7 +568,9 @@ async function run() {
 	return google(requireConfig({ needToken: false }));
 }
 
+// exitCode rather than process.exit(): on Windows, Node 24 aborts with a libuv
+// assertion when exit() lands while fetch's sockets are still closing.
 run().catch((err) => {
 	console.error(`\n${err instanceof Error ? err.message : err}\n`);
-	process.exit(1);
+	process.exitCode = 1;
 });

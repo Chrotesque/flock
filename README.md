@@ -297,30 +297,38 @@ Instagram publishes in two steps, so the worker uploads a reel ten minutes
 ahead of its slot (`instagramLeadSeconds` in the config) and publishes it on
 the minute. Every video goes out as a Reel — that is the only kind of video
 Instagram's API still publishes — MP4 or MOV, under 1 GB, between 3 seconds
-and 15 minutes. flock signs in with **Facebook Login**, which needs:
+and 15 minutes. flock reaches the account through **Facebook**, which needs:
 
 - a **professional** (Business or Creator) Instagram account, **linked to a
   Facebook Page** you manage (Instagram app: *Settings → Accounts Center*, or
   the Page's settings under *Linked accounts*);
-- a Meta app of type **Business** with the **Facebook Login for Business**
-  product. While the app is in Development mode, your Facebook account having a
-  role on the app is enough; no App Review is needed. Facebook allows a
-  `localhost` redirect in Development mode, so nothing has to be registered.
+- a Meta app of type **Business** on
+  [developers.facebook.com](https://developers.facebook.com), with Instagram
+  set up for Facebook login. While the app is in Development mode, your
+  Facebook account having a role on the app is enough; no App Review is needed.
 
-Put the app's **App ID** and **App secret** (*App settings → Basic*) into the
-worker config as `instagram.appId` and `instagram.appSecret`, then run:
+Put the app's own **App ID** and **App secret** (*App settings → Basic* in the
+app's dashboard — not the Instagram app ID shown under the Instagram product)
+into the worker config as `instagram.appId` and `instagram.appSecret`, then run:
 
 ```bash
-pnpm worker:auth --instagram
+pnpm worker:auth --instagram --token
 ```
 
-Sign in, tick the Page and the Instagram account on the consent screen, and the
-worker keeps the Page's token, which does not expire. If you have several Pages
-with an Instagram account it asks which one; `instagram.pageId` fixes the
-choice. If your app uses a Facebook Login for Business *configuration*, put its
-id in `instagram.configId`. Instead of the consent you can paste a user token
-from the [Graph API Explorer](https://developers.facebook.com/tools/explorer)
-with the same permissions: `pnpm worker:auth --instagram --token <paste>`.
+It lists the permissions to tick and waits for a token, which you make in the
+[Graph API Explorer](https://developers.facebook.com/tools/explorer): set
+*Meta App* to your app, choose *User Token*, add the listed permissions, click
+*Generate Access Token* and allow the Page and the Instagram account, then
+paste the token at the prompt. The worker checks what was granted, turns the
+token into the Page's own token, which does not expire, and keeps only that.
+If you have several Pages with an Instagram account it asks which one;
+`instagram.pageId` fixes the choice.
+
+Without `--token`, `pnpm worker:auth --instagram` runs Facebook's consent
+screen instead. That needs the **Facebook Login for Business** product, which
+Meta may only enable after Advanced Access on `public_profile`, and that in
+turn after verifying your business; the Explorer route needs neither. If you
+use a Login for Business *configuration*, put its id in `instagram.configId`.
 
 ```bash
 pnpm worker:instagram
