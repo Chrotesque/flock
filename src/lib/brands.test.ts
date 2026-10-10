@@ -9,7 +9,7 @@ import {
 } from './brands';
 import type { Brand } from './types';
 
-const brand = (id: string, name: string, sort_order = 0): Brand => ({ id, name, sort_order });
+const brand = (id: string, name: string, sort_order = 0): Brand => ({ id, name, sort_order, accounts: {} });
 
 describe('brandNameProblem', () => {
 	const brands = [brand('a', 'Acme'), brand('b', 'North Star')];

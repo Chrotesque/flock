@@ -31,7 +31,15 @@ import { createServer } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { loadConfig, requireConfig, saveRefreshToken, saveSection, CONFIG_PATH } from './config.mjs';
+import {
+	loadConfig,
+	requireConfig,
+	saveRefreshToken,
+	saveSection,
+	saveInstagramAccounts,
+	CONFIG_PATH
+} from './config.mjs';
+import { mergeAccounts, parseChoice } from './accounts.mjs';
 import { TIKTOK_SCOPES, creatorInfo, privacyLabel } from './tiktok.mjs';
 import {
 	INSTAGRAM_PERMISSIONS,
@@ -441,15 +449,14 @@ async function checkInstagramGrant(ig, userToken, fromExplorer) {
 	}
 }
 
-/** Picks the Page whose Instagram account flock posts to, asking when there is a choice. */
-async function choosePage(ig, pages) {
+/**
+ * Picks the Pages whose Instagram accounts flock may post to, asking when
+ * there is a choice: one answer can take several ("1,2") or all of them. The
+ * ones already connected are marked, since running this again is also how a
+ * token is refreshed.
+ */
+async function choosePages(ig, pages) {
 	const linked = pages.filter((page) => page.igUserId);
-	if (ig.pageId) {
-		const page = pages.find((p) => p.id === ig.pageId);
-		if (!page) throw new Error(`instagram.pageId ${ig.pageId} is not among the Pages this account can act for.`);
-		if (!page.igUserId) throw new Error(`The Page "${page.name}" has no Instagram account linked to it.`);
-		return page;
-	}
 	if (linked.length === 0) {
 		const names = pages.map((p) => `"${p.name}"`).join(', ') || 'none';
 		throw new Error(
@@ -459,15 +466,21 @@ async function choosePage(ig, pages) {
 				'screen, and run this again.'
 		);
 	}
-	if (linked.length === 1) return linked[0];
+	if (linked.length === 1) return linked;
 
-	console.log('\nMore than one Page has an Instagram account:');
-	linked.forEach((p, i) => console.log(`  ${i + 1}. ${p.name}  ->  @${p.username}`));
+	const known = new Set(ig.accounts.map((a) => a.igUserId));
+	console.log('\nThese Pages have an Instagram account:');
+	linked.forEach((p, i) =>
+		console.log(`  ${i + 1}. ${p.name}  ->  @${p.username}${known.has(p.igUserId) ? '   (connected)' : ''}`)
+	);
 	const rl = createInterface({ input: stdin, output: stdout });
 	try {
 		for (;;) {
-			const n = Number((await rl.question('Which one should flock post to? ')).trim());
-			if (Number.isInteger(n) && n >= 1 && n <= linked.length) return linked[n - 1];
+			const picked = parseChoice(
+				await rl.question('Which should flock post to? Numbers separated by commas, or "all": '),
+				linked.length
+			);
+			if (picked) return picked.map((i) => linked[i]);
 		}
 	} finally {
 		rl.close();
@@ -477,8 +490,10 @@ async function choosePage(ig, pages) {
 /**
  * Instagram through Facebook Login. A user token — made in the Graph API
  * Explorer with `--token`, or from the Facebook Login for Business consent
- * without it — is swapped for a sixty-day one; the Page token taken from that
- * does not expire, and it is the only token kept.
+ * without it — is swapped for a sixty-day one; the Page tokens taken from
+ * that do not expire, and they are the only tokens kept, one per account
+ * chosen. Accounts are added to the list (or refreshed), never dropped: one
+ * Facebook login can connect several Instagram accounts at once.
  */
 async function instagram(config) {
 	const ig = config.instagram;
@@ -528,38 +543,46 @@ async function instagram(config) {
 	}
 
 	await checkInstagramGrant(ig, userToken, fromExplorer);
-	const page = await choosePage(ig, await listPages(ig.apiVersion, userToken));
-	if (!page.accessToken) {
-		throw new Error(`Facebook returned no token for the Page "${page.name}"; does this account manage it?`);
+	const pages = await choosePages(ig, await listPages(ig.apiVersion, userToken));
+	const tokenless = pages.filter((page) => !page.accessToken);
+	if (tokenless.length > 0) {
+		throw new Error(
+			`Facebook returned no token for ${tokenless.map((p) => `"${p.name}"`).join(', ')}; ` +
+				'does this Facebook account manage those Pages? Nothing was saved.'
+		);
 	}
 
-	const saved = {
-		pageId: page.id,
-		pageName: page.name,
-		pageAccessToken: page.accessToken,
+	const chosen = pages.map((page) => ({
 		igUserId: page.igUserId,
 		username: page.username,
-		// What the Instagram Login version kept; gone, so they cannot be mistaken
-		// for live credentials.
-		accessToken: undefined,
-		tokenObtainedAt: undefined,
-		tokenExpiresAt: undefined,
-		userId: undefined
-	};
-	saveSection('instagram', saved);
-	Object.assign(config.instagram, saved);
-	console.log(`\nPage token for "${page.name}" saved to ${CONFIG_PATH} (it does not expire)`);
+		pageId: page.id,
+		pageName: page.name,
+		pageAccessToken: page.accessToken
+	}));
+	const accounts = mergeAccounts(ig.accounts, chosen, (a) => a.igUserId);
+	saveInstagramAccounts(accounts);
+	console.log(
+		`\nSaved to ${CONFIG_PATH} — ${accounts.length} Instagram account` +
+			`${accounts.length === 1 ? '' : 's'} connected (Page tokens do not expire):`
+	);
 
-	try {
-		const account = await accountInfo(config);
-		console.log(
-			`Posting as @${account.username}` +
-				(account.quotaTotal ? ` (${account.quotaUsed} of ${account.quotaTotal} posts used today)` : '')
-		);
-	} catch (err) {
-		console.log(`Token saved, but reading the account failed: ${err.message}`);
+	for (const account of accounts) {
+		const fresh = chosen.some((c) => c.igUserId === account.igUserId);
+		try {
+			const info = await accountInfo({ ...account, apiVersion: ig.apiVersion });
+			console.log(
+				`  @${info.username} through the Page "${account.pageName}"` +
+					(info.quotaTotal ? ` — ${info.quotaUsed} of ${info.quotaTotal} posts used today` : '') +
+					(fresh ? '' : '   (kept from before)')
+			);
+		} catch (err) {
+			console.log(`  @${account.username}: saved, but reading the account failed: ${err.message.split('\n')[0]}`);
+		}
 	}
-	console.log('Check the queue with:  pnpm worker:dry\n');
+	console.log(
+		'\nChoose which brand posts as which account in Settings → Brands once the worker has\n' +
+			'run (it lists the accounts there). Check the queue with:  pnpm worker:dry\n'
+	);
 }
 
 async function run() {

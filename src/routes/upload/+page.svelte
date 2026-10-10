@@ -10,7 +10,9 @@
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
+	import { accounts } from '$lib/stores/accounts.svelte';
 	import { buildPlan } from '$lib/plan';
+	import { base } from '$app/paths';
 	import { createJob, rememberTags, rememberUsedSources } from '$lib/repo';
 	import { formatBytes } from '$lib/format';
 	import { imageFits } from '$lib/coverimage';
@@ -168,6 +170,8 @@
 						brand: brands.current ?? null,
 						targets: group.rows.map((row) => ({
 							platform: row.platform,
+							// The brand's account, so the worker posts through exactly it.
+							account: accounts.for(row.platform)?.account_id ?? '',
 							title: row.title,
 							description: row.description,
 							options: row.options,
@@ -435,6 +439,16 @@
 
 			{#if settings.error}
 				<p class="banner error">Could not reach PocketBase — {settings.error}</p>
+			{/if}
+
+			{#if brands.multiple && settings.withoutAccount.length > 0 && phase !== 'uploading'}
+				<!-- Said, not hidden: a platform that silently vanished would look like a bug. -->
+				<p class="banner">
+					{settings.withoutAccount.map((id) => PLATFORMS[id].label).join(', ')}
+					{settings.withoutAccount.length === 1 ? 'is' : 'are'} not offered for {brands.current?.name}:
+					no account chosen for this brand.
+					<a href="{base}/settings?section=brands">Choose one in Settings → Brands</a>.
+				</p>
 			{/if}
 
 			{#if settings.loading}

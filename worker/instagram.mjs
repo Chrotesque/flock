@@ -20,6 +20,7 @@
 
 import { fetchOrExplain, isNetworkError } from './net.mjs';
 import { streamRequest, videoMime, sleep, msUntil, MiB } from './upload.mjs';
+import { pickAccount, instagramReady } from './accounts.mjs';
 
 const GRAPH = 'https://graph.facebook.com';
 const UPLOAD = 'https://rupload.facebook.com/ig-api-upload';
@@ -87,10 +88,23 @@ const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
 // How often the account's details are re-read for the compose screen.
 const ACCOUNT_TTL_MS = 30 * 60_000;
 
-const REAUTH = 'Re-authorise with:  pnpm worker:auth --instagram --token';
+const SETUP = 'pnpm worker:auth --instagram --token';
+const REAUTH = `Re-authorise with:  ${SETUP}`;
 
-function base(config) {
-	return `${GRAPH}/${config.instagram.apiVersion}`;
+/**
+ * One account to talk to Instagram as: an entry of `config.instagram.accounts`
+ * (the account, its Page and that Page's token) plus the Graph version. Every
+ * call below takes one of these, never the whole config, so a post can only
+ * go out through the account it names — see `pickAccount`.
+ */
+export function instagramAccount(config, wanted = '') {
+	const ready = config.instagram.accounts.filter(instagramReady);
+	const account = pickAccount(ready, wanted, (a) => a.igUserId, 'Instagram', SETUP);
+	return { ...account, apiVersion: config.instagram.apiVersion };
+}
+
+function base(ig) {
+	return `${GRAPH}/${ig.apiVersion}`;
 }
 
 /**
@@ -99,10 +113,14 @@ function base(config) {
  * password changes or the person loses the Page, and then the consent flow is
  * the way back.
  */
-function token(config) {
-	const t = config.instagram.pageAccessToken;
-	if (!t) throw new Error(`Instagram is not set up. ${REAUTH}`);
-	return t;
+function token(ig) {
+	if (!ig.pageAccessToken) throw new Error(`Instagram is not set up. ${REAUTH}`);
+	return ig.pageAccessToken;
+}
+
+/** The profile address, for when the reel's own permalink cannot be read. */
+function profileUrl(ig) {
+	return ig.username ? `https://www.instagram.com/${ig.username}/` : 'https://www.instagram.com/';
 }
 
 class GraphError extends Error {
@@ -134,14 +152,14 @@ async function parse(res) {
  * form body for a POST; objects and arrays are sent as JSON, which is how the
  * API takes a list of collaborators.
  */
-async function graph(config, path, { method = 'GET', params = {} } = {}) {
-	const url = new URL(`${base(config)}${path}`);
+async function graph(ig, path, { method = 'GET', params = {} } = {}) {
+	const url = new URL(`${base(ig)}${path}`);
 	const form = new URLSearchParams();
 	for (const [key, value] of Object.entries(params)) {
 		if (value === undefined || value === null || value === '') continue;
 		form.set(key, typeof value === 'string' ? value : JSON.stringify(value));
 	}
-	form.set('access_token', token(config));
+	form.set('access_token', token(ig));
 
 	if (method === 'POST') {
 		return parse(
@@ -216,9 +234,8 @@ export async function listPages(apiVersion, userToken) {
  * is used. The allowance is informational — the account itself answering is
  * the check that matters — so a failure there is swallowed.
  */
-export async function accountInfo(config) {
-	const ig = config.instagram;
-	const me = await graph(config, `/${ig.igUserId}`, { params: { fields: 'id,username,name' } });
+export async function accountInfo(ig) {
+	const me = await graph(ig, `/${ig.igUserId}`, { params: { fields: 'id,username,name' } });
 	const info = {
 		userId: String(me.id ?? ig.igUserId),
 		username: me.username ?? '',
@@ -229,7 +246,7 @@ export async function accountInfo(config) {
 		quotaTotal: null
 	};
 	try {
-		const limit = await graph(config, `/${ig.igUserId}/content_publishing_limit`, {
+		const limit = await graph(ig, `/${ig.igUserId}/content_publishing_limit`, {
 			params: { fields: 'quota_usage,config' }
 		});
 		const row = limit.data?.[0];
@@ -278,25 +295,24 @@ export function buildContainer(target, options, durationSeconds) {
  * public, so Instagram can fetch it as `cover_url`. The caller deletes the
  * photo once Instagram has processed the container.
  */
-async function hostCover(config, image, name) {
-	const ig = config.instagram;
+async function hostCover(ig, image, name) {
 	const form = new FormData();
 	form.set('published', 'false');
 	form.set('source', new Blob([image.bytes], { type: image.mimeType }), name || 'cover');
-	form.set('access_token', token(config));
+	form.set('access_token', token(ig));
 	const photo = await parse(
-		await fetchOrExplain(`${base(config)}/${ig.pageId}/photos`, { method: 'POST', body: form })
+		await fetchOrExplain(`${base(ig)}/${ig.pageId}/photos`, { method: 'POST', body: form })
 	);
 	const id = String(photo.id ?? '');
 	if (!id) throw new Error('the Page returned no photo id');
 	try {
-		const read = await graph(config, `/${id}`, { params: { fields: 'images' } });
+		const read = await graph(ig, `/${id}`, { params: { fields: 'images' } });
 		// The largest rendition; Meta lists several sizes.
 		const best = [...(read.images ?? [])].sort((a, b) => b.width * b.height - a.width * a.height)[0];
 		if (!best?.source) throw new Error('the photo has no image address');
 		return { id, url: best.source };
 	} catch (err) {
-		await graph(config, `/${id}`, { method: 'DELETE' }).catch(() => {});
+		await graph(ig, `/${id}`, { method: 'DELETE' }).catch(() => {});
 		throw err;
 	}
 }
@@ -306,13 +322,13 @@ async function hostCover(config, image, name) {
  * resumable upload endpoint documents it. A byte range resume exists in the
  * protocol; a failure here restarts from zero, as YouTube's does.
  */
-async function uploadBytes(config, container, video, log) {
-	const url = container.uri || `${UPLOAD}/${config.instagram.apiVersion}/${container.id}`;
+async function uploadBytes(ig, container, video, log) {
+	const url = container.uri || `${UPLOAD}/${ig.apiVersion}/${container.id}`;
 	const res = await streamRequest({
 		url,
 		method: 'POST',
 		headers: {
-			Authorization: `OAuth ${token(config)}`,
+			Authorization: `OAuth ${token(ig)}`,
 			offset: '0',
 			file_size: String(video.size),
 			'Content-Type': 'application/octet-stream'
@@ -344,14 +360,14 @@ async function uploadBytes(config, container, video, log) {
  * or the overall cap ends the wait. Nothing is published until the publish
  * call, so giving up here leaves no stray post behind.
  */
-async function waitForContainer(config, id, log) {
+async function waitForContainer(ig, id, log) {
 	const started = Date.now();
 	let last = '';
 	let misses = 0;
 	while (Date.now() - started < STATUS_TIMEOUT_MS) {
 		let container;
 		try {
-			container = await graph(config, `/${id}`, { params: { fields: 'status_code,status' } });
+			container = await graph(ig, `/${id}`, { params: { fields: 'status_code,status' } });
 			misses = 0;
 		} catch (err) {
 			const transient =
@@ -388,11 +404,11 @@ async function waitForContainer(config, id, log) {
  * for a container it has just called FINISHED, so that one answer is retried
  * a few times before it counts as a failure.
  */
-async function publishContainer(config, id) {
+async function publishContainer(ig, id) {
 	let last;
 	for (let attempt = 1; attempt <= 6; attempt++) {
 		try {
-			return await graph(config, `/${config.instagram.igUserId}/media_publish`, {
+			return await graph(ig, `/${ig.igUserId}/media_publish`, {
 				method: 'POST',
 				params: { creation_id: id }
 			});
@@ -416,13 +432,13 @@ async function publishContainer(config, id) {
  * container nobody has published yet, which `publishReady` can finish.
  */
 export async function probeInstagram(config, handle) {
-	const container = await graph(config, `/${handle.containerId}`, { params: { fields: 'status_code,status' } });
+	// The handle names the account the container was made under; a handle from
+	// before accounts were recorded falls back to the only one, as a post does.
+	const ig = instagramAccount(config, handle.account ?? '');
+	const container = await graph(ig, `/${handle.containerId}`, { params: { fields: 'status_code,status' } });
 	const code = String(container.status_code || '');
 	if (code === 'PUBLISHED') {
-		const profile = config.instagram.username
-			? `https://www.instagram.com/${config.instagram.username}/`
-			: 'https://www.instagram.com/';
-		return { state: 'done', result: { url: profile, scheduled: false, privacyStatus: 'a reel' } };
+		return { state: 'done', result: { url: profileUrl(ig), scheduled: false, privacyStatus: 'a reel' } };
 	}
 	if (code === 'FINISHED') return { state: 'ready' };
 	if (code === 'IN_PROGRESS' || code === '') return { state: 'incomplete' };
@@ -431,17 +447,16 @@ export async function probeInstagram(config, handle) {
 
 /** Publishes a container another worker left processed but unpublished. */
 export async function publishReady(config, handle) {
+	const ig = instagramAccount(config, handle.account ?? '');
 	let published;
 	try {
-		published = await publishContainer(config, handle.containerId);
+		published = await publishContainer(ig, handle.containerId);
 	} catch (err) {
 		throw explain(err);
 	}
-	let url = config.instagram.username
-		? `https://www.instagram.com/${config.instagram.username}/`
-		: 'https://www.instagram.com/';
+	let url = profileUrl(ig);
 	try {
-		const media = await graph(config, `/${published.id}`, { params: { fields: 'permalink' } });
+		const media = await graph(ig, `/${published.id}`, { params: { fields: 'permalink' } });
 		if (media.permalink) url = media.permalink;
 	} catch {
 		// The reel is up; the permalink is a nicety.
@@ -449,12 +464,15 @@ export async function publishReady(config, handle) {
 	return { url, scheduled: false, privacyStatus: 'a reel' };
 }
 
-/** Deletes a cover photo another worker left on the Page. */
-export async function dropHostedCover(config, id) {
-	await graph(config, `/${id}`, { method: 'DELETE' });
+/** Deletes a cover photo another worker left on the Page of the handle's account. */
+export async function dropHostedCover(config, handle) {
+	const ig = instagramAccount(config, handle.account ?? '');
+	await graph(ig, `/${handle.coverPhotoId}`, { method: 'DELETE' });
 }
 
 export async function publishToInstagram({ target, job, pb, config, log, saveHandle }) {
+	// The account this post is for, or an error — never another account.
+	const ig = instagramAccount(config, target.account ?? '');
 	const options = target.options ?? {};
 	const name = job.video_name || job.video;
 	const duration = Number(job.video_duration) || 0;
@@ -484,7 +502,7 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 	let hosted = null;
 	if (job.cover) {
 		try {
-			hosted = await hostCover(config, await pb.openCover(job), job.cover);
+			hosted = await hostCover(ig, await pb.openCover(job), job.cover);
 			params.cover_url = hosted.url;
 			delete params.thumb_offset;
 			log(`cover: ${job.cover} put on the Page as unpublished photo ${hosted.id} for Instagram to fetch`);
@@ -500,7 +518,7 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 		const id = hosted.id;
 		hosted = null;
 		try {
-			await graph(config, `/${id}`, { method: 'DELETE' });
+			await graph(ig, `/${id}`, { method: 'DELETE' });
 		} catch (err) {
 			log(`cover photo ${id} could not be deleted from the Page — it is unpublished, so nobody sees it (${err.message.split('\n')[0]})`);
 		}
@@ -508,7 +526,7 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 
 	let container;
 	try {
-		container = await graph(config, `/${config.instagram.igUserId}/media`, { method: 'POST', params });
+		container = await graph(ig, `/${ig.igUserId}/media`, { method: 'POST', params });
 	} catch (err) {
 		await dropCover();
 		video.stream.destroy();
@@ -525,6 +543,8 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 		await saveHandle({
 			kind: 'instagram-container',
 			containerId: container.id,
+			// So a worker taking over asks with this account's token.
+			account: ig.igUserId,
 			...(hosted ? { coverPhotoId: hosted.id } : {})
 		});
 	} catch (err) {
@@ -533,10 +553,13 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 		throw err;
 	}
 
-	log(`uploading ${name} (${(video.size / MiB).toFixed(1)} MB) into container ${container.id}`);
+	log(
+		`uploading ${name} (${(video.size / MiB).toFixed(1)} MB) into container ${container.id} ` +
+			`for @${ig.username || ig.igUserId}`
+	);
 	try {
-		await uploadBytes(config, container, video, log);
-		await waitForContainer(config, container.id, log);
+		await uploadBytes(ig, container, video, log);
+		await waitForContainer(ig, container.id, log);
 	} catch (err) {
 		throw explain(err);
 	} finally {
@@ -557,17 +580,15 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 
 	let published;
 	try {
-		published = await publishContainer(config, container.id);
+		published = await publishContainer(ig, container.id);
 	} catch (err) {
 		throw explain(err);
 	}
 	const mediaId = String(published.id ?? '');
 
-	let url = config.instagram.username
-		? `https://www.instagram.com/${config.instagram.username}/`
-		: 'https://www.instagram.com/';
+	let url = profileUrl(ig);
 	try {
-		const media = await graph(config, `/${mediaId}`, { params: { fields: 'permalink' } });
+		const media = await graph(ig, `/${mediaId}`, { params: { fields: 'permalink' } });
 		if (media.permalink) url = media.permalink;
 	} catch {
 		// The reel is up; the permalink is a nicety.
@@ -582,34 +603,52 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 	};
 }
 
-let accountAt = 0;
-let accountError = '';
+let accountsAt = 0;
+const accountErrors = new Map();
 
 /**
- * Publishes the account's details to `app_settings` / `instagram_account`,
- * the same arrangement as TikTok's creator row and the YouTube playlists:
- * the browser holds no Instagram credentials, so the worker reads them and
- * leaves them where the compose screen can show who the reel goes out as.
- * A failed read keeps the last good details and records the error beside them.
+ * Publishes each account's details to the `accounts` collection — id, handle,
+ * name and the day's publishing allowance, never the token: the browser holds
+ * no Instagram credentials, so the worker reads them and leaves them where
+ * Settings can offer the accounts to brands and the compose screen can show
+ * who a reel goes out as. A failed read keeps the last good details and
+ * records the error beside them; a row for an account no longer configured
+ * goes.
  */
-export async function refreshInstagramAccount(pb, config, log, force = false) {
-	if (!force && Date.now() - accountAt < ACCOUNT_TTL_MS) return;
-	accountAt = Date.now();
+export async function refreshInstagramAccounts(pb, config, log, force = false) {
+	if (!force && Date.now() - accountsAt < ACCOUNT_TTL_MS) return;
+	accountsAt = Date.now();
 	const now = new Date().toISOString();
-	try {
-		const account = await accountInfo(config);
-		await pb.setSetting('instagram_account', { fetchedAt: now, ...account, error: '' });
-		if (accountError) log('instagram: recovered');
-		accountError = '';
-	} catch (err) {
-		const message = explain(err).message;
-		if (message !== accountError) {
-			log(`instagram account failed: ${message.split('\n')[0]}`);
-			accountError = message;
+	const accounts = config.instagram.accounts.filter(instagramReady);
+
+	for (const entry of accounts) {
+		const ig = { ...entry, apiVersion: config.instagram.apiVersion };
+		const said = accountErrors.get(ig.igUserId) ?? '';
+		try {
+			const info = await accountInfo(ig);
+			await pb.upsertAccount('instagram', ig.igUserId, {
+				handle: info.username || ig.username,
+				name: info.name || ig.pageName,
+				details: { fetchedAt: now, ...info, error: '' },
+				error: '',
+				fetched_at: now
+			});
+			if (said) log(`instagram @${ig.username}: recovered`);
+			accountErrors.delete(ig.igUserId);
+		} catch (err) {
+			const message = explain(err).message;
+			if (message !== said) {
+				log(`instagram @${ig.username || ig.igUserId} failed: ${message.split('\n')[0]}`);
+				accountErrors.set(ig.igUserId, message);
+			}
+			await pb
+				.upsertAccount('instagram', ig.igUserId, {
+					handle: ig.username,
+					name: ig.pageName,
+					error: message.slice(0, 1900)
+				})
+				.catch(() => {});
 		}
-		const row = await pb.getSetting('instagram_account').catch(() => null);
-		await pb
-			.setSetting('instagram_account', { ...(row?.value ?? {}), checkedAt: now, error: message })
-			.catch(() => {});
 	}
+	await pb.pruneAccounts('instagram', accounts.map((a) => a.igUserId)).catch(() => {});
 }

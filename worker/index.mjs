@@ -16,16 +16,17 @@
 
 import { requireConfig, hasTikTok, hasInstagram } from './config.mjs';
 import { makeClient } from './pb.mjs';
-import { publishToYouTube, probeYouTube } from './youtube.mjs';
+import { publishToYouTube, probeYouTube, refreshYouTubeChannel } from './youtube.mjs';
 import { publishToTikTok, probeTikTok, refreshTikTokCreator, creatorInfo, privacyLabel } from './tiktok.mjs';
 import {
 	publishToInstagram,
 	probeInstagram,
 	publishReady,
 	dropHostedCover,
-	refreshInstagramAccount,
+	refreshInstagramAccounts,
 	accountInfo
 } from './instagram.mjs';
+import { instagramReady } from './accounts.mjs';
 import { copyToDestination, copyInto } from './archive.mjs';
 import { scanWatchFolder, scanLocalFolders } from './watch.mjs';
 import { createReadStream } from 'node:fs';
@@ -528,16 +529,19 @@ async function pass(pb, config) {
 	}
 }
 
+/** Lanes at work, `platform:account`, and platforms whose rows are being listed. */
 const busy = new Set();
+const listing = new Set();
 
 /**
  * The hold-and-fire platforms, on their own tick.
  *
  * Their rows become due at a particular minute, and the main loop can be held
  * for many minutes by one YouTube upload, so they are checked apart from it.
- * Each platform works one row at a time; a platform still busy with an upload
- * is skipped until it is free, so a second row for it waits while a row for
- * the other platform does not. A dry run lists every pending row, due or not.
+ * Each account is a lane that works one row at a time: a reel held for its
+ * minute on one account must not keep another account's reel from going up
+ * at the same time, while a second row for the same account waits for the
+ * first. A dry run lists every pending row, due or not.
  */
 async function slotPass(pb, config, { wait = false } = {}) {
 	if (!hb.canPublish()) return;
@@ -545,37 +549,65 @@ async function slotPass(pb, config, { wait = false } = {}) {
 	for (const [platform, adapter] of Object.entries(ADAPTERS)) {
 		if (adapter.timing !== 'slot') continue;
 		if (!dry && !adapter.ready(config)) continue;
-		if (busy.has(platform)) continue;
-		busy.add(platform);
+		if (listing.has(platform)) continue;
+		listing.add(platform);
 
 		const work = (async () => {
+			let targets = [];
 			try {
 				const dueBy = dry ? null : new Date(Date.now() + adapter.lead(config) * 1000);
-				const targets = await pb.pendingTargets(platform, dueBy);
-				if (targets.length === 0) return;
-				log(`${targets.length} ${dry ? 'pending' : 'due'} for ${platform}`);
-				for (const target of targets) {
-					await handle(pb, config, platform, target);
-				}
+				targets = await pb.pendingTargets(platform, dueBy);
 			} catch (err) {
 				log(`${platform} pass failed: ${err instanceof Error ? err.message : err}`);
+				return;
 			} finally {
-				busy.delete(platform);
+				listing.delete(platform);
 			}
+
+			const lanes = new Map();
+			for (const target of targets) {
+				const key = `${platform}:${target.account ?? ''}`;
+				if (!lanes.has(key)) lanes.set(key, []);
+				lanes.get(key).push(target);
+			}
+			const started = [];
+			for (const [key, rows] of lanes) {
+				if (busy.has(key)) continue;
+				busy.add(key);
+				log(`${rows.length} ${dry ? 'pending' : 'due'} for ${platform}`);
+				started.push(
+					(async () => {
+						try {
+							for (const target of rows) await handle(pb, config, platform, target);
+						} catch (err) {
+							log(`${platform} pass failed: ${err instanceof Error ? err.message : err}`);
+						} finally {
+							busy.delete(key);
+						}
+					})()
+				);
+			}
+			await Promise.all(started);
 		})();
 		running.push(work);
 	}
 	if (wait) await Promise.all(running);
 }
 
-/** The account details the compose screen shows, each on its own timer. */
+/**
+ * The accounts each platform posts as, written to the `accounts` collection
+ * for Settings and the compose screen — each on its own timer.
+ */
 async function accountPass(pb, config) {
 	if (!hb.canPublish()) return;
+	if (config.google.refreshToken) {
+		await refreshYouTubeChannel(pb, config, log).catch((err) => log(`youtube: ${err.message}`));
+	}
 	if (hasTikTok(config)) {
 		await refreshTikTokCreator(pb, config, log).catch((err) => log(`tiktok: ${err.message}`));
 	}
 	if (hasInstagram(config)) {
-		await refreshInstagramAccount(pb, config, log).catch((err) => log(`instagram: ${err.message}`));
+		await refreshInstagramAccounts(pb, config, log).catch((err) => log(`instagram: ${err.message}`));
 	}
 }
 
@@ -660,7 +692,7 @@ async function settleOrphan(pb, config, platform, row) {
 	}
 
 	if (handle?.coverPhotoId) {
-		await dropHostedCover(config, handle.coverPhotoId).catch((err) =>
+		await dropHostedCover(config, handle).catch((err) =>
 			log(`cover photo ${handle.coverPhotoId} could not be deleted from the Page (${err.message.split('\n')[0]})`)
 		);
 	}
@@ -682,9 +714,18 @@ async function showAccounts(config) {
 		if (!hasInstagram(config)) {
 			throw new Error('Instagram is not set up. Run:  pnpm worker:auth --instagram --token');
 		}
-		const account = await accountInfo(config);
-		log(`Instagram posts as @${account.username} (id ${account.userId}), through the Page "${account.pageName}"`);
-		if (account.quotaTotal) log(`${account.quotaUsed} of ${account.quotaTotal} posts used in the last 24 hours`);
+		for (const entry of config.instagram.accounts.filter(instagramReady)) {
+			try {
+				const account = await accountInfo({ ...entry, apiVersion: config.instagram.apiVersion });
+				log(
+					`Instagram posts as @${account.username} (id ${account.userId}), through the Page ` +
+						`"${account.pageName}"` +
+						(account.quotaTotal ? ` — ${account.quotaUsed} of ${account.quotaTotal} posts used in 24 hours` : '')
+				);
+			} catch (err) {
+				log(`Instagram @${entry.username || entry.igUserId}: ${err.message.split('\n')[0]}`);
+			}
+		}
 	}
 }
 

@@ -409,6 +409,14 @@ export async function publishToTikTok({ target, job, pb, config, log, saveHandle
 	// Their rules require this before every post: it is where the account's
 	// privacy levels and interaction settings come from.
 	const creator = await creatorInfo(config);
+	// A post made for another TikTok account is refused, never posted here.
+	const holding = tiktokAccountId(config, creator);
+	if (target.account && target.account !== holding) {
+		throw new Error(
+			`This post is for the TikTok account ${target.account}, but this worker posts as ` +
+				`@${creator.username}. Connect that account, or choose @${creator.username} for the brand.`
+		);
+	}
 	const level = resolvePrivacy(options.privacy, creator);
 	const duration = Number(job.video_duration) || 0;
 	const postInfo = buildPostInfo(target, options, creator, level, duration);
@@ -499,15 +507,23 @@ export async function publishToTikTok({ target, job, pb, config, log, saveHandle
 	};
 }
 
+/**
+ * The id this worker's TikTok account is known by in `accounts` and on the
+ * posts made for it: the open id the consent stored, else the username.
+ */
+export function tiktokAccountId(config, creator) {
+	return config.tiktok.openId || creator?.username || '';
+}
+
 let creatorAt = 0;
 let creatorError = '';
 
 /**
- * Publishes the creator's details to `app_settings` / `tiktok_creator`, the
- * same arrangement as the YouTube playlists: the browser holds no TikTok
- * credentials, so the worker reads them and leaves them where the compose
- * screen can show who the post goes out as and which audiences exist. A
- * failed read keeps the last good details and records the error beside them.
+ * Publishes the creator's details to the `accounts` collection: the browser
+ * holds no TikTok credentials, so the worker reads them and leaves them where
+ * Settings can offer the account to a brand and the compose screen can show
+ * who the post goes out as and which audiences exist (`details`). A failed
+ * read keeps the last good details and records the error beside them.
  */
 export async function refreshTikTokCreator(pb, config, log, force = false) {
 	if (!force && Date.now() - creatorAt < CREATOR_TTL_MS) return;
@@ -515,7 +531,16 @@ export async function refreshTikTokCreator(pb, config, log, force = false) {
 	const now = new Date().toISOString();
 	try {
 		const creator = await creatorInfo(config);
-		await pb.setSetting('tiktok_creator', { fetchedAt: now, ...creator, error: '' });
+		const id = tiktokAccountId(config, creator);
+		await pb.upsertAccount('tiktok', id, {
+			handle: creator.username,
+			name: creator.nickname,
+			details: { fetchedAt: now, ...creator, error: '' },
+			error: '',
+			fetched_at: now
+		});
+		// One TikTok account per worker for now: any other row is a past one.
+		await pb.pruneAccounts('tiktok', [id]).catch(() => {});
 		if (creatorError) log('tiktok: recovered');
 		creatorError = '';
 	} catch (err) {
@@ -524,9 +549,7 @@ export async function refreshTikTokCreator(pb, config, log, force = false) {
 			log(`tiktok creator info failed: ${message.split('\n')[0]}`);
 			creatorError = message;
 		}
-		const row = await pb.getSetting('tiktok_creator').catch(() => null);
-		await pb
-			.setSetting('tiktok_creator', { ...(row?.value ?? {}), checkedAt: now, error: message })
-			.catch(() => {});
+		const id = config.tiktok.openId;
+		if (id) await pb.upsertAccount('tiktok', id, { error: message.slice(0, 1900) }).catch(() => {});
 	}
 }

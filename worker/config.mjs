@@ -12,6 +12,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isSea } from 'node:sea';
 import { parseRole } from './roles.mjs';
+import { instagramAccounts, instagramReady } from './accounts.mjs';
 
 /**
  * Where the config file lives. Beside this module when the worker runs from
@@ -65,24 +66,20 @@ export function loadConfig() {
 			scope: tiktok.scope || ''
 		},
 		// Instagram through Facebook Login: the Meta app's own id and secret
-		// (App settings, Basic), and the Facebook Page the Instagram account is
-		// linked to. The consent flow stores the Page's token, which does not
-		// expire, so there is nothing to renew. `configId` is the Facebook
-		// Login for Business configuration, when the app uses one; without it
-		// the consent asks for the scopes directly. `pageId` picks a Page when
-		// the person runs more than one with an Instagram account.
+		// (App settings, Basic), shared by every account, and `accounts` — one
+		// entry per Instagram account, with the Facebook Page it is linked to
+		// and that Page's token, which does not expire, so there is nothing to
+		// renew. The consent flow adds to the list (accounts.mjs). `configId`
+		// is the Facebook Login for Business configuration, when the app uses
+		// one; without it the consent asks for the scopes directly.
 		instagram: {
 			appId: process.env.INSTAGRAM_APP_ID || instagram.appId || '',
 			appSecret: process.env.INSTAGRAM_APP_SECRET || instagram.appSecret || '',
 			configId: process.env.INSTAGRAM_CONFIG_ID || instagram.configId || '',
 			redirectUri:
 				process.env.INSTAGRAM_REDIRECT_URI || instagram.redirectUri || 'http://localhost:8766/instagram',
-			pageId: process.env.INSTAGRAM_PAGE_ID || instagram.pageId || '',
-			pageName: instagram.pageName || '',
-			pageAccessToken: process.env.INSTAGRAM_PAGE_TOKEN || instagram.pageAccessToken || '',
-			igUserId: instagram.igUserId || '',
-			username: instagram.username || '',
-			apiVersion: instagram.apiVersion || 'v23.0'
+			apiVersion: instagram.apiVersion || 'v23.0',
+			accounts: instagramAccounts(instagram, process.env)
 		},
 		pollSeconds: Number(process.env.FLOCK_POLL_SECONDS || file.pollSeconds || 60),
 		// The hold-and-fire platforms are checked on their own, tighter tick, so
@@ -129,16 +126,35 @@ export function saveRefreshToken(token) {
 	saveSection('google', { refreshToken: token });
 }
 
+/**
+ * Writes the Instagram account list, and drops the flat keys one account was
+ * kept in before there was a list (and the Instagram Login ones before that),
+ * so neither can be read back as a live account.
+ */
+export function saveInstagramAccounts(accounts) {
+	saveSection('instagram', {
+		accounts,
+		pageId: undefined,
+		pageName: undefined,
+		pageAccessToken: undefined,
+		igUserId: undefined,
+		username: undefined,
+		accessToken: undefined,
+		tokenObtainedAt: undefined,
+		tokenExpiresAt: undefined,
+		userId: undefined
+	});
+}
+
 /** Whether the TikTok adapter has what it needs to publish. */
 export function hasTikTok(config) {
 	const t = config.tiktok;
 	return Boolean(t.clientKey && t.clientSecret && t.refreshToken);
 }
 
-/** Whether the Instagram adapter has what it needs to publish. */
+/** Whether the Instagram adapter has at least one account it can publish to. */
 export function hasInstagram(config) {
-	const ig = config.instagram;
-	return Boolean(ig.pageAccessToken && ig.igUserId && ig.pageId);
+	return config.instagram.accounts.some(instagramReady);
 }
 
 /**

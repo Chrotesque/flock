@@ -321,9 +321,12 @@ It lists the permissions to tick and waits for a token, which you make in the
 *Meta App* to your app, choose *User Token*, add the listed permissions, click
 *Generate Access Token* and allow the Page and the Instagram account, then
 paste the token at the prompt. The worker checks what was granted, turns the
-token into the Page's own token, which does not expire, and keeps only that.
-If you have several Pages with an Instagram account it asks which one;
-`instagram.pageId` fixes the choice.
+token into each Page's own token, which does not expire, and keeps only those.
+**Several Instagram accounts** come in through the same login: with more than
+one Page that has an Instagram account it lists them and takes several at once
+(`1,2` or `all`). Running it again adds accounts or refreshes their tokens and
+never drops the others. Which brand posts as which account is chosen in
+Settings → Brands once the worker has run and listed them.
 
 Without `--token`, `pnpm worker:auth --instagram` runs Facebook's consent
 screen instead, which needs the **Facebook Login for Business** product added
@@ -336,8 +339,8 @@ Business *configuration*, put its id in `instagram.configId`.
 pnpm worker:instagram
 ```
 
-shows who the token posts as and how much of the day's allowance (100 posts)
-is used.
+shows who each account's token posts as and how much of its day's allowance
+(100 posts) is used.
 
 **A custom cover for the reel.** The image in the Details step's *Thumbnail /
 Cover* box is also the reel's cover (portrait JPEG or PNG, up to 8 MB, for
@@ -365,6 +368,15 @@ one, a row of brand buttons sits under the heading of the upload screen and
 above the brand's part of Settings; both are the same choice, remembered per
 browser. Switching brand in the middle of an upload keeps the video and the
 text but resets each platform's options and schedule to that brand's.
+
+Each brand also has its own accounts. The worker lists every account it can
+post as under Settings → Brands, and each brand picks one per platform. With a
+single brand there is nothing to pick: it posts as each platform's only
+account. With more than one, a platform is offered on an upload only for a
+brand that has an account chosen for it — the upload screen says which are
+missing — and the worker publishes each post through exactly the account it
+was made for, or refuses it. So one brand's post can never go out on another
+brand's account.
 
 **Upload** is a four-step flow: Upload, Details, Schedule, Review. flock opens
 on Analytics; Upload lives at `/upload`. The first step takes the video: drop
@@ -446,8 +458,9 @@ brand once there is more than one.
 and defaults* holds the NAS folders a finished video is copied into (the filled
 circle marks the default), the NAS watch folder, the local watch folders listed
 under *Locally*, and this browser's device name; *Brands* adds, renames, orders
-and deletes brands (deleting one removes its settings and templates, while its
-uploads stay and anything queued still goes out); *Other* holds the compliance
+and deletes brands and chooses each brand's account per platform (deleting one
+removes its settings and templates, while its uploads stay and anything queued
+still goes out); *Other* holds the compliance
 switch and any extra time zones for the calendar's second clock.
 
 The other half belongs to the brand in view. *Templates* holds reusable blocks of
@@ -480,7 +493,7 @@ again. Replace the files in `site/img/` to update the screenshots.
 ## Where things live
 
 Videos and schedules live in PocketBase on the NAS, in the collections
-`upload_jobs`, `upload_targets`, `brands`, `platform_settings`, `app_settings`,
+`upload_jobs`, `upload_targets`, `brands`, `accounts`, `platform_settings`, `app_settings`,
 `activity_log`, `devices`, `video_stats` and `worker_log`. The chosen destination is recorded on each upload, so
 changing the destination list later never redirects something already queued —
 and the file is copied there, never moved. Nothing is written until you confirm an

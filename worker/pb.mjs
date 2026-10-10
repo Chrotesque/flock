@@ -251,6 +251,48 @@ export function makeClient(baseUrl) {
 			});
 		},
 
+		/** The accounts the worker has published for one platform. */
+		async listAccounts(platform) {
+			const filter = encodeURIComponent(`platform="${platform}"`);
+			const res = await request(`/api/collections/accounts/records?perPage=200&filter=${filter}`);
+			return res.items ?? [];
+		},
+
+		/**
+		 * Writes the public half of an account — never a token — keyed by the
+		 * platform and the platform's own id for it, which a unique index holds.
+		 */
+		async upsertAccount(platform, accountId, data) {
+			const filter = encodeURIComponent(`platform="${platform}" && account_id="${accountId}"`);
+			const res = await request(`/api/collections/accounts/records?perPage=1&filter=${filter}`);
+			const existing = res.items?.[0];
+			if (existing) {
+				return request(`/api/collections/accounts/records/${existing.id}`, {
+					method: 'PATCH',
+					body: JSON.stringify(data)
+				});
+			}
+			return request('/api/collections/accounts/records', {
+				method: 'POST',
+				body: JSON.stringify({ platform, account_id: accountId, ...data })
+			});
+		},
+
+		async deleteAccount(id) {
+			return request(`/api/collections/accounts/records/${id}`, { method: 'DELETE' });
+		},
+
+		/**
+		 * Brings a platform's rows in line with the accounts this worker holds:
+		 * a row for an account no longer configured goes, so the screens stop
+		 * offering an account nothing can post through.
+		 */
+		async pruneAccounts(platform, keepIds) {
+			for (const row of await this.listAccounts(platform)) {
+				if (!keepIds.includes(row.account_id)) await this.deleteAccount(row.id);
+			}
+		},
+
 		/** One line of the worker's console, for the Log screen — see remotelog.mjs. */
 		async appendWorkerLog(row) {
 			return request('/api/collections/worker_log/records', {

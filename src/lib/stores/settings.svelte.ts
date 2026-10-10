@@ -4,6 +4,7 @@ import { logAction } from '../log';
 import { settle, LOG_SETTLE_MS } from '../settle';
 import { DEFAULT_SCHEDULING } from '../types';
 import { brands } from './brands.svelte';
+import { accounts } from './accounts.svelte';
 import type {
 	FilterRule,
 	OptionValues,
@@ -39,8 +40,9 @@ class SettingsStore {
 		this.error = null;
 		try {
 			// The brands first: their first load turns brandless rows into the
-			// first brand's, which seeding below must not race.
-			await brands.load();
+			// first brand's, which seeding below must not race. The accounts
+			// decide which platforms a brand is offered (`available`).
+			await Promise.all([brands.load(), accounts.load()]);
 			if (brands.error) throw new Error(brands.error);
 			this.list = await loadPlatformSettings(brands.list);
 			this.#logged.clear();
@@ -65,9 +67,19 @@ class SettingsStore {
 	 * The platforms a new upload may target. Unticking a platform in Settings
 	 * removes it from the compose flow entirely rather than merely starting it
 	 * unselected, so this — not `ordered` — is what the upload screens iterate.
+	 * A platform the brand has no account for is left out too (accounts.ts):
+	 * with several brands, that is what keeps a post off another brand's
+	 * account.
 	 */
 	get available(): PlatformSettings[] {
-		return this.ordered.filter((entry) => entry.enabled);
+		return this.ordered.filter((entry) => entry.enabled && accounts.offer(entry.platform).offered);
+	}
+
+	/** Enabled for the brand in view but not offered, for want of an account. */
+	get withoutAccount(): PlatformId[] {
+		return this.ordered
+			.filter((entry) => entry.enabled && !accounts.offer(entry.platform).offered)
+			.map((entry) => entry.platform);
 	}
 
 	get(platform: PlatformId): PlatformSettings | undefined {

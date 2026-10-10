@@ -11,6 +11,7 @@
 	import { loadPreviewServer } from '$lib/repo';
 	import { previewCheckUrl, previewVideoUrl, previewProblem, type PreviewSource } from '$lib/preview';
 	import { accounts } from '$lib/stores/accounts.svelte';
+	import { accountLabel } from '$lib/accounts';
 	import { imageFits, isImagePlatform } from '$lib/coverimage';
 	import {
 		tiktokProblems,
@@ -42,6 +43,9 @@
 			return creator.nickname ? `${creator.nickname} (@${creator.username})` : `@${creator.username}`;
 		}
 		if (platform === 'instagram' && accounts.instagram) return `@${accounts.instagram.username}`;
+		// YouTube's channel, by name: with brands, which channel is the question.
+		const account = accounts.for(platform);
+		if (account) return account.name || accountLabel(account);
 		return '';
 	}
 

@@ -13,6 +13,7 @@ import {
 } from './brands';
 import type { WorkerBeat, WorkerBeats, WorkerRole } from './workerstatus';
 import type {
+	Account,
 	Brand,
 	OptionValues,
 	PlatformId,
@@ -26,9 +27,7 @@ import type {
 	UploadJob,
 	UploadTarget,
 	VideoStats,
-	StatsStatus,
-	TikTokCreator,
-	InstagramAccount
+	StatsStatus
 } from './types';
 
 /* ------------------------------------------------------------------ */
@@ -38,12 +37,54 @@ import type {
 /** The per-brand `app_settings` areas, by their key before brands existed. */
 const BRAND_SETTINGS = ['templates', 'recent_tags'] as const;
 
+/** A brand's account choices, keeping only platforms the registry knows. */
+function brandAccounts(stored: unknown): Brand['accounts'] {
+	const out: Brand['accounts'] = {};
+	if (!stored || typeof stored !== 'object') return out;
+	for (const [platform, id] of Object.entries(stored as Record<string, unknown>)) {
+		if (isPlatformId(platform) && typeof id === 'string' && id) out[platform] = id;
+	}
+	return out;
+}
+
 function toBrand(row: Record<string, unknown>): Brand {
 	return {
 		id: String(row.id),
 		name: String(row.name ?? ''),
-		sort_order: Number(row.sort_order ?? 0)
+		sort_order: Number(row.sort_order ?? 0),
+		accounts: brandAccounts(row.accounts)
 	};
+}
+
+/** The accounts the worker posts as, as it last read them — every platform. */
+export async function loadAccounts(): Promise<Account[]> {
+	const rows = await pb.collection('accounts').getFullList({ sort: 'platform,handle' });
+	return rows
+		.filter((row) => isPlatformId(row.platform))
+		.map((row) => ({
+			id: row.id,
+			platform: row.platform as PlatformId,
+			account_id: String(row.account_id ?? ''),
+			handle: String(row.handle ?? ''),
+			name: String(row.name ?? ''),
+			details: row.details && typeof row.details === 'object' ? (row.details as Record<string, unknown>) : null,
+			error: String(row.error ?? ''),
+			fetched_at: String(row.fetched_at ?? '')
+		}));
+}
+
+/**
+ * Sets which account a brand posts as on each platform. `label` names the
+ * change for the log, since an account id means nothing to a reader.
+ */
+export async function setBrandAccounts(
+	brand: Brand,
+	accounts: Brand['accounts'],
+	label: string
+): Promise<void> {
+	assertDeviceNamed();
+	await pb.collection('brands').update(brand.id, { accounts });
+	logAction('settings', `${brand.name}: ${label}`);
 }
 
 export async function listBrands(): Promise<Brand[]> {
@@ -110,14 +151,16 @@ async function adoptBrandless(first: Brand) {
 /**
  * A new brand, optionally starting as a copy of another: its platform
  * settings row for row and its templates. Recent tags are not copied — they
- * are a memory of what this brand used, and it has used nothing yet.
+ * are a memory of what this brand used, and it has used nothing yet — and
+ * neither are its accounts: a new brand is usually a new set of accounts, and
+ * starting from another brand's would post to them until somebody noticed.
  */
 export async function createBrand(name: string, sortOrder: number, copyFrom: Brand | null): Promise<Brand> {
 	assertDeviceNamed();
 	const created = toBrand(
 		await pb
 			.collection('brands')
-			.create({ name: name.trim(), key: brandKey(name), sort_order: sortOrder })
+			.create({ name: name.trim(), key: brandKey(name), sort_order: sortOrder, accounts: {} })
 	);
 
 	if (copyFrom) {
@@ -338,6 +381,8 @@ export async function getBrandSettings<T>(base: string): Promise<Record<string, 
 
 export interface TargetPlan {
 	platform: PlatformId;
+	/** The `accounts` id it goes out as; '' for the platform's only one. */
+	account: string;
 	title: string;
 	description: string;
 	options: OptionValues;
@@ -456,6 +501,7 @@ export async function createJob(
 		await pb.collection('upload_targets').create({
 			job: job.id,
 			platform: target.platform,
+			account: target.account,
 			title: target.title,
 			description: target.description,
 			options: target.options,
@@ -632,25 +678,6 @@ export async function loadPlaylists(): Promise<PlaylistIndex | null> {
 	const index = await getSetting<PlaylistIndex | null>('youtube_playlists', empty);
 	if (!index || !Array.isArray(index.items)) return null;
 	return index;
-}
-
-/**
- * The TikTok account the worker posts as, as it last read it. Null until the
- * worker has run with TikTok set up; the same arrangement as the playlists.
- */
-export async function loadTikTokCreator(): Promise<TikTokCreator | null> {
-	const empty: TikTokCreator | null = null;
-	const creator = await getSetting<TikTokCreator | null>('tiktok_creator', empty);
-	if (!creator || typeof creator.username !== 'string') return null;
-	return { ...creator, privacyOptions: Array.isArray(creator.privacyOptions) ? creator.privacyOptions : [] };
-}
-
-/** The Instagram account the worker posts as, as it last read it. */
-export async function loadInstagramAccount(): Promise<InstagramAccount | null> {
-	const empty: InstagramAccount | null = null;
-	const account = await getSetting<InstagramAccount | null>('instagram_account', empty);
-	if (!account || typeof account.username !== 'string') return null;
-	return account;
 }
 
 /**

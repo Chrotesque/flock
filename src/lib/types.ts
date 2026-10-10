@@ -94,6 +94,25 @@ export interface Brand {
 	id: string;
 	name: string;
 	sort_order: number;
+	/** The account the brand posts as per platform, by `accounts.account_id`. */
+	accounts: Partial<Record<PlatformId, string>>;
+}
+
+/**
+ * An account the worker can post as, from the `accounts` collection: the
+ * public half only — tokens stay in the worker config. `details` is the
+ * platform's own description of it (a `TikTokCreator` for TikTok, an
+ * `InstagramAccount` for Instagram).
+ */
+export interface Account {
+	id: string;
+	platform: PlatformId;
+	account_id: string;
+	handle: string;
+	name: string;
+	details: Record<string, unknown> | null;
+	error: string;
+	fetched_at: string;
 }
 
 export interface PlatformSettings {
@@ -168,6 +187,8 @@ export interface UploadTarget {
 	id: string;
 	job: string;
 	platform: PlatformId;
+	/** The `accounts.account_id` it goes out as; empty for the platform's only one. */
+	account?: string;
 	title: string;
 	description: string;
 	options: OptionValues;
@@ -329,8 +350,8 @@ export interface PlaylistIndex {
 }
 
 /**
- * The TikTok account the worker posts as, in `app_settings` under
- * `tiktok_creator` — the same arrangement as the playlists. TikTok's rules
+ * A TikTok account the worker posts as: the `details` of its `accounts` row,
+ * as the worker last read it. TikTok's rules
  * ask that the creator's name be shown wherever a post is confirmed, and its
  * creator_info call is the only source of which audiences the account
  * offers. `error` is set when the last read failed; the other fields then
@@ -350,7 +371,7 @@ export interface TikTokCreator {
 	error?: string;
 }
 
-/** The Instagram account the worker posts as, in `app_settings` under `instagram_account`. */
+/** An Instagram account the worker posts as: the `details` of its `accounts` row. */
 export interface InstagramAccount {
 	fetchedAt: string;
 	userId: string;

@@ -14,6 +14,7 @@
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
+	import { accounts } from '$lib/stores/accounts.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { templates } from '$lib/stores/templates.svelte';
 	import { tagSets } from '$lib/stores/tagsets.svelte';
@@ -30,6 +31,8 @@
 	general.load();
 	templates.load();
 	tagSets.load();
+	// Fresh, so an account the worker has just listed can be chosen at once.
+	accounts.load(true);
 
 	type Section = 'general' | 'brands' | 'templates' | 'other' | PlatformId;
 

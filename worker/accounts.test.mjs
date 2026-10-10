@@ -1,0 +1,76 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { instagramAccounts, instagramReady, mergeAccounts, pickAccount, parseChoice } from './accounts.mjs';
+
+const ig = (id, extra = {}) => ({
+	igUserId: id,
+	username: `user${id}`,
+	pageId: `page${id}`,
+	pageName: `Page ${id}`,
+	pageAccessToken: `tok${id}`,
+	...extra
+});
+const byId = (a) => a.igUserId;
+
+test('a config with a list keeps the list, cleaned', () => {
+	const list = instagramAccounts({ accounts: [ig('1', { junk: 1 }), { username: 'no id' }] });
+	assert.equal(list.length, 1);
+	assert.deepEqual(Object.keys(list[0]).sort(), ['igUserId', 'pageAccessToken', 'pageId', 'pageName', 'username']);
+});
+
+test('the old single-account section reads as a list of one', () => {
+	const list = instagramAccounts({ appId: 'x', ...ig('9') });
+	assert.deepEqual(list.map(byId), ['9']);
+	assert.equal(list[0].pageAccessToken, 'tok9');
+});
+
+test('an old section without a token is no account at all', () => {
+	assert.deepEqual(instagramAccounts({ igUserId: '9' }), []);
+});
+
+test('the environment token goes to the named Page, or to the only account', () => {
+	const two = instagramAccounts({ accounts: [ig('1'), ig('2')] }, {
+		INSTAGRAM_PAGE_TOKEN: 'env',
+		INSTAGRAM_PAGE_ID: 'page2'
+	});
+	assert.deepEqual(two.map((a) => a.pageAccessToken), ['tok1', 'env']);
+	const one = instagramAccounts({ accounts: [ig('1')] }, { INSTAGRAM_PAGE_TOKEN: 'env' });
+	assert.equal(one[0].pageAccessToken, 'env');
+	const ambiguous = instagramAccounts({ accounts: [ig('1'), ig('2')] }, { INSTAGRAM_PAGE_TOKEN: 'env' });
+	assert.deepEqual(ambiguous.map((a) => a.pageAccessToken), ['tok1', 'tok2']);
+});
+
+test('ready needs the account, its Page and the token', () => {
+	assert.equal(instagramReady(ig('1')), true);
+	assert.equal(instagramReady(ig('1', { pageAccessToken: '' })), false);
+});
+
+test('merging replaces an account by id and keeps the rest', () => {
+	const merged = mergeAccounts([ig('1'), ig('2')], [ig('2', { pageAccessToken: 'new' }), ig('3')], byId);
+	assert.deepEqual(merged.map(byId), ['1', '2', '3']);
+	assert.equal(merged[1].pageAccessToken, 'new');
+});
+
+test('a post naming an account gets exactly that one', () => {
+	assert.equal(pickAccount([ig('1'), ig('2')], '2', byId, 'Instagram', 'setup').igUserId, '2');
+});
+
+test('a post naming an account the worker lacks is refused, never sent elsewhere', () => {
+	assert.throws(() => pickAccount([ig('1')], '2', byId, 'Instagram', 'setup'), /no credentials/);
+});
+
+test('a post naming none gets the only account, and is refused when there are several', () => {
+	assert.equal(pickAccount([ig('1')], '', byId, 'Instagram', 'setup').igUserId, '1');
+	assert.throws(() => pickAccount([ig('1'), ig('2')], '', byId, 'Instagram', 'setup'), /names no Instagram account/);
+	assert.throws(() => pickAccount([], '', byId, 'Instagram', 'setup'), /not set up/);
+});
+
+test('choices parse from numbers, lists and "all"', () => {
+	assert.deepEqual(parseChoice('2', 3), [1]);
+	assert.deepEqual(parseChoice('1, 3', 3), [0, 2]);
+	assert.deepEqual(parseChoice('3 1 3', 3), [0, 2]);
+	assert.deepEqual(parseChoice('all', 2), [0, 1]);
+	assert.equal(parseChoice('4', 3), null);
+	assert.equal(parseChoice('x', 3), null);
+	assert.equal(parseChoice('', 3), null);
+});

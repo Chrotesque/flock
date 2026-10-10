@@ -26,6 +26,6 @@
     "appSecret": "PASTE-META-APP-SECRET",
     "configId": "",
     "redirectUri": "http://localhost:8766/instagram",
-    "pageId": ""
+    "accounts": []
   }
 }

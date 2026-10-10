@@ -125,6 +125,62 @@ async function api(token, path, options = {}) {
 	return text ? JSON.parse(text) : null;
 }
 
+// The channel the token uploads to: read once a process for the check before
+// every upload (one unit), and every half hour for the `accounts` row.
+const CHANNEL_TTL_MS = 30 * 60_000;
+let channel = null;
+let channelAt = 0;
+let channelError = '';
+
+/** The channel this worker's Google grant uploads to. */
+export async function ownChannel(config, { fresh = false } = {}) {
+	if (channel && !fresh) return channel;
+	const token = await accessToken(config.google);
+	const body = await api(token, '/channels?part=snippet&mine=true');
+	const item = body?.items?.[0];
+	if (!item) throw new Error('The Google account has no YouTube channel.');
+	channel = {
+		id: String(item.id),
+		title: item.snippet?.title ?? '',
+		handle: item.snippet?.customUrl ?? '',
+		thumbnail: item.snippet?.thumbnails?.default?.url ?? ''
+	};
+	return channel;
+}
+
+/**
+ * Publishes the channel to the `accounts` collection, so Settings can offer
+ * it to a brand. One channel per worker for now; any other YouTube row is a
+ * past one. A failed read is said once and leaves the last good row.
+ */
+export async function refreshYouTubeChannel(pb, config, log, force = false) {
+	if (!force && Date.now() - channelAt < CHANNEL_TTL_MS) return;
+	channelAt = Date.now();
+	const now = new Date().toISOString();
+	try {
+		const own = await ownChannel(config, { fresh: true });
+		await pb.upsertAccount('youtube', own.id, {
+			handle: own.handle,
+			name: own.title,
+			details: { fetchedAt: now, thumbnail: own.thumbnail },
+			error: '',
+			fetched_at: now
+		});
+		await pb.pruneAccounts('youtube', [own.id]).catch(() => {});
+		if (channelError) log('youtube channel: recovered');
+		channelError = '';
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		if (message !== channelError) {
+			log(`youtube channel could not be read: ${message.split('\n')[0]}`);
+			channelError = message;
+		}
+		if (channel) {
+			await pb.upsertAccount('youtube', channel.id, { error: message.slice(0, 1900) }).catch(() => {});
+		}
+	}
+}
+
 /** Opens a resumable session and returns the URL the bytes go to. */
 async function startSession(token, resource, { size, mimeType, notifySubscribers }) {
 	const url = new URL(UPLOAD);
@@ -326,6 +382,20 @@ export async function publishToYouTube({ target, job, pb, config, log, saveHandl
 	const release = resolveRelease(options, target.scheduled_at);
 
 	let token = await accessToken(config.google);
+
+	// A post made for another channel is refused before a byte goes anywhere:
+	// this grant can only upload to its own channel, and that must be the one
+	// the post's brand chose.
+	if (target.account) {
+		const own = await ownChannel(config);
+		if (own.id !== target.account) {
+			throw new Error(
+				`This post is for the YouTube channel ${target.account}, but this worker's Google grant ` +
+					`uploads to "${own.title}" (${own.id}). Not uploading it there.`
+			);
+		}
+	}
+
 	const video = await pb.openVideo(job);
 
 	const resource = buildResource(target, options, release);

@@ -1,4 +1,11 @@
-import { createBrand, deleteBrand, ensureBrands, renameBrand, reorderBrands } from '../repo';
+import {
+	createBrand,
+	deleteBrand,
+	ensureBrands,
+	renameBrand,
+	reorderBrands,
+	setBrandAccounts
+} from '../repo';
 import { nextBrandName, orderBrands } from '../brands';
 import type { Brand } from '../types';
 
@@ -89,6 +96,12 @@ class BrandStore {
 		this.list = [...this.list, brand];
 		this.select(brand.id);
 		return brand;
+	}
+
+	/** Sets which account the brand posts as per platform; `label` is the log line. */
+	async setAccounts(brand: Brand, accounts: Brand['accounts'], label: string) {
+		await setBrandAccounts(brand, accounts, label);
+		this.list = this.list.map((b) => (b.id === brand.id ? { ...b, accounts: { ...accounts } } : b));
 	}
 
 	async rename(brand: Brand, name: string) {

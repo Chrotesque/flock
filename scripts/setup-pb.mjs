@@ -37,9 +37,36 @@ const collections = [
 			// as devices.key, and for the same reason: an index, not a check.
 			{ type: 'text', name: 'key', required: true, max: 120 },
 			{ type: 'number', name: 'sort_order' },
+			// Which account the brand posts as on each platform:
+			// { instagram: "<account_id>", youtube: "<account_id>", ... }, ids
+			// from `accounts`. A platform left out has none.
+			{ type: 'json', name: 'accounts', maxSize: 20000 },
 			...stamps
 		],
 		indexes: ['CREATE UNIQUE INDEX `idx_brands_key` ON `brands` (`key`)']
+	},
+	{
+		// The accounts the worker can post as, as it last read them — the public
+		// half only: the platform's own id, handle and name, plus whatever the
+		// compose screen needs (`details`: TikTok's audiences, Instagram's daily
+		// allowance). Tokens never come here; they live in the worker config.
+		// Written only by the worker.
+		name: 'accounts',
+		type: 'base',
+		...RULES,
+		fields: [
+			{ type: 'text', name: 'platform', required: true, max: 40 },
+			{ type: 'text', name: 'account_id', required: true, max: 120 },
+			{ type: 'text', name: 'handle', max: 200 },
+			{ type: 'text', name: 'name', max: 200 },
+			{ type: 'json', name: 'details', maxSize: 50000 },
+			{ type: 'text', name: 'error', max: 2000 },
+			{ type: 'date', name: 'fetched_at' },
+			...stamps
+		],
+		indexes: [
+			'CREATE UNIQUE INDEX `idx_accounts_platform_id` ON `accounts` (`platform`, `account_id`)'
+		]
 	},
 	{
 		name: 'platform_settings',
@@ -149,6 +176,10 @@ const collections = [
 				cascadeDelete: true
 			},
 			{ type: 'text', name: 'platform', required: true, max: 40 },
+			// The `accounts` id this post goes out as, chosen by its brand. The
+			// worker publishes through exactly that account or refuses; empty means
+			// the platform's only account (a single-brand install).
+			{ type: 'text', name: 'account', max: 120 },
 			// Title/description are stored *post-filter*, per platform, so the
 			// worker never has to re-run the adaptation rules.
 			{ type: 'text', name: 'title', max: 500 },
