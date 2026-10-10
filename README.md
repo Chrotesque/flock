@@ -325,10 +325,11 @@ If you have several Pages with an Instagram account it asks which one;
 `instagram.pageId` fixes the choice.
 
 Without `--token`, `pnpm worker:auth --instagram` runs Facebook's consent
-screen instead. That needs the **Facebook Login for Business** product, which
-Meta may only enable after Advanced Access on `public_profile`, and that in
-turn after verifying your business; the Explorer route needs neither. If you
-use a Login for Business *configuration*, put its id in `instagram.configId`.
+screen instead, which needs the **Facebook Login for Business** product added
+to the app. Its settings page may warn that it requires Advanced Access on
+`public_profile`; that is for an app that goes live, and in Development mode
+the consent works for anyone with a role on the app. If you use a Login for
+Business *configuration*, put its id in `instagram.configId`.
 
 ```bash
 pnpm worker:instagram
