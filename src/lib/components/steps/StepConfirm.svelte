@@ -12,7 +12,7 @@
 	import { previewCheckUrl, previewVideoUrl, previewProblem, type PreviewSource } from '$lib/preview';
 	import { accounts } from '$lib/stores/accounts.svelte';
 	import { accountLabel, allowanceLabel, allowanceWarning, postAllowance, type Allowance } from '$lib/accounts';
-	import { imageFits, isImagePlatform } from '$lib/coverimage';
+	import { imageFits, isImagePlatform, type ImagePlatform } from '$lib/coverimage';
 	import {
 		tiktokProblems,
 		readDisclosure,
@@ -184,7 +184,7 @@
 	});
 
 	$effect(() => {
-		const image = draft.thumbnail;
+		const image = shownImage?.file ?? null;
 		if (!image) {
 			thumbUrl = '';
 			return;
@@ -204,22 +204,46 @@
 		if (video.currentTime === 0) video.currentTime = 0.1;
 	}
 
-	// Which pane the stage shows: the video, or the thumbnail at the same size,
-	// so the preview is actually judgeable. One image tab, not one per
-	// platform: YouTube's thumbnail and Instagram's cover are the same picture.
-	// TikTok takes a cover *time* (its `coverFrame` option), so it is not on
-	// the tab. Falls back to the video if neither platform is in the plan.
-	let tab = $state<'video' | 'image'>('video');
-	let imagePlatforms = $derived(
-		rows.map((row) => row.platform).filter(isImagePlatform)
+	// Which pane the stage shows: the video, or an image at the same size, so
+	// the preview is actually judgeable. One image tab while YouTube's
+	// thumbnail and Instagram's cover are the same picture, one each once they
+	// were unlinked. TikTok takes a cover *time* (its `coverFrame` option), so
+	// it is not on a tab. Falls back to the video if neither platform is in
+	// the plan.
+	interface ImageTab {
+		key: string;
+		label: string;
+		noun: string;
+		platforms: ImagePlatform[];
+		file: File | null;
+	}
+	let tab = $state('video');
+	let imagePlatforms = $derived(rows.map((row) => row.platform).filter(isImagePlatform));
+	let imageTabs = $derived.by((): ImageTab[] => {
+		if (imagePlatforms.length === 0) return [];
+		if (draft.imagesLinked) {
+			return [
+				{ key: 'image', label: 'Thumbnail', noun: 'thumbnail', platforms: imagePlatforms, file: draft.thumbnail }
+			];
+		}
+		return imagePlatforms.map((p) => ({
+			key: `image-${p}`,
+			label: p === 'youtube' ? 'Thumbnail' : 'Cover',
+			noun: p === 'youtube' ? 'thumbnail' : 'cover',
+			platforms: [p],
+			file: draft.imageFor(p)
+		}));
+	});
+	let shownImage = $derived(imageTabs.find((t) => t.key === tab) ?? null);
+	let shownTab = $derived(shownImage ? 'image' : 'video');
+	// The platforms that will actually get the image shown, and those it does not fit.
+	let imageGoesTo = $derived(
+		shownImage ? shownImage.platforms.filter((p) => imageFits(shownImage!.file, p)) : []
 	);
-	let shownTab = $derived(tab === 'image' && imagePlatforms.length === 0 ? 'video' : tab);
-	// The platforms that will actually get the image, and those it does not fit.
-	let imageGoesTo = $derived(imagePlatforms.filter((p) => imageFits(draft.thumbnail, p)));
 	let imageMisses = $derived(
-		draft.thumbnail ? imagePlatforms.filter((p) => !imageFits(draft.thumbnail, p)) : []
+		shownImage?.file ? shownImage.platforms.filter((p) => !imageFits(shownImage!.file, p)) : []
 	);
-	let paneNoun = 'thumbnail';
+	let paneNoun = $derived(shownImage?.noun ?? 'thumbnail');
 	let stageImage = $derived(shownTab === 'image' ? thumbUrl : '');
 	let portrait = $state(false);
 
@@ -260,20 +284,20 @@
 					Video
 				</button>
 			{/each}
-			{#if imagePlatforms.length > 0}
+			{#each imageTabs as image (image.key)}
 				<button
 					class="tab"
-					class:active={shownTab === 'image'}
+					class:active={shownImage?.key === image.key}
 					role="tab"
-					aria-selected={shownTab === 'image'}
-					onclick={() => (tab = 'image')}
+					aria-selected={shownImage?.key === image.key}
+					onclick={() => (tab = image.key)}
 				>
-					{#each imagePlatforms as id (id)}
+					{#each image.platforms as id (id)}
 						<PlatformIcon platform={id} size={14} />
 					{/each}
-					Thumbnail
+					{image.label}
 				</button>
-			{/if}
+			{/each}
 		</div>
 
 		{#if shownTab === 'video'}

@@ -13,6 +13,7 @@
 		done = false,
 		summary = '',
 		platforms = [],
+		action,
 		children
 	}: {
 		label: string;
@@ -20,6 +21,8 @@
 		summary?: string;
 		/** Which platforms this box serves, shown as small icons after the label. */
 		platforms?: PlatformId[];
+		/** A control at the right end of the header, outside the fold button. */
+		action?: Snippet;
 		children: Snippet;
 	} = $props();
 
@@ -46,6 +49,7 @@
 {/snippet}
 
 <section class="box card" class:collapsed>
+	<div class="top">
 	{#if done}
 		<button
 			class="head"
@@ -81,6 +85,10 @@
 	{:else}
 		{@render heading()}
 	{/if}
+	{#if action}
+		<span class="action">{@render action()}</span>
+	{/if}
+	</div>
 
 	{#if !collapsed}
 		{@render children()}
@@ -106,13 +114,37 @@
 		min-width: 0;
 	}
 
+	.top {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		min-width: 0;
+		margin-bottom: 8px;
+	}
+
+	.collapsed .top {
+		margin-bottom: 0;
+	}
+
+	.top > :global(.label) {
+		flex: 1;
+		min-width: 0;
+		margin-bottom: 0;
+	}
+
+	.action {
+		flex: none;
+		margin-left: auto;
+	}
+
 	.head {
+		flex: 1;
 		display: flex;
 		align-items: center;
 		gap: 8px;
 		width: 100%;
 		min-width: 0;
-		margin: 0 0 4px;
+		margin: 0;
 		padding: 0;
 		background: none;
 		border: 0;
@@ -120,10 +152,6 @@
 		font: inherit;
 		text-align: left;
 		cursor: pointer;
-	}
-
-	.collapsed .head {
-		margin-bottom: 0;
 	}
 
 	.head .label {

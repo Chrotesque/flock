@@ -61,10 +61,6 @@ function emptyVideos(): Record<VideoSlot, SlotVideo> {
 	) as Record<VideoSlot, SlotVideo>;
 }
 
-function allSelected(value: boolean): Record<PlatformId, boolean> {
-	return Object.fromEntries(PLATFORM_IDS.map((id) => [id, value])) as Record<PlatformId, boolean>;
-}
-
 const EMPTY_TEXT: PlatformText = { title: '', description: '' };
 
 /** Tomorrow, so a schedule is never accidentally in the past. */
@@ -105,10 +101,38 @@ class DraftStore {
 	 * The custom image: YouTube's thumbnail and Instagram's reel cover, picked
 	 * once and sent to each that takes it (see coverimage.ts). Optional;
 	 * without one each platform uses a frame. TikTok takes a cover *time*, not
-	 * an image. Instagram fetches its copy from a public address, so the
-	 * worker has to be set up to serve one — see the README.
+	 * an image.
+	 *
+	 * Linked by default. Unlinked, `thumbnail` is YouTube's alone and `cover`
+	 * is Instagram's own picture — for trying a different image on each.
+	 * Every new upload starts linked again.
 	 */
 	thumbnail = $state<File | null>(null);
+	cover = $state<File | null>(null);
+	imagesLinked = $state(true);
+
+	/** The image a platform gets, linked or not. */
+	imageFor(platform: 'youtube' | 'instagram'): File | null {
+		return platform === 'instagram' && !this.imagesLinked ? this.cover : this.thumbnail;
+	}
+
+	/**
+	 * Unlinking starts the cover as the same picture, so nothing chosen is
+	 * lost; relinking keeps the picture of the platform in view, or whichever
+	 * one exists.
+	 */
+	linkImages(linked: boolean) {
+		if (linked === this.imagesLinked) return;
+		if (linked) {
+			const keep =
+				this.composing === 'instagram' ? (this.cover ?? this.thumbnail) : (this.thumbnail ?? this.cover);
+			this.thumbnail = keep;
+			this.cover = null;
+		} else {
+			this.cover = this.thumbnail;
+		}
+		this.imagesLinked = linked;
+	}
 
 	slotFor(platform: PlatformId): VideoSlot {
 		return this.split.includes(platform) ? platform : 'all';
@@ -177,7 +201,20 @@ class DraftStore {
 		}
 	}
 
-	selected = $state<Record<PlatformId, boolean>>(allSelected(true));
+	/**
+	 * Ticks made on this upload. A platform not ticked or unticked here starts
+	 * as Settings has it (`enabled`), so `isSelected` is what to read.
+	 */
+	selected = $state<Partial<Record<PlatformId, boolean>>>({});
+
+	isSelected(platform: PlatformId): boolean {
+		return this.selected[platform] ?? settings.get(platform)?.enabled ?? false;
+	}
+
+	select(platform: PlatformId, on: boolean) {
+		this.selected[platform] = on;
+	}
+
 	/** Per-platform overrides layered on top of that platform's saved defaults. */
 	overrides = $state<Partial<Record<PlatformId, OptionValues>>>({});
 	schedule = $state<Partial<Record<PlatformId, { date: string; time: string }>>>({});
@@ -252,16 +289,16 @@ class DraftStore {
 	}
 
 	/**
-	 * Platforms this upload will actually go to: ticked on this upload *and*
-	 * still enabled in Settings. Disabling a platform there must drop it from an
-	 * in-progress draft too, not just from the next one.
+	 * Platforms this upload will actually go to: ticked (or, untouched, enabled
+	 * in Settings) *and* offered to the brand. A platform that loses its
+	 * account drops out of an in-progress draft too, not just the next one.
 	 *
 	 * Returned in the user's configured display order, which is what makes the
 	 * compose pills, the schedule list and the confirmation list agree.
 	 */
 	get activePlatforms(): PlatformId[] {
 		return settings.available
-			.filter((entry) => this.selected[entry.platform])
+			.filter((entry) => this.isSelected(entry.platform))
 			.map((entry) => entry.platform);
 	}
 
@@ -385,7 +422,9 @@ class DraftStore {
 		// The split is kept on purpose — it is the arrangement, not this video.
 		this.videos = emptyVideos();
 		this.thumbnail = null;
-		this.selected = allSelected(true);
+		this.cover = null;
+		this.imagesLinked = true;
+		this.selected = {};
 		this.overrides = {};
 		this.schedule = {};
 		this.immediate = {};

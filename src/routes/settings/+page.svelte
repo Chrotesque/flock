@@ -342,8 +342,8 @@
 					</ul>
 
 					<p class="note foot">
-						Unticking a platform removes it from new uploads entirely — it stops being listed on the
-						compose screen. Its defaults and rules are kept.
+						Unticked platforms start switched off on a new upload. They are still listed there, and
+						can be ticked for that upload. Their defaults and rules are kept.
 					</p>
 				</aside>
 

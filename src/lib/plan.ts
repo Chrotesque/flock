@@ -53,7 +53,7 @@ function resolveOptions(platform: PlatformId, def: (typeof PLATFORMS)[PlatformId
  */
 export function buildPlan(): PlanRow[] {
 	return settings.available
-		.filter((entry) => draft.selected[entry.platform])
+		.filter((entry) => draft.isSelected(entry.platform))
 		.map((entry) => {
 			const platform = entry.platform;
 			const def = PLATFORMS[platform];

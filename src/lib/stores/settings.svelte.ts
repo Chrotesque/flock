@@ -64,15 +64,15 @@ class SettingsStore {
 	}
 
 	/**
-	 * The platforms a new upload may target. Unticking a platform in Settings
-	 * removes it from the compose flow entirely rather than merely starting it
-	 * unselected, so this — not `ordered` — is what the upload screens iterate.
-	 * A platform the brand has no account for is left out too (accounts.ts):
-	 * with several brands, that is what keeps a post off another brand's
-	 * account.
+	 * The platforms a new upload may target: every one the brand in view is
+	 * offered. `enabled` no longer hides a platform; it only decides whether
+	 * the platform starts ticked on a new upload (`draft.isSelected`), and the
+	 * Details step lists the rest unticked. A platform the brand has no
+	 * account for is left out (accounts.ts): with several brands, that is what
+	 * keeps a post off another brand's account.
 	 */
 	get available(): PlatformSettings[] {
-		return this.ordered.filter((entry) => entry.enabled && accounts.offer(entry.platform).offered);
+		return this.ordered.filter((entry) => accounts.offer(entry.platform).offered);
 	}
 
 	/** Enabled for the brand in view but not offered, for want of an account. */

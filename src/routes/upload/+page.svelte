@@ -60,18 +60,6 @@
 		{ title: 'Review', sub: 'Review exactly what will be published, and when.' }
 	];
 
-	/* ---- the platform switch, centred in the header on the details step ---- */
-
-	let pills = $derived(
-		draft.activePlatforms.map((platform) => ({
-			platform,
-			complete: draft.isComplete(platform)
-		}))
-	);
-	let composing = $derived(
-		draft.composing && draft.activePlatforms.includes(draft.composing) ? draft.composing : null
-	);
-
 	/** Platforms ticked since the upload step whose video slot is still empty. */
 	let missingVideo = $derived(
 		draft.slots.filter((entry) => !draft.slotHasVideo(entry.slot)).flatMap((entry) => entry.platforms)
@@ -155,15 +143,15 @@
 						description: label.description,
 						file,
 						source: nasFile,
-						// One image, sent to each platform it fits; the picker has
-						// already said which it does not.
+						// Each platform's image (one shared, unless unlinked), sent only
+						// where it fits; the picker has already said where it does not.
 						thumbnail:
-							group.platforms.includes('youtube') && imageFits(draft.thumbnail, 'youtube')
-								? draft.thumbnail
+							group.platforms.includes('youtube') && imageFits(draft.imageFor('youtube'), 'youtube')
+								? draft.imageFor('youtube')
 								: null,
 						cover:
-							group.platforms.includes('instagram') && imageFits(draft.thumbnail, 'instagram')
-								? draft.thumbnail
+							group.platforms.includes('instagram') && imageFits(draft.imageFor('instagram'), 'instagram')
+								? draft.imageFor('instagram')
 								: null,
 						duration,
 						destination: general.defaultDestination,
@@ -284,7 +272,8 @@
 						per-platform choices (see draft.followBrand). Hidden with one brand.
 					-->
 					{#if brands.multiple}
-						<div class="brands" role="radiogroup" aria-label="Brand">
+						<div class="brands" role="radiogroup" aria-labelledby="brandlabel">
+							<span class="brandlabel" id="brandlabel">Brand</span>
 							{#each brands.ordered as brand (brand.id)}
 								<button
 									class="brandchip"
@@ -295,43 +284,6 @@
 									onclick={() => brands.select(brand.id)}
 								>
 									{brand.name}
-								</button>
-							{/each}
-						</div>
-					{/if}
-				</div>
-
-				<!--
-					Which platform the details step is composing: icons only, centred in
-					the bar. A check marks one that is ready, a hollow dot one that is not.
-				-->
-				<div class="switch">
-					{#if draft.step === 1 && pills.length > 0}
-						<div class="pills" role="tablist" aria-label="Platform being composed">
-							{#each pills as pill (pill.platform)}
-								<button
-									class="pilltab"
-									class:on={composing === pill.platform}
-									role="tab"
-									aria-selected={composing === pill.platform}
-									aria-label={PLATFORMS[pill.platform].label}
-									title={PLATFORMS[pill.platform].label}
-									onclick={() => (draft.composing = pill.platform)}
-								>
-									<PlatformIcon platform={pill.platform} size={20} />
-									{#if pill.complete}
-										<svg class="mark" viewBox="0 0 24 24" width="11" height="11" fill="none">
-											<path
-												d="M4 12.5 9.5 18 20 6.5"
-												stroke="currentColor"
-												stroke-width="3.2"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-											/>
-										</svg>
-									{:else}
-										<span class="dot" aria-hidden="true"></span>
-									{/if}
 								</button>
 							{/each}
 						</div>
@@ -500,11 +452,11 @@
 		margin: 0;
 	}
 
-	/* Three tracks with equal outer ones, so the platform switch sits at the
-	   true centre of the bar whatever the heading and stepper measure. */
+	/* The heading (and brand) on the left, the stepper on the right. Which
+	   platform is being written is picked in the Details step's own list. */
 	.head {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+		grid-template-columns: minmax(0, 1fr) auto;
 		align-items: end;
 		gap: 30px;
 		margin-bottom: 22px;
@@ -525,8 +477,18 @@
 	.brands {
 		display: flex;
 		flex-wrap: wrap;
+		align-items: center;
 		gap: 6px;
 		margin-top: 12px;
+	}
+
+	.brandlabel {
+		margin-right: 4px;
+		font-size: 11px;
+		font-weight: 650;
+		letter-spacing: 0.09em;
+		text-transform: uppercase;
+		color: var(--text-faint);
 	}
 
 	.brandchip {
@@ -558,60 +520,6 @@
 		align-items: center;
 		justify-content: flex-end;
 		gap: 22px;
-	}
-
-	.switch {
-		align-self: center;
-	}
-
-	.pills {
-		display: flex;
-		gap: 8px;
-	}
-
-	.pilltab {
-		position: relative;
-		width: 44px;
-		height: 38px;
-		display: grid;
-		place-items: center;
-		border-radius: 999px;
-		border: 1px solid var(--border-strong);
-		background: var(--bg-elev);
-		transition: background 0.14s, border-color 0.14s;
-	}
-
-	.pilltab:hover {
-		border-color: var(--pink-soft);
-	}
-
-	.pilltab.on {
-		border-color: var(--pink);
-		background: var(--accent-grad-soft);
-	}
-
-	/* Ready or not, as a badge on the pill's corner. */
-	.mark,
-	.dot {
-		position: absolute;
-		top: -3px;
-		right: -3px;
-	}
-
-	.mark {
-		padding: 2px;
-		box-sizing: content-box;
-		border-radius: 999px;
-		background: var(--surface);
-		color: var(--ok);
-	}
-
-	.dot {
-		width: 7px;
-		height: 7px;
-		border-radius: 999px;
-		border: 1.5px solid var(--text-faint);
-		background: var(--surface);
 	}
 
 	.relink {
@@ -797,9 +705,6 @@
 			grid-template-columns: 1fr;
 			align-items: stretch;
 			gap: 18px;
-		}
-		.switch {
-			justify-self: center;
 		}
 	}
 

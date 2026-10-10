@@ -93,9 +93,22 @@
 	// option), not an image.
 	let mediaActive = $derived(youtubeActive || tiktokActive);
 	let imagePlatforms = $derived(draft.activePlatforms.filter(isImagePlatform));
-	let showImageBox = $derived(
-		imagePlatforms.length > 0 && (composing === 'youtube' || composing === 'instagram')
+	let imageComposing = $derived(composing && isImagePlatform(composing) ? composing : null);
+	let showImageBox = $derived(imagePlatforms.length > 0 && imageComposing !== null);
+	// Linked, one box serves both; unlinked, the box is the platform in view's
+	// own — YouTube's thumbnail or Instagram's cover. The switch shows only
+	// while there are two to link, or while they are apart.
+	let imageBoxPlatforms = $derived(
+		draft.imagesLinked || !imageComposing ? imagePlatforms : [imageComposing]
 	);
+	let imageBoxLabel = $derived(
+		draft.imagesLinked ? 'Thumbnail / Cover' : imageComposing === 'instagram' ? 'Cover' : 'Thumbnail'
+	);
+	let imageBoxFile = $derived(imageComposing ? draft.imageFor(imageComposing) : null);
+	let imageBoxDone = $derived(
+		imageBoxFile !== null && imageBoxPlatforms.every((p) => imageFits(imageBoxFile, p))
+	);
+	let showLinkSwitch = $derived(imagePlatforms.length > 1 || !draft.imagesLinked);
 	// The boxes follow the pill being composed, like the playlist box: the
 	// paid-promotion box shows only for a platform it serves, the TikTok box
 	// only for TikTok. Both still apply to every platform they serve.
@@ -562,10 +575,13 @@
 
 	// One adaptation pass per platform, over that platform's own text, so the
 	// rail can show at a glance what the rules will still do to what was typed.
-	// Only platforms enabled in Settings appear here at all.
+	// Every platform of the brand is listed: one switched off in Settings just
+	// starts unticked, and one the brand has no account for is listed locked.
 	let summaries = $derived(
-		settings.available.map((entry) => {
+		settings.ordered.map((entry) => {
 			const platform = entry.platform;
+			const offered = accounts.offer(platform).offered;
+			const on = offered && draft.isSelected(platform);
 			const own = draft.textFor(platform);
 			const platformDef = PLATFORMS[platform];
 			const result = adapt(own.title, own.description, entry.filters);
@@ -578,11 +594,71 @@
 					result.title.output.length > platformDef.titleLimit ||
 					result.description.output.length > platformDef.descriptionLimit,
 				overridden: Object.keys(draft.overrides[platform] ?? {}).length > 0,
-				needsText: draft.selected[platform] && !draft.isComplete(platform)
+				needsText: on && !draft.isComplete(platform),
+				offered,
+				on
 			};
 		})
 	);
+
+	/**
+	 * Clicking a platform composes it, ticking it first if it was off. The
+	 * tick itself is its own control, so a platform can still be turned off
+	 * without being opened.
+	 */
+	function compose(platform: PlatformId) {
+		if (!draft.isSelected(platform)) draft.select(platform, true);
+		draft.composing = platform;
+	}
+
+	/**
+	 * Whether a platform's mark must keep its colour when its row is off. An
+	 * unticked row goes grey, but YouTube (with the compliance switch on),
+	 * TikTok (its black or white only) and Facebook (its blue or white) forbid
+	 * any other colour — fading white TikTok to grey is a recolour too — so
+	 * their marks stay as they are and only the rest of the row dims.
+	 * Instagram allows any solid colour, grey included.
+	 */
+	function keepsColour(platform: PlatformId): boolean {
+		if (platform === 'youtube') return general.value.complianceBranding;
+		return platform === 'tiktok' || platform === 'facebook';
+	}
 </script>
+
+{#snippet linkSwitch()}
+	<!--
+		One picture for YouTube and Instagram (linked rings), or one each
+		(broken rings) — to try a different thumbnail than cover.
+	-->
+	<button
+		class="linkswitch"
+		class:on={draft.imagesLinked}
+		role="switch"
+		aria-checked={draft.imagesLinked}
+		aria-label="Same image for the YouTube thumbnail and the Instagram cover"
+		title={draft.imagesLinked
+			? 'One image for both. Switch off to give YouTube and Instagram their own.'
+			: 'YouTube and Instagram each get their own image. Switch on to use one for both.'}
+		onclick={() => draft.linkImages(!draft.imagesLinked)}
+	>
+		<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+			{#if draft.imagesLinked}
+				<circle cx="8.6" cy="12" r="5" stroke="currentColor" stroke-width="1.8" />
+				<circle cx="15.4" cy="12" r="5" stroke="currentColor" stroke-width="1.8" />
+			{:else}
+				<circle cx="6.2" cy="12" r="4.2" stroke="currentColor" stroke-width="1.8" />
+				<circle cx="17.8" cy="12" r="4.2" stroke="currentColor" stroke-width="1.8" />
+				<path
+					d="M11 7.6 12 9.6M13 14.4l-1 2M12 4.8v1.6M12 17.6v1.6"
+					stroke="currentColor"
+					stroke-width="1.6"
+					stroke-linecap="round"
+				/>
+			{/if}
+		</svg>
+		<span class="track"><span class="knob"></span></span>
+	</button>
+{/snippet}
 
 {#snippet pencil()}
 	<svg viewBox="0 0 24 24" width="11" height="11" fill="none" aria-hidden="true">
@@ -782,7 +858,7 @@
 					{/if}
 				</div>
 			{:else}
-				<p class="emptypanel">Tick a platform on the right to start composing.</p>
+				<p class="emptypanel">Pick a platform on the right to start writing.</p>
 			{/if}
 		</section>
 
@@ -984,62 +1060,86 @@
 	<div class="side">
 		<aside class="rail card">
 			<header>
-				<h3>Platform Settings</h3>
+				<h3>Platforms</h3>
 				<span class="pill">{draft.activePlatforms.length} of {summaries.length}</span>
 			</header>
 
+			<!--
+				The one place a platform is picked: the row composes it (ticking it
+				if it was off), the tick turns it on or off for this upload, and the
+				gear opens its options for this upload. The row's own button lies
+				under the tick and the gear, so neither nests inside it.
+			-->
 			<ul>
 				{#each summaries as item (item.platform)}
 					<li
-						class:off={!draft.selected[item.platform]}
+						class:off={!item.on}
+						class:locked={!item.offered}
+						class:keep={keepsColour(item.platform)}
 						class:active={composing === item.platform}
+						title={item.offered
+							? ''
+							: `${brands.current?.name ?? 'This brand'} has no ${item.def.label} account chosen`}
 					>
-						<button class="open" onclick={() => openModal(item.platform)}>
-							<span class="ic"><PlatformIcon platform={item.platform} size={19} /></span>
-							<span class="who">
-								<span class="name">{item.def.label}</span>
-								<span class="tags">
-									{#if item.needsText}
-										<span class="tag warn">needs text</span>
-									{/if}
-									{#if item.errors > 0}
-										<span class="tag bad">rule error</span>
-									{:else if item.hits > 0}
-										<span class="tag">{item.hits} adapted</span>
-									{/if}
-									{#if item.overLimit}
-										<span class="tag warn">over limit</span>
-									{/if}
-									{#if item.overridden}
-										<span class="tag alt">custom</span>
-									{/if}
-								</span>
-							</span>
-							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
-								<path
-									d="M9 6l6 6-6 6"
-									stroke="currentColor"
-									stroke-width="1.8"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								/>
-							</svg>
-						</button>
+						<button
+							class="pick"
+							disabled={!item.offered}
+							aria-pressed={composing === item.platform}
+							aria-label="Write for {item.def.label}"
+							onclick={() => compose(item.platform)}
+						></button>
+						<span class="ic"><PlatformIcon platform={item.platform} size={19} /></span>
 						<span class="check">
 							<Checkbox
-								checked={draft.selected[item.platform]}
-								onchange={(next) => (draft.selected[item.platform] = next)}
+								checked={item.on}
+								disabled={!item.offered}
+								onchange={(next) => draft.select(item.platform, next)}
 							/>
 						</span>
+						<span class="who">
+							<span class="name">{item.def.label}</span>
+							<span class="tags">
+								{#if !item.offered}
+									<span class="tag warn">no account</span>
+								{/if}
+								{#if item.needsText}
+									<span class="tag warn">needs text</span>
+								{/if}
+								{#if item.errors > 0}
+									<span class="tag bad">rule error</span>
+								{:else if item.hits > 0}
+									<span class="tag">{item.hits} adapted</span>
+								{/if}
+								{#if item.overLimit}
+									<span class="tag warn">over limit</span>
+								{/if}
+								{#if item.overridden}
+									<span class="tag alt">custom</span>
+								{/if}
+							</span>
+						</span>
+						<button
+							class="gear"
+							disabled={!item.offered}
+							onclick={() => openModal(item.platform)}
+							aria-label="{item.def.label} options for this upload"
+							title="{item.def.label} options for this upload"
+						>
+							<svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+								<path
+									d="M10.3 3.6a1.7 1.7 0 0 1 3.4 0 1.7 1.7 0 0 0 2.6 1.1 1.7 1.7 0 0 1 2.4 2.4 1.7 1.7 0 0 0 1.1 2.6 1.7 1.7 0 0 1 0 3.4 1.7 1.7 0 0 0-1.1 2.6 1.7 1.7 0 0 1-2.4 2.4 1.7 1.7 0 0 0-2.6 1.1 1.7 1.7 0 0 1-3.4 0 1.7 1.7 0 0 0-2.6-1.1 1.7 1.7 0 0 1-2.4-2.4 1.7 1.7 0 0 0-1.1-2.6 1.7 1.7 0 0 1 0-3.4 1.7 1.7 0 0 0 1.1-2.6 1.7 1.7 0 0 1 2.4-2.4 1.7 1.7 0 0 0 2.6-1.1Z"
+									stroke="currentColor"
+									stroke-width="1.6"
+									stroke-linejoin="round"
+								/>
+								<circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.6" />
+							</svg>
+						</button>
 					</li>
 				{/each}
 			</ul>
 
-			{#if summaries.length === 0}
-				<p class="warnbox">
-					No platforms are enabled. Turn one on in <a href="{base}/settings">Settings</a>.
-				</p>
-			{:else if draft.activePlatforms.length === 0}
+			{#if draft.activePlatforms.length === 0}
 				<p class="warnbox">Select at least one platform to continue.</p>
 			{:else if draft.incompletePlatforms.length > 0}
 				<div class="warnbox still">
@@ -1210,14 +1310,21 @@
 		{/if}
 
 		{#if showImageBox}
-			<FoldBox
-				label="Thumbnail / Cover"
-				platforms={imagePlatforms}
-				done={imagePlatforms.every((p) => imageFits(draft.thumbnail, p))}
-				summary={draft.thumbnail?.name ?? ''}
-			>
-				<ThumbnailPicker platforms={imagePlatforms} bind:file={draft.thumbnail} />
-			</FoldBox>
+			{#key imageBoxLabel}
+				<FoldBox
+					label={imageBoxLabel}
+					platforms={imageBoxPlatforms}
+					done={imageBoxDone}
+					summary={imageBoxFile?.name ?? ''}
+					action={showLinkSwitch ? linkSwitch : undefined}
+				>
+					{#if draft.imagesLinked || imageComposing === 'youtube'}
+						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.thumbnail} />
+					{:else}
+						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.cover} />
+					{/if}
+				</FoldBox>
+			{/key}
 		{/if}
 	</div>
 	</div>
@@ -1874,42 +1981,148 @@
 		gap: 7px;
 	}
 
-	li {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		padding: 4px 10px 4px 4px;
-		border-radius: var(--radius);
-		background: var(--bg-elev);
-		border: 1px solid var(--border);
-		transition: border-color 0.16s, opacity 0.16s, background 0.16s;
-	}
-
-	li:hover {
-		border-color: var(--border-strong);
-	}
-
-	li.off {
-		opacity: 0.42;
-	}
-
-	li.active {
-		border-color: var(--pink);
-	}
-
-	.open {
-		flex: 1;
-		min-width: 0;
+	/* Icon, tick, name, gear. The row's own button (.pick) is stretched
+	   underneath; the spans let clicks through to it, while the tick and the
+	   gear sit above it as controls of their own. */
+	.rail li {
+		position: relative;
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		padding: 8px 4px 8px 7px;
-		color: var(--text-dim);
-		text-align: left;
+		padding: 8px 6px 8px 8px;
+		border-radius: var(--radius);
+		background: var(--bg-elev);
+		border: 1px solid var(--border);
+		transition: border-color 0.16s, background 0.16s;
 	}
 
-	.open:hover {
-		color: var(--text);
+	.rail li:hover:not(.locked) {
+		border-color: var(--border-strong);
+	}
+
+	.rail li.active {
+		border-color: var(--pink);
+		background: var(--accent-grad-soft);
+	}
+
+	.pick {
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		cursor: pointer;
+	}
+
+	.pick:disabled {
+		cursor: not-allowed;
+	}
+
+	.pick:focus-visible {
+		outline: 2px solid var(--pink-soft);
+		outline-offset: 1px;
+	}
+
+	.rail li .ic,
+	.rail li .who {
+		pointer-events: none;
+	}
+
+	.rail li .check,
+	.gear {
+		position: relative;
+		z-index: 1;
+	}
+
+	/* Off for this upload: the row dims, and the mark goes grey where its
+	   brand allows that (see keepsColour) — elsewhere it keeps its colour. */
+	.rail li.off .who,
+	.rail li.off .gear {
+		opacity: 0.45;
+	}
+
+	.rail li.off .check {
+		opacity: 0.75;
+	}
+
+	.rail li.off .ic {
+		background: transparent;
+	}
+
+	.rail li.off:not(.keep) .ic :global(svg) {
+		filter: grayscale(1);
+		opacity: 0.5;
+	}
+
+	.rail li.locked .who {
+		opacity: 0.6;
+	}
+
+	.gear {
+		flex: none;
+		width: 30px;
+		height: 30px;
+		display: grid;
+		place-items: center;
+		border-radius: 8px;
+		color: var(--text-faint);
+		transition: background 0.14s, color 0.14s;
+	}
+
+	.gear:hover:not(:disabled) {
+		background: var(--surface-3);
+		color: var(--pink);
+	}
+
+	.gear:disabled {
+		opacity: 0.3;
+		cursor: not-allowed;
+	}
+
+	/* Linked rings or broken ones, then the switch itself. */
+	.linkswitch {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		padding: 2px 0;
+		color: var(--text-faint);
+	}
+
+	.linkswitch.on {
+		color: var(--pink-soft);
+	}
+
+	.track {
+		position: relative;
+		width: 30px;
+		height: 17px;
+		border-radius: 999px;
+		background: var(--surface-3);
+		border: 1px solid var(--border-strong);
+		transition: background 0.16s, border-color 0.16s;
+	}
+
+	.knob {
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		width: 11px;
+		height: 11px;
+		border-radius: 999px;
+		background: var(--text-dim);
+		transition: transform 0.16s, background 0.16s;
+	}
+
+	.linkswitch.on .track {
+		background: var(--accent-grad);
+		border-color: transparent;
+	}
+
+	.linkswitch.on .knob {
+		transform: translateX(13px);
+		background: #fff;
+	}
+
+	.linkswitch:hover .track {
+		border-color: var(--pink-soft);
 	}
 
 	.ic {
@@ -1978,11 +2191,6 @@
 		border: 1px solid rgba(251, 191, 36, 0.3);
 		color: var(--warn);
 		font-size: 11.5px;
-	}
-
-	.warnbox a {
-		color: inherit;
-		font-weight: 600;
 	}
 
 	/* Which platforms are outstanding, as icons pushed to the right edge. */
@@ -2182,6 +2390,8 @@
 		.aside {
 			grid-template-columns: 1fr;
 			position: static;
+			/* The platform list picks what is written, so it comes first. */
+			order: -1;
 		}
 	}
 </style>
