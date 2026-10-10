@@ -378,6 +378,12 @@ missing — and the worker publishes each post through exactly the account it
 was made for, or refuses it. So one brand's post can never go out on another
 brand's account.
 
+Instagram allows 100 posts through its API in any 24 hours, per account. The
+count used so far shows beside each brand's Instagram account in Settings →
+Brands and on the Review step's Instagram row, which warns when a post due
+within the day would find the allowance used up. The worker reads the count
+every half hour and right after each post.
+
 **Upload** is a four-step flow: Upload, Details, Schedule, Review. flock opens
 on Analytics; Upload lives at `/upload`. The first step takes the video: drop
 one on the picker on the left, or drag one from the *Locally* or *On the NAS*

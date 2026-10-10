@@ -71,6 +71,51 @@ export function implicitChoices(
 	return out;
 }
 
+/**
+ * How many posts an account may still publish, as the worker last read it.
+ * Only Instagram reports this: 100 posts through the API in any rolling 24
+ * hours (`content_publishing_limit`). TikTok and YouTube report no count, so
+ * they have none here rather than a guess.
+ */
+export interface Allowance {
+	used: number;
+	total: number;
+	left: number;
+	/** When the worker read it; up to half an hour old, fresher after a post. */
+	fetchedAt: string;
+}
+
+export function postAllowance(account: Account | null | undefined): Allowance | null {
+	const d = account?.details;
+	const used = d?.quotaUsed;
+	const total = d?.quotaTotal;
+	if (typeof used !== 'number' || typeof total !== 'number' || !(total > 0)) return null;
+	return {
+		used,
+		total,
+		left: Math.max(0, total - used),
+		fetchedAt: typeof d?.fetchedAt === 'string' ? d.fetchedAt : (account?.fetched_at ?? '')
+	};
+}
+
+/** "3 of 100 posts in 24 h". */
+export function allowanceLabel(allowance: Allowance): string {
+	return `${allowance.used} of ${allowance.total} posts in 24 h`;
+}
+
+const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * Why a post may be refused for the allowance, or ''. Only when it is used
+ * up and the post goes out within a day: the window rolls, so by a slot a
+ * day or more away today's posts no longer count.
+ */
+export function allowanceWarning(allowance: Allowance | null, dueAt: number, now = Date.now()): string {
+	if (!allowance || allowance.left > 0) return '';
+	if (dueAt - now >= DAY_MS) return '';
+	return `All ${allowance.total} posts of the last 24 hours are used; Instagram refuses this one unless some age out by its time.`;
+}
+
 /** "@handle" when there is one (YouTube's already carries the @), else the name, else the id. */
 export function accountLabel(account: Account): string {
 	if (account.handle) return account.handle.startsWith('@') ? account.handle : `@${account.handle}`;

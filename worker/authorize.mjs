@@ -572,7 +572,7 @@ async function instagram(config) {
 			const info = await accountInfo({ ...account, apiVersion: ig.apiVersion });
 			console.log(
 				`  @${info.username} through the Page "${account.pageName}"` +
-					(info.quotaTotal ? ` — ${info.quotaUsed} of ${info.quotaTotal} posts used today` : '') +
+					(info.quotaTotal ? ` — ${info.quotaUsed} of ${info.quotaTotal} posts used in 24 hours` : '') +
 					(fresh ? '' : '   (kept from before)')
 			);
 		} catch (err) {

@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { accountFor, accountLabel, implicitChoices, offerFor } from './accounts';
+import {
+	accountFor,
+	accountLabel,
+	allowanceLabel,
+	allowanceWarning,
+	implicitChoices,
+	offerFor,
+	postAllowance
+} from './accounts';
 import type { Account, Brand, PlatformId } from './types';
 
 const account = (platform: PlatformId, id: string, handle = ''): Account => ({
@@ -80,6 +88,45 @@ describe('implicitChoices', () => {
 
 	it('leaves a platform with several accounts unchosen', () => {
 		expect(implicitChoices(brand(), [igA, igB], ['instagram'])).toEqual({});
+	});
+});
+
+describe('postAllowance', () => {
+	const withQuota = (details: Account['details']): Account => ({ ...igA, details });
+
+	it('reads what the worker stored', () => {
+		const allowance = postAllowance(
+			withQuota({ quotaUsed: 3, quotaTotal: 100, fetchedAt: '2026-10-10T20:00:00Z' })
+		);
+		expect(allowance).toEqual({ used: 3, total: 100, left: 97, fetchedAt: '2026-10-10T20:00:00Z' });
+		expect(allowanceLabel(allowance!)).toBe('3 of 100 posts in 24 h');
+	});
+
+	it('has none when the worker could not read it, or for a platform that reports none', () => {
+		expect(postAllowance(withQuota({ quotaUsed: null, quotaTotal: null }))).toBeNull();
+		expect(postAllowance(withQuota({ quotaUsed: 0, quotaTotal: 0 }))).toBeNull();
+		expect(postAllowance(yt)).toBeNull();
+		expect(postAllowance(null)).toBeNull();
+	});
+
+	it('never counts below nothing left', () => {
+		expect(postAllowance(withQuota({ quotaUsed: 104, quotaTotal: 100 }))?.left).toBe(0);
+	});
+});
+
+describe('allowanceWarning', () => {
+	const now = Date.parse('2026-10-10T20:00:00Z');
+	const full = { used: 100, total: 100, left: 0, fetchedAt: '' };
+
+	it('warns for a post within a day once the allowance is used up', () => {
+		expect(allowanceWarning(full, now + 60 * 60_000, now)).toMatch(/All 100 posts/);
+		expect(allowanceWarning(full, now - 60_000, now)).toMatch(/All 100 posts/);
+	});
+
+	it('stays quiet with posts left, or for a post a day or more away', () => {
+		expect(allowanceWarning({ ...full, used: 99, left: 1 }, now, now)).toBe('');
+		expect(allowanceWarning(full, now + 24 * 60 * 60_000, now)).toBe('');
+		expect(allowanceWarning(null, now, now)).toBe('');
 	});
 });
 

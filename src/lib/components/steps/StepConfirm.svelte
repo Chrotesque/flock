@@ -8,10 +8,10 @@
 	import { general } from '$lib/stores/general.svelte';
 	import { formatSchedule, formatBytes, formatDuration, firstLine } from '$lib/format';
 	import { portal } from '$lib/portal';
-	import { loadPreviewServer } from '$lib/repo';
+	import { loadPreviewServer, toInstant } from '$lib/repo';
 	import { previewCheckUrl, previewVideoUrl, previewProblem, type PreviewSource } from '$lib/preview';
 	import { accounts } from '$lib/stores/accounts.svelte';
-	import { accountLabel } from '$lib/accounts';
+	import { accountLabel, allowanceLabel, allowanceWarning, postAllowance, type Allowance } from '$lib/accounts';
 	import { imageFits, isImagePlatform } from '$lib/coverimage';
 	import {
 		tiktokProblems,
@@ -33,9 +33,10 @@
 	 * ask for the creator's display name wherever a post is confirmed;
 	 * Instagram's account is shown for the same reason. Absent until the
 	 * worker has run with that platform set up, in which case nothing is shown
-	 * rather than a guess.
+	 * rather than a guess. Re-read on every visit, so Instagram's post count
+	 * is as fresh as the worker's last read.
 	 */
-	accounts.load();
+	accounts.load(true);
 
 	function accountFor(platform: PlatformId): string {
 		if (platform === 'tiktok' && accounts.tiktok) {
@@ -47,6 +48,21 @@
 		const account = accounts.for(platform);
 		if (account) return account.name || accountLabel(account);
 		return '';
+	}
+
+	/** When the row goes out, for the allowance check: now, for an immediate post. */
+	function dueAt(row: PlanRow): number {
+		return row.immediate ? Date.now() : Date.parse(toInstant(row.date, row.time));
+	}
+
+	/** Where the count comes from and how old it is, for the tooltip. */
+	function allowanceHint(allowance: Allowance): string {
+		const read = allowance.fetchedAt ? new Date(allowance.fetchedAt) : null;
+		const when =
+			read && !Number.isNaN(read.getTime())
+				? ` As the worker read it at ${read.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`
+				: '';
+		return `Instagram allows ${allowance.total} posts through its API in any 24 hours; ${allowance.left} left.${when}`;
 	}
 
 	/**
@@ -376,6 +392,8 @@
 			{@const visibility = visibilityWarning(row)}
 			{@const issues = tiktokIssues(row)}
 			{@const account = accountFor(row.platform)}
+			{@const allowance = postAllowance(accounts.for(row.platform))}
+			{@const overAllowance = allowanceWarning(allowance, dueAt(row))}
 			{@const disclosure = row.platform === 'tiktok' ? readDisclosure(row.options) : null}
 			<li class="card" class:flagged={row.overLimit || row.errors > 0}>
 				<span class="ic"><PlatformIcon platform={row.platform} size={20} /></span>
@@ -412,6 +430,20 @@
 							Visibility: {visibility}
 						</p>
 					{/if}
+					{#if overAllowance}
+						<p class="warnline">
+							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+								<path
+									d="M12 3.5 21 19.5H3L12 3.5Z"
+									stroke="currentColor"
+									stroke-width="1.8"
+									stroke-linejoin="round"
+								/>
+								<path d="M12 10v4M12 16.4v.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+							</svg>
+							{overAllowance}
+						</p>
+					{/if}
 					{#each issues as issue (issue)}
 						<p class="warnline">
 							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
@@ -440,6 +472,9 @@
 						{/if}
 						{#if account}
 							<span class="dot">·</span>as {account}
+						{/if}
+						{#if allowance}
+							<span class="dot">·</span><span title={allowanceHint(allowance)}>{allowanceLabel(allowance)}</span>
 						{/if}
 						{#if row.platform === 'youtube' && row.options.playlist}
 							<span class="dot">·</span>playlist: {row.options.playlist}

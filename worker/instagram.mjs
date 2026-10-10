@@ -408,10 +408,14 @@ async function publishContainer(ig, id) {
 	let last;
 	for (let attempt = 1; attempt <= 6; attempt++) {
 		try {
-			return await graph(ig, `/${ig.igUserId}/media_publish`, {
+			const published = await graph(ig, `/${ig.igUserId}/media_publish`, {
 				method: 'POST',
 				params: { creation_id: id }
 			});
+			// The allowance just moved: re-read the accounts on the next tick
+			// rather than show the old count for half an hour.
+			accountsAt = 0;
+			return published;
 		} catch (err) {
 			last = err;
 			const notReady =

@@ -4,7 +4,7 @@
 	import { templates } from '$lib/stores/templates.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
 	import { brandNameProblem } from '$lib/brands';
-	import { accountLabel, implicitChoices } from '$lib/accounts';
+	import { accountFor, accountLabel, implicitChoices, postAllowance } from '$lib/accounts';
 	import { PLATFORMS, PLATFORM_IDS } from '$lib/platforms';
 	import PlatformIcon from './PlatformIcon.svelte';
 	import type { Brand, PlatformId } from '$lib/types';
@@ -210,6 +210,7 @@
 							{@const chosen = brand.accounts[platform] ?? ''}
 							{@const list = accounts.forPlatform(platform)}
 							{@const gone = chosen && !list.some((a) => a.account_id === chosen)}
+							{@const allowance = postAllowance(accountFor(brand, platform, accounts.list, brands.list.length))}
 							<label class="acct" class:unset={!chosen} class:gone>
 								<PlatformIcon {platform} size={14} />
 								<select
@@ -231,6 +232,14 @@
 										</option>
 									{/each}
 								</select>
+								{#if allowance}
+									<span
+										class="quota"
+										class:full={allowance.left === 0}
+										title="Posts in the last 24 hours, of the {allowance.total} Instagram allows through its API"
+										>{allowance.used}/{allowance.total}</span
+									>
+								{/if}
 							</label>
 						{/each}
 					</div>
@@ -394,6 +403,18 @@
 		font-size: 11.5px;
 		min-width: 0;
 		max-width: 220px;
+	}
+
+	.quota {
+		padding-right: 4px;
+		font-size: 11px;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-faint);
+	}
+
+	.quota.full {
+		color: var(--warn);
+		font-weight: 650;
 	}
 
 	.acct.unset {
