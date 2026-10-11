@@ -1,6 +1,6 @@
-// Scanning the watch folder and publishing what is in it.
+// Scanning the watch folders.
 //
-// The compose screen needs to list videos sitting on the NAS, and a browser
+// The compose screen needs to list videos sitting in them, and a browser
 // cannot read a filesystem. Rather than standing up a second service for the
 // SPA to call — with its own URL, port and CORS — the worker writes the listing
 // into PocketBase, which the SPA already talks to. It is stale by up to one
@@ -13,7 +13,7 @@ import { resolveFolder, triedAs } from './paths.mjs';
 // Matches what the browser picker accepts, minus the ones nothing here can
 // realistically publish. Keeping it to a list stops stray .part files, sidecar
 // subtitles and Windows thumbnail junk showing up as choosable videos.
-const VIDEO_EXTENSIONS = new Set([
+export const VIDEO_EXTENSIONS = new Set([
 	'.mp4',
 	'.mov',
 	'.m4v',
@@ -28,11 +28,22 @@ const VIDEO_EXTENSIONS = new Set([
 ]);
 
 /**
+ * A path under a folder, in the form the folder was typed in Settings. A UNC
+ * folder joins with backslashes on any machine — the NAS worker reads it as
+ * /mnt/user/… but names it as typed — and anything else as this machine
+ * joins paths.
+ */
+export function typedJoin(typed, ...parts) {
+	const base = String(typed).trim().replace(/[\\/]+$/, '');
+	return /^\\\\/.test(base) ? [base, ...parts].join('\\') : join(base, ...parts);
+}
+
+/**
  * The videos in one folder, newest first, or the reason it could not be read.
  * `label` names the folder in errors, since the resolved path may not be what
  * the user typed.
  */
-async function scanFolder(folder, label) {
+export async function scanFolder(folder, label) {
 	const out = { folder, files: [] };
 
 	let entries;
@@ -74,43 +85,39 @@ async function scanFolder(folder, label) {
 }
 
 /**
- * The watch folder's videos, each `path` in the form the folder was typed in
- * Settings — not the form that resolved here. A NAS worker reads the folder
- * as /mnt/user/... and a PC worker as \\nas\..., and both publish this
- * listing, so naming files by the typed form is what keeps a job's
- * `source_path` the same whichever wrote it; `resolveFolder` translates it
- * back on whichever machine opens it. `folder` stays the resolved one.
+ * Every folder of one kind pooled into one listing, newest first. Each file's
+ * `path` is in the form its folder was typed — not the form that resolved
+ * here: a NAS worker reads a share as /mnt/user/... and a PC worker as
+ * \\nas\..., and both may publish this listing, so naming files the typed way
+ * is what keeps a job's `source_path` the same whichever wrote it;
+ * `resolveFolder` translates it back where it is opened. `opened` is the path
+ * that works here, for the preview server — strip it before publishing. A
+ * folder listed twice, or two sharing a file, never offer it twice.
  */
-export async function scanWatchFolder(configured) {
-	const folder = await resolveFolder(configured);
-	if (!folder) return null;
-	const tried = folder === configured.trim() ? triedAs(configured) : '';
-	const scan = await scanFolder(folder, `the watch folder ${configured}${tried}`);
-	const typed = configured.trim();
-	if (folder !== typed && /^\\\\/.test(typed)) {
-		const base = typed.replace(/\\+$/, '');
-		scan.files = scan.files.map((file) => ({ ...file, path: `${base}\\${file.name}` }));
-	}
-	return { ...scan, scannedAt: new Date().toISOString() };
-}
-
-/**
- * Every local folder pooled into one list, newest first. A folder listed twice,
- * or two folders sharing a file, never offer the same file twice.
- */
-export async function scanLocalFolders(configured) {
+export async function scanFolders(configured) {
 	const folders = [];
 	const files = new Map();
 	for (const entry of configured) {
 		const typed = (entry || '').trim();
 		if (!typed) continue;
-		const scan = await scanFolder(await resolveFolder(typed), typed);
+		const resolved = await resolveFolder(typed);
+		const tried = resolved === typed ? triedAs(typed) : '';
+		const scan = await scanFolder(resolved, `${typed}${tried}`);
 		folders.push(scan.error ? { folder: typed, error: scan.error } : { folder: typed });
-		for (const file of scan.files) files.set(file.path, file);
+		for (const file of scan.files) {
+			const path = typedJoin(typed, file.name);
+			files.set(path.toLowerCase(), { ...file, path, opened: file.path });
+		}
 	}
 	return {
 		scannedAt: new Date().toISOString(),
 		folders,
 		files: [...files.values()].sort((a, b) => b.modified.localeCompare(a.modified))
 	};
+}
+
+/** A listed file as the page gets it: without the path that works here. */
+export function published(file) {
+	const { opened: _opened, ...rest } = file;
+	return rest;
 }

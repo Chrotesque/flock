@@ -5,10 +5,10 @@
 	import { PLATFORMS } from '$lib/platforms';
 	import type { PlatformId } from '$lib/types';
 
-	// What a pasted flock block filled, in the corner of every page. A clean
-	// fill closes itself; anything that needs reading — a note, a failed or
-	// still-coming thumbnail, a block that could not be used — stays until
-	// closed.
+	// What a pasted flock block filled — or a project opened — in the corner
+	// of every page. A clean fill closes itself; anything that needs reading
+	// — a note, a failed or still-coming thumbnail, a block that could not be
+	// used — stays until closed.
 	let notice = $derived(paste.notice);
 	let clean = $derived(
 		Boolean(notice) &&
@@ -32,7 +32,7 @@
 {#if notice}
 	<aside class="notice" class:bad={Boolean(notice.error)} role="status" aria-live="polite">
 		<header>
-			<strong>{notice.error ? 'Nothing pasted' : 'Filled from paste'}</strong>
+			<strong>{notice.title || (notice.error ? 'Nothing pasted' : 'Filled from paste')}</strong>
 			{#if notice.brand}<span class="brand">for {notice.brand}</span>{/if}
 			<button class="close" onclick={() => paste.dismiss()} aria-label="Close">
 				<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">

@@ -7,7 +7,7 @@
 	import StepConfirm from '$lib/components/steps/StepConfirm.svelte';
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
 	import PlatformSwitch from '$lib/components/PlatformSwitch.svelte';
-	import { draft, type Step, type VideoSlot } from '$lib/stores/draft.svelte';
+	import { draft, type Step } from '$lib/stores/draft.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
@@ -20,6 +20,8 @@
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { PLATFORMS } from '$lib/platforms';
 	import { paste } from '$lib/stores/paste.svelte';
+	import { projects } from '$lib/stores/projects.svelte';
+	import { onDestroy } from 'svelte';
 
 	settings.load();
 	general.load();
@@ -90,12 +92,6 @@
 					: true
 	);
 
-	/**
-	 * Slots already written by an earlier press that failed part-way. Confirming
-	 * again sends only the rest, so a failure on the second video never queues
-	 * the first one twice. Cleared by starting over.
-	 */
-	let queued = $state<VideoSlot[]>([]);
 	/** The video being sent right now, for the progress line. */
 	let sending = $state<{ name: string; size: number; transfer: boolean; local: boolean } | null>(
 		null
@@ -123,10 +119,11 @@
 				video: draft.videos[entry.slot],
 				rows: plan.filter((row) => entry.platforms.includes(row.platform))
 			}))
-			.filter((group) => group.rows.length > 0 && !queued.includes(group.slot));
+			.filter((group) => group.rows.length > 0 && !draft.queued.includes(group.slot));
 		// Progress is by bytes actually transferred; a watch-folder pick sends none.
 		const total = groups.reduce((sum, g) => sum + (g.video.file?.size ?? 0), 0);
 		let sent = 0;
+		const jobs: string[] = [];
 
 		try {
 			for (const group of groups) {
@@ -139,7 +136,7 @@
 					transfer: Boolean(file),
 					local: Boolean(nasFile?.local)
 				};
-				await createJob(
+				const job = await createJob(
 					{
 						title: label.title,
 						description: label.description,
@@ -172,7 +169,8 @@
 					(fraction) => (progress = total > 0 ? (sent + fraction * size) / total : fraction)
 				);
 				sent += size;
-				queued = [...queued, group.slot];
+				jobs.push(job.id);
+				draft.queued = [...draft.queued, group.slot];
 				// So the file lists stop offering it; see loadUsedSources.
 				rememberUsedSources([
 					file
@@ -199,8 +197,11 @@
 				)
 			);
 			phase = 'done';
+			// Off the sidebar: a project is done once all of it is queued.
+			if (draft.project) void projects.markUploaded(draft.project, jobs);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
+			const queued = draft.queued;
 			failure =
 				queued.length > 0
 					? `${message} — ${queued.length} video${queued.length === 1 ? ' is' : 's are'} already queued; confirming again sends only the rest.`
@@ -211,8 +212,8 @@
 	}
 
 	function startOver() {
+		paste.cancel();
 		draft.reset();
-		queued = [];
 		phase = 'idle';
 		disarm();
 		progress = 0;
@@ -236,7 +237,7 @@
 				paste.refuse('An upload is being sent. Paste again once it has finished.');
 				return;
 			}
-			if (queued.length > 0 && phase !== 'done') {
+			if (draft.queued.length > 0 && phase !== 'done') {
 				paste.refuse('Part of this upload is already queued. Confirm the rest or start over, then paste again.');
 				return;
 			}
@@ -248,6 +249,50 @@
 			void paste.apply(block);
 		});
 	});
+
+	/**
+	 * A project picked in the sidebar, handed over like a paste: refused while
+	 * an upload is being sent, after a finished one a new upload starts, and
+	 * otherwise it replaces the draft (the sidebar asked first when that
+	 * would lose an upload belonging to no project).
+	 */
+	$effect(() => {
+		if (!projects.pending) return;
+		untrack(() => {
+			const id = projects.take();
+			if (!id) return;
+			if (phase === 'uploading') {
+				paste.refuse('An upload is being sent. Open the project once it has finished.');
+				return;
+			}
+			if (draft.project === id && phase !== 'done') return;
+			if (phase === 'done') startOver();
+			if (phase === 'error') {
+				phase = 'idle';
+				failure = '';
+			}
+			void projects.enter(id);
+		});
+	});
+
+	/**
+	 * Every change to a project's draft goes onto its row (projects store),
+	 * so it can be picked up again after a restart. The snapshot reads every
+	 * field it keeps, which is what makes them all dependencies; the save is
+	 * read through untrack and writes nothing here.
+	 */
+	$effect(() => {
+		const id = draft.project;
+		if (!id || phase === 'done') return;
+		const snapshot = draft.projectSnapshot();
+		JSON.stringify(snapshot);
+		const images = { thumbnail: draft.thumbnail, cover: draft.cover };
+		untrack(() => projects.queueSave(id, snapshot, images));
+	});
+
+	onDestroy(() => void projects.flush());
+
+	let project = $derived(projects.byId(draft.project));
 </script>
 
 <div class="page">
@@ -270,7 +315,7 @@
 					<p class="forbrand">For {brands.current.name}</p>
 				{/if}
 				<p>
-					{queued.length === 1 ? 'The video is' : `${queued.length} videos are`} stored and {plan.length}
+					{draft.queued.length === 1 ? 'The video is' : `${draft.queued.length} videos are`} stored and {plan.length}
 					{plan.length === 1 ? 'release is' : 'releases are'} queued. You can close this machine down —
 					publishing happens from the NAS at each scheduled time.
 				</p>
@@ -299,6 +344,12 @@
 				<div class="titling">
 					<h1>{HEADINGS[draft.step].title}</h1>
 					<p>{HEADINGS[draft.step].sub}</p>
+					{#if project}
+						<p class="projectline">
+							Project <strong>{project.name}</strong>
+							<span class="saved">· {projects.saveError ? `not saved: ${projects.saveError}` : 'kept as you go'}</span>
+						</p>
+					{/if}
 					<!--
 						Which brand this upload is for, on every step so it is never in
 						doubt. Switching keeps the video and the text and drops the
@@ -517,6 +568,20 @@
 		margin: 5px 0 0;
 		font-size: 13px;
 		color: var(--text-dim);
+	}
+
+	.titling .projectline {
+		margin-top: 8px;
+		font-size: 12.5px;
+	}
+
+	.projectline strong {
+		color: var(--text);
+		font-weight: 600;
+	}
+
+	.saved {
+		color: var(--text-faint);
 	}
 
 	.brands {

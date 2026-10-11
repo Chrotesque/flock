@@ -102,29 +102,40 @@ not do this for you.
 few hundred megabytes — but it is one HTTP request with no resume, and PocketBase
 caps a stored file at 5 GB.
 
-**Or drop it on the NAS.** Set a *watch folder* in Settings, copy videos into it
-over SMB, and the Upload step lists what is there. Picking one references the
-file where it lies rather than transferring it, so nothing goes through the
-browser and the 5 GB cap does not apply. This is the only route for a large
-video, and the transfer is a normal file copy you can resume or retry.
+**Or point flock at a folder.** Add *watch folders* in Settings — *Choose
+folder…* opens the Windows folder dialog on the PC the worker runs on, *Type a
+path* takes a network folder such as `\\nas\videos\incoming`. Their videos are
+pooled into one *Watch folders* list on the Upload step. A folder on the
+network (*LAN*: a `\\server\share` path) is referenced where it lies, so
+nothing goes through the browser and the 5 GB cap does not apply — the only
+route for a large video. A folder on the PC (*local*: a drive path) is copied
+by the worker into a LAN watch folder on confirm, and published from that
+copy; with several LAN folders, a radio button in Settings picks which one.
+The original always stays where it was.
 
-**Or leave it where it is on this PC.** Add any number of *local watch folders*
-in Settings — *Add folder…* opens the Windows folder dialog on the PC the worker
-runs on, so the worker has to be running; their videos are pooled into one *Locally* list above the NAS one. On
-confirm, the worker copies the chosen file into the NAS watch folder and
-publishes from that copy, so it needs a watch folder set and has to run on this
-PC (it does today). The original stays where it was.
-
-Both listings come from the worker, which scans the folders each time it polls —
+The listings come from the worker, which scans the folders each time it polls —
 so nothing appears until the worker has run at least once, and the Upload step
 shows when it last looked. A file that has gone out in an upload before is
-hidden from both lists from then on; *Show N uploaded before* under a list
+hidden from the list from then on; *Show N uploaded before* under the list
 brings those back.
 
-Right-click a file in either list to play it in the page. The worker streams it
+**Or keep each video in a project folder.** Add *project folders* in Settings
+the same way: folders that hold one subfolder per video project. A subfolder
+is ignored until a `flock.json` file appears in it (a flock block, see
+*Pasting a prepared upload* below). Then it is listed in the sidebar under
+**New projects**; clicking it opens Upload filled from that file, with the
+subfolder's videos listed in a *Project Folder* box above the watch folders
+(a folder holding a single video has it picked already). Everything done to
+that upload is kept on the project as you go, so clicking it again — after a
+restart, or on another computer — picks it up where it was left; TikTok's
+audience and interaction choices and paid promotion are chosen again then.
+Once the upload is confirmed the project leaves the list. *Take it off the
+list*, in the Project Folder box, drops one that will not be uploaded.
+
+Right-click a file in any list to play it in the page.Right-click a file in either list to play it in the page. The worker streams it
 from the PC it runs on (port 8790, reachable from that PC only), so previews
 work while the worker is running and in a browser on the same PC. The Review
-step plays a file picked from either list the same way.
+step plays a file picked from any list the same way.
 
 ## The worker
 
@@ -134,8 +145,8 @@ on your PC, your NAS or both (see *One worker or two* below). It handles YouTube
 set up separately below, and a platform that is not set up simply leaves its
 releases waiting in the queue, with a note in the worker's log.
 
-It also scans the watch folder and the local folders, copies local picks into
-the watch folder, and copies finished videos into their NAS destination, both of which happen regardless of which platforms a job is bound
+It also scans the watch folders and project folders, copies local picks into
+a LAN watch folder, and copies finished videos into their NAS destination, both of which happen regardless of which platforms a job is bound
 for.
 
 **vidIQ title scoring** runs through the worker too, because vidIQ has no REST
@@ -246,17 +257,19 @@ the flock icon in the notification area — double-click to open flock,
 right-click to open the log or stop the worker — and
 `flock-worker-background.exe --stop` stops it too. Both keep everything they print
 in `flock-worker.log` beside themselves, and only one polling worker of a
-role runs on a machine — starting a second does nothing. Local watch folders
-are paths on the machine the worker runs on, so set them again in Settings
-after moving it, and run only one worker at a time — unless you split them as
-below.
+role runs on a machine — starting a second does nothing. Local watch and
+project folders are paths on the machine the worker runs on, so set them again
+in Settings after moving it, and run only one worker at a time — unless you
+split them as below. A single worker (`all`) with no LAN watch folder publishes
+a local pick from where it lies instead of copying it.
 
 **One worker or two.** With no NAS, run one worker on your PC and leave
 `"role"` in its config at `"all"` (the default): it does everything. With a
 NAS or any other machine that stays on, you can run two: one there with
 `"role": "nas"` (publishing, filing videos into their destinations, stats,
-title scoring) and one on the PC with `"role": "local"` (local watch
-folders, the folder dialog, video previews, a pasted block's thumbnail).
+title scoring, LAN watch and project folders) and one on the PC with
+`"role": "local"` (local watch and project folders, the folder dialog, video
+previews, a pasted block's thumbnail).
 `FLOCK_WORKER_ROLE` sets the role too. The PC worker needs nothing but
 `pocketbaseUrl` and `"role": "local"` in its config — no client secrets or
 tokens — and then leaves publishing to the NAS worker entirely. Given the
@@ -277,7 +290,7 @@ container from `node:24-alpine` with:
 - that folder mounted at `/config`, and the command `node /config/flock-worker.cjs`;
 - `FLOCK_WORKER_ROLE=nas`, and `FLOCK_PB_URL` set to an address of
   PocketBase the container can reach (a LAN address is safest);
-- each share holding the watch folder or a destination mounted at
+- each share holding a LAN watch or project folder or a destination mounted at
   `/mnt/user/<share name>`: the worker turns a folder typed in Settings as
   `\\server\share\folder` into `/mnt/user/share/folder`, matching the case of
   what it finds there. That is Unraid's own layout, so on Unraid mount
@@ -548,6 +561,12 @@ promotion are never filled: those are chosen by hand on every post.
 }
 ```
 
+The same block saved as `flock.json` in a project folder's subfolder makes
+that subfolder a project (see *Or keep each video in a project folder*). There
+a `thumbnail` without a drive or share — `"thumb.png"` — means the file next
+to `flock.json`. If `flock.json` changes after the upload was opened, the
+Project Folder box offers to fill from it again.
+
 **Calendar** shows every release ever scheduled on a week grid. Things already
 released — or whose slot has passed — are greyed out, and there is a toggle to hide
 them. It opens read-only; press *Edit* twice within two seconds to unlock it, then
@@ -583,8 +602,8 @@ brand once there is more than one.
 **Settings** shows flock's version beside its title, and comes in two halves.
 *General* is shared by every brand: *Storage
 and defaults* holds the NAS folders a finished video is copied into (the filled
-circle marks the default), the NAS watch folder, the local watch folders listed
-under *Locally*, and this browser's device name; *Brands* adds, renames, orders
+circle marks the default), the watch folders, the project folders, and this
+browser's device name; *Brands* adds, renames, orders
 and deletes brands and chooses each brand's account per platform (deleting one
 removes its settings and templates, while its uploads stay and anything queued
 still goes out); *Other* holds the compliance

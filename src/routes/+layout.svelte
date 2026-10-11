@@ -9,6 +9,10 @@
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
 	import PasteNotice from '$lib/components/PasteNotice.svelte';
 	import { paste } from '$lib/stores/paste.svelte';
+	import { projects } from '$lib/stores/projects.svelte';
+	import { draft } from '$lib/stores/draft.svelte';
+	import { projectState } from '$lib/projects';
+	import { folderName } from '$lib/folders';
 	import { readFlockPaste } from '$lib/flockpaste';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -17,8 +21,35 @@
 	onMount(() => {
 		void general.load();
 		workers.start();
-		return videoTodo.start();
+		const stopProjects = projects.start();
+		const stopTodo = videoTodo.start();
+		return () => {
+			stopProjects();
+			stopTodo();
+		};
 	});
+
+	/**
+	 * A project in the sidebar opens on the Upload page, which takes it from
+	 * the store. An upload open there that belongs to no project would be
+	 * replaced and lost, so that takes a second press within two seconds;
+	 * a project's own upload is kept on its row and needs none.
+	 */
+	let armedProject = $state<string | null>(null);
+	let projectTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function openProject(id: string) {
+		const replaces = draft.project !== id && !draft.project && draft.hasContent;
+		if (replaces && armedProject !== id) {
+			armedProject = id;
+			if (projectTimer) clearTimeout(projectTimer);
+			projectTimer = setTimeout(() => (armedProject = null), 2000);
+			return;
+		}
+		armedProject = null;
+		projects.offer(id);
+		if (!isActive('/upload')) void goto(`${base}/upload`);
+	}
 
 	/**
 	 * Ctrl+V anywhere: a flock block (flockpaste.ts) fills the upload, and
@@ -127,6 +158,33 @@
 				</a>
 			{/each}
 		</nav>
+
+		<!-- Project folders that hold a flock JSON file and have not been sent
+		     yet, right under Upload: one press opens the upload, filled from
+		     the file the first time and as it was left after that. -->
+		{#if projects.listed.length > 0}
+			<section class="projects" aria-label="New projects">
+				<p class="todohead">New projects <span class="count">{projects.listed.length}</span></p>
+				<ul>
+					{#each projects.listed as row (row.id)}
+						{@const started = projectState(row) === 'started'}
+						<li class:current={draft.project === row.id}>
+							<button
+								class="ptitle"
+								class:armed={armedProject === row.id}
+								title={armedProject === row.id
+									? 'Press again: the upload open now belongs to no project and would be replaced'
+									: `${row.name} — in ${folderName(row.root)}${started ? ', started' : ''}`}
+								onclick={() => openProject(row.id)}
+							>
+								{armedProject === row.id ? 'Press again to replace' : row.name}
+							</button>
+							<span class="pbadge" class:new={!started}>{started ? 'Started' : 'New'}</span>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
 
 		<!-- Videos with something left to do by hand — set in Studio, linked on
 		     Jestr — centred in the free stretch between the main links and the
@@ -360,6 +418,86 @@
 
 	.todo + .lower {
 		margin-top: 0;
+	}
+
+	/* Right under the main links: these are things to start, not to finish. */
+	.projects {
+		padding-top: 18px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		min-height: 0;
+	}
+
+	.projects ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 2px;
+		max-height: 26vh;
+		overflow-y: auto;
+		overflow-x: hidden;
+	}
+
+	.projects li {
+		display: flex;
+		align-items: center;
+		min-width: 0;
+		gap: 6px;
+		padding: 2px 6px 2px 0;
+		border-radius: 8px;
+	}
+
+	.projects li:hover {
+		background: var(--surface-2);
+	}
+
+	.projects li.current {
+		background: var(--accent-grad-soft);
+		box-shadow: inset 0 0 0 1px rgba(255, 77, 158, 0.25);
+	}
+
+	.ptitle {
+		flex: 1;
+		min-width: 0;
+		padding: 5px 0 5px 11px;
+		text-align: left;
+		font: inherit;
+		font-size: 12px;
+		line-height: 1.3;
+		color: var(--text-dim);
+		background: none;
+		border: none;
+		cursor: pointer;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.ptitle:hover,
+	.projects li.current .ptitle {
+		color: var(--text);
+	}
+
+	.ptitle.armed {
+		color: var(--warn);
+	}
+
+	.pbadge {
+		flex: none;
+		padding: 1px 7px;
+		border-radius: 999px;
+		font-size: 10px;
+		font-weight: 600;
+		background: var(--surface-2);
+		color: var(--text-faint);
+	}
+
+	.pbadge.new {
+		background: var(--accent-grad-soft);
+		color: var(--pink-soft);
 	}
 
 	.todo {
@@ -719,7 +857,8 @@
 			gap: 12px;
 		}
 		/* A list does not fit a one-row bar; the wide layout shows it. */
-		.todo {
+		.todo,
+		.projects {
 			display: none;
 		}
 		.doing {

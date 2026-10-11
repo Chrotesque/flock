@@ -2,16 +2,33 @@ import { newId } from '../id';
 import { getSetting, setSetting } from '../repo';
 import { logAction } from '../log';
 import { settle, LOG_SETTLE_MS } from '../settle';
-import type { GeneralSettings, LocalFolder, NasDestination } from '../types';
+import type { GeneralSettings, NasDestination, WatchFolder } from '../types';
 import type { TimeZoneChoice } from '../timezones';
+import {
+	folderKind,
+	importFolder,
+	legacyWatchKeys,
+	migrateWatchFolders,
+	readFolders,
+	sameFolder
+} from '../folders';
+
+/** The two folder lists, which share their rows' shape and their methods. */
+export type FolderListKey = 'watchFolders' | 'projectFolders';
+
+const FOLDER_WORDS: Record<FolderListKey, string> = {
+	watchFolders: 'watch folder',
+	projectFolders: 'project folder'
+};
 
 export const GENERAL_KEY = 'general';
 
 export const DEFAULT_GENERAL: GeneralSettings = {
 	destinations: [],
 	defaultDestinationId: null,
-	watchFolder: '',
-	localFolders: [],
+	watchFolders: [],
+	importFolderId: null,
+	projectFolders: [],
 	complianceBranding: true,
 	jestrIntegration: false,
 	timeZones: []
@@ -49,12 +66,11 @@ class GeneralStore {
 			this.value = {
 				destinations: Array.isArray(stored.destinations) ? stored.destinations : [],
 				defaultDestinationId: stored.defaultDestinationId ?? null,
-				watchFolder: stored.watchFolder ?? '',
-				localFolders: Array.isArray(stored.localFolders)
-					? stored.localFolders.filter(
-							(f): f is LocalFolder => Boolean(f) && typeof f.id === 'string' && typeof f.path === 'string'
-						)
-					: [],
+				// One list since the NAS watch folder and the local ones merged;
+				// a row from before is read into it (folders.ts).
+				watchFolders: migrateWatchFolders(stored as Record<string, unknown>, newId),
+				importFolderId: typeof stored.importFolderId === 'string' ? stored.importFolderId : null,
+				projectFolders: readFolders(stored.projectFolders),
 				complianceBranding: stored.complianceBranding ?? true,
 				jestrIntegration: stored.jestrIntegration === true,
 				timeZones: Array.isArray(stored.timeZones) ? stored.timeZones : []
@@ -133,29 +149,12 @@ class GeneralStore {
 			logAction('settings', `Turned the Jestr integration ${after.jestrIntegration ? 'on' : 'off'}`);
 		}
 
-		if (before.watchFolder !== after.watchFolder) {
-			logAction(
-				'settings',
-				'Changed the watch folder',
-				`${before.watchFolder || '(none)'} → ${after.watchFolder || '(none)'}`
-			);
-		}
+		for (const key of ['watchFolders', 'projectFolders'] as const) this.#logFolders(key, before, after);
 
-		// A new row starts blank, so like a destination it is only "added" once
-		// it has a path.
-		const foldersWere = new Map(before.localFolders.map((f) => [f.id, f.path.trim()]));
-		for (const folder of after.localFolders) {
-			const path = folder.path.trim();
-			const old = foldersWere.get(folder.id);
-			if (!old) {
-				if (path) logAction('settings', 'Added a local folder', path);
-			} else if (old !== path) {
-				logAction('settings', 'Changed a local folder', `${old} → ${path || '(empty)'}`);
-			}
-		}
-		const foldersNow = new Set(after.localFolders.map((f) => f.id));
-		for (const [id, path] of foldersWere) {
-			if (!foldersNow.has(id) && path) logAction('settings', 'Removed a local folder', path);
+		const importWas = importFolder(before.watchFolders, before.importFolderId);
+		const importNow = importFolder(after.watchFolders, after.importFolderId);
+		if (importWas && importNow && importWas.id !== importNow.id) {
+			logAction('settings', 'Changed where local videos are copied', `${importWas.path} → ${importNow.path}`);
 		}
 
 		const zonesWere = new Map(before.timeZones.map((z) => [z.id, z]));
@@ -191,10 +190,36 @@ class GeneralStore {
 		}
 	}
 
+	/**
+	 * One entry per folder added, changed or removed. A new row starts blank,
+	 * so like a destination it is only "added" once it has a path.
+	 */
+	#logFolders(key: FolderListKey, before: GeneralSettings, after: GeneralSettings) {
+		const word = FOLDER_WORDS[key];
+		const kind = (path: string) => (folderKind(path) === 'network' ? 'network ' : 'local ');
+		const was = new Map(before[key].map((f) => [f.id, f.path.trim()]));
+		for (const folder of after[key]) {
+			const path = folder.path.trim();
+			const old = was.get(folder.id);
+			if (!old) {
+				if (path) logAction('settings', `Added a ${kind(path)}${word}`, path);
+			} else if (old !== path) {
+				logAction('settings', `Changed a ${word}`, `${old} → ${path || '(empty)'}`);
+			}
+		}
+		const now = new Set(after[key].map((f) => f.id));
+		for (const [id, path] of was) {
+			if (!now.has(id) && path) logAction('settings', `Removed a ${kind(path)}${word}`, path);
+		}
+	}
+
 	async saveNow() {
 		this.saving = true;
 		try {
-			const written = $state.snapshot(this.value);
+			const value = $state.snapshot(this.value) as GeneralSettings;
+			// Plus the two keys a worker from before the merge reads — see
+			// legacyWatchKeys. Load ignores them.
+			const written = { ...value, ...legacyWatchKeys(value.watchFolders, value.importFolderId) };
 			await setSetting(GENERAL_KEY, written);
 			this.error = null;
 		} catch (err) {
@@ -250,32 +275,45 @@ class GeneralStore {
 		this.#queueLog();
 	}
 
-	setWatchFolder(path: string) {
-		this.value.watchFolder = path;
-		this.queueSave();
-		this.#queueLog();
-	}
-
-	/** Adds a chosen folder; one already listed (case-insensitively) is left as it is. */
-	addLocalFolder(path: string) {
+	/**
+	 * Adds a folder; one already in the list (however it is cased) is left as
+	 * it is. An empty path adds a blank row to type a path into; `chosen`
+	 * marks one that came back from the folder dialog.
+	 */
+	addFolder(key: FolderListKey, path = '', chosen = false) {
 		const clean = path.trim();
-		if (!clean) return;
-		if (this.value.localFolders.some((f) => f.path.trim().toLowerCase() === clean.toLowerCase())) return;
-		this.value.localFolders = [...this.value.localFolders, { id: newId(), path: clean }];
+		if (clean && this.value[key].some((f) => sameFolder(f.path, clean))) return;
+		this.value[key] = [...this.value[key], { id: newId(), path: clean, ...(chosen ? { chosen } : {}) }];
 		this.queueSave();
 		this.#queueLog();
 	}
 
-	setLocalFolder(id: string, path: string) {
-		this.value.localFolders = this.value.localFolders.map((f) => (f.id === id ? { ...f, path } : f));
+	/** A typed edit, or with `chosen` the dialog's answer replacing the path. */
+	setFolder(key: FolderListKey, id: string, path: string, chosen?: boolean) {
+		this.value[key] = this.value[key].map((f: WatchFolder) =>
+			f.id === id ? { ...f, path, ...(chosen ? { chosen } : {}) } : f
+		);
 		this.queueSave();
 		this.#queueLog();
 	}
 
-	removeLocalFolder(id: string) {
-		this.value.localFolders = this.value.localFolders.filter((f) => f.id !== id);
+	removeFolder(key: FolderListKey, id: string) {
+		this.value[key] = this.value[key].filter((f: WatchFolder) => f.id !== id);
+		if (key === 'watchFolders' && this.value.importFolderId === id) this.value.importFolderId = null;
 		this.queueSave();
 		this.#queueLog();
+	}
+
+	/** The network watch folder local picks are copied into. */
+	setImportFolder(id: string) {
+		this.value.importFolderId = id;
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	/** Where local picks are copied, or null with no network watch folder. */
+	get importFolder(): WatchFolder | null {
+		return importFolder(this.value.watchFolders, this.value.importFolderId);
 	}
 
 	addTimeZone() {

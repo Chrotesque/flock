@@ -2,6 +2,7 @@ import { PLATFORMS, PLATFORM_IDS } from '../platforms';
 import { isoDate, nextDayMatching } from '../format';
 import { tiktokProblems } from '../tiktok';
 import { PASTE_TAG_BOX, type FlockPaste, type PastedPlatform } from '../flockpaste';
+import { SAVED_VERSION, withoutHandPicked, type SavedDraft } from '../projects';
 import { settings } from './settings.svelte';
 import { accounts } from './accounts.svelte';
 import { DEFAULT_SCHEDULING } from '../types';
@@ -78,6 +79,24 @@ function tomorrow(): Date {
  */
 class DraftStore {
 	step = $state<Step>(0);
+
+	/**
+	 * The `projects` row this upload belongs to, when it was opened from the
+	 * sidebar; everything below is then kept on that row as it changes (see
+	 * stores/projects.svelte.ts). `projectBase` is the project file's
+	 * `manifest_modified` when its text went in, so a newer file can be
+	 * offered again.
+	 */
+	project = $state<string | null>(null);
+	projectBase = $state('');
+
+	/**
+	 * Slots already written by a confirm that failed part-way. Confirming
+	 * again sends only the rest, so a failure on the second video never
+	 * queues the first one twice. Kept on a project row too, so a resume
+	 * after a restart does not either.
+	 */
+	queued = $state<VideoSlot[]>([]);
 
 	/**
 	 * Text composed per platform. There is no shared title/description pair:
@@ -422,8 +441,90 @@ class DraftStore {
 		if (named.length > 0) this.composing = named[0][0];
 	}
 
-	/** The brand the per-platform choices above were made for. */
-	#brand = '';
+	/**
+	 * The brand the per-platform choices above were made for. State, so a
+	 * project's saved draft follows a brand switch that changed nothing else.
+	 */
+	#brand = $state('');
+
+	/** Anything typed or picked that starting over would lose. */
+	get hasContent(): boolean {
+		return (
+			Object.values(this.texts).some((t) => Boolean(t && (t.title.trim() || t.description.trim()))) ||
+			Object.values(this.videos).some((v) => Boolean(v.file || v.nasFile)) ||
+			Boolean(this.thumbnail || this.cover)
+		);
+	}
+
+	/**
+	 * The draft as a project row keeps it (projects.ts). Reads every field
+	 * it saves, so an effect that serialises this re-runs on any change.
+	 * Videos chosen in the browser have no path to keep, and TikTok's
+	 * hand-picked choices are left out on purpose (HAND_PICKED).
+	 */
+	projectSnapshot(): SavedDraft {
+		const { overrides, dropped } = withoutHandPicked(this.overrides);
+		const videos: SavedDraft['videos'] = {};
+		for (const [slot, video] of Object.entries(this.videos) as [VideoSlot, SlotVideo][]) {
+			if (video.nasFile) videos[slot] = video.nasFile;
+		}
+		return {
+			v: SAVED_VERSION,
+			base: this.projectBase,
+			brand: this.#brand,
+			step: this.step,
+			composing: this.composing,
+			texts: this.texts,
+			selected: this.selected,
+			overrides,
+			schedule: this.schedule,
+			immediate: this.immediate,
+			profile: this.profile,
+			split: this.split,
+			videos,
+			imagesLinked: this.imagesLinked,
+			thumbnailName: this.thumbnail?.name ?? '',
+			coverName: this.cover?.name ?? '',
+			queued: this.queued,
+			repick: dropped
+		};
+	}
+
+	/**
+	 * Puts a saved draft back, on a draft just reset. The brand is the
+	 * caller's to select and `followBrand` first, as for a paste; the images
+	 * come from the row's files. The step is the one it was left on, or the
+	 * furthest one before it that can still be reached — a choice left out of
+	 * the save (TikTok's) sends it back to Details.
+	 */
+	restoreSaved(saved: SavedDraft) {
+		this.texts = saved.texts;
+		this.selected = saved.selected;
+		this.overrides = saved.overrides;
+		this.schedule = saved.schedule;
+		this.immediate = saved.immediate;
+		this.profile = saved.profile;
+		this.split = saved.split;
+		saveSplit(saved.split);
+		const videos = emptyVideos();
+		for (const [slot, file] of Object.entries(saved.videos) as [VideoSlot, WatchFile][]) {
+			videos[slot].nasFile = file;
+		}
+		this.videos = videos;
+		this.imagesLinked = saved.imagesLinked;
+		this.queued = saved.queued;
+		this.composing = saved.composing;
+		this.projectBase = saved.base;
+		this.step = this.reachable(saved.step);
+	}
+
+	/** The furthest step up to `wanted` whose way in is open. */
+	reachable(wanted: Step): Step {
+		if (wanted >= 1 && !this.canLeaveUpload) return 0;
+		if (wanted >= 2 && !(this.canLeaveDetails && this.hasVideo)) return 1;
+		if (wanted >= 3 && !(this.scheduleComplete && this.pastPlatforms.length === 0)) return 2;
+		return wanted;
+	}
 
 	/**
 	 * Called with the brand in view whenever it may have changed. Switching
@@ -445,6 +546,9 @@ class DraftStore {
 
 	reset() {
 		this.step = 0;
+		this.project = null;
+		this.projectBase = '';
+		this.queued = [];
 		this.texts = {};
 		this.composing = null;
 		// The split is kept on purpose — it is the arrangement, not this video.

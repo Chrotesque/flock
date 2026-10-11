@@ -227,17 +227,18 @@ export interface GeneralSettings {
 	destinations: NasDestination[];
 	defaultDestinationId: string | null;
 	/**
-	 * Folder on the NAS that videos can be dropped into instead of uploaded
-	 * through the browser. The worker scans it and publishes the listing; the
-	 * SPA cannot read a filesystem itself.
+	 * Folders the worker lists videos from, one list whatever machine they are
+	 * on (see folders.ts): a network path is read where it lies, a path on the
+	 * PC is copied into a network folder — `importFolderId`, else the first
+	 * network one — before anything publishes.
 	 */
-	watchFolder: string;
+	watchFolders: WatchFolder[];
+	importFolderId: string | null;
 	/**
-	 * Folders on the worker's own machine (today the dev PC) whose videos are
-	 * listed under "Locally", all pooled into one list. A pick from one is
-	 * copied into the NAS watch folder by the worker before anything publishes.
+	 * Parents of project folders: each subfolder holding a flock JSON file is
+	 * a project, listed in the sidebar with its videos on the upload step.
 	 */
-	localFolders: LocalFolder[];
+	projectFolders: WatchFolder[];
 	/**
 	 * Renders YouTube's brand features the way its API branding guidelines
 	 * require: the official mark in official colours, and a clickable logo
@@ -263,9 +264,14 @@ export interface GeneralSettings {
 	timeZones: TimeZoneChoice[];
 }
 
-export interface LocalFolder {
+export interface WatchFolder {
 	id: string;
 	path: string;
+	/**
+	 * Picked in the worker's folder dialog rather than typed: shown as it
+	 * came back, and changed only through the dialog again.
+	 */
+	chosen?: boolean;
 }
 
 /** One video sitting in the watch folder, as the worker last saw it. */
@@ -288,29 +294,54 @@ export interface WatchFile {
 }
 
 /**
- * The worker's listing of the watch folder, written to `app_settings` under
- * `watch_index`.
+ * The worker's listing of the watch folders of one kind, pooled: the network
+ * ones in `app_settings` / `watch_index` (written by the worker that
+ * publishes) and the PC's in `local_index` (by the `local` one).
  *
  * A cache rather than a setting, which is a small abuse of that collection —
  * but it means the SPA needs no second service to talk to, no CORS and no extra
  * URL to configure. The worker already polls; it writes this on the way past.
  */
 export interface WatchIndex {
-	folder: string;
-	scannedAt: string;
-	files: WatchFile[];
-	error?: string;
-}
-
-/**
- * The worker's listing of every local folder, pooled, written to
- * `app_settings` under `local_index` — the same arrangement as the watch index.
- */
-export interface LocalIndex {
 	scannedAt: string;
 	/** One entry per configured folder, with the reason it could not be read. */
 	folders: { folder: string; error?: string }[];
 	files: WatchFile[];
+	/** The project folders of the same kind, and how many projects each holds. */
+	projectRoots?: { folder: string; error?: string; count?: number }[];
+}
+
+/** The same shape; kept as a name for the PC's half. */
+export type LocalIndex = WatchIndex;
+
+/**
+ * One project folder, as the worker found it and the compose screen left it
+ * (`projects`). The worker writes the first half on every change; the page
+ * writes `status`, `draft`, the two images and `done_at`, and nothing else.
+ */
+export interface ProjectRow {
+	id: string;
+	key: string;
+	path: string;
+	name: string;
+	root: string;
+	/** On the PC: a picked video is copied to the NAS first. */
+	local: boolean;
+	/** The flock JSON file's text, read raw; flockpaste.ts reads it. */
+	manifest: string;
+	manifest_name: string;
+	manifest_modified: string;
+	videos: WatchFile[] | null;
+	/** The JSON file or the folder has gone since; hidden from the sidebar. */
+	missing: boolean;
+	error: string;
+	status: '' | 'started' | 'uploaded' | 'dismissed';
+	draft: unknown;
+	thumbnail: string;
+	cover: string;
+	done_at: string;
+	created: string;
+	updated: string;
 }
 
 /**

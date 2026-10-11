@@ -6,6 +6,9 @@
 	import { PLATFORMS } from '$lib/platforms';
 	import { draft, type VideoSlot } from '$lib/stores/draft.svelte';
 	import { general } from '$lib/stores/general.svelte';
+	import { projects } from '$lib/stores/projects.svelte';
+	import { workers } from '$lib/stores/workers.svelte';
+	import { paste } from '$lib/stores/paste.svelte';
 	import {
 		loadWatchIndex,
 		loadLocalIndex,
@@ -14,7 +17,9 @@
 		type UsedIndex
 	} from '$lib/repo';
 	import { formatBytes } from '$lib/format';
-	import type { LocalIndex, PlatformId, WatchFile, WatchIndex } from '$lib/types';
+	import { folderKind, folderName, parentName } from '$lib/folders';
+	import { readVideos } from '$lib/projects';
+	import type { PlatformId, WatchFile, WatchIndex } from '$lib/types';
 
 	general.load();
 
@@ -39,7 +44,7 @@
 
 	/* ---- dragging a listed file onto a video box ----
 	 *
-	 * The two file lists are drag sources, not pickers: a file is dragged onto
+	 * The file lists are drag sources, not pickers: a file is dragged onto
 	 * the box it belongs in. The payload names the list and the file's path
 	 * under a type of flock's own, so a drag from anywhere else is never
 	 * mistaken for one. An OS file dropped on a box is still the VideoPicker's
@@ -49,7 +54,7 @@
 
 	const DRAG_TYPE = 'application/x-flock-nas';
 
-	type Source = 'nas' | 'local';
+	type Source = 'watch' | 'project';
 
 	/** The slot a drag is currently over, for the highlight. */
 	let over = $state<VideoSlot | null>(null);
@@ -89,9 +94,9 @@
 			} catch {
 				return;
 			}
-			const list = drag.source === 'local' ? localIndex?.files : watchIndex?.files;
-			const entry = list?.find((file) => file.path === drag.path);
-			if (entry) draft.chooseNasFile(slot, drag.source === 'local' ? { ...entry, local: true } : entry);
+			const list = drag.source === 'project' ? projectVideos : pooled;
+			const entry = list.find((file) => file.path === drag.path);
+			if (entry && usable(entry)) draft.chooseNasFile(slot, entry);
 			return;
 		}
 		if (!draft.videos[slot].nasFile) return;
@@ -101,25 +106,28 @@
 		draft.chooseFile(slot, file);
 	}
 
-	/* ---- the two listings ----
+	/* ---- the watch folders ----
 	 *
-	 * The browser cannot read a filesystem, so both come from the worker by
-	 * way of PocketBase: the NAS watch folder, and the local folders pooled
-	 * into one list. Each is as fresh as the worker's last poll, which is why
-	 * the scan time is shown rather than implied.
+	 * One list in Settings, two listings here: the browser cannot read a
+	 * filesystem, so both come from the workers by way of PocketBase — the
+	 * LAN folders from the one that publishes, the local ones from the PC's.
+	 * They are pooled into one list, newest first. Each is as fresh as its
+	 * worker's last poll, which is why the scan time is shown, not implied.
 	 */
 
 	let watchIndex = $state<WatchIndex | null>(null);
-	let localIndex = $state<LocalIndex | null>(null);
+	let localIndex = $state<WatchIndex | null>(null);
 	let loading = $state(false);
 
-	let hasLocal = $derived(general.value.localFolders.some((f) => f.path.trim()));
+	let configured = $derived(general.value.watchFolders.map((f) => f.path.trim()).filter(Boolean));
+	let hasNetwork = $derived(configured.some((p) => folderKind(p) === 'network'));
+	let hasLocal = $derived(configured.some((p) => folderKind(p) === 'local'));
 
 	async function refresh() {
 		loading = true;
 		try {
 			const [watch, local, gone] = await Promise.all([
-				general.value.watchFolder ? loadWatchIndex() : Promise.resolve(null),
+				hasNetwork ? loadWatchIndex() : Promise.resolve(null),
 				hasLocal ? loadLocalIndex() : Promise.resolve(null),
 				loadUsedSources()
 			]);
@@ -127,19 +135,77 @@
 			localIndex = local;
 			used = gone;
 		} catch {
-			// Each box says what it is missing.
+			// The box says what it is missing.
 		} finally {
 			loading = false;
 		}
 	}
 
-	// Depends on the configured folders only: setting one in Settings should
+	// Depends on the configured folders only: changing one in Settings should
 	// make its list appear without a reload, and nothing here writes those.
 	$effect(() => {
-		void general.value.watchFolder;
-		void hasLocal;
+		void configured.join('|');
 		void refresh();
 	});
+
+	/** Both listings as one, newest first; a local file says so, for the copy it needs. */
+	let pooled = $derived(
+		[
+			...(watchIndex?.files ?? []),
+			...(localIndex?.files ?? []).map((file) => ({ ...file, local: true }))
+		].sort((a, b) => (b.modified ?? '').localeCompare(a.modified ?? ''))
+	);
+
+	let folderErrors = $derived(
+		[...(watchIndex?.folders ?? []), ...(localIndex?.folders ?? [])].filter((f) => f.error)
+	);
+
+	/**
+	 * A local file is copied onto the network before it publishes, so it needs
+	 * a LAN watch folder to go into — unless a single `all` worker both lists
+	 * and publishes, which uses it where it lies.
+	 */
+	let canImport = $derived(Boolean(general.importFolder) || workers.view.dots.some((d) => d.role === 'all'));
+
+	function usable(file: WatchFile): boolean {
+		return !file.local || canImport;
+	}
+
+	/* ---- the project open in this upload ----
+	 *
+	 * Its folder's videos, listed by the worker on the project row. A local
+	 * project's videos are copied onto the network like any local pick.
+	 */
+
+	let project = $derived(projects.byId(draft.project));
+	let projectVideos = $derived(
+		readVideos(project?.videos).map((file) => (project?.local ? { ...file, local: true } : file))
+	);
+	let fileChanged = $derived(
+		Boolean(project && draft.projectBase && project.manifest_modified && project.manifest_modified !== draft.projectBase)
+	);
+
+	let dismissArmed = $state(false);
+	let dismissTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/** Two presses within two seconds, as everywhere a click cannot be undone. */
+	async function dismiss() {
+		if (!project) return;
+		if (!dismissArmed) {
+			dismissArmed = true;
+			dismissTimer = setTimeout(() => (dismissArmed = false), 2000);
+			return;
+		}
+		if (dismissTimer) clearTimeout(dismissTimer);
+		dismissArmed = false;
+		try {
+			await projects.dismiss(project.id);
+			paste.cancel();
+			draft.reset();
+		} catch (err) {
+			paste.refuse(err instanceof Error ? err.message : String(err));
+		}
+	}
 
 	function scannedAgo(iso: string | undefined): string {
 		if (!iso) return 'never';
@@ -166,18 +232,18 @@
 	 */
 
 	let used = $state<UsedIndex>({ paths: new Set(), keys: new Set() });
-	let showUsed = $state<Record<Source, boolean>>({ nas: false, local: false });
+	let showUsed = $state(false);
 
-	function listing(files: WatchFile[], source: Source) {
+	function listing(files: WatchFile[], hide: boolean) {
 		const gone = files.filter((file) => isUsed(used, file));
-		const shown = showUsed[source]
-			? files
-			: files.filter((file) => !isUsed(used, file) || usedBy(file.path).length > 0);
-		return { shown, hidden: gone.length };
+		const shown =
+			showUsed || !hide ? files : files.filter((file) => !isUsed(used, file) || usedBy(file.path).length > 0);
+		return { shown, hidden: hide ? gone.length : 0 };
 	}
 
-	let nasList = $derived(listing(watchIndex?.files ?? [], 'nas'));
-	let localList = $derived(listing(localIndex?.files ?? [], 'local'));
+	let watchList = $derived(listing(pooled, true));
+	// A project's own videos are all shown: it is the place to find them.
+	let projectList = $derived(listing(projectVideos, false));
 
 	/* ---- playing a listed file ----
 	 *
@@ -186,12 +252,12 @@
 	 * readable from a browser, so the worker streams it — see VideoPreview.
 	 */
 
-	let playing = $state<{ file: WatchFile; source: Source } | null>(null);
+	let playing = $state<WatchFile | null>(null);
 	let playerOpen = $state(false);
 
-	function play(event: MouseEvent, source: Source, file: WatchFile) {
+	function play(event: MouseEvent, file: WatchFile) {
 		event.preventDefault();
-		playing = { file, source };
+		playing = file;
 		playerOpen = true;
 	}
 </script>
@@ -288,98 +354,122 @@
 	</div>
 
 	<div class="right">
-		<section class="card files">
-			<header class="nashead">
-				<span class="label">Locally</span>
-				<span class="for">drag onto a video box, right-click to play</span>
-			</header>
-
-			{#if !hasLocal}
-				<p class="nasnote">
-					No local folders set — add some in <a href="{base}/settings">Settings</a> to list the
-					videos on this PC here.
+		{#if project}
+			<section class="card files project">
+				<header class="nashead">
+					<span class="label">Project Folder · <span class="pname">{project.name}</span></span>
+					<span class="for">drag onto a video box, right-click to play</span>
+				</header>
+				<p class="nasnote faint" title={project.path}>
+					In {folderName(project.root)} · {project.manifest_name || 'flock JSON'} · {project.local ? 'local' : 'LAN'}
 				</p>
-			{:else if loading && !localIndex}
-				<p class="nasnote">Looking…</p>
-			{:else if !localIndex}
-				<p class="nasnote">The worker has not scanned the local folders yet.</p>
-			{:else}
-				{#each localIndex.folders.filter((f) => f.error) as folder (folder.folder)}
-					<p class="nasnote bad">{folder.error}</p>
-				{/each}
-				{#if !general.value.watchFolder}
-					<p class="nasnote bad">
-						Local videos are copied into the NAS watch folder, and none is set — add one in
-						<a href="{base}/settings">Settings</a> to use these.
+
+				{#if fileChanged}
+					<p class="nasnote warn">
+						{project.manifest_name || 'The project file'} has changed since this upload was filled from it.
+						<button class="relink" onclick={() => projects.refill()}>Fill from it again</button>
 					</p>
 				{/if}
-				{@render fileList(localList, 'local', Boolean(general.value.watchFolder))}
-				{#if localIndex.files.length === 0}
-					<p class="nasnote">Nothing in the local folders right now.</p>
+				{#if project.missing}
+					<p class="nasnote bad">The project file is no longer in the folder.</p>
 				{/if}
-				<p class="nasnote faint">
-					Scanned {scannedAgo(localIndex.scannedAt)}.
-					<button class="relink" onclick={refresh}>Refresh</button>
-				</p>
-			{/if}
-		</section>
+				{#if project.error}
+					<p class="nasnote bad">{project.error}</p>
+				{/if}
+				{#if project.local && projectVideos.length > 0 && !canImport}
+					<p class="nasnote bad">
+						These are on the PC, and are copied into a LAN watch folder before publishing — add one in
+						<a href="{base}/settings">Settings</a> to use them.
+					</p>
+				{/if}
+
+				{@render fileList(projectList, 'project')}
+				{#if projectVideos.length === 0}
+					<p class="nasnote">No videos in this folder yet — the worker lists them as they arrive.</p>
+				{/if}
+
+				<button class="relink toggle drop" class:armed={dismissArmed} onclick={dismiss}>
+					{dismissArmed ? 'Press again to take it off the list' : 'Not uploading this one? Take it off the list'}
+				</button>
+			</section>
+		{/if}
 
 		<section class="card files">
 			<header class="nashead">
-				<span class="label">On the NAS</span>
+				<span class="label">Watch folders</span>
 				<span class="for">drag onto a video box, right-click to play</span>
 			</header>
 
-			{#if !general.value.watchFolder}
+			{#if configured.length === 0}
 				<p class="nasnote">
-					No watch folder set — add one in <a href="{base}/settings">Settings</a> to drop videos
-					straight onto the NAS instead of uploading them here.
+					No watch folders set — add some in <a href="{base}/settings">Settings</a> to list videos on
+					the NAS or on this PC here.
 				</p>
-			{:else if loading && !watchIndex}
+			{:else if loading && !watchIndex && !localIndex}
 				<p class="nasnote">Looking…</p>
-			{:else if !watchIndex}
-				<p class="nasnote">
-					The worker has not scanned <code>{general.value.watchFolder}</code> yet.
-				</p>
-			{:else if watchIndex.error}
-				<p class="nasnote bad">{watchIndex.error}</p>
 			{:else}
-				{@render fileList(nasList, 'nas', true)}
-				{#if watchIndex.files.length === 0}
-					<p class="nasnote">Nothing in <code>{watchIndex.folder}</code> right now.</p>
+				{#if hasNetwork && !watchIndex}
+					<p class="nasnote">The worker has not scanned the LAN folders yet.</p>
 				{/if}
-				<p class="nasnote faint">
-					Scanned {scannedAgo(watchIndex.scannedAt)}.
-					<button class="relink" onclick={refresh}>Refresh</button>
-				</p>
+				{#if hasLocal && !localIndex}
+					<p class="nasnote">The worker on this PC has not scanned the local folders yet.</p>
+				{/if}
+				{#each folderErrors as folder (folder.folder)}
+					<p class="nasnote bad">{folder.error}</p>
+				{/each}
+				{#if pooled.some((file) => file.local) && !canImport}
+					<p class="nasnote bad">
+						Local videos are copied into a LAN watch folder before publishing, and none is set — add one
+						in <a href="{base}/settings">Settings</a> to use them.
+					</p>
+				{/if}
+				{@render fileList(watchList, 'watch')}
+				{#if (watchIndex || localIndex) && pooled.length === 0}
+					<p class="nasnote">Nothing in the watch folders right now.</p>
+				{/if}
+				{#if watchIndex || localIndex}
+					<p class="nasnote faint">
+						{#if watchIndex && localIndex}
+							LAN scanned {scannedAgo(watchIndex.scannedAt)}, local {scannedAgo(localIndex.scannedAt)}.
+						{:else}
+							Scanned {scannedAgo((watchIndex ?? localIndex)?.scannedAt)}.
+						{/if}
+						<button class="relink" onclick={refresh}>Refresh</button>
+					</p>
+				{/if}
 			{/if}
 		</section>
 	</div>
 </div>
 
-<VideoPreview bind:open={playerOpen} file={playing?.file ?? null} source={playing?.source ?? 'nas'} />
+<VideoPreview bind:open={playerOpen} file={playing} source={playing?.local ? 'local' : 'nas'} />
 
-{#snippet fileList(list: { shown: WatchFile[]; hidden: number }, source: Source, usable: boolean)}
+{#snippet fileList(list: { shown: WatchFile[]; hidden: number }, source: Source)}
 	{#if list.shown.length > 0}
 		<ul class="naslist">
 			{#each list.shown as file (file.path)}
 				{@const users = usedBy(file.path)}
 				{@const gone = isUsed(used, file)}
+				{@const ok = usable(file)}
 				<li>
 					<div
 						class="nasitem"
 						class:on={users.length > 0}
 						class:gone
-						class:locked={!usable}
-						draggable={usable}
+						class:locked={!ok}
+						draggable={ok}
 						role="listitem"
-						title={usable ? 'Drag onto a video box, right-click to play' : 'Right-click to play'}
+						title={ok ? 'Drag onto a video box, right-click to play' : 'Right-click to play'}
 						ondragstart={(e) => onDragStart(e, source, file.path)}
-						oncontextmenu={(e) => play(e, source, file)}
+						oncontextmenu={(e) => play(e, file)}
 					>
 						<span class="nasname">{file.name}</span>
 						<span class="nasmeta">
 							{formatBytes(file.size)}
+							{#if source === 'watch' && parentName(file.path)}
+								<span class="where">{parentName(file.path)}</span>
+							{/if}
+							{#if file.local}<span class="tag">local</span>{/if}
 							{#if gone}<span class="tag">uploaded before</span>{/if}
 							{#if users.length > 0}
 								<span class="users">
@@ -397,10 +487,8 @@
 		<p class="nasnote">Everything here has been uploaded before.</p>
 	{/if}
 	{#if list.hidden > 0}
-		<button class="relink toggle" onclick={() => (showUsed[source] = !showUsed[source])}>
-			{showUsed[source]
-				? `Hide ${list.hidden} uploaded before`
-				: `Show ${list.hidden} uploaded before`}
+		<button class="relink toggle" onclick={() => (showUsed = !showUsed)}>
+			{showUsed ? `Hide ${list.hidden} uploaded before` : `Show ${list.hidden} uploaded before`}
 		</button>
 	{/if}
 {/snippet}
@@ -571,15 +659,40 @@
 		color: var(--danger);
 	}
 
+	.nasnote.warn {
+		color: var(--warn);
+	}
+
+	.project {
+		border: 1px solid rgba(255, 77, 158, 0.35);
+	}
+
+	.pname {
+		text-transform: none;
+		letter-spacing: 0;
+		font-size: 12.5px;
+		font-weight: 600;
+		color: var(--text);
+	}
+
+	.drop {
+		color: var(--text-faint);
+	}
+
+	.drop.armed {
+		color: var(--danger);
+	}
+
+	.where {
+		max-width: 18ch;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
 	.nasnote a,
 	.warnbox a {
 		color: var(--pink-soft);
-	}
-
-	.nasnote code {
-		font-family: var(--mono);
-		font-size: 10.5px;
-		overflow-wrap: anywhere;
 	}
 
 	.relink {

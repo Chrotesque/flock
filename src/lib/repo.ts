@@ -20,6 +20,7 @@ import type {
 	PlatformId,
 	WatchIndex,
 	LocalIndex,
+	ProjectRow,
 	PreviewServer,
 	UsedSource,
 	PlaylistIndex,
@@ -524,26 +525,39 @@ export async function createJob(
 }
 
 /**
- * The worker's listing of the watch folder.
+ * The worker's listings of the watch folders: `watch_index` for the network
+ * ones, `local_index` for the PC's.
  *
  * A browser cannot read a filesystem, so this is the only way the compose
  * screen knows what is sitting there. It is written by the worker on each poll
  * pass, which means it is stale by up to that interval — `scannedAt` is shown
  * so an empty list reads as "nothing scanned recently" rather than "no files".
+ * A `watch_index` from a worker older than the merged list names one
+ * `folder`, read here as a list of one.
  */
-export async function loadWatchIndex(): Promise<WatchIndex | null> {
-	const empty: WatchIndex | null = null;
-	const index = await getSetting<WatchIndex | null>('watch_index', empty);
-	if (!index || !Array.isArray(index.files)) return null;
-	return index;
+function readIndex(raw: unknown): WatchIndex | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const index = raw as Partial<WatchIndex> & { folder?: unknown; error?: unknown };
+	if (!Array.isArray(index.files)) return null;
+	const folders = Array.isArray(index.folders)
+		? index.folders.filter((f) => f && typeof f.folder === 'string')
+		: typeof index.folder === 'string'
+			? [{ folder: index.folder, ...(typeof index.error === 'string' ? { error: index.error } : {}) }]
+			: [];
+	return {
+		scannedAt: typeof index.scannedAt === 'string' ? index.scannedAt : '',
+		folders,
+		files: index.files.filter((f) => f && typeof f.path === 'string' && typeof f.name === 'string'),
+		projectRoots: Array.isArray(index.projectRoots) ? index.projectRoots.filter((r) => r && typeof r.folder === 'string') : []
+	};
 }
 
-/** The worker's pooled listing of the local folders; same arrangement as the watch index. */
+export async function loadWatchIndex(): Promise<WatchIndex | null> {
+	return readIndex(await getSetting<unknown>('watch_index', null));
+}
+
 export async function loadLocalIndex(): Promise<LocalIndex | null> {
-	const empty: LocalIndex | null = null;
-	const index = await getSetting<LocalIndex | null>('local_index', empty);
-	if (!index || !Array.isArray(index.files)) return null;
-	return { ...index, folders: Array.isArray(index.folders) ? index.folders : [] };
+	return readIndex(await getSetting<unknown>('local_index', null));
 }
 
 /** Where the worker last said it streams listed videos from, if it ever has. */
@@ -1049,6 +1063,74 @@ export function subscribeWorkerBeats(onBeat: (role: WorkerRole, beat: WorkerBeat
 	});
 	sub.catch(() => {});
 	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
+}
+
+/* ------------------------------------------------------------------ */
+/* projects                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Every project the workers have found, as they last wrote them plus what
+ * this page saved on them. A PocketBase without the collection yet (setup-pb
+ * not run since it arrived) reads as none.
+ */
+export async function loadProjects(): Promise<ProjectRow[]> {
+	try {
+		return await pb.collection('projects').getFullList<ProjectRow>({ sort: 'created' });
+	} catch {
+		return [];
+	}
+}
+
+export async function getProject(id: string): Promise<ProjectRow> {
+	return pb.collection('projects').getOne<ProjectRow>(id);
+}
+
+export function subscribeProjects(onChange: (action: string, row: ProjectRow) => void): () => void {
+	const sub = pb.collection('projects').subscribe<ProjectRow>('*', (e) => onChange(e.action, e.record));
+	sub.catch(() => {});
+	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
+}
+
+/** The page's own fields on a project row: never the worker's. */
+export async function markProject(
+	id: string,
+	patch: { status?: ProjectRow['status']; done_at?: string; jobs?: string[]; draft?: unknown }
+): Promise<void> {
+	assertDeviceNamed();
+	await pb.collection('projects').update(id, patch);
+}
+
+/**
+ * Keeps an upload in progress on its project row. `images` carries only the
+ * images that changed since the last save: a File replaces the stored one,
+ * null removes it.
+ */
+export async function saveProjectDraft(
+	id: string,
+	draft: unknown,
+	images: { thumbnail?: File | null; cover?: File | null }
+): Promise<void> {
+	assertDeviceNamed();
+	const removed = Object.entries(images).filter(([, file]) => file === null);
+	const added = Object.entries(images).filter((entry): entry is [string, File] => entry[1] instanceof File);
+	await pb.collection('projects').update(id, { draft, ...Object.fromEntries(removed) });
+	if (added.length === 0) return;
+	const form = new FormData();
+	for (const [field, file] of added) form.set(field, file);
+	await pb.collection('projects').update(id, form);
+}
+
+/** A stored project image, under the name it was picked with. */
+export async function loadProjectImage(row: ProjectRow, field: 'thumbnail' | 'cover', name: string): Promise<File | null> {
+	const stored = row[field];
+	if (!stored) return null;
+	const res = await fetch(pb.files.getURL(row, stored));
+	if (!res.ok) return null;
+	const blob = await res.blob();
+	const own = name || stored;
+	const ext = own.split('.').pop()?.toLowerCase() ?? '';
+	return new File([blob], own, { type: blob.type || IMAGE_TYPE_BY_EXT[ext] || '' });
 }
 
 export async function deleteJob(id: string): Promise<void> {

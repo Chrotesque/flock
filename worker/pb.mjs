@@ -82,6 +82,28 @@ export function makeClient(baseUrl) {
 		},
 
 		/** The compose screen's asks for an image on this machine, oldest first. */
+		/**
+		 * Every project row, with the worker's half of its fields only — the
+		 * page's draft and images are none of the worker's business.
+		 */
+		async listProjects() {
+			const fields = 'id,key,path,name,root,local,manifest,manifest_name,manifest_modified,videos,missing,error';
+			const out = [];
+			for (let page = 1; ; page++) {
+				const res = await request(`/api/collections/projects/records?perPage=500&page=${page}&fields=${fields}`);
+				out.push(...(res.items ?? []));
+				if (page >= (res.totalPages ?? 1)) return out;
+			}
+		},
+
+		async createProject(data) {
+			return request('/api/collections/projects/records', { method: 'POST', body: JSON.stringify(data) });
+		},
+
+		async updateProject(id, data) {
+			return request(`/api/collections/projects/records/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+		},
+
 		async pendingFileRequests() {
 			const filter = encodeURIComponent('status="pending"');
 			const res = await request(

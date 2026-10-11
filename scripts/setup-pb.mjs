@@ -268,6 +268,51 @@ const collections = [
 		indexes: ['CREATE INDEX `idx_file_requests_status` ON `file_requests` (`status`)']
 	},
 	{
+		// Project folders: a subfolder of a project folder in Settings that
+		// holds a flock JSON file. The worker writes the first half on every
+		// change it finds (worker/projects.mjs); the page writes `status`,
+		// `draft`, the two images, `done_at` and `jobs` — the upload in
+		// progress, kept so it can be picked up again after a restart.
+		name: 'projects',
+		type: 'base',
+		...RULES,
+		fields: [
+			// Lower-cased path: what the unique index compares.
+			{ type: 'text', name: 'key', required: true, max: 1000 },
+			{ type: 'text', name: 'path', required: true, max: 1000 },
+			{ type: 'text', name: 'name', max: 300 },
+			{ type: 'text', name: 'root', max: 1000 },
+			{ type: 'bool', name: 'local' },
+			// The JSON file's text as read, parsed by the page.
+			{ type: 'text', name: 'manifest', max: 100000 },
+			{ type: 'text', name: 'manifest_name', max: 300 },
+			{ type: 'text', name: 'manifest_modified', max: 40 },
+			{ type: 'json', name: 'videos', maxSize: 200000 },
+			{ type: 'bool', name: 'missing' },
+			{ type: 'text', name: 'error', max: 2000 },
+			{ type: 'select', name: 'status', maxSelect: 1, values: ['started', 'uploaded', 'dismissed'] },
+			{ type: 'json', name: 'draft', maxSize: 500000 },
+			{
+				type: 'file',
+				name: 'thumbnail',
+				maxSelect: 1,
+				maxSize: 8388608,
+				mimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+			},
+			{
+				type: 'file',
+				name: 'cover',
+				maxSelect: 1,
+				maxSize: 8388608,
+				mimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+			},
+			{ type: 'date', name: 'done_at' },
+			{ type: 'json', name: 'jobs', maxSize: 20000 },
+			...stamps
+		],
+		indexes: ['CREATE UNIQUE INDEX `idx_projects_key` ON `projects` (`key`)']
+	},
+	{
 		// The newest videos on the channel as the worker last read them, one row
 		// per video and keyed by YouTube's id rather than by anything of flock's:
 		// most of the channel was never published through here. `data` is the

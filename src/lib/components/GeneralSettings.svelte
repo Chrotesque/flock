@@ -1,39 +1,11 @@
 <script lang="ts">
 	import { general } from '$lib/stores/general.svelte';
 	import DeviceInfo from './DeviceInfo.svelte';
-	import { requestFolderPick } from '$lib/repo';
+	import FolderList from './FolderList.svelte';
 
-	// App-wide settings. Anything that is not tied to one platform lands here,
-	// which for now means only where finished videos go on the NAS — release
-	// timing moved to the individual platforms.
+	// App-wide settings. Anything that is not tied to one platform lands here:
+	// where finished videos go on the NAS, and where flock looks for videos.
 	let value = $derived(general.value);
-
-	/*
-	 * Local watch folders are chosen, never typed: the worker opens the Windows
-	 * folder dialog on its own desktop and sends the path back. `picking` is
-	 * 'new' for an addition or the id of the row being changed.
-	 */
-	let picking = $state<string | null>(null);
-	let pickNote = $state('');
-
-	async function choose(replacing?: string) {
-		picking = replacing ?? 'new';
-		pickNote = '';
-		try {
-			const path = await requestFolderPick({
-				onWaiting: () =>
-					(pickNote = 'Waiting for the worker to open the dialog — is it running on this PC?')
-			});
-			pickNote = '';
-			if (!path) return;
-			if (replacing) general.setLocalFolder(replacing, path);
-			else general.addLocalFolder(path);
-		} catch (err) {
-			pickNote = err instanceof Error ? err.message : String(err);
-		} finally {
-			picking = null;
-		}
-	}
 </script>
 
 <div class="general">
@@ -116,93 +88,46 @@
 	<section>
 		<div class="subhead">
 			<div>
-				<h4>Watch folder</h4>
+				<h4>Watch folders</h4>
 				<p>
-					A folder on the NAS you can drop videos into instead of uploading them through the
-					browser. The upload step lists what is in it under <em>On the NAS</em>, and picking one references the file
-					where it lies rather than transferring it — which is the only route for a video above the
-					5 GB upload limit.
+					Folders whose videos the upload step lists under <em>Watch folders</em>, instead of uploading
+					them through the browser. Choose one on the PC the worker runs on, or type a network path. A
+					video on the network (<em>LAN</em>) is referenced where it lies — the only route past the
+					5 GB upload limit; a <em>local</em> one is copied onto the network by the worker before anything
+					is published.
 				</p>
 			</div>
 		</div>
 
-		<input
-			class="input"
-			value={value.watchFolder}
-			oninput={(e) => general.setWatchFolder(e.currentTarget.value)}
-			placeholder="\\nas\videos\incoming"
-			autocomplete="off"
-			spellcheck="false"
+		<FolderList
+			list="watchFolders"
+			importChoice
+			empty="No watch folders yet. Choose folder… opens the Windows folder dialog on the PC the worker runs on; Type a path takes a network folder like \\nas\videos\incoming."
 		/>
 		<p class="hint">
-			The worker scans this folder and publishes the listing; the browser cannot read a filesystem
-			itself. Nothing appears on the upload step until the worker has run at least once.
+			The worker scans these folders and publishes the listing; the browser cannot read a filesystem
+			itself. Nothing appears on the upload step until it has run at least once.
 		</p>
 	</section>
 
 	<section>
 		<div class="subhead">
 			<div>
-				<h4>Local Watch folders</h4>
+				<h4>Project folders</h4>
 				<p>
-					Folders on the machine the worker runs on — today this PC — whose videos are listed
-					together under <em>Locally</em> on the upload step. A video picked from one is copied into
-					the watch folder above by the worker before anything is published, so the upload no longer
-					depends on this machine afterwards.
+					Folders holding one subfolder per project — for example one for monetized videos and one
+					for the rest. A subfolder stays out of sight until it holds a flock JSON file
+					(<code>flock.json</code>); then it is listed in the sidebar under <em>New projects</em>,
+					opening it fills the upload from that file and lists the videos beside it, and the upload
+					keeps its progress there until it is sent.
 				</p>
 			</div>
-			<button class="btn sm" onclick={() => choose()} disabled={picking !== null}>
-				{picking === 'new' ? 'Waiting…' : 'Add folder…'}
-			</button>
 		</div>
 
-		{#if pickNote}
-			<p class="hint warn pick">{pickNote}</p>
-		{/if}
-
-		{#if value.localFolders.length === 0}
-			<p class="empty">
-				No local watch folders yet. <em>Add folder…</em> opens the Windows folder dialog on the PC the
-				worker runs on.
-			</p>
-		{:else}
-			<ul>
-				{#each value.localFolders as folder (folder.id)}
-					<li>
-						<span class="path" title={folder.path}>{folder.path}</span>
-						<button
-							class="btn sm ghost"
-							onclick={() => choose(folder.id)}
-							disabled={picking !== null}
-						>
-							{picking === folder.id ? 'Waiting…' : 'Change…'}
-						</button>
-						<button
-							class="del"
-							onclick={() => general.removeLocalFolder(folder.id)}
-							aria-label="Remove folder"
-						>
-							<svg viewBox="0 0 16 16" width="13" height="13"
-								><path
-									d="M3 4.5h10M6.5 4.5V3.2h3v1.3M4.4 4.5l.5 8h6.2l.5-8"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="1.4"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								/></svg
-							>
-						</button>
-					</li>
-				{/each}
-			</ul>
-			{#if !value.watchFolder.trim()}
-				<p class="hint warn">
-					Set a watch folder above too: local videos are copied into it, and cannot be uploaded
-					without one.
-				</p>
-			{/if}
-		{/if}
+		<FolderList
+			list="projectFolders"
+			empty="No project folders yet. Local or on the network, like the watch folders."
+		/>
 	</section>
 
 	<section>
@@ -238,6 +163,11 @@
 
 	h4 {
 		font-size: 13.5px;
+	}
+
+	.subhead p code {
+		font-family: var(--mono);
+		font-size: 11px;
 	}
 
 	.subhead p {
@@ -338,29 +268,6 @@
 	.fields .input {
 		padding: 7px 10px;
 		font-size: 12.5px;
-	}
-
-	.path {
-		flex: 1;
-		min-width: 0;
-		font-family: var(--mono);
-		font-size: 12px;
-		color: var(--text);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.ghost {
-		background: transparent;
-	}
-
-	.pick {
-		margin: 0 0 12px;
-	}
-
-	.hint.warn {
-		color: var(--warn);
 	}
 
 	.path-input {

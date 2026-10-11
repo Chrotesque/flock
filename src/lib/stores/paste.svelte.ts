@@ -5,9 +5,12 @@ import { loadPlaylists, requestLocalImage } from '../repo';
 import { filledSummary, matchBrand, type FlockPaste, type PasteResult } from '../flockpaste';
 import { IMAGE_PLATFORMS, acceptedTypes, largestAccepted } from '../coverimage';
 import { formatBytes } from '../format';
+import { resolveIn } from '../folders';
 import type { PlatformId } from '../types';
 
 export interface PasteNotice {
+	/** The heading: 'Filled from paste', or the project opened. */
+	title: string;
 	/** A block that could not be used at all; nothing was filled. */
 	error: string;
 	/** The brand the draft was filled for, with more than one brand. */
@@ -17,7 +20,14 @@ export interface PasteNotice {
 	thumbnail: { path: string; state: 'fetching' | 'waiting' | 'done' | 'failed'; message: string } | null;
 }
 
-const emptyNotice = (): PasteNotice => ({ error: '', brand: '', platforms: [], notes: [], thumbnail: null });
+const emptyNotice = (): PasteNotice => ({
+	title: '',
+	error: '',
+	brand: '',
+	platforms: [],
+	notes: [],
+	thumbnail: null
+});
 
 /**
  * A pasted flock block on its way into the draft (flockpaste.ts), and the
@@ -55,11 +65,27 @@ class PasteStore {
 		this.notice = { ...emptyNotice(), error: reason };
 	}
 
+	/** Shows a notice of the caller's own — a project resumed, say. */
+	show(notice: Partial<PasteNotice>) {
+		this.notice = { ...emptyNotice(), ...notice };
+	}
+
+	/** A thumbnail still on its way belongs to a draft that is gone: drop it. */
+	cancel() {
+		this.#seq++;
+	}
+
 	dismiss() {
 		this.notice = null;
 	}
 
-	async apply(paste: FlockPaste) {
+	/**
+	 * Fills the draft from a block. `folder` is the project folder the block
+	 * came from, which a relative thumbnail path is read against; `title`
+	 * heads the notice. The text is in when this resolves; the thumbnail
+	 * follows from the worker.
+	 */
+	async apply(paste: FlockPaste, opts: { folder?: string; title?: string } = {}) {
 		const seq = ++this.#seq;
 		const notes = [...paste.notes];
 
@@ -82,16 +108,19 @@ class PasteStore {
 			if (note) notes.push(note);
 		}
 
+		const thumbnail = opts.folder ? resolveIn(opts.folder, paste.thumbnail) : paste.thumbnail;
+		if (seq !== this.#seq) return;
 		this.notice = {
+			title: opts.title ?? 'Filled from paste',
 			error: '',
 			brand: brands.multiple ? (brands.current?.name ?? '') : '',
 			platforms: (Object.entries(paste.platforms) as [PlatformId, NonNullable<FlockPaste['platforms'][PlatformId]>][]).map(
 				([id, entry]) => ({ id, summary: filledSummary(id, entry) })
 			),
 			notes,
-			thumbnail: paste.thumbnail ? { path: paste.thumbnail, state: 'fetching', message: '' } : null
+			thumbnail: thumbnail ? { path: thumbnail, state: 'fetching', message: '' } : null
 		};
-		if (paste.thumbnail) await this.#fetchThumbnail(seq, paste.thumbnail);
+		if (thumbnail) void this.#fetchThumbnail(seq, thumbnail);
 	}
 
 	/**

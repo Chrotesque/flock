@@ -29,10 +29,12 @@ import {
 } from './instagram.mjs';
 import { instagramReady } from './accounts.mjs';
 import { copyToDestination, copyInto } from './archive.mjs';
-import { scanWatchFolder, scanLocalFolders } from './watch.mjs';
+import { scanFolders, published } from './watch.mjs';
+import { readWatchConfig } from './folders.mjs';
+import { planProjectWrites, scanProjectRoots } from './projects.mjs';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename } from 'node:path';
 import { resolveFolder } from './paths.mjs';
 import { pickFolder } from './folderpick.mjs';
 import { readLocalImage } from './localfile.mjs';
@@ -305,73 +307,151 @@ async function copyPass(pb) {
 }
 
 /**
- * The latest listing of each list, by path: what the preview server may
- * stream. Replaced wholesale on every scan, so a file that has left a folder
- * stops being playable at the same moment it stops being listed.
+ * The latest listing of each kind, by path: what the preview server may
+ * stream — the watch folders' videos and the projects' alike, `nas` for the
+ * network's and `local` for the PC's. Replaced wholesale on every scan, so a
+ * file that has left a folder stops being playable at the same moment it
+ * stops being listed. Keyed by the path the page knows, holding the one that
+ * opens here.
  */
 const listed = { nas: new Map(), local: new Map() };
 
-function byPath(files) {
-	return new Map(files.map((file) => [file.path, file]));
+function playable(index, roots) {
+	const map = new Map();
+	for (const file of index?.files ?? []) map.set(file.path, { ...file, path: file.opened });
+	for (const root of roots) {
+		for (const project of root.projects) {
+			for (const file of project.videos) map.set(file.path, { ...file, path: file.opened });
+		}
+	}
+	return map;
+}
+
+/** For the listing's row: each project folder, and how many projects it holds. */
+function rootSummary(roots) {
+	return roots.map((root) =>
+		root.error ? { folder: root.folder, error: root.error } : { folder: root.folder, count: root.projects.length }
+	);
 }
 
 /**
- * Publishes what is sitting in the watch folder so the compose screen can list
- * it. The folder is configured in the SPA, so it is read back out of settings
- * each pass rather than duplicated into the worker's own config.
+ * Lists the watch folders and the project folders so the compose screen can
+ * show them. The folders are configured in the SPA, so they are read back out
+ * of settings each pass rather than duplicated into the worker's own config.
+ *
+ * The network's are written by whoever publishes; a PC worker that is not
+ * covering still reads them, for the previews it serves. The PC's own are
+ * the `local` worker's, and only work while it runs on the PC they are on.
  */
-async function watchPass(pb) {
+async function watchPass(pb, config) {
 	const row = await pb.getSetting('general');
-	const folder = row?.value?.watchFolder?.trim() ?? '';
-	// The listing is published by whoever publishes; a PC worker that is not
-	// covering still scans it, for the previews it serves.
+	const folders = readWatchConfig(row?.value);
 	const publish = hb.canPublish();
+	const local = hb.canLocal();
+
 	// Swapped in once the scan is done, not emptied before it: a slow share
 	// would otherwise cut off every preview for as long as the scan takes.
 	let nas = new Map();
-	if (folder && (publish || hb.canLocal())) {
-		const index = await scanWatchFolder(folder);
-		if (index) {
-			if (publish) await pb.setSetting('watch_index', index);
-			// Listed by the path the page knows, opened by the one that works here.
-			if (!index.error) nas = new Map(index.files.map((f) => [f.path, { ...f, path: join(index.folder, f.name) }]));
-			if (index.error) log(`watch folder: ${index.error}`);
-			else log(`watch folder: ${index.files.length} video(s) in ${index.folder}`);
+	const network = folders.network.length + folders.projects.network.length > 0;
+	if (network && (publish || local)) {
+		const index = await scanFolders(folders.network);
+		const roots = await scanProjectRoots(folders.projects.network);
+		if (publish) {
+			await pb.setSetting('watch_index', {
+				...index,
+				files: index.files.map(published),
+				projectRoots: rootSummary(roots)
+			});
+			await writeProjects(pb, roots, false);
 		}
+		nas = playable(index, roots);
+		reportScan('LAN', index, roots);
 	}
 	listed.nas = nas;
-	if (!hb.canLocal()) return;
+	if (!local) return;
 
-	// The local folders, pooled into one listing for the "Locally" box. Read
-	// from this machine's disks, which is why they only work while the worker
-	// runs on the PC they belong to.
-	const locals = Array.isArray(row?.value?.localFolders)
-		? row.value.localFolders.map((f) => f?.path ?? '').filter((p) => p.trim())
-		: [];
-	let local = new Map();
-	if (locals.length > 0) {
-		const index = await scanLocalFolders(locals);
-		await pb.setSetting('local_index', index);
-		local = byPath(index.files);
-		for (const entry of index.folders) if (entry.error) log(`local folder: ${entry.error}`);
-		log(`local folders: ${index.files.length} video(s) in ${locals.length} folder(s)`);
+	let pc = new Map();
+	if (folders.local.length + folders.projects.local.length > 0) {
+		const index = await scanFolders(folders.local);
+		const roots = await scanProjectRoots(folders.projects.local);
+		await pb.setSetting('local_index', {
+			...index,
+			files: index.files.map(published),
+			projectRoots: rootSummary(roots)
+		});
+		await writeProjects(pb, roots, true);
+		pc = playable(index, roots);
+		reportScan('local', index, roots);
 	}
-	listed.local = local;
+	listed.local = pc;
+}
+
+function reportScan(kind, index, roots) {
+	for (const entry of index.folders) if (entry.error) log(`${kind} watch folder: ${entry.error}`);
+	if (index.folders.length > 0) {
+		log(`${kind} watch folders: ${index.files.length} video(s) in ${index.folders.length} folder(s)`);
+	}
+	for (const root of roots) if (root.error) log(`${kind} projects: ${root.error}`);
+	if (roots.length > 0) {
+		const count = roots.reduce((sum, root) => sum + root.projects.length, 0);
+		log(`${kind} projects: ${count} in ${roots.length} project folder(s)`);
+	}
+}
+
+/** Off for the run once PocketBase says it has no `projects` collection. */
+let projectsOff = false;
+
+/**
+ * Brings the `projects` rows in line with a scan of one kind's project
+ * folders: only what changed is written (projects.mjs). A missing collection
+ * — setup-pb not run since this arrived — turns this off with one line.
+ */
+async function writeProjects(pb, roots, local) {
+	if (projectsOff || roots.length === 0) return;
+	let existing;
+	try {
+		existing = await pb.listProjects();
+	} catch (err) {
+		if (!/ -> 404\b/.test(err.message)) throw err;
+		projectsOff = true;
+		log('projects is missing — run pnpm setup-pb, then restart; project folders are not listed until then');
+		return;
+	}
+	const { create, update } = planProjectWrites(existing, roots, local);
+	if (dry) {
+		for (const data of create) log(`would list the new project ${data.name}`);
+		if (update.length) log(`would update ${update.length} project row(s)`);
+		return;
+	}
+	for (const data of create) {
+		try {
+			await pb.createProject(data);
+			log(`new project: ${data.name} (${data.manifest_name}, ${data.videos.length} video(s))`);
+		} catch (err) {
+			log(`could not list the project ${data.name}: ${err.message.split('\n')[0]}`);
+		}
+	}
+	for (const { id, data } of update) {
+		await pb.updateProject(id, data).catch((err) => log(`could not update project ${id}: ${err.message.split('\n')[0]}`));
+	}
 }
 
 /**
- * Copies videos picked from a local folder into the NAS watch folder, then
- * points the job at the copy. Until that happens nothing publishes from the
- * job and nothing is filed into its destination — see `handle` and
- * `pendingCopies`. The local original is left alone.
+ * Copies videos picked from a folder on the PC into the network watch folder
+ * Settings marks for it, then points the job at the copy. Until that happens
+ * nothing publishes from the job and nothing is filed into its destination —
+ * see `handle` and `pendingCopies`. The local original is left alone.
+ *
+ * With no network folder to copy into, a worker that both lists and
+ * publishes (`all`, one machine) uses the file where it lies.
  */
-async function importPass(pb) {
+async function importPass(pb, config) {
 	if (!hb.canLocal()) return;
 	const jobs = await pb.pendingImports();
 	if (jobs.length === 0) return;
 
 	const row = await pb.getSetting('general');
-	const watch = row?.value?.watchFolder?.trim() ?? '';
+	const watch = readWatchConfig(row?.value).importTo;
 
 	for (const job of jobs) {
 		if (dry) {
@@ -379,7 +459,12 @@ async function importPass(pb) {
 			continue;
 		}
 		try {
-			if (!watch) throw new Error('No NAS watch folder is set to copy local videos into.');
+			if (!watch && config.role === 'all') {
+				await pb.updateJob(job.id, { source_local: false, error: '' });
+				log(`"${job.title}" is published from ${job.source_path}, where it lies — no network watch folder to copy it into`);
+				continue;
+			}
+			if (!watch) throw new Error('No network watch folder is set to copy local videos into.');
 			const from = job.source_path;
 			let info;
 			try {
@@ -580,8 +665,8 @@ async function noteUnready(pb, platform) {
 }
 
 async function pass(pb, config) {
-	await watchPass(pb);
-	await importPass(pb);
+	await watchPass(pb, config);
+	await importPass(pb, config);
 	if (!hb.canPublish()) return;
 	await copyPass(pb);
 
