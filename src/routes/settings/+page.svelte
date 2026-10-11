@@ -398,11 +398,11 @@
 								onchange={(next) => general.setJestrIntegration(next)}
 							/>
 							<p class="otherhint">
-								Lists every video that goes public on a connected YouTube channel in the sidebar —
-								uploaded through flock or not — each with a <strong>Jestr</strong> button. Press it
-								once the video is linked to its campaign on jestr.gg, and it leaves the list. Jestr
-								offers no API, so flock cannot see or make the link itself; the list starts on the
-								day this is first switched on.
+								Adds every video that goes public on a connected YouTube channel — uploaded through
+								flock or not — to the sidebar's <em>To finish</em> list, with a <strong>Jestr</strong>
+								button beside its YouTube icon. Press it once the video is linked to its campaign on
+								jestr.gg. Jestr offers no API, so flock cannot see or make the link itself. A
+								scheduled video is listed straight away, its button usable once it is public.
 							</p>
 
 							<TimeZoneList />

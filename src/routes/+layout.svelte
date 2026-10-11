@@ -5,20 +5,34 @@
 	import { device } from '$lib/stores/device.svelte';
 	import { workers } from '$lib/stores/workers.svelte';
 	import { general } from '$lib/stores/general.svelte';
-	import { jestr } from '$lib/stores/jestr.svelte';
+	import { videoTodo } from '$lib/stores/videotodo.svelte';
+	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
 	import { onMount } from 'svelte';
+	import type { TodoLine } from '$lib/videotodo';
 
 	onMount(() => {
 		void general.load();
-		return workers.start();
+		workers.start();
+		return videoTodo.start();
 	});
 
-	// The Jestr list polls only while its setting is on; switching it off
-	// stops the polling and empties the list.
-	$effect(() => {
-		if (!general.value.jestrIntegration) return;
-		return jestr.start();
-	});
+	/** "Sun 13 Oct, 08:00" — when a scheduled video goes public. */
+	function goesPublic(iso: string | null): string {
+		const date = iso ? new Date(iso) : null;
+		if (!date || Number.isNaN(date.getTime())) return '';
+		return date.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+	}
+
+	function studioTitle(line: TodoLine): string {
+		return line.studio.length
+			? `Open in YouTube Studio to set ${line.studio.join(' and ')} — takes this off the list`
+			: 'Open in YouTube Studio';
+	}
+
+	function lineTitle(line: TodoLine): string {
+		const parts = [line.title, line.channel, line.publicAt ? `goes public ${goesPublic(line.publicAt)}` : ''];
+		return parts.filter(Boolean).join(' — ');
+	}
 
 	/** A held release's slot, as the clock on this machine reads it. */
 	function at(iso: string): string {
@@ -96,30 +110,44 @@
 			{/each}
 		</nav>
 
-		<!-- Every video gone public and not yet linked on Jestr, centred in the
-		     free stretch between the main links and the worker. -->
-		{#if general.value.jestrIntegration && jestr.videos.length > 0}
-			<section class="jestr" aria-label="Videos to link on Jestr">
-				<p class="jestrhead">To link on Jestr <span class="count">{jestr.videos.length}</span></p>
+		<!-- Videos with something left to do by hand — set in Studio, linked on
+		     Jestr — centred in the free stretch between the main links and the
+		     worker. Rules in videotodo.ts. -->
+		{#if videoTodo.lines.length > 0}
+			<section class="todo" aria-label="Videos to finish">
+				<p class="todohead">To finish <span class="count">{videoTodo.lines.length}</span></p>
 				<ul>
-					{#each jestr.videos as video (video.id)}
+					{#each videoTodo.lines as line (line.id)}
 						<li>
+							<a class="vtitle" href={line.watchUrl} target="_blank" rel="noopener" title={lineTitle(line)}>
+								{line.title}
+							</a>
 							<a
-								class="vtitle"
-								href={video.url}
+								class="studio"
+								class:task={line.studio.length > 0}
+								href={line.studioUrl}
 								target="_blank"
 								rel="noopener"
-								title="{video.title}{video.channel ? ` — ${video.channel}` : ''}"
+								title={studioTitle(line)}
+								aria-label={studioTitle(line)}
+								onclick={() => {
+									if (line.studio.length) void videoTodo.markStudio(line);
+								}}
 							>
-								{video.title}
+								<PlatformIcon platform="youtube" size={15} />
 							</a>
-							<button
-								class="jbtn"
-								onclick={() => jestr.markLinked(video)}
-								title="Linked on Jestr: take it off this list"
-							>
-								Jestr
-							</button>
+							{#if line.jestr}
+								<button
+									class="jbtn"
+									disabled={line.jestr === 'waiting'}
+									onclick={() => videoTodo.markJestr(line)}
+									title={line.jestr === 'waiting'
+										? `Goes public ${goesPublic(line.publicAt)}; link it on Jestr after that`
+										: 'Linked on Jestr: take it off this list'}
+								>
+									Jestr
+								</button>
+							{/if}
 						</li>
 					{/each}
 				</ul>
@@ -282,8 +310,8 @@
 	/* The device alert and the worker status, low in the rail just above
 	   Settings: the auto top margin takes the free space, and the bottom one
 	   keeps a little more room to Settings than the links keep to each other.
-	   With the Jestr list showing, the list's own auto margins take the free
-	   space instead, centring it between the main links and this block. */
+	   With the "To finish" list showing, the list's own auto margins take the
+	   free space instead, centring it between the main links and this block. */
 	.lower {
 		margin-top: auto;
 		margin-bottom: 22px;
@@ -292,11 +320,11 @@
 		padding-top: 18px;
 	}
 
-	.jestr + .lower {
+	.todo + .lower {
 		margin-top: 0;
 	}
 
-	.jestr {
+	.todo {
 		margin: auto 0;
 		padding: 18px 0 0;
 		min-height: 0;
@@ -305,7 +333,7 @@
 		gap: 6px;
 	}
 
-	.jestrhead {
+	.todohead {
 		margin: 0;
 		text-align: center;
 		font-size: 11px;
@@ -324,26 +352,31 @@
 		letter-spacing: 0;
 	}
 
-	.jestr ul {
+	.todo ul {
 		margin: 0;
 		padding: 0;
 		list-style: none;
 		display: grid;
+		/* minmax(0, …): an auto column grows to the longest title, pushing the
+		   icon and the button out of the rail instead of shortening the title. */
+		grid-template-columns: minmax(0, 1fr);
+		overflow-x: hidden;
 		gap: 2px;
 		/* A long backlog scrolls rather than pushing the worker off the rail. */
 		max-height: 36vh;
 		overflow-y: auto;
 	}
 
-	.jestr li {
+	.todo li {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		min-width: 0;
+		gap: 6px;
 		padding: 4px 4px 4px 11px;
 		border-radius: 8px;
 	}
 
-	.jestr li:hover {
+	.todo li:hover {
 		background: var(--surface-2);
 	}
 
@@ -377,9 +410,50 @@
 		transition: border-color 0.15s, color 0.15s;
 	}
 
-	.jbtn:hover {
+	.jbtn:hover:not(:disabled) {
 		border-color: var(--text-dim);
 		color: var(--text);
+	}
+
+	/* Scheduled: nothing to link on Jestr until the video is public. */
+	.jbtn:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+
+	/* The way to the video's edit page in Studio. A dot marks the lines where
+	   something is still to be set there (paid promotion, a Short's cover). */
+	.studio {
+		position: relative;
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 22px;
+		border-radius: 6px;
+		opacity: 0.75;
+		transition: opacity 0.15s, background 0.15s;
+	}
+
+	.studio:hover,
+	.studio.task {
+		opacity: 1;
+	}
+
+	.studio:hover {
+		background: var(--surface-3);
+	}
+
+	.studio.task::after {
+		content: '';
+		position: absolute;
+		top: 1px;
+		right: 1px;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--warn);
+		box-shadow: 0 0 0 1.5px var(--bg);
 	}
 
 	.worker {
@@ -597,7 +671,7 @@
 			gap: 12px;
 		}
 		/* A list does not fit a one-row bar; the wide layout shows it. */
-		.jestr {
+		.todo {
 			display: none;
 		}
 		.doing {

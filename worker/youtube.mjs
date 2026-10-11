@@ -77,11 +77,11 @@ export function scopeCanEdit(scope) {
 	return EDIT_SCOPES.some((s) => granted.includes(s));
 }
 
-// The thumbnail and the paid-promotion check wait for YouTube to finish
-// processing. A thumbnail set seconds after the upload, while YouTube was
-// still making its own, did not stay on 11 Oct 2026 although thumbnails.set
-// had accepted it. Shorts finish in a minute or two; a long upload that has
-// not finished by the cap goes ahead anyway rather than holding the queue.
+// The thumbnail waits for YouTube to finish processing: one set seconds
+// after the upload, while YouTube was still making its own, did not stay on
+// 11 Oct 2026 although thumbnails.set had accepted it. Shorts finish in a
+// minute or two; a long upload that has not finished by the cap goes ahead
+// anyway rather than holding the queue.
 const PROCESSING_POLL_MS = 15_000;
 const PROCESSING_WAIT_MS = 15 * 60_000;
 
@@ -90,6 +90,34 @@ const PROCESSING_WAIT_MS = 15 * 60_000;
  * while YouTube is processing or has not made its own thumbnails yet, `done`
  * once both are finished, `failed` when processing will not finish.
  */
+/** Seconds in an ISO 8601 duration as videos.list gives it ("PT1M5S"); null if unreadable. */
+export function isoSeconds(value) {
+	const text = String(value ?? '');
+	const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(text);
+	if (!match || text === 'P' || text.endsWith('T')) return null;
+	const [, d, h, m, s] = match;
+	return Number(d ?? 0) * 86400 + Number(h ?? 0) * 3600 + Number(m ?? 0) * 60 + Number(s ?? 0);
+}
+
+// Up to three minutes is a Short — the same line as the SPA's studio.ts.
+const SHORT_MAX_SECONDS = 180;
+
+/**
+ * Whether the upload is a Short, whose cover YouTube takes only in Studio
+ * (thumbnails.set changes just the 16:9 thumbnail; found 11 Oct 2026): true,
+ * false, or null when its length is not known — which the caller counts as
+ * a possible Short, as the SPA does.
+ */
+export function isShortVideo(seconds) {
+	if (!(Number(seconds) > 0)) return null;
+	return Number(seconds) <= SHORT_MAX_SECONDS;
+}
+
+/** A video's edit page in YouTube Studio, where what the API cannot set is set. */
+export function studioUrl(videoId) {
+	return `https://studio.youtube.com/video/${encodeURIComponent(videoId)}/edit`;
+}
+
 export function processingState(details) {
 	const status = details?.processingStatus;
 	if (status === 'failed' || status === 'terminated') return 'failed';
@@ -443,85 +471,44 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Waits until YouTube has processed the video and made its own thumbnails,
- * reading processingDetails (1 unit) every 15 s up to the cap. Returns `done`,
- * `failed`, `timeout`, or `unreadable` when the reading itself fails — the
- * steps after it go ahead in every case, and the log says which. `getToken`
- * is asked on every reading, as the wait can outlast a token.
+ * reading processingDetails and the length (1 unit together) every 15 s up
+ * to the cap. Returns `{ outcome, seconds }`: `done`, `failed`, `timeout`, or
+ * `unreadable` when the reading itself fails — the steps after it go ahead
+ * in every case, and the log says which — and the video's length once
+ * YouTube has it, else null. `getToken` is asked on every reading, as the
+ * wait can outlast a token.
  */
 async function waitForProcessing(getToken, videoId, log) {
 	const started = Date.now();
-	log('waiting for YouTube to finish processing before the thumbnail and paid promotion');
+	let seconds = null;
+	log('waiting for YouTube to finish processing before the thumbnail');
 	for (;;) {
 		let details;
 		try {
-			const body = await api(await getToken(), `/videos?part=processingDetails&id=${videoId}`);
-			details = body?.items?.[0]?.processingDetails;
+			const body = await api(await getToken(), `/videos?part=processingDetails,contentDetails&id=${videoId}`);
+			const item = body?.items?.[0];
+			details = item?.processingDetails;
+			seconds = isoSeconds(item?.contentDetails?.duration) || seconds;
 		} catch (err) {
 			log(`processing could not be read (${err.message.split('\n')[0]}) — going ahead`);
-			return 'unreadable';
+			return { outcome: 'unreadable', seconds };
 		}
 		const state = processingState(details);
 		const took = Math.round((Date.now() - started) / 1000);
 		if (state === 'done') {
 			log(`processed after ${took} s`);
-			return 'done';
+			return { outcome: 'done', seconds };
 		}
 		if (state === 'failed') {
 			log(`YouTube reports processing ${details.processingStatus} — going ahead`);
-			return 'failed';
+			return { outcome: 'failed', seconds };
 		}
 		if (Date.now() - started >= PROCESSING_WAIT_MS) {
 			log(`still processing after ${Math.round(took / 60)} min — going ahead`);
-			return 'timeout';
+			return { outcome: 'timeout', seconds };
 		}
 		await sleep(PROCESSING_POLL_MS);
 	}
-}
-
-/** Whether YouTube has paid promotion on for a video (1 unit). */
-async function paidPlacement(token, videoId) {
-	const body = await api(token, `/videos?part=paidProductPlacementDetails&id=${videoId}`);
-	return body?.items?.[0]?.paidProductPlacementDetails?.hasPaidProductPlacement === true;
-}
-
-/**
- * Makes sure paid promotion is on, after processing: read it, edit the video
- * when it is off and the grant may, read it again. The edit names only this
- * part, so nothing else on the video is touched (videos.update clears what a
- * named part omits). Returns whether it is on; logs which way it went.
- */
-async function ensurePaidPlacement(token, videoId, canEdit, log) {
-	if (await paidPlacement(token, videoId)) {
-		log('paid promotion on (checked after processing)');
-		return true;
-	}
-	if (canEdit === false) {
-		log(
-			'paid promotion skipped: YouTube left it off at upload, and the upload-only grant cannot edit ' +
-				'the video. Tick it in Studio, or re-authorise with `pnpm worker:auth --with-playlists`.'
-		);
-		return false;
-	}
-	try {
-		await api(token, '/videos?part=paidProductPlacementDetails', {
-			method: 'PUT',
-			body: JSON.stringify({ id: videoId, paidProductPlacementDetails: { hasPaidProductPlacement: true } })
-		});
-	} catch (err) {
-		const denied = /\b(403|401)\b/.test(err.message) || err.message.includes('insufficient');
-		log(
-			denied
-				? 'paid promotion skipped: YouTube left it off at upload and refused the edit. Tick it in Studio.'
-				: `paid promotion failed (video is still up): ${err.message.split('\n')[0]}. Tick it in Studio.`
-		);
-		return false;
-	}
-	if (await paidPlacement(token, videoId)) {
-		log('paid promotion set by editing the video');
-		return true;
-	}
-	log('paid promotion failed: YouTube still reports it off after the edit. Tick it in Studio.');
-	return false;
 }
 
 /**
@@ -659,16 +646,16 @@ export async function publishToYouTube({ target, job, pb, config, log, saveHandl
 	}
 
 	// What did not reach YouTube and has to be set in Studio; the log entry
-	// for the release names it.
+	// for the release names it, with the video's Studio page.
 	const todo = [];
 
-	// The insert named paidProductPlacementDetails, so its reply says whether
-	// YouTube took it there. On 11 Oct 2026 it did not, which is why it is
-	// checked again below.
-	const paidWanted = Boolean(options.paidPromotion);
-	if (paidWanted) {
-		const atUpload = result.paidProductPlacementDetails?.hasPaidProductPlacement === true;
-		log(`paid promotion ${atUpload ? 'on' : 'left off by YouTube'} at upload; checking again once processed`);
+	// Paid promotion went with the insert, and the API reads it back as on —
+	// but on 11 Oct 2026 viewers never got the notice until it was ticked in
+	// Studio. So it is always a Studio step; the request stays in case
+	// YouTube starts honouring it.
+	if (options.paidPromotion) {
+		log("paid promotion sent, but YouTube's API does not apply it — tick it in Studio");
+		todo.push('paid promotion');
 	}
 
 	// A long upload (and the wait below) can outlast the hour an access token
@@ -694,14 +681,18 @@ export async function publishToYouTube({ target, job, pb, config, log, saveHandl
 		}
 	}
 
-	if (job.thumbnail || paidWanted) {
-		await waitForProcessing(freshToken, videoId, log);
-		token = await freshToken();
-	}
-
 	if (job.thumbnail) {
+		const { seconds } = await waitForProcessing(freshToken, videoId, log);
+		token = await freshToken();
 		try {
 			await setThumbnail(token, videoId, job, pb, log);
+			if (isShortVideo(seconds) !== false) {
+				log(
+					`${seconds ? 'a Short' : 'length unknown, so possibly a Short'}: its cover is set in Studio — ` +
+						'the image above only becomes the 16:9 thumbnail'
+				);
+				todo.push('Shorts cover');
+			}
 		} catch (err) {
 			log(
 				err.status === 403
@@ -713,15 +704,5 @@ export async function publishToYouTube({ target, job, pb, config, log, saveHandl
 		}
 	}
 
-	if (paidWanted) {
-		let on = false;
-		try {
-			on = await ensurePaidPlacement(token, videoId, await grantCanEdit(config, account), log);
-		} catch (err) {
-			log(`paid promotion could not be checked (video is still up): ${err.message.split('\n')[0]}`);
-		}
-		if (!on) todo.push('paid promotion');
-	}
-
-	return { videoId, url, scheduled: release.scheduled, privacyStatus: got, locked, todo };
+	return { videoId, url, scheduled: release.scheduled, privacyStatus: got, locked, todo, todoUrl: studioUrl(videoId) };
 }

@@ -24,6 +24,7 @@
 	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
 	import { youtubeCanEdit, YOUTUBE_EDIT_SETUP } from '$lib/accounts';
+	import { studioNotes } from '$lib/studio';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { mergeTagGroups, tagListLength, parseTagList } from '$lib/format';
 	import { checkTags } from '$lib/tagcheck';
@@ -100,6 +101,12 @@
 		imageBoxFile !== null && imageBoxPlatforms.every((p) => imageFits(imageBoxFile, p))
 	);
 	let showLinkSwitch = $derived(imagePlatforms.length > 1 || !draft.imagesLinked);
+	// A Short's cover is set in Studio; flock's image only becomes YouTube's
+	// 16:9 thumbnail (studio.ts). Said while YouTube is in the box, unless the
+	// video is known to be long.
+	let coverNote = $derived(
+		imageBoxPlatforms.includes('youtube') ? (studioNotes(false, true, draft.videoFor('youtube').duration)[0] ?? '') : ''
+	);
 	// The boxes follow the pill being composed, like the playlist box: the
 	// paid-promotion box shows only for a platform it serves, the TikTok box
 	// only for TikTok. Both still apply to every platform they serve.
@@ -1023,6 +1030,9 @@
 					label="This video contains paid promotion or commercial content"
 					onchange={setPaidPromotion}
 				/>
+				{#if paidPromotion && youtubeActive}
+					<p class="nasnote faint">{studioNotes(true, false, 0)[0]}</p>
+				{/if}
 			</section>
 		{/if}
 
@@ -1184,6 +1194,9 @@
 						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.thumbnail} />
 					{:else}
 						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.cover} />
+					{/if}
+					{#if coverNote}
+						<p class="nasnote faint">{coverNote}</p>
 					{/if}
 				</FoldBox>
 			{/key}

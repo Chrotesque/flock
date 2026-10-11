@@ -184,21 +184,28 @@ That asks for **upload permission plus read-only access** to the channel. Upload
 is all `videos.insert` needs; read-only is what the Analytics screen's stats
 need, and it cannot change anything. An authorisation made before Analytics
 existed has read the channel fine too, so re-run this only if the worker reports
-a scope error. The exceptions are the playlist box and the paid-promotion
-checkbox on the compose screen: putting a video in a playlist, and setting paid
-promotion when YouTube leaves it off at upload (it can), both mean editing the
-video, which requires Google's broader `youtube` scope — the consent screen
-describes it as permanently deleting videos, comments and captions. If you want
-those to work, authorise each channel with:
+a scope error. The exception is the playlist box on the compose screen:
+putting a video in a playlist means editing it, which requires Google's broader
+`youtube` scope — the consent screen describes it as permanently deleting
+videos, comments and captions. If you want that to work, authorise each channel
+with:
 
 ```bash
 pnpm worker:auth --with-playlists
 ```
 
-Otherwise the playlist is skipped, paid promotion stays as YouTube left it, and
-the review screen warns about both before you confirm. The thumbnail and paid
-promotion are set once YouTube has processed the video, so a YouTube release
-is marked done a minute or two after its upload (longer for a long video).
+Otherwise the playlist is skipped, and the review screen says so before you
+confirm.
+
+Two things only YouTube Studio can set, whatever the authorisation: **paid
+promotion** (YouTube's API accepts it but viewers never see the notice) and a
+**Short's cover** (the API sets only the 16:9 thumbnail; the vertical cover a
+Short shows in the Shorts feed is picked in Studio). flock still sends both,
+says so on the details and review screens, and lists the video in the sidebar's
+*To finish* list — its YouTube icon opens the video's edit page in Studio. The
+thumbnail is set once YouTube has processed the video, so a YouTube release
+with one is marked done a minute or two after its upload (longer for a long
+video).
 
 Check the queue without uploading anything:
 
@@ -479,8 +486,9 @@ releases or all of them, and each card names its brand while all are shown.
 **Log** lists every change — uploads, calendar moves and settings — with the date,
 time and the machine that made it. Filter by category, search, or click a device
 tag to see only that machine. It cannot be edited or cleared. A YouTube release's
-entry ends with *Set by hand in Studio: …* when YouTube did not take the
-thumbnail, playlist or paid promotion. The *Worker* tab
+entry ends with *Set by hand in Studio: …* and the video's Studio link when
+something has to be finished there (paid promotion, a Short's cover, or a
+thumbnail or playlist that failed). The *Worker* tab
 shows what the worker printed, live as it prints it, kept for 14 days — the place to
 look when a thumbnail, playlist or post did not come out as asked. It needs
 `pnpm setup-pb` run once, and fills from the next worker start.
@@ -511,13 +519,21 @@ still goes out); *Other* holds the compliance
 switch, the Jestr integration and any extra time zones for the calendar's
 second clock.
 
+**To finish**, in the sidebar, lists YouTube videos with something left to do
+by hand, from the day flock first showed it. Each line has the video's title
+(it opens the video), a YouTube icon that opens its edit page in Studio, and —
+with the Jestr integration on — a *Jestr* button. An amber dot on the icon means
+the video still needs paid promotion or its Short's cover set in Studio;
+clicking it opens Studio and counts that as done.
+
 **Jestr integration** (off unless ticked under Settings → *Other*) is for
 creators paid through [Jestr](https://jestr.gg) campaigns, where each video's
-link has to be handed to Jestr by hand. With it on, the sidebar lists every
-video that goes public on a connected YouTube channel from that day on —
-uploaded through flock or not — with a *Jestr* button beside it; press it once
-the video is linked on Jestr and it leaves the list. The title opens the video,
-to copy its link from. Jestr has no API, so flock cannot check the link itself.
+link has to be handed to Jestr by hand. With it on, *To finish* also lists every
+video on a connected YouTube channel — uploaded through flock or not — with a
+*Jestr* button: press it once the video is linked on Jestr. A scheduled video is
+listed straight away, its button usable once it is public. A line leaves the
+list once nothing is left on it. Jestr has no API, so flock cannot check the
+link itself.
 
 The other half belongs to the brand in view. *Templates* holds reusable blocks of
 text: on the upload screen they appear under the details, and typing a

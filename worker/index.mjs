@@ -239,7 +239,9 @@ async function publishOne(pb, config, platform, target, job, label, claim) {
 async function recordResult(pb, platform, target, result, label) {
 	// What the platform did not take and has to be set by hand (YouTube's
 	// thumbnail, playlist, paid promotion) is said on the Log entry.
-	const todo = result.todo?.length ? `Set by hand in Studio: ${result.todo.join(', ')}.` : '';
+	const todo = result.todo?.length
+		? `Set by hand in Studio: ${result.todo.join(', ')}${result.todoUrl ? ` — ${result.todoUrl}` : '.'}`
+		: '';
 	const notes = [result.locked ? 'Stored as private: the API project is not audited yet.' : '', todo];
 	await pb.updateTarget(target.id, {
 		status: result.scheduled ? 'scheduled' : 'published',
@@ -714,10 +716,9 @@ async function showAccounts(config) {
 			const canEdit = await grantCanEdit(config, account).catch(() => null);
 			log(
 				canEdit === true
-					? '  can edit after upload: playlists and paid promotion work'
+					? '  can edit after upload: adding to playlists works'
 					: canEdit === false
-						? '  upload-only: no playlists, and paid promotion only if YouTube takes it at upload ' +
-								'(pnpm worker:auth --with-playlists)'
+						? '  upload-only: no playlists (pnpm worker:auth --with-playlists)'
 						: '  whether it can edit after upload is unknown'
 			);
 		}

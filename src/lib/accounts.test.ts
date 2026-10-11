@@ -161,11 +161,10 @@ describe('youtubeGrantWarnings', () => {
 	const unknown = account('youtube', 'UC1');
 	const both = { playlist: 'First Peck', paidPromotion: true };
 
-	it('names the playlist and paid promotion for an upload-only grant', () => {
+	it('names the playlist for an upload-only grant, and not paid promotion', () => {
 		const lines = youtubeGrantWarnings(both, uploadOnly);
-		expect(lines).toHaveLength(2);
+		expect(lines).toHaveLength(1);
 		expect(lines[0]).toContain('"First Peck"');
-		expect(lines[1]).toMatch(/^Paid promotion/);
 	});
 
 	it('says nothing a post does not ask for', () => {

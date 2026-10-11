@@ -21,6 +21,7 @@
 		type Allowance
 	} from '$lib/accounts';
 	import { imageFits, isImagePlatform, type ImagePlatform } from '$lib/coverimage';
+	import { studioNotes } from '$lib/studio';
 	import {
 		tiktokProblems,
 		readDisclosure,
@@ -91,6 +92,21 @@
 	function grantIssues(row: PlanRow): string[] {
 		if (row.platform !== 'youtube') return [];
 		return youtubeGrantWarnings(row.options, accounts.for('youtube'));
+	}
+
+	/**
+	 * What only Studio can set (studio.ts): paid promotion, and a Short's
+	 * cover. Said here so it is no surprise; the sidebar's To finish list
+	 * opens the video in Studio once it is up.
+	 */
+	function studioIssues(row: PlanRow): string[] {
+		if (row.platform !== 'youtube') return [];
+		const image = draft.imageFor('youtube');
+		return studioNotes(
+			Boolean(row.options.paidPromotion),
+			image !== null && imageFits(image, 'youtube'),
+			draft.videoFor('youtube').duration
+		);
 	}
 
 	/**
@@ -434,6 +450,7 @@
 			{@const visibility = visibilityWarning(row)}
 			{@const issues = tiktokIssues(row)}
 			{@const grant = grantIssues(row)}
+			{@const studio = studioIssues(row)}
 			{@const account = accountFor(row.platform)}
 			{@const allowance = postAllowance(accounts.for(row.platform))}
 			{@const overAllowance = allowanceWarning(allowance, dueAt(row))}
@@ -503,6 +520,23 @@
 					{/each}
 					{#each grant as issue (issue)}
 						<p class="warnline" title="Sign the channel in again with {YOUTUBE_EDIT_SETUP} to let flock edit it after upload.">
+							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+								<path
+									d="M12 3.5 21 19.5H3L12 3.5Z"
+									stroke="currentColor"
+									stroke-width="1.8"
+									stroke-linejoin="round"
+								/>
+								<path d="M12 10v4M12 16.4v.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+							</svg>
+							{issue}
+						</p>
+					{/each}
+					{#each studio as issue (issue)}
+						<p
+							class="warnline"
+							title="Once the video is up, the YouTube icon in the sidebar's To finish list opens it in Studio."
+						>
 							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
 								<path
 									d="M12 3.5 21 19.5H3L12 3.5Z"
