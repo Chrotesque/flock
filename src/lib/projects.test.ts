@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { listedProjects, projectState, readSavedDraft, readVideos, withoutHandPicked } from './projects';
+import { listedProjects, projectState, readSavedDraft, readVideos, uploadedName, withoutHandPicked } from './projects';
 import type { ProjectRow } from './types';
 
 function row(patch: Partial<ProjectRow>): ProjectRow {
@@ -21,6 +21,8 @@ function row(patch: Partial<ProjectRow>): ProjectRow {
 		thumbnail: '',
 		cover: '',
 		done_at: '',
+		archived_at: '',
+		archived_as: '',
 		created: '2026-10-11 10:00:00.000Z',
 		updated: '2026-10-11 10:00:00.000Z',
 		...patch
@@ -132,5 +134,13 @@ describe('listedProjects', () => {
 			row({ id: 'begun', status: 'started', manifest_modified: '2026-09-01T00:00:00Z' })
 		];
 		expect(listedProjects(rows, roots).map((r) => r.id)).toEqual(['begun', 'new', 'old']);
+	});
+});
+
+describe('uploadedName', () => {
+	it('names the file a sent project is renamed to', () => {
+		expect(uploadedName('flock.json')).toBe('flock_uploaded.json');
+		expect(uploadedName('Upload.JSON')).toBe('Upload_uploaded.json');
+		expect(uploadedName('')).toBe('flock_uploaded.json');
 	});
 });

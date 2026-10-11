@@ -87,13 +87,21 @@ export function makeClient(baseUrl) {
 		 * page's draft and images are none of the worker's business.
 		 */
 		async listProjects() {
-			const fields = 'id,key,path,name,root,local,manifest,manifest_name,manifest_modified,videos,missing,error';
+			const fields = 'id,key,path,name,root,local,manifest,manifest_name,manifest_modified,videos,missing,error,archived_at';
 			const out = [];
 			for (let page = 1; ; page++) {
 				const res = await request(`/api/collections/projects/records?perPage=500&page=${page}&fields=${fields}`);
 				out.push(...(res.items ?? []));
 				if (page >= (res.totalPages ?? 1)) return out;
 			}
+		},
+
+		/** Projects sent whose file has not been renamed yet (see archivePass). */
+		async projectsToArchive() {
+			const filter = encodeURIComponent('status = "uploaded" && archived_at = ""');
+			const fields = 'id,key,path,name,local,manifest_name';
+			const res = await request(`/api/collections/projects/records?perPage=50&filter=${filter}&fields=${fields}`);
+			return res.items ?? [];
 		},
 
 		async createProject(data) {

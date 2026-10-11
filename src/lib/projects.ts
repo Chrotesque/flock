@@ -187,6 +187,11 @@ export function readSavedDraft(raw: unknown): SavedDraft | null {
 	};
 }
 
+/** What the worker renames a sent project's file to — worker/projects.mjs, without a clash. */
+export function uploadedName(name: string): string {
+	return `${(name || 'flock.json').replace(/\.json$/i, '')}_uploaded.json`;
+}
+
 export type ProjectState = 'new' | 'started' | 'done';
 
 export function projectState(row: Pick<ProjectRow, 'status'>): ProjectState {

@@ -340,6 +340,12 @@ export interface ProjectRow {
 	thumbnail: string;
 	cover: string;
 	done_at: string;
+	/**
+	 * Set by the worker once the project is sent: when it renamed the file
+	 * (flock.json → flock_uploaded.json), and to what — '' if it was gone.
+	 */
+	archived_at: string;
+	archived_as: string;
 	created: string;
 	updated: string;
 }

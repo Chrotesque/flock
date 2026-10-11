@@ -31,7 +31,7 @@ import { instagramReady } from './accounts.mjs';
 import { copyToDestination, copyInto } from './archive.mjs';
 import { scanFolders, published } from './watch.mjs';
 import { readWatchConfig } from './folders.mjs';
-import { planProjectWrites, scanProjectRoots } from './projects.mjs';
+import { MANIFEST_NAME, archiveManifest, detachedKey, planProjectWrites, scanProjectRoots } from './projects.mjs';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { basename } from 'node:path';
@@ -433,6 +433,61 @@ async function writeProjects(pb, roots, local) {
 	}
 	for (const { id, data } of update) {
 		await pb.updateProject(id, data).catch((err) => log(`could not update project ${id}: ${err.message.split('\n')[0]}`));
+	}
+}
+
+/**
+ * Renames a sent project's flock.json to flock_uploaded.json, so its folder
+ * leaves the sidebar for good while the text stays beside the video — done
+ * by the worker that scans that kind of folder, on the slot tick, so a long
+ * upload holding the main loop does not hold it. The rename comes first and
+ * the row is marked after: the other order, with a rename that then failed,
+ * would list the same file again as a new project. A folder that cannot be
+ * read is tried again on the next tick, said once.
+ */
+let archiving = false;
+const archiveSaid = new Map();
+
+async function archivePass(pb) {
+	if (archiving || projectsOff || dry) return;
+	const publish = hb.canPublish();
+	const local = hb.canLocal();
+	if (!publish && !local) return;
+	archiving = true;
+	try {
+		let rows;
+		try {
+			rows = await pb.projectsToArchive();
+		} catch (err) {
+			if (/ -> 404\b/.test(err.message)) return;
+			throw err;
+		}
+		for (const row of rows) {
+			if (row.local ? !local : !publish) continue;
+			const name = row.manifest_name || MANIFEST_NAME;
+			try {
+				const result = await archiveManifest(await resolveFolder(row.path), name);
+				await pb.updateProject(row.id, {
+					archived_at: new Date().toISOString(),
+					archived_as: result.renamed ?? '',
+					key: detachedKey(row)
+				});
+				archiveSaid.delete(row.id);
+				log(
+					result.renamed
+						? `project ${row.name} sent: renamed ${name} to ${result.renamed}`
+						: `project ${row.name} sent: ${name} was already gone from its folder`
+				);
+			} catch (err) {
+				const message = err.message.split('\n')[0];
+				if (archiveSaid.get(row.id) !== message) {
+					archiveSaid.set(row.id, message);
+					log(`project ${row.name} sent, but ${name} could not be renamed yet: ${message}`);
+				}
+			}
+		}
+	} finally {
+		archiving = false;
 	}
 }
 
@@ -1047,6 +1102,7 @@ async function main() {
 		if (!dry) await accountPass(pb, config);
 		await pass(pb, config);
 		await slotPass(pb, config, { wait: true });
+		await archivePass(pb);
 		log('single pass complete');
 		return;
 	}
@@ -1140,6 +1196,7 @@ async function main() {
 		void accountPass(pb, config);
 		void slotPass(pb, config);
 		void orphanPass(pb, config).catch((err) => log(`orphan check failed: ${err.message}`));
+		void archivePass(pb).catch((err) => log(`project rename failed: ${err.message.split('\n')[0]}`));
 	};
 	slotTick();
 	setInterval(slotTick, Math.max(5, config.slotSeconds) * 1000);

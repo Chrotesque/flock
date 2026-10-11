@@ -3,7 +3,17 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile, mkdir, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { canonical, planProjectWrites, projectKey, scanProjectRoot } from './projects.mjs';
+import { readdir, readFile } from 'node:fs/promises';
+import {
+	archiveManifest,
+	canonical,
+	detachedKey,
+	isUploadedName,
+	planProjectWrites,
+	projectKey,
+	scanProjectRoot,
+	uploadedName
+} from './projects.mjs';
 import { readWatchConfig, folderKind } from './folders.mjs';
 import { scanFolders, typedJoin, published } from './watch.mjs';
 
@@ -87,6 +97,14 @@ describe('scanning a project folder', () => {
 		// A broken flock.json still makes a project, so it can be reported.
 		await mkdir(join(root, 'Broken'));
 		await writeFile(join(root, 'Broken', 'flock.json'), '{"flock": 1, "youtube": {');
+		// Sent: the renamed file, flock block and all, is not a project.
+		await mkdir(join(root, 'Sent'));
+		await writeFile(join(root, 'Sent', 'flock_uploaded.json'), '{"flock": 1}');
+		await writeFile(join(root, 'Sent', 'final.mp4'), 'x');
+		// Sent once, and a new flock.json written since: a project again.
+		await mkdir(join(root, 'Again'));
+		await writeFile(join(root, 'Again', 'flock_uploaded.json'), '{"flock": 1, "brand": "old"}');
+		await writeFile(join(root, 'Again', 'flock.json'), '{"flock": 1, "brand": "new"}');
 		await utimes(join(root, 'Cats', 'final.mp4'), new Date('2026-10-01'), new Date('2026-10-01'));
 	});
 
@@ -98,7 +116,8 @@ describe('scanning a project folder', () => {
 		const scan = await scanProjectRoot(root);
 		assert.equal(scan.error, undefined);
 		const byName = Object.fromEntries(scan.projects.map((p) => [p.name, p]));
-		assert.deepEqual(Object.keys(byName).sort(), ['Broken', 'Cats', 'Dogs']);
+		assert.deepEqual(Object.keys(byName).sort(), ['Again', 'Broken', 'Cats', 'Dogs']);
+		assert.equal(byName.Again.manifest, '{"flock": 1, "brand": "new"}');
 
 		assert.equal(byName.Cats.manifestName, 'flock.json');
 		assert.equal(byName.Cats.manifest, '{"flock": 1, "youtube": {"title": "Cats"}}');
@@ -202,7 +221,49 @@ describe('planProjectWrites', () => {
 		assert.equal(plan.update[0].data.missing, false);
 	});
 
+	it('leaves a row whose file was renamed alone, and lets a new file there be a new project', () => {
+		const sent = { id: 'old', key: '\\nas\p\cats#old', root: '\\nas\p', local: false, missing: false, archived_at: '2026-10-11 20:00:00.000Z' };
+		const plan = planProjectWrites([sent], [{ folder: '\\nas\p', projects: [project({ path: '\\nas\p\cats' })] }], false);
+		assert.equal(plan.create.length, 1);
+		assert.equal(plan.create[0].key, '\\nas\p\cats');
+		assert.deepEqual(plan.update, []);
+	});
+
 	it('keys a project by its path, whatever the case', () => {
 		assert.equal(projectKey('\\\\NAS\\P\\Cats\\'), '\\\\nas\\p\\cats');
+	});
+});
+
+describe('renaming a sent project file', () => {
+	it('knows a renamed file by its name', () => {
+		assert.equal(isUploadedName('flock_uploaded.json'), true);
+		assert.equal(isUploadedName('Flock_Uploaded-3.JSON'), true);
+		assert.equal(isUploadedName('flock.json'), false);
+		assert.equal(isUploadedName('uploaded.json'), false);
+	});
+
+	it('picks a free name', () => {
+		assert.equal(uploadedName('flock.json', []), 'flock_uploaded.json');
+		assert.equal(uploadedName('flock.json', ['FLOCK_uploaded.json', 'flock_uploaded-2.json']), 'flock_uploaded-3.json');
+		assert.equal(uploadedName('upload.json', ['flock.json']), 'upload_uploaded.json');
+	});
+
+	it('renames the file and keeps what it holds', async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'flock-archive-'));
+		try {
+			await writeFile(join(dir, 'flock.json'), '{"flock": 1, "brand": "x"}');
+			await writeFile(join(dir, 'flock_uploaded.json'), '{"flock": 1, "brand": "earlier"}');
+			assert.deepEqual(await archiveManifest(dir, 'flock.json'), { renamed: 'flock_uploaded-2.json' });
+			assert.deepEqual((await readdir(dir)).sort(), ['flock_uploaded-2.json', 'flock_uploaded.json']);
+			assert.equal(await readFile(join(dir, 'flock_uploaded-2.json'), 'utf8'), '{"flock": 1, "brand": "x"}');
+			assert.deepEqual(await archiveManifest(dir, 'flock.json'), { gone: true });
+			await assert.rejects(archiveManifest(join(dir, 'nope'), 'flock.json'));
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it('detaches the key from the folder', () => {
+		assert.equal(detachedKey({ id: 'abc', key: 'd:\\p\\cats' }), 'd:\\p\\cats#abc');
 	});
 });

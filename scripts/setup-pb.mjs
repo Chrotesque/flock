@@ -272,7 +272,8 @@ const collections = [
 		// holds a flock JSON file. The worker writes the first half on every
 		// change it finds (worker/projects.mjs); the page writes `status`,
 		// `draft`, the two images, `done_at` and `jobs` — the upload in
-		// progress, kept so it can be picked up again after a restart.
+		// progress, kept so it can be picked up again after a restart. Once
+		// sent, the worker renames the file and fills `archived_*`.
 		name: 'projects',
 		type: 'base',
 		...RULES,
@@ -308,6 +309,10 @@ const collections = [
 			},
 			{ type: 'date', name: 'done_at' },
 			{ type: 'json', name: 'jobs', maxSize: 20000 },
+			// The worker again: when it renamed the sent project's file, and to
+			// what ('' when the file was already gone). The key is detached then.
+			{ type: 'date', name: 'archived_at' },
+			{ type: 'text', name: 'archived_as', max: 300 },
 			...stamps
 		],
 		indexes: ['CREATE UNIQUE INDEX `idx_projects_key` ON `projects` (`key`)']

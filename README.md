@@ -129,8 +129,11 @@ subfolder's videos listed in a *Project Folder* box above the watch folders
 that upload is kept on the project as you go, so clicking it again — after a
 restart, or on another computer — picks it up where it was left; TikTok's
 audience and interaction choices and paid promotion are chosen again then.
-Once the upload is confirmed the project leaves the list. *Take it off the
-list*, in the Project Folder box, drops one that will not be uploaded.
+Once the upload is confirmed the project leaves the list, and the worker
+renames its `flock.json` to `flock_uploaded.json` — kept beside the video,
+never read as a project again; a new `flock.json` in the same folder later
+starts a new project. *Take it off the list*, in the Project Folder box,
+drops one that will not be uploaded and leaves its file as it is.
 
 Right-click a file in any list to play it in the page.Right-click a file in either list to play it in the page. The worker streams it
 from the PC it runs on (port 8790, reachable from that PC only), so previews

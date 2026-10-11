@@ -21,6 +21,7 @@
 	import { PLATFORMS } from '$lib/platforms';
 	import { paste } from '$lib/stores/paste.svelte';
 	import { projects } from '$lib/stores/projects.svelte';
+	import { uploadedName } from '$lib/projects';
 	import { onDestroy } from 'svelte';
 
 	settings.load();
@@ -336,6 +337,20 @@
 				{/if}
 				{#if plan.some((row) => row.platform === 'facebook')}
 					<p class="caveat">Facebook is not connected yet, so that release stays queued.</p>
+				{/if}
+				{#if project}
+					<!-- The worker renames the project's file, so the folder is off
+					     the list for good and the text stays beside the video. -->
+					<p class="caveat">
+						{#if project.archived_as}
+							{project.manifest_name} in {project.name} is now {project.archived_as}.
+						{:else if project.archived_at}
+							{project.manifest_name || 'The project file'} was no longer in {project.name} to rename.
+						{:else}
+							The worker renames {project.manifest_name || 'flock.json'} in {project.name} to
+							{uploadedName(project.manifest_name)} — kept beside the video, off the New projects list.
+						{/if}
+					</p>
 				{/if}
 				<button class="btn btn-primary" onclick={startOver}>New upload</button>
 			</section>
