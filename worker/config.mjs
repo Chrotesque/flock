@@ -11,7 +11,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isSea } from 'node:sea';
-import { parseRole } from './roles.mjs';
+import { ownsPublishing, parseRole } from './roles.mjs';
 import {
 	googleAccounts,
 	instagramAccounts,
@@ -201,6 +201,12 @@ export function hasInstagram(config) {
  */
 export function requireConfig({ needToken = true, needGoogle = true } = {}) {
 	const config = loadConfig();
+	// A PC worker beside a NAS one publishes nothing of its own, so it needs
+	// no platform at all — only the PocketBase address.
+	if (!ownsPublishing(config.role)) {
+		needToken = false;
+		needGoogle = false;
+	}
 	const missing = [];
 	if (!config.pocketbaseUrl) missing.push('pocketbaseUrl');
 	if (needGoogle && !config.google.clientId) missing.push('google.clientId');

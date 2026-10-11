@@ -231,7 +231,8 @@ pnpm build:worker
 ```
 
 That writes `dist/worker/flock-worker.exe`, a single program with Node baked
-in, and the example config beside it. Copy the program and your own
+in, the example config beside it, and `flock-worker.cjs`, the same worker for
+a machine that has Node (see the container below). Copy the program and your own
 `.worker-config.json` into one folder on the other machine and run it there;
 it takes the same flags as `pnpm worker` (`--once`, `--dry`, `--stats`,
 `--tiktok`, `--instagram`), and `flock-worker auth --tiktok` runs a consent
@@ -244,15 +245,55 @@ below.
 
 **One worker or two.** With no NAS, run one worker on your PC and leave
 `"role"` in its config at `"all"` (the default): it does everything. With a
-NAS, you can run two: one on the NAS with `"role": "nas"` (publishing,
-filing videos into their destinations, stats, title scoring) and one on the
-PC with `"role": "local"` (local watch folders, the folder dialog, video
-previews). `FLOCK_WORKER_ROLE` sets the role too. While the NAS worker is
-down, the PC worker takes over its work, and hands it back once the NAS
-worker returns. The sidebar shows **Worker** with one dot per worker
-(PC left, NAS right): green running, red not, amber with a ring while the PC
-is doing the NAS worker's work as well; underneath, what each is doing.
-Never run an `all` worker beside either of the others.
+NAS or any other machine that stays on, you can run two: one there with
+`"role": "nas"` (publishing, filing videos into their destinations, stats,
+title scoring) and one on the PC with `"role": "local"` (local watch
+folders, the folder dialog, video previews, a pasted block's thumbnail).
+`FLOCK_WORKER_ROLE` sets the role too. The PC worker needs nothing but
+`pocketbaseUrl` and `"role": "local"` in its config — no client secrets or
+tokens — and then leaves publishing to the NAS worker entirely. Given the
+platform credentials as well, it takes over the NAS worker's work while that
+one is down and hands it back once it returns; the catch is that TikTok
+replaces its tokens as they are used, so two configs holding them drift
+apart, and one of them stops working. The sidebar shows **Worker** with one
+dot per worker (PC left, NAS right): green running, red not, amber with a
+ring while the PC is doing the NAS worker's work as well; underneath, what
+each is doing. Never run an `all` worker beside either of the others.
+
+**The NAS worker in a container.** The worker is one file for plain Node,
+`dist/worker/flock-worker.cjs` (written by `pnpm build:worker`), so any
+`node:22` or newer image runs it with nothing to install. Put it and the
+worker's `.worker-config.json` in one folder on the NAS, then create a
+container from `node:24-alpine` with:
+
+- that folder mounted at `/config`, and the command `node /config/flock-worker.cjs`;
+- `FLOCK_WORKER_ROLE=nas`, and `FLOCK_PB_URL` set to an address of
+  PocketBase the container can reach (a LAN address is safest);
+- each share holding the watch folder or a destination mounted at
+  `/mnt/user/<share name>`: the worker turns a folder typed in Settings as
+  `\\server\share\folder` into `/mnt/user/share/folder`, matching the case of
+  what it finds there. That is Unraid's own layout, so on Unraid mount
+  `/mnt/user/<share>` at the same path; on another NAS mount the share's own
+  path there instead;
+- a restart policy (`--restart unless-stopped`), and on Unraid
+  `--user 99:100` with `UMASK=000`, so copied videos stay editable over SMB;
+- `FLOCK_RESTART_ON_UPDATE=1`, so the worker restarts itself on a new
+  version (below). Leave it out anywhere nothing would restart the worker.
+
+Its console shows in the container's log and on flock's Log screen. To
+update it, set `FLOCK_WORKER_DEST` in `.env` to that folder as this machine
+reaches it (`\\nas\appdata\flock_worker`, say) and run:
+
+```bash
+pnpm deploy:worker
+```
+
+That bundles the worker, copies it beside the config, and waits until the
+worker has finished what it holds and restarted on the new file.
+`pnpm deploy:worker:dry` shows where it would go. To connect another account
+later, point the consent flow at the NAS config — for example
+`FLOCK_WORKER_CONFIG=\\nas\appdata\flock_worker\.worker-config.json pnpm worker:auth --tiktok`
+— and restart the container.
 
 `pnpm worker:once` does a single pass and exits, which is the easier one to watch
 while testing. `pnpm worker:stats` runs one stats poll on its own, which is the

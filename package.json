@@ -25,7 +25,9 @@
 		"worker:youtube": "node worker/index.mjs --youtube",
 		"worker:tiktok": "node worker/index.mjs --tiktok",
 		"worker:instagram": "node worker/index.mjs --instagram",
-		"build:worker": "node scripts/build-worker.mjs"
+		"build:worker": "node scripts/build-worker.mjs",
+		"deploy:worker": "node scripts/deploy-worker.mjs",
+		"deploy:worker:dry": "node scripts/deploy-worker.mjs --dry"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.0",

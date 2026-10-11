@@ -21,9 +21,19 @@ import {
  * do what their role owns. `onStartPublishing` runs whenever this worker
  * takes up the publishing work — the NAS worker once the PC has handed it
  * over, the PC worker when it starts covering — and is where rows left
- * `publishing` by the other one are recovered.
+ * `publishing` by the other one are recovered. `covers` is whether a `local`
+ * worker takes the NAS worker's work over at all (roles.coversNas): without
+ * credentials it never does, and only ever does the PC's own jobs.
  */
-export function makeHeartbeat({ pb, role, run, log, live = true, onStartPublishing = async () => {} }) {
+export function makeHeartbeat({
+	pb,
+	role,
+	run,
+	log,
+	live = true,
+	covers = true,
+	onStartPublishing = async () => {}
+}) {
 	const startedAt = new Date().toISOString();
 	const tasks = new Map();
 	let nextTask = 0;
@@ -41,9 +51,14 @@ export function makeHeartbeat({ pb, role, run, log, live = true, onStartPublishi
 	let timer = null;
 	let soon = null;
 	let lastError = '';
+	// Set when a new worker file has arrived: nothing new is started, what is
+	// in hand finishes, and then the process exits for its container to
+	// restart it on the new code (see selfupdate.mjs).
+	let draining = false;
 	const warned = new Set();
 
 	function canPublish() {
+		if (draining) return false;
 		if (!live) return ownsPublishing(role);
 		if (role === 'all') return true;
 		if (role === 'nas') return !waiting;
@@ -119,6 +134,7 @@ export function makeHeartbeat({ pb, role, run, log, live = true, onStartPublishi
 		}
 
 		// role === 'local'
+		if (!covers) return;
 		const nasBeat = await read(beatKey('nas'));
 		const decision = coverDecision({ covering, nasBeat, now });
 		if (decision === 'start') {
@@ -175,7 +191,16 @@ export function makeHeartbeat({ pb, role, run, log, live = true, onStartPublishi
 	return {
 		role,
 		canPublish,
-		canLocal: () => ownsLocal(role),
+		canLocal: () => !draining && ownsLocal(role),
+
+		/** Starts nothing new from here on; see `draining` above. */
+		drain() {
+			draining = true;
+			beatSoon();
+		},
+
+		/** How many tasks are in hand — shown in the sidebar, and waited on by a drain. */
+		inHand: () => tasks.size,
 
 		/**
 		 * Runs `fn` as a named task: shown in the sidebar while it runs, and —

@@ -56,6 +56,18 @@ export function ownsLocal(role) {
 }
 
 /**
+ * Whether a worker takes the NAS worker's work over while it is down: only a
+ * `local` one, and only with credentials to publish with. A PC worker kept to
+ * the PC's own jobs holds no secrets, and the NAS config stays the only copy
+ * of TikTok's rotating token — two copies would kill one another's on the
+ * first refresh. Since PocketBase itself usually lives on the NAS, covering
+ * only ever helped while just the worker was down there.
+ */
+export function coversNas(role, hasCredentials) {
+	return role === 'local' && hasCredentials;
+}
+
+/**
  * What a `local` worker should do about the NAS worker's work, given the NAS
  * heartbeat. `start` covering once the NAS has been quiet for TAKEOVER_MS;
  * `release` once it is back while covering; otherwise `stay` as it is.

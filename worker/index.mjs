@@ -42,7 +42,8 @@ import { startPreviewServer } from './preview.mjs';
 import { makeRemoteLog } from './remotelog.mjs';
 import { randomBytes } from 'node:crypto';
 import { makeHeartbeat } from './heartbeat.mjs';
-import { ownsPublishing } from './roles.mjs';
+import { coversNas, ownsPublishing } from './roles.mjs';
+import { watchForUpdate } from './selfupdate.mjs';
 import { decide, mayBeAlive } from './orphans.mjs';
 
 /**
@@ -763,6 +764,32 @@ async function settleOrphan(pb, config, platform, row) {
 	}
 }
 
+/**
+ * A new worker file has settled beside this one: start nothing new, let what
+ * is in hand finish — an upload, a held reel, a copy — then exit, for the
+ * container's restart policy to bring the worker back on the new code. A row
+ * claimed in the instant before the drain is caught by the orphan check on
+ * the way back up.
+ */
+async function restartForUpdate() {
+	log('a new worker file has arrived — restarting once nothing is in hand');
+	hb.drain();
+	let said = false;
+	while (hb.inHand() > 0 || inHand.size > 0 || busy.size > 0) {
+		if (!said) {
+			said = true;
+			log('  waiting for the work in hand to finish first');
+		}
+		await new Promise((resolve) => setTimeout(resolve, 1000));
+	}
+	log('restarting on the new worker file');
+	await Promise.race([
+		hb.stop().then(() => remote.flush()),
+		new Promise((resolve) => setTimeout(resolve, 3000))
+	]);
+	process.exit(0);
+}
+
 /** Who the TikTok and Instagram tokens post as — the check that a setup worked. */
 async function showAccounts(config) {
 	if (checkYouTube) {
@@ -843,12 +870,15 @@ async function main() {
 			`role ${config.role}, pid ${process.pid})`
 	);
 	remote.attach(pb);
+	// A PC worker covers for the NAS one only with credentials of its own.
+	const covers = coversNas(config.role, hasYouTube(config) || hasTikTok(config) || hasInstagram(config));
 	hb = makeHeartbeat({
 		pb,
 		role: config.role,
 		run,
 		log,
 		live,
+		covers,
 		onStartPublishing: () => orphanPass(pb, config).catch((err) => log(`orphan check failed: ${err.message}`))
 	});
 
@@ -867,12 +897,17 @@ async function main() {
 		}
 	}
 	log(`PocketBase ok at ${config.pocketbaseUrl}`);
-	log(
-		'adapters: ' +
-			Object.entries(ADAPTERS)
-				.map(([platform, adapter]) => (adapter.ready(config) ? platform : `${platform} (not set up)`))
-				.join(', ')
-	);
+	if (config.role === 'local' && !covers) {
+		log('adapters: none here — publishing is the NAS worker\'s, and this one does the PC\'s own jobs only');
+	} else {
+		log(
+			'adapters: ' +
+				Object.entries(ADAPTERS)
+					.map(([platform, adapter]) => (adapter.ready(config) ? platform : `${platform} (not set up)`))
+					.join(', ')
+		);
+		if (covers) log('covers for the NAS worker while it is down, with the credentials in this config');
+	}
 
 	// Reads only, so it goes before the stale-row recovery: a stats check must
 	// not touch the publishing queue.
@@ -937,10 +972,17 @@ async function main() {
 		});
 	}
 
+	// A worker in a container restarts on a new bundle — see selfupdate.mjs.
+	if (process.env.FLOCK_RESTART_ON_UPDATE === '1' && process.argv[1]) {
+		log(`restarts itself when ${basename(process.argv[1])} is replaced`);
+		watchForUpdate({ file: process.argv[1], onReady: () => void restartForUpdate() });
+	}
+
 	// Same reason as scoring: an upload can hold the main loop for many
 	// minutes, and the Analytics screen should not go stale for the duration.
-	// `busy` stops a slow poll overlapping the next tick.
-	if (config.statsSeconds > 0) {
+	// `busy` stops a slow poll overlapping the next tick. A PC worker that
+	// never covers never reads them.
+	if (config.statsSeconds > 0 && (ownsPublishing(config.role) || covers)) {
 		if (!ownsPublishing(config.role)) log('stats run here only while covering for the NAS worker');
 		const count = config.google.accounts.length;
 		log(

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRole, isAlive, coverDecision, nasMayWork, STALE_MS, TAKEOVER_MS } from './roles.mjs';
+import { parseRole, isAlive, coverDecision, nasMayWork, coversNas, STALE_MS, TAKEOVER_MS } from './roles.mjs';
 
 const now = Date.parse('2026-10-04T12:00:00Z');
 const ago = (ms, extra = {}) => ({ beatAt: new Date(now - ms).toISOString(), ...extra });
@@ -40,4 +40,11 @@ test('the NAS waits while a live PC worker covers', () => {
 	// A PC that died while covering is not waited for.
 	assert.equal(nasMayWork(ago(STALE_MS + 1000, { covering: true }), now), true);
 	assert.equal(nasMayWork(null, now), true);
+});
+
+test('only a local worker with credentials covers for the NAS', () => {
+	assert.equal(coversNas('local', true), true);
+	assert.equal(coversNas('local', false), false);
+	assert.equal(coversNas('all', true), false);
+	assert.equal(coversNas('nas', true), false);
 });

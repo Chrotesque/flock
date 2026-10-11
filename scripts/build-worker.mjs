@@ -13,7 +13,7 @@ import { copyFileSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync 
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
+import { bundleWorker } from './bundle-worker.mjs';
 import { inject } from 'postject';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -23,19 +23,9 @@ const exe = process.platform === 'win32' ? 'flock-worker.exe' : 'flock-worker';
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
-// 1. One CommonJS file. The single-executable loader takes nothing else. The
-//    worker's one use of import.meta sits behind an isSea() check, so the
-//    empty import.meta of a CommonJS bundle is never read there.
-await build({
-	entryPoints: [join(root, 'worker', 'cli.mjs')],
-	bundle: true,
-	platform: 'node',
-	format: 'cjs',
-	target: 'node22',
-	outfile: join(out, 'flock-worker.cjs'),
-	logLevel: 'warning',
-	logOverride: { 'empty-import-meta': 'silent' }
-});
+// 1. One CommonJS file (bundle-worker.mjs). The single-executable loader takes
+//    nothing else.
+await bundleWorker(join(out, 'flock-worker.cjs'));
 
 // 2. The blob Node loads at startup.
 writeFileSync(
