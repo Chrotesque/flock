@@ -3,13 +3,25 @@
 // single-executable feature.
 //
 //   pnpm build:worker      -> dist/worker/flock-worker.exe (+ example config)
-//                             and flock-worker.cjs, the bundle for plain Node
+//                             and flock-worker.cjs, the bundle for plain Node,
+//                             and on Windows flock-worker-background.exe, no window
 //
 // The result is for the platform this runs on, so a Windows exe is built on
 // Windows. It is not signed: Windows may show a SmartScreen notice the first
 // time it is run, and the copied Node's own signature no longer matches.
 
-import { copyFileSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+	closeSync,
+	copyFileSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	readSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+	writeSync
+} from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +30,35 @@ import { inject } from 'postject';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const out = join(root, 'dist', 'worker');
+
+const WINDOWS_CONSOLE = 3;
+const WINDOWS_GUI = 2;
+
+/**
+ * Sets a Windows program's subsystem in its PE header: a console program (3)
+ * gets a console window from Windows when started, a windowed one (2) does
+ * not. Node then writes stdout nowhere, which the worker covers with its log
+ * file. The field sits 68 bytes into the optional header in both PE32 and
+ * PE32+. Changing it voids a signature, but this copy of Node has none left.
+ */
+function setSubsystem(file, value) {
+	const fd = openSync(file, 'r+');
+	try {
+		const head = Buffer.alloc(4096);
+		readSync(fd, head, 0, head.length, 0);
+		const pe = head.readUInt32LE(0x3c);
+		if (head.toString('latin1', pe, pe + 4) !== 'PE\0\0') throw new Error(`${file} is not a Windows program`);
+		const optional = pe + 24;
+		if (![0x10b, 0x20b].includes(head.readUInt16LE(optional))) throw new Error(`${file}: unknown PE header`);
+		const at = optional + 68;
+		if (head.readUInt16LE(at) !== WINDOWS_CONSOLE) throw new Error(`${file} is not a console program`);
+		const field = Buffer.alloc(2);
+		field.writeUInt16LE(value);
+		writeSync(fd, field, 0, 2, at);
+	} finally {
+		closeSync(fd);
+	}
+}
 const exe = process.platform === 'win32' ? 'flock-worker.exe' : 'flock-worker';
 
 rmSync(out, { recursive: true, force: true });
@@ -60,6 +101,15 @@ for (const f of ['flock-worker.blob', 'sea-config.json']) {
 	rmSync(join(out, f), { force: true });
 }
 
+// 5. On Windows, the same program again with no console window, for a PC
+//    worker that should simply run in the background (started from the
+//    Startup folder, stopped with --stop; it keeps flock-worker.log).
+const background = 'flock-worker-background.exe';
+if (process.platform === 'win32') {
+	copyFileSync(join(out, exe), join(out, background));
+	setSubsystem(join(out, background), WINDOWS_GUI);
+}
+
 // The bundle stays too: it is the whole worker for any machine with Node 22+,
 // which is how the NAS container runs it (`node flock-worker.cjs`).
 const size = (statSync(join(out, exe)).size / 1048576).toFixed(0);
@@ -67,3 +117,6 @@ const bundle = (statSync(join(out, 'flock-worker.cjs')).size / 1024).toFixed(0);
 console.log(`\nBuilt ${join(out, exe)} (${size} MB, Node ${process.version}).`);
 console.log('Put .worker-config.json beside it on the other machine, then run it like pnpm worker.');
 console.log(`And ${join(out, 'flock-worker.cjs')} (${bundle} KB), the same worker for plain Node, as the NAS runs it.`);
+if (process.platform === 'win32') {
+	console.log(`And ${join(out, background)}, the same program with no console window.`);
+}

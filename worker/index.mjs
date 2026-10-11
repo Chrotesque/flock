@@ -8,13 +8,14 @@
 //   pnpm worker:stats       one stats pass over the channel, then exit
 //   pnpm worker:tiktok      show who the TikTok token posts as, then exit
 //   pnpm worker:instagram   show who the Instagram token posts as, then exit
+//   … --stop                stop the polling worker of this role on this machine
 //
 // Belongs beside PocketBase, not in the SPA: it holds the platforms' client
 // secrets, and it has to keep running when no browser is open. Its `role`
 // (roles.mjs) splits the work between a NAS and a PC worker; the default,
 // `all`, does everything.
 
-import { requireConfig, hasYouTube, hasTikTok, hasInstagram } from './config.mjs';
+import { loadConfig, requireConfig, hasYouTube, hasTikTok, hasInstagram } from './config.mjs';
 import { makeClient } from './pb.mjs';
 import { grantCanEdit, publishToYouTube, probeYouTube, refreshYouTubeChannels, youtubeChannels } from './youtube.mjs';
 import { publishToTikTok, probeTikTok, refreshTikTokCreators, creatorInfo, privacyLabel } from './tiktok.mjs';
@@ -44,6 +45,7 @@ import { randomBytes } from 'node:crypto';
 import { makeHeartbeat } from './heartbeat.mjs';
 import { coversNas, ownsPublishing } from './roles.mjs';
 import { watchForUpdate } from './selfupdate.mjs';
+import { askToStop, holdInstance } from './instance.mjs';
 import { decide, mayBeAlive } from './orphans.mjs';
 
 /**
@@ -91,6 +93,7 @@ const statsOnly = process.argv.includes('--stats');
 const checkTikTok = process.argv.includes('--tiktok');
 const checkInstagram = process.argv.includes('--instagram');
 const checkYouTube = process.argv.includes('--youtube');
+const stopOnly = process.argv.includes('--stop');
 
 function stamp() {
 	return new Date().toLocaleTimeString();
@@ -765,6 +768,23 @@ async function settleOrphan(pb, config, platform, row) {
 }
 
 /**
+ * Ctrl-c, SIGTERM or `--stop`: a last heartbeat on the way out, so the
+ * sidebar turns red and a PC worker takes over at once rather than after the
+ * stale window. A second ctrl-c does not wait for it.
+ */
+let stopping = false;
+
+function shutdown() {
+	if (stopping) process.exit(1);
+	stopping = true;
+	log('stopping');
+	void Promise.race([
+		(hb ? hb.stop() : Promise.resolve()).then(() => remote.flush()),
+		new Promise((resolve) => setTimeout(resolve, 3000))
+	]).finally(() => process.exit(0));
+}
+
+/**
  * A new worker file has settled beside this one: start nothing new, let what
  * is in hand finish — an upload, a held reel, a copy — then exit, for the
  * container's restart policy to bring the worker back on the new code. A row
@@ -862,9 +882,22 @@ async function main() {
 		return;
 	}
 
+	// Stops the worker of this role running on this machine — the background
+	// build's ctrl-c, since it has no console. See instance.mjs.
+	if (stopOnly) {
+		log(await askToStop(loadConfig().role));
+		return;
+	}
+
 	const config = requireConfig({ needToken: !dry, needGoogle: !dry });
 	const pb = makeClient(config.pocketbaseUrl);
 	const live = !(once || dry || statsOnly);
+	// One polling worker of a role per machine; a second leaves before it has
+	// written anything. The one-shot modes may run beside a polling worker.
+	if (live && !(await holdInstance(config.role, shutdown))) {
+		log(`another ${config.role} worker is already running on this machine — leaving it to it`);
+		return;
+	}
 	log(
 		`worker started (${dry ? 'dry run' : once ? 'single pass' : statsOnly ? 'stats only' : 'polling'}, ` +
 			`role ${config.role}, pid ${process.pid})`
@@ -933,25 +966,11 @@ async function main() {
 
 	log(
 		`polling every ${config.pollSeconds}s, slots every ${config.slotSeconds}s, ` +
-			`scoring every ${config.scoreSeconds}s — ctrl-c to stop`
+			`scoring every ${config.scoreSeconds}s — ctrl-c or --stop to stop`
 	);
 
 	await hb.start();
-	// A last heartbeat on the way out, so the sidebar turns red and a PC worker
-	// takes over at once rather than after the stale window. A second ctrl-c
-	// does not wait for it.
-	let stopping = false;
-	for (const signal of ['SIGINT', 'SIGTERM']) {
-		process.on(signal, () => {
-			if (stopping) process.exit(1);
-			stopping = true;
-			log('stopping');
-			void Promise.race([
-				hb.stop().then(() => remote.flush()),
-				new Promise((resolve) => setTimeout(resolve, 3000))
-			]).finally(() => process.exit(0));
-		});
-	}
+	for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, shutdown);
 
 	// The Upload step's player — see preview.mjs. Only for a worker that stays
 	// up; the address is published where the page looks for it, and left there

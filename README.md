@@ -238,7 +238,13 @@ it takes the same flags as `pnpm worker` (`--once`, `--dry`, `--stats`,
 `--tiktok`, `--instagram`), and `flock-worker auth --tiktok` runs a consent
 flow. It reads the config beside itself, or wherever `FLOCK_WORKER_CONFIG`
 points. It is built for the platform it was built on and is not signed, so
-Windows may show a SmartScreen notice the first time. Local watch folders
+Windows may show a SmartScreen notice the first time. On Windows the build
+also writes `flock-worker-background.exe`, the same program with no console
+window, for a PC worker that should simply run: put a shortcut to it in the
+Startup folder (Win+R, `shell:startup`) and it starts with Windows; stop it
+with `flock-worker-background.exe --stop`. Both keep everything they print
+in `flock-worker.log` beside themselves, and only one polling worker of a
+role runs on a machine — starting a second does nothing. Local watch folders
 are paths on the machine the worker runs on, so set them again in Settings
 after moving it, and run only one worker at a time — unless you split them as
 below.
