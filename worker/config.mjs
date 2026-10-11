@@ -24,11 +24,14 @@ import {
  * Where the config file lives. Beside this module when the worker runs from
  * the checkout; beside the program when it runs as the single-file executable
  * `pnpm build:worker` makes, where there is no module directory to speak of;
- * or wherever FLOCK_WORKER_CONFIG points, which is what a container will use.
+ * beside the bundle (`flock-worker.cjs`) when that runs under plain Node, as
+ * in the NAS container, where a CommonJS bundle has no import.meta; or
+ * wherever FLOCK_WORKER_CONFIG points.
  */
 function configDir() {
 	if (isSea()) return dirname(process.execPath);
-	return dirname(fileURLToPath(import.meta.url));
+	const url = import.meta.url;
+	return url ? dirname(fileURLToPath(url)) : dirname(resolve(process.argv[1] ?? '.'));
 }
 
 export const CONFIG_PATH = process.env.FLOCK_WORKER_CONFIG

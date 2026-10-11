@@ -3,6 +3,7 @@
 // single-executable feature.
 //
 //   pnpm build:worker      -> dist/worker/flock-worker.exe (+ example config)
+//                             and flock-worker.cjs, the bundle for plain Node
 //
 // The result is for the platform this runs on, so a Windows exe is built on
 // Windows. It is not signed: Windows may show a SmartScreen notice the first
@@ -65,10 +66,14 @@ copyFileSync(
 	join(root, 'worker', '.worker-config.example.json'),
 	join(out, '.worker-config.example.json')
 );
-for (const f of ['flock-worker.cjs', 'flock-worker.blob', 'sea-config.json']) {
+for (const f of ['flock-worker.blob', 'sea-config.json']) {
 	rmSync(join(out, f), { force: true });
 }
 
+// The bundle stays too: it is the whole worker for any machine with Node 22+,
+// which is how the NAS container runs it (`node flock-worker.cjs`).
 const size = (statSync(join(out, exe)).size / 1048576).toFixed(0);
+const bundle = (statSync(join(out, 'flock-worker.cjs')).size / 1024).toFixed(0);
 console.log(`\nBuilt ${join(out, exe)} (${size} MB, Node ${process.version}).`);
 console.log('Put .worker-config.json beside it on the other machine, then run it like pnpm worker.');
+console.log(`And ${join(out, 'flock-worker.cjs')} (${bundle} KB), the same worker for plain Node, as the NAS runs it.`);

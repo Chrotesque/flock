@@ -14,6 +14,12 @@
 
 const args = process.argv.slice(2);
 
+// UMASK, as Unraid's containers take it ("000"): run as nobody:users with
+// root's default 022, the destination copies would be read-only over SMB.
+if (process.env.UMASK && /^[0-7]{1,4}$/.test(process.env.UMASK)) {
+	process.umask(parseInt(process.env.UMASK, 8));
+}
+
 if (args[0] === 'auth') {
 	process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
 	void import('./authorize.mjs');
