@@ -46,6 +46,8 @@ import { makeHeartbeat } from './heartbeat.mjs';
 import { coversNas, ownsPublishing } from './roles.mjs';
 import { watchForUpdate } from './selfupdate.mjs';
 import { askToStop, holdInstance } from './instance.mjs';
+import { startTray, wantsTray } from './tray.mjs';
+import { exeLogPath } from './filelog.mjs';
 import { decide, mayBeAlive } from './orphans.mjs';
 
 /**
@@ -971,6 +973,17 @@ async function main() {
 
 	await hb.start();
 	for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, shutdown);
+
+	// The background executable's icon, its way to be seen and stopped — see tray.mjs.
+	if (wantsTray()) {
+		startTray({
+			title: `flock worker (${config.role})`,
+			url: `${config.pocketbaseUrl}/`,
+			logPath: exeLogPath(),
+			onStop: shutdown,
+			log
+		});
+	}
 
 	// The Upload step's player — see preview.mjs. Only for a worker that stays
 	// up; the address is published where the page looks for it, and left there

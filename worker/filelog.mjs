@@ -7,7 +7,14 @@
 // Capped: past `maxBytes` the file becomes `.old` and a new one starts.
 
 import { appendFileSync, renameSync, statSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { isSea } from 'node:sea';
 import { format } from 'node:util';
+
+/** Where a Windows executable keeps its log — beside itself — or '' for any other run. */
+export function exeLogPath() {
+	return isSea() && process.platform === 'win32' ? join(dirname(process.execPath), 'flock-worker.log') : '';
+}
 
 export function logToFile(path, { maxBytes = 2 * 1024 * 1024 } = {}) {
 	let size = 0;

@@ -16,9 +16,7 @@
 // top-level await: the bundle the executable is built from is CommonJS, which
 // has none, and each module reports its own failures anyway.
 
-import { isSea } from 'node:sea';
-import { dirname, join } from 'node:path';
-import { logToFile } from './filelog.mjs';
+import { exeLogPath, logToFile } from './filelog.mjs';
 
 const args = process.argv.slice(2);
 
@@ -30,9 +28,7 @@ if (process.env.UMASK && /^[0-7]{1,4}$/.test(process.env.UMASK)) {
 
 // The Windows executables keep what they print in flock-worker.log beside
 // themselves — the background one has no console to print to at all.
-if (isSea() && process.platform === 'win32') {
-	logToFile(join(dirname(process.execPath), 'flock-worker.log'));
-}
+if (exeLogPath()) logToFile(exeLogPath());
 
 if (args[0] === 'auth') {
 	process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
