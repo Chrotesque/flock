@@ -1,15 +1,19 @@
 import type { PlatformId } from './types';
 
 /**
- * One image, two names: YouTube calls it a thumbnail, Instagram a reel cover.
- * The compose screen picks it once and it goes to whichever of the two the
- * upload serves. Each still has its own cap, so the image is checked against
- * every platform it would go to, and a platform it does not fit picks a
+ * The cover image: Instagram's reel cover, the one platform whose API takes a
+ * picture. YouTube's thumbnail was dropped in v0.11.7 (the user's call):
+ * `thumbnails.set` only ever changed a Short's 16:9 thumbnail, never the
+ * cover the Shorts feed shows (studio.ts). TikTok takes a cover *time*
+ * (`coverFrame`), never an image — its Direct Post API has nothing but
+ * `video_cover_timestamp_ms` (checked 11 Oct 2026). Still a list, so a
+ * platform can join the day its API takes an image; the image is checked
+ * against every platform it would go to, and one it does not fit uses its
  * frame instead — said beside the picker, never decided silently at confirm.
  */
-export type ImagePlatform = 'youtube' | 'instagram';
+export type ImagePlatform = 'instagram';
 
-export const IMAGE_PLATFORMS: readonly ImagePlatform[] = ['youtube', 'instagram'];
+export const IMAGE_PLATFORMS: readonly ImagePlatform[] = ['instagram'];
 
 interface Limit {
 	bytes: number;
@@ -20,12 +24,6 @@ interface Limit {
 }
 
 export const IMAGE_LIMITS: Record<ImagePlatform, Limit> = {
-	youtube: {
-		bytes: 2 * 1024 * 1024,
-		types: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-		formats: 'JPEG, PNG, GIF or WebP',
-		fallback: 'picks a frame'
-	},
 	instagram: {
 		bytes: 8 * 1024 * 1024,
 		types: ['image/jpeg', 'image/png'],

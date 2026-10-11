@@ -3,7 +3,7 @@ import { accounts } from './accounts.svelte';
 import { draft } from './draft.svelte';
 import { loadPlaylists, requestLocalImage } from '../repo';
 import { filledSummary, matchBrand, type FlockPaste, type PasteResult } from '../flockpaste';
-import { IMAGE_PLATFORMS, acceptedTypes, largestAccepted } from '../coverimage';
+import { IMAGE_LIMITS, IMAGE_PLATFORMS, acceptedTypes, largestAccepted } from '../coverimage';
 import { formatBytes } from '../format';
 import { resolveIn } from '../folders';
 import type { PlatformId } from '../types';
@@ -162,10 +162,10 @@ class PasteStore {
 			// What the picker would refuse outright; one platform's limits alone
 			// are said by the Thumbnail / Cover box itself.
 			if (!acceptedTypes(IMAGE_PLATFORMS).includes(file.type)) {
-				throw new Error(`${file.name} is not a JPEG, PNG, GIF or WebP image.`);
+				throw new Error(`${file.name} is not a ${IMAGE_PLATFORMS.map((p) => IMAGE_LIMITS[p].formats).join(' / ')} image.`);
 			}
 			if (file.size > largestAccepted(IMAGE_PLATFORMS)) {
-				throw new Error(`${file.name} is ${formatBytes(file.size)}, over the 8 MB limit.`);
+				throw new Error(`${file.name} is ${formatBytes(file.size)}, over the ${formatBytes(largestAccepted(IMAGE_PLATFORMS))} limit.`);
 			}
 			draft.thumbnail = file;
 			set('done', `${file.name}, ${formatBytes(file.size)}`);

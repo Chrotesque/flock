@@ -786,10 +786,16 @@ export async function loadTodoStats(since: string): Promise<StatsRow[]> {
 	});
 }
 
-/** flock's YouTube uploads since the list began, with what may be left to set in Studio. */
+/**
+ * flock's YouTube uploads since the list began: those YouTube has, with what
+ * may be left to set in Studio, and those still on their way (no link yet).
+ */
 export async function loadTodoUploads(since: string): Promise<UploadRow[]> {
 	return pb.collection('upload_targets').getFullList<UploadRow>({
-		filter: pb.filter("platform = 'youtube' && remote_url != '' && created >= {:since}", { since: new Date(since) }),
+		filter: pb.filter(
+			"platform = 'youtube' && created >= {:since} && (remote_url != '' || status = 'pending' || status = 'publishing')",
+			{ since: new Date(since) }
+		),
 		expand: 'job',
 		fields: UPLOAD_FIELDS,
 		sort: 'created'

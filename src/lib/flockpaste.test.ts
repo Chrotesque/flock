@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filledSummary, matchBrand, readFlockPaste, type FlockPaste } from './flockpaste';
+import { filledSummary, matchBrand, parseSchedule, readFlockPaste, type FlockPaste } from './flockpaste';
 import type { Brand } from './types';
 
 function read(text: string): FlockPaste {
@@ -173,5 +173,64 @@ describe('filledSummary', () => {
 		);
 		expect(filledSummary('tiktok', { description: 'd' })).toBe('caption');
 		expect(filledSummary('instagram', {})).toBe('ticked, nothing to fill');
+	});
+});
+
+describe('parseSchedule', () => {
+	it('reads a local date and time', () => {
+		expect(parseSchedule('2026-10-13 18:00')).toEqual({ date: '2026-10-13', time: '18:00' });
+		expect(parseSchedule(' 2026-10-13T9:05:00 ')).toEqual({ date: '2026-10-13', time: '09:05' });
+	});
+
+	it('turns an offset into local time', () => {
+		const at = new Date('2026-10-13T16:00:00Z');
+		const local = { date: `2026-10-${String(at.getDate()).padStart(2, '0')}`, time: `${String(at.getHours()).padStart(2, '0')}:00` };
+		expect(parseSchedule('2026-10-13T16:00:00Z')).toEqual(local);
+		expect(parseSchedule('2026-10-13T18:00+0200')).toEqual(local);
+		expect(parseSchedule('2026-10-13 18:00:00+02:00')).toEqual(local);
+	});
+
+	it('takes now', () => {
+		expect(parseSchedule('now')).toBe('now');
+		expect(parseSchedule('Immediately')).toBe('now');
+	});
+
+	it('refuses anything else', () => {
+		expect(parseSchedule('tomorrow at six')).toBeNull();
+		expect(parseSchedule('2026-02-30 10:00')).toBeNull();
+		expect(parseSchedule('2026-10-13 25:00')).toBeNull();
+		expect(parseSchedule(1760371200)).toBeNull();
+	});
+});
+
+describe('readFlockPaste: schedule', () => {
+	const now = new Date(2026, 9, 12, 12, 0).getTime();
+
+	it('reads each platform its own slot', () => {
+		const paste = readFlockPaste(
+			block({ youtube: { title: 'T', description: 'D', schedule: '2026-10-13 18:00' }, tiktok: { caption: 'c', schedule: 'now' } }),
+			now
+		);
+		expect(paste?.ok && paste.paste.platforms.youtube?.schedule).toEqual({ date: '2026-10-13', time: '18:00' });
+		expect(paste?.ok && paste.paste.platforms.tiktok?.schedule).toBe('now');
+		expect(paste?.ok && paste.paste.notes).toEqual([]);
+	});
+
+	it('says when a slot cannot be read, or has passed', () => {
+		const paste = readFlockPaste(
+			block({ instagram: { caption: 'c', schedule: 'Monday evening' }, youtube: { title: 'T', schedule: '2026-10-11 08:00' } }),
+			now
+		);
+		const notes = paste?.ok ? paste.paste.notes : [];
+		expect(paste?.ok && paste.paste.platforms.instagram?.schedule).toBeUndefined();
+		expect(notes.some((n) => n.startsWith('Instagram: ignored the schedule "Monday evening"'))).toBe(true);
+		expect(notes.some((n) => n.startsWith("YouTube's time, Sun 11 Oct, 08:00, has passed"))).toBe(true);
+	});
+
+	it('names the slot in the summary', () => {
+		expect(filledSummary('instagram', { description: 'c', schedule: { date: '2026-10-13', time: '19:30' } })).toBe(
+			'caption, Tue 13 Oct, 19:30'
+		);
+		expect(filledSummary('tiktok', { schedule: 'now' })).toBe('out on pickup');
 	});
 });

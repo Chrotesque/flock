@@ -207,6 +207,28 @@ export function makeTime(hour: number, minute: number): string {
 	return `${pad(hour)}:${pad(minute)}`;
 }
 
+/** Local midnight of the day `date` falls on. */
+export function dayStart(date: Date): Date {
+	const d = new Date(date);
+	d.setHours(0, 0, 0, 0);
+	return d;
+}
+
+/**
+ * "12 – 25 Oct 2026", "28 Oct – 10 Nov 2026", or with both years when the
+ * range crosses one — for a run of days that need not be a week.
+ */
+export function rangeLabel(start: Date, end: Date): string {
+	const mon = (d: Date) => MONTH_NAMES[d.getMonth()].slice(0, 3);
+	if (start.getFullYear() !== end.getFullYear()) {
+		return `${start.getDate()} ${mon(start)} ${start.getFullYear()} – ${end.getDate()} ${mon(end)} ${end.getFullYear()}`;
+	}
+	if (start.getMonth() !== end.getMonth()) {
+		return `${start.getDate()} ${mon(start)} – ${end.getDate()} ${mon(end)} ${end.getFullYear()}`;
+	}
+	return `${start.getDate()} – ${end.getDate()} ${mon(end)} ${end.getFullYear()}`;
+}
+
 /** "Sep 2026", or "Feb – Mar 2026" when the week straddles two months. */
 export function weekLabel(start: Date, end: Date): string {
 	const a = MONTH_NAMES[start.getMonth()].slice(0, 3);

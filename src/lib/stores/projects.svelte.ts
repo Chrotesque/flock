@@ -146,10 +146,17 @@ class ProjectsStore {
 		paste.show({ title: `Resumed ${row.name}`, brand: brands.multiple ? (brands.current?.name ?? '') : '', notes });
 	}
 
-	/** A project opened for the first time: filled from its file, like a paste. */
+	/**
+	 * A project opened for the first time: filled from its file, like a
+	 * paste. One video for every platform, whatever split this browser
+	 * remembers — a project's folder is one video's (the user's rule): its
+	 * only video is picked, and with several none is, nor is any platform
+	 * given its own; both are left to her.
+	 */
 	async #seed(row: ProjectRow) {
 		draft.project = row.id;
 		draft.projectBase = row.manifest_modified;
+		draft.useOwnSplit([]);
 		void markProject(row.id, { status: 'started' }).catch(() => {});
 
 		const title = `Opened ${row.name}`;
@@ -162,11 +169,9 @@ class ProjectsStore {
 			await paste.apply(result.paste, { folder: row.path, title });
 		}
 
-		// The folder's only video goes in by itself; with more, she picks.
 		const videos = readVideos(row.videos);
-		const slot = draft.slots.find((entry) => entry.slot === 'all') ?? draft.slots[0];
-		if (videos.length === 1 && slot && draft.project === row.id) {
-			draft.chooseNasFile(slot.slot, row.local ? { ...videos[0], local: true } : videos[0]);
+		if (videos.length === 1 && draft.project === row.id) {
+			draft.chooseNasFile('all', row.local ? { ...videos[0], local: true } : videos[0]);
 		}
 	}
 

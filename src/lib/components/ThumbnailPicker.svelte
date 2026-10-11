@@ -9,8 +9,8 @@
 		type ImagePlatform
 	} from '$lib/coverimage';
 
-	// One image for every platform that takes one — YouTube's thumbnail and
-	// Instagram's reel cover. The dialog accepts what any of them takes; what
+	// One image for every platform that takes one — today Instagram's reel
+	// cover (coverimage.ts). The dialog accepts what any of them takes; what
 	// one of them would refuse is said under the preview, per platform, while
 	// somebody is looking rather than at publish time when nobody is.
 	let {
@@ -22,11 +22,7 @@
 	let largest = $derived(largestAccepted(platforms));
 
 	let hint = $derived.by(() => {
-		const shape = platforms.includes('youtube')
-			? platforms.includes('instagram')
-				? '1280×720 for a video, 1080×1920 for a Short or reel'
-				: '1280×720 works best'
-			: '1080×1920 (9:16) works best';
+		const shape = '1080×1920 (9:16) works best';
 		const caps = platforms
 			.map((p) => `${PLATFORMS[p].label} ${IMAGE_LIMITS[p].bytes / 1024 / 1024} MB`)
 			.join(', ');

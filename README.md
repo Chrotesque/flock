@@ -125,7 +125,8 @@ is ignored until a `flock.json` file appears in it (a flock block, see
 *Pasting a prepared upload* below). Then it is listed in the sidebar under
 **New projects**; clicking it opens Upload filled from that file, with the
 subfolder's videos listed in a *Project Folder* box above the watch folders
-(a folder holding a single video has it picked already). Everything done to
+and one video for every platform: a folder holding a single video has it
+picked already, one holding several leaves the choice to you. Everything done to
 that upload is kept on the project as you go, so clicking it again — after a
 restart, or on another computer — picks it up where it was left; TikTok's
 audience and interaction choices and paid promotion are chosen again then.
@@ -211,15 +212,11 @@ pnpm worker:auth --with-playlists
 Otherwise the playlist is skipped, and the review screen says so before you
 confirm.
 
-Two things only YouTube Studio can set, whatever the authorisation: **paid
-promotion** (YouTube's API accepts it but viewers never see the notice) and a
-**Short's cover** (the API sets only the 16:9 thumbnail; the vertical cover a
-Short shows in the Shorts feed is picked in Studio). flock still sends both,
-says so on the details and review screens, and lists the video in the sidebar's
-*To finish* list — its YouTube icon opens the video's edit page in Studio. The
-thumbnail is set once YouTube has processed the video, so a YouTube release
-with one is marked done a minute or two after its upload (longer for a long
-video).
+flock sets no thumbnail and no **paid promotion** on YouTube: the API accepts
+paid promotion but viewers never see the notice, and the thumbnail it sets is
+only the 16:9 one, never the vertical cover a Short shows in the Shorts feed.
+Set both in YouTube Studio; the sidebar's *To finish* list links each video's
+edit page there.
 
 Check the queue without uploading anything:
 
@@ -441,8 +438,8 @@ pnpm worker:instagram
 shows who each account's token posts as and how much of its day's allowance
 (100 posts) is used.
 
-**A custom cover for the reel.** The image in the Details step's *Thumbnail /
-Cover* box is also the reel's cover (portrait JPEG or PNG, up to 8 MB, for
+**A custom cover for the reel.** The image in the Details step's *Cover* box
+is the reel's cover (portrait JPEG or PNG, up to 8 MB, for
 Instagram); without one, Instagram uses the frame at the *Cover frame* time.
 Instagram only takes a cover as an address it downloads, so the worker puts the
 image on your Page as an **unpublished** photo — it never appears on the Page —
@@ -501,17 +498,13 @@ controls above it: a tick on the left, which turns the platform on or off for
 this upload, and a gear on the right for its options on this upload. Platforms
 switched off in Settings start off and greyed out. One the brand has no account
 for cannot be used, and its controls say to choose the account in Settings →
-Brands first. The boxes on the right follow the platform being written for. For YouTube and Instagram, one *Thumbnail / Cover* image, used as YouTube's
-thumbnail and as the reel's cover. The linked-rings switch in that box's corner
-unlinks them, and then YouTube gets a thumbnail and Instagram a cover of their
-own, each picked while writing for that platform (optional;
-YouTube takes JPEG, PNG, GIF or WebP up to 2 MB, Instagram JPEG or PNG up to
-8 MB — if the image misses one platform's limits the box says so, and that
-platform picks a frame; TikTok takes a cover *time* in its options instead;
-see *Instagram* under *The worker* for what lets the worker send the cover).
+Brands first. The boxes on the right follow the platform being written for. For Instagram, a *Cover* image for the reel (optional;
+JPEG or PNG up to 8 MB — without one Instagram uses the frame at its cover
+time; see *Instagram* under *The worker* for what lets the worker send it).
+TikTok's API takes no cover image, only a cover *time*, set in its options.
 For YouTube, a playlist dropdown listing the channel's own playlists as the
-worker last read them. For YouTube and TikTok, a paid-promotion checkbox,
-off on every new upload, that covers both platforms' disclosures at once. For
+worker last read them. For TikTok, a paid-promotion checkbox, off on every new
+upload — TikTok's commercial-content disclosure. For
 TikTok, a *Post to TikTok* box names the account the worker posts as and holds
 the choices TikTok insists are made per post rather than saved: who can view the
 video, picked from the audiences that account offers with nothing preselected;
@@ -522,22 +515,24 @@ will be labelled. The line TikTok requires about its Music Usage Confirmation
 sits underneath, and Continue stays off until the box is complete. While writing
 a TikTok caption, everything past roughly the first hundred characters turns
 red: that is the part TikTok hides behind "more" under the video. The whole
-caption is still published. The thumbnail and playlist boxes fold to a single
+caption is still published. The cover and playlist boxes fold to a single
 line with a green check once they are done; click the line to open one again.
 Continue unlocks once every ticked platform has been written for and has a
 video. Clicking a platform in the
 right-hand list opens its options and a preview of its adapted text. Next comes a
-week calendar showing a card per platform: drag a card to another day or hour to move
-that release, or use the exact date and time fields underneath. While a card is held
+calendar of the coming days — today first, 14 days unless *Show N days* above it
+says otherwise (7 to 21, remembered per browser) — showing a card per platform:
+drag a card to another day or hour to move that release, or use the exact date
+and time fields underneath. While a card is held
 the grid scrolls with the wheel, or on its own near the top and bottom edges. A
 dropdown above the time column shows a second zone's clock beside the local one —
 US West, US East, or any zone added under Settings → Other — and the night and
 evening hours are tinted. The review screen
-plays the video — a tab per video when platforms have their own — with a tab for the thumbnail at the same size, beside
+plays the video — a tab per video when platforms have their own — with a tab for the reel's cover at the same size, beside
 what each platform gets and when — and, once the worker has read the accounts,
 which TikTok and Instagram account each goes out as, and a warning when the
-YouTube channel's authorisation cannot add the playlist or set paid promotion
-after upload; confirming is the tick
+YouTube channel's authorisation cannot add the playlist after upload;
+confirming is the tick
 button, pressed once and then again within two seconds while it shows "!!!", and
 the copy to the NAS starts there.
 
@@ -545,9 +540,12 @@ the copy to the NAS starts there.
 assistant, say — can go in with one Ctrl+V anywhere in flock, as a *flock
 block*: a JSON object with `"flock": 1` at the top. flock opens Upload,
 switches to the brand named, ticks each platform named and fills its text;
-YouTube's tags go into the *Other* box and its playlist is picked. A
-`thumbnail` path is read by the worker from its own disk (JPEG, PNG, GIF or
-WebP, up to 8 MB), so it has to be running on the PC that holds the image.
+YouTube's tags go into the *Other* box and its playlist is picked, and a
+platform's `schedule` — `"2026-10-13 18:00"` in local time, or `"now"` —
+fills its slot on the Schedule step, where it can still be changed. A
+`thumbnail` path is the reel's cover, read by the worker from its own disk
+(JPEG or PNG, up to 8 MB), so it has to be running on the PC that holds the
+image.
 A note in the bottom corner says what was filled and what was ignored.
 Anything else on the clipboard pastes as usual. The video is still picked on
 the Upload step, and TikTok's audience and interaction choices and paid
@@ -558,9 +556,9 @@ promotion are never filled: those are chosen by hand on every post.
   "flock": 1,
   "brand": "My brand",
   "thumbnail": "C:/Users/me/Pictures/thumbnail.png",
-  "youtube": { "title": "…", "description": "…", "tags": ["…", "…"], "playlist": "…" },
-  "instagram": { "caption": "…" },
-  "tiktok": { "caption": "…" }
+  "youtube": { "title": "…", "description": "…", "tags": ["…", "…"], "playlist": "…", "schedule": "2026-10-13 18:00" },
+  "instagram": { "caption": "…", "schedule": "2026-10-13 19:30" },
+  "tiktok": { "caption": "…", "schedule": "2026-10-14 17:00" }
 }
 ```
 
@@ -616,10 +614,12 @@ second clock.
 **To finish**, in the sidebar, lists YouTube videos with something left to do
 by hand, from the day flock first showed it. Each line has the video's title
 (it opens the video), a YouTube icon that opens its edit page in Studio, and —
-with the Jestr integration on — a *Jestr* button. A yellow dot on the icon means
-the video still needs paid promotion or its Short's cover set in Studio;
-clicking it opens Studio and counts that as done. A green check means nothing is
-left to set there.
+with the Jestr integration on — a *Jestr* button. From the moment an upload is
+confirmed until YouTube has the video, its line is a placeholder with a turning
+ring instead of the icon, so it is clear the upload went through and only
+YouTube is still to answer. A yellow dot on the icon (on videos uploaded before
+0.11.7) means paid promotion or a Short's cover was still to be set in Studio;
+clicking it opens Studio and counts that as done.
 
 **Jestr integration** (off unless ticked under Settings → *Other*) is for
 creators paid through [Jestr](https://jestr.gg) campaigns, where each video's

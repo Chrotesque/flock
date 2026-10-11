@@ -4,10 +4,13 @@
 	import { general } from '$lib/stores/general.svelte';
 	import { BUILT_IN_ZONES, clock, isValidZone, zoneTime } from '$lib/timezones';
 	import { untrack, type Snippet } from 'svelte';
-	import { isoDate, startOfWeek, addDays, weekLabel, hourOf, dayLabel } from '$lib/format';
+	import { isoDate, startOfWeek, addDays, weekLabel, hourOf, dayLabel, dayStart, rangeLabel } from '$lib/format';
 
-	// The week time-grid, shared by the upload wizard's schedule step and the
-	// standalone Calendar so the two cannot drift apart visually.
+	// The time-grid, shared by the upload wizard's schedule step and the
+	// standalone Calendar so the two cannot drift apart visually. The Calendar
+	// shows Monday-to-Sunday weeks; the schedule step a rolling run of
+	// `dayCount` days from today (`rolling`), so the days that matter for a
+	// new upload are never split across two weeks.
 	//
 	// Placement, drag plumbing and off-screen tracking live here; what a card
 	// *looks* like is the caller's `card` snippet (in practice always PostCard).
@@ -19,11 +22,18 @@
 		marker,
 		offscreen,
 		dense = false,
+		dayCount = 7,
+		rolling = false,
 		candrag,
 		ondropitem
 	}: {
 		items: T[];
+		/** The first day shown: a Monday, or with `rolling` any day — today to begin with. */
 		weekStart?: Date;
+		/** How many days are shown side by side. */
+		dayCount?: number;
+		/** Starts on any day, "Today" resets it, and the label names days rather than the month. */
+		rolling?: boolean;
 		card: Snippet<[T]>;
 		toolbar?: Snippet;
 		/** Rendered in a day's column header, once per item scheduled that day. */
@@ -56,14 +66,18 @@
 	let scroller = $state<HTMLDivElement | null>(null);
 
 	let days = $derived(
-		Array.from({ length: 7 }, (_, i) => {
+		Array.from({ length: dayCount }, (_, i) => {
 			const date = addDays(weekStart, i);
 			return { date, iso: isoDate(date), day: date.getDay() };
 		})
 	);
 
 	let inThisWeek = $derived(new Set(days.map((d) => d.iso)));
-	let isCurrentWeek = $derived(inThisWeek.has(today));
+	// "Today" is spent once today is the first day; "This week" once it is in the week.
+	let isCurrentWeek = $derived(rolling ? days[0]?.iso === today : inThisWeek.has(today));
+	let rangeText = $derived(
+		rolling ? rangeLabel(weekStart, addDays(weekStart, dayCount - 1)) : weekLabel(weekStart, addDays(weekStart, 6))
+	);
 
 	function cardsAt(iso: string, hour: number): T[] {
 		return items.filter((item) => item.date === iso && hourOf(item.time) === hour);
@@ -406,7 +420,7 @@
 		<button
 			class="nav-btn"
 			onclick={() => (weekStart = addDays(weekStart, -7))}
-			aria-label="Previous week"
+			aria-label={rolling ? 'A week earlier' : 'Previous week'}
 		>
 			<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
 				><path
@@ -418,11 +432,11 @@
 				/></svg
 			>
 		</button>
-		<span class="label">{weekLabel(weekStart, addDays(weekStart, 6))}</span>
+		<span class="label">{rangeText}</span>
 		<button
 			class="nav-btn"
 			onclick={() => (weekStart = addDays(weekStart, 7))}
-			aria-label="Next week"
+			aria-label={rolling ? 'A week later' : 'Next week'}
 		>
 			<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
 				><path
@@ -438,10 +452,10 @@
 
 	<button
 		class="btn sm"
-		onclick={() => (weekStart = startOfWeek(new Date()))}
+		onclick={() => (weekStart = rolling ? dayStart(new Date()) : startOfWeek(new Date()))}
 		disabled={isCurrentWeek}
 	>
-		This week
+		{rolling ? 'Today' : 'This week'}
 	</button>
 
 	<span class="spacer"></span>
@@ -449,7 +463,13 @@
 	{@render toolbar?.()}
 </header>
 
-<div class="calendar card" class:zoned={Boolean(zone)} class:dragging={Boolean(dragging)}>
+<div
+	class="calendar card"
+	class:zoned={Boolean(zone)}
+	class:dragging={Boolean(dragging)}
+	class:many={dayCount > 10}
+	style="--days: {dayCount}"
+>
 	<div class="head" style="padding-right: {gutter}px">
 		<div class="corner">
 			<select
@@ -632,7 +652,20 @@
 	.head,
 	.grid {
 		display: grid;
-		grid-template-columns: var(--gutter) repeat(7, minmax(0, 1fr));
+		grid-template-columns: var(--gutter) repeat(var(--days, 7), minmax(0, 1fr));
+	}
+
+	/* Two or three weeks side by side: narrower day heads, the date on top of
+	   the markers rather than beside them. */
+	.calendar.many .dayhead {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 4px;
+		padding: 7px 6px;
+	}
+
+	.calendar.many .dom {
+		font-size: 15px;
 	}
 
 	.head {
@@ -826,14 +859,14 @@
 
 	/* Floating over the grid's own edges, so an off-screen card is reachable
 	   without hunting for it. */
-	/* Mirrors the grid's seven day columns exactly, so an arrow lands over the
-	   day its card is on. */
+	/* Mirrors the grid's day columns exactly, so an arrow lands over the day
+	   its card is on. */
 	.rail {
 		position: absolute;
 		left: var(--gutter);
 		right: 0;
 		display: grid;
-		grid-template-columns: repeat(7, minmax(0, 1fr));
+		grid-template-columns: repeat(var(--days, 7), minmax(0, 1fr));
 		align-items: start;
 		padding: 7px 0;
 		pointer-events: none;
@@ -870,7 +903,7 @@
 
 		.head,
 		.grid {
-			grid-template-columns: var(--gutter) repeat(7, minmax(78px, 1fr));
+			grid-template-columns: var(--gutter) repeat(var(--days, 7), minmax(78px, 1fr));
 		}
 
 		.calendar {

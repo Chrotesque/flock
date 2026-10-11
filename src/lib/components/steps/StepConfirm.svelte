@@ -21,7 +21,6 @@
 		type Allowance
 	} from '$lib/accounts';
 	import { imageFits, isImagePlatform, type ImagePlatform } from '$lib/coverimage';
-	import { studioNotes } from '$lib/studio';
 	import {
 		tiktokProblems,
 		readDisclosure,
@@ -92,21 +91,6 @@
 	function grantIssues(row: PlanRow): string[] {
 		if (row.platform !== 'youtube') return [];
 		return youtubeGrantWarnings(row.options, accounts.for('youtube'));
-	}
-
-	/**
-	 * What only Studio can set (studio.ts): paid promotion, and a Short's
-	 * cover. Said here so it is no surprise; the sidebar's To finish list
-	 * opens the video in Studio once it is up.
-	 */
-	function studioIssues(row: PlanRow): string[] {
-		if (row.platform !== 'youtube') return [];
-		const image = draft.imageFor('youtube');
-		return studioNotes(
-			Boolean(row.options.paidPromotion),
-			image !== null && imageFits(image, 'youtube'),
-			draft.videoFor('youtube').duration
-		);
 	}
 
 	/**
@@ -239,11 +223,10 @@
 	}
 
 	// Which pane the stage shows: the video, or an image at the same size, so
-	// the preview is actually judgeable. One image tab while YouTube's
-	// thumbnail and Instagram's cover are the same picture, one each once they
-	// were unlinked. TikTok takes a cover *time* (its `coverFrame` option), so
-	// it is not on a tab. Falls back to the video if neither platform is in
-	// the plan.
+	// the preview is actually judgeable — Instagram's cover (coverimage.ts),
+	// one tab per image once they were unlinked. TikTok takes a cover *time*
+	// (its `coverFrame` option), so it is not on a tab. Falls back to the
+	// video if no image platform is in the plan.
 	interface ImageTab {
 		key: string;
 		label: string;
@@ -257,13 +240,13 @@
 		if (imagePlatforms.length === 0) return [];
 		if (draft.imagesLinked) {
 			return [
-				{ key: 'image', label: 'Thumbnail', noun: 'thumbnail', platforms: imagePlatforms, file: draft.thumbnail }
+				{ key: 'image', label: 'Cover', noun: 'cover', platforms: imagePlatforms, file: draft.thumbnail }
 			];
 		}
 		return imagePlatforms.map((p) => ({
 			key: `image-${p}`,
-			label: p === 'youtube' ? 'Thumbnail' : 'Cover',
-			noun: p === 'youtube' ? 'thumbnail' : 'cover',
+			label: 'Cover',
+			noun: 'cover',
 			platforms: [p],
 			file: draft.imageFor(p)
 		}));
@@ -450,7 +433,6 @@
 			{@const visibility = visibilityWarning(row)}
 			{@const issues = tiktokIssues(row)}
 			{@const grant = grantIssues(row)}
-			{@const studio = studioIssues(row)}
 			{@const account = accountFor(row.platform)}
 			{@const allowance = postAllowance(accounts.for(row.platform))}
 			{@const overAllowance = allowanceWarning(allowance, dueAt(row))}
@@ -520,23 +502,6 @@
 					{/each}
 					{#each grant as issue (issue)}
 						<p class="warnline" title="Sign the channel in again with {YOUTUBE_EDIT_SETUP} to let flock edit it after upload.">
-							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
-								<path
-									d="M12 3.5 21 19.5H3L12 3.5Z"
-									stroke="currentColor"
-									stroke-width="1.8"
-									stroke-linejoin="round"
-								/>
-								<path d="M12 10v4M12 16.4v.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
-							</svg>
-							{issue}
-						</p>
-					{/each}
-					{#each studio as issue (issue)}
-						<p
-							class="warnline"
-							title="Once the video is up, the YouTube icon in the sidebar's To finish list opens it in Studio."
-						>
 							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
 								<path
 									d="M12 3.5 21 19.5H3L12 3.5Z"

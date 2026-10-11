@@ -24,7 +24,6 @@
 	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
 	import { youtubeCanEdit, YOUTUBE_EDIT_SETUP } from '$lib/accounts';
-	import { studioNotes } from '$lib/studio';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { mergeTagGroups, tagListLength, parseTagList } from '$lib/format';
 	import { checkTags } from '$lib/tagcheck';
@@ -67,10 +66,10 @@
 	let def = $derived(composing ? PLATFORMS[composing] : null);
 	let text = $derived(composing ? draft.textFor(composing) : { title: '', description: '' });
 
-	/* ---- YouTube extras: thumbnail and playlist ----
+	/* ---- YouTube's playlist, Instagram's cover ----
 	 *
-	 * Both YouTube-only, so they only render while YouTube is going to get this
-	 * upload. The playlist list comes from the worker by way of PocketBase,
+	 * The playlist is YouTube-only, so it only renders while YouTube is going
+	 * to get this upload. The playlist list comes from the worker by way of PocketBase,
 	 * exactly like the watch folder: the browser holds no Google credentials.
 	 * The choice is per upload and lives only in the draft's overrides — there
 	 * is no saved default, since no two uploads want the same one. The value
@@ -79,45 +78,28 @@
 
 	let youtubeActive = $derived(draft.activePlatforms.includes('youtube'));
 	let tiktokActive = $derived(draft.activePlatforms.includes('tiktok'));
-	// The paid-promotion box serves both of these. The image box serves YouTube
-	// and Instagram instead — one picture, a thumbnail to one and a reel cover
-	// to the other — while TikTok takes a cover *time* (its `coverFrame`
-	// option), not an image.
-	let mediaActive = $derived(youtubeActive || tiktokActive);
+	// The image box is Instagram's cover (coverimage.ts): YouTube's thumbnail
+	// was dropped in v0.11.7, and TikTok takes a cover *time* (its
+	// `coverFrame` option), not an image.
 	let imagePlatforms = $derived(draft.activePlatforms.filter(isImagePlatform));
 	let imageComposing = $derived(composing && isImagePlatform(composing) ? composing : null);
 	let showImageBox = $derived(imagePlatforms.length > 0 && imageComposing !== null);
-	// Linked, one box serves both; unlinked, the box is the platform in view's
-	// own — YouTube's thumbnail or Instagram's cover. The switch shows only
-	// while there are two to link, or while they are apart.
+	// Linked, one box serves every image platform; unlinked, the box is the
+	// platform in view's own. With Instagram alone there is nothing to link,
+	// so the switch shows only for an older draft that was unlinked.
 	let imageBoxPlatforms = $derived(
 		draft.imagesLinked || !imageComposing ? imagePlatforms : [imageComposing]
 	);
-	let imageBoxLabel = $derived(
-		draft.imagesLinked ? 'Thumbnail / Cover' : imageComposing === 'instagram' ? 'Cover' : 'Thumbnail'
-	);
+	let imageBoxLabel = $derived('Cover');
 	let imageBoxFile = $derived(imageComposing ? draft.imageFor(imageComposing) : null);
 	let imageBoxDone = $derived(
 		imageBoxFile !== null && imageBoxPlatforms.every((p) => imageFits(imageBoxFile, p))
 	);
 	let showLinkSwitch = $derived(imagePlatforms.length > 1 || !draft.imagesLinked);
-	// A Short's cover is set in Studio; flock's image only becomes YouTube's
-	// 16:9 thumbnail (studio.ts). Said while YouTube is in the box, unless the
-	// video is known to be long.
-	let coverNote = $derived(
-		imageBoxPlatforms.includes('youtube') ? (studioNotes(false, true, draft.videoFor('youtube').duration)[0] ?? '') : ''
-	);
 	// The boxes follow the pill being composed, like the playlist box: the
-	// paid-promotion box shows only for a platform it serves, the TikTok box
-	// only for TikTok. Both still apply to every platform they serve.
-	let showPaidPromotion = $derived(
-		mediaActive && (composing === 'youtube' || composing === 'tiktok')
-	);
+	// paid-promotion box and the TikTok box show only while TikTok is.
+	let showPaidPromotion = $derived(tiktokActive && composing === 'tiktok');
 	let showTiktokBox = $derived(tiktokActive && composing === 'tiktok');
-	// In the user's display order, for the icons beside the shared boxes.
-	let mediaPlatforms = $derived(
-		draft.activePlatforms.filter((p) => p === 'youtube' || p === 'tiktok')
-	);
 	let playlists = $state<PlaylistIndex | null>(null);
 	let playlistsLoading = $state(false);
 
@@ -150,19 +132,13 @@
 
 	// Per upload as well, and off unless ticked: it changes too often to be a
 	// saved default, and a default of "yes" would mislabel every other video.
-	// One box for both platforms that ask: YouTube's paid-promotion flag and
-	// TikTok's commercial-content disclosure are the same admission.
-	let paidPromotion = $derived(
-		Boolean(draft.overrides.youtube?.paidPromotion || draft.overrides.tiktok?.discloseContent)
-	);
+	// TikTok's commercial-content disclosure only: YouTube's paid-promotion
+	// flag never reached viewers through the API (studio.ts) and was dropped
+	// in v0.11.7, so it is ticked in Studio by hand.
+	let paidPromotion = $derived(Boolean(draft.overrides.tiktok?.discloseContent));
 
 	function setPaidPromotion(on: boolean) {
-		if (youtubeActive) {
-			draft.overrides.youtube = { ...(draft.overrides.youtube ?? {}), paidPromotion: on };
-		}
-		if (tiktokActive) {
-			draft.overrides.tiktok = { ...(draft.overrides.tiktok ?? {}), discloseContent: on };
-		}
+		draft.overrides.tiktok = { ...(draft.overrides.tiktok ?? {}), discloseContent: on };
 	}
 
 	/* ---- TikTok's per-post rules ----
@@ -583,18 +559,18 @@
 
 {#snippet linkSwitch()}
 	<!--
-		One picture for YouTube and Instagram (linked rings), or one each
-		(broken rings) — to try a different thumbnail than cover.
+		One picture for every platform that takes one (linked rings), or one
+		each (broken rings). Shown only while there are two to link.
 	-->
 	<button
 		class="linkswitch"
 		class:on={draft.imagesLinked}
 		role="switch"
 		aria-checked={draft.imagesLinked}
-		aria-label="Same image for the YouTube thumbnail and the Instagram cover"
+		aria-label="Same image for every platform that takes one"
 		title={draft.imagesLinked
-			? 'One image for both. Switch off to give YouTube and Instagram their own.'
-			: 'YouTube and Instagram each get their own image. Switch on to use one for both.'}
+			? 'One image for every platform that takes one. Switch off to give each its own.'
+			: 'Each platform gets its own image. Switch on to use one for all.'}
 		onclick={() => draft.linkImages(!draft.imagesLinked)}
 	>
 		<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
@@ -1019,20 +995,13 @@
 			<section class="videocard card">
 				<span class="label">
 					Paid promotion
-					<span class="icons">
-						{#each mediaPlatforms as platform (platform)}
-							<PlatformIcon {platform} size={13} />
-						{/each}
-					</span>
+					<span class="icons"><PlatformIcon platform="tiktok" size={13} /></span>
 				</span>
 				<Checkbox
 					checked={paidPromotion}
 					label="This video contains paid promotion or commercial content"
 					onchange={setPaidPromotion}
 				/>
-				{#if paidPromotion && youtubeActive}
-					<p class="nasnote faint">{studioNotes(true, false, 0)[0]}</p>
-				{/if}
 			</section>
 		{/if}
 
@@ -1190,13 +1159,10 @@
 					summary={imageBoxFile?.name ?? ''}
 					action={showLinkSwitch ? linkSwitch : undefined}
 				>
-					{#if draft.imagesLinked || imageComposing === 'youtube'}
+					{#if draft.imagesLinked}
 						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.thumbnail} />
 					{:else}
 						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.cover} />
-					{/if}
-					{#if coverNote}
-						<p class="nasnote faint">{coverNote}</p>
 					{/if}
 				</FoldBox>
 			{/key}

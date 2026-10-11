@@ -22,6 +22,7 @@
 	import { paste } from '$lib/stores/paste.svelte';
 	import { projects } from '$lib/stores/projects.svelte';
 	import { uploadedName } from '$lib/projects';
+	import { videoTodo } from '$lib/stores/videotodo.svelte';
 	import { onDestroy } from 'svelte';
 
 	settings.load();
@@ -143,12 +144,10 @@
 						description: label.description,
 						file,
 						source: nasFile,
-						// Each platform's image (one shared, unless unlinked), sent only
-						// where it fits; the picker has already said where it does not.
-						thumbnail:
-							group.platforms.includes('youtube') && imageFits(draft.imageFor('youtube'), 'youtube')
-								? draft.imageFor('youtube')
-								: null,
+						// Instagram's cover, sent only if it fits — the picker has
+						// already said when it does not. YouTube gets no thumbnail any
+						// more (coverimage.ts).
+						thumbnail: null,
 						cover:
 							group.platforms.includes('instagram') && imageFits(draft.imageFor('instagram'), 'instagram')
 								? draft.imageFor('instagram')
@@ -198,6 +197,8 @@
 				)
 			);
 			phase = 'done';
+			// The YouTube placeholder in To finish, now rather than on the next poll.
+			void videoTodo.refresh();
 			// Off the sidebar: a project is done once all of it is queued.
 			if (draft.project) void projects.markUploaded(draft.project, jobs);
 		} catch (err) {

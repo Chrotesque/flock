@@ -4,40 +4,34 @@ import { acceptedTypes, imageFits, imageProblem, largestAccepted } from './cover
 const MB = 1024 * 1024;
 
 describe('imageProblem', () => {
-	it('passes an image both platforms take', () => {
-		const png = { type: 'image/png', size: 1 * MB };
-		expect(imageProblem(png, 'youtube')).toBe('');
-		expect(imageProblem(png, 'instagram')).toBe('');
+	it("passes an image Instagram takes", () => {
+		expect(imageProblem({ type: 'image/png', size: 1 * MB }, 'instagram')).toBe('');
+		expect(imageProblem({ type: 'image/jpeg', size: 5 * MB }, 'instagram')).toBe('');
 	});
 
-	it('holds each platform to its own cap', () => {
-		const big = { type: 'image/jpeg', size: 5 * MB };
-		expect(imageProblem(big, 'youtube')).toBe('over its 2 MB limit');
-		expect(imageProblem(big, 'instagram')).toBe('');
+	it('holds it to its cap', () => {
+		expect(imageProblem({ type: 'image/jpeg', size: 9 * MB }, 'instagram')).toBe('over its 8 MB limit');
 	});
 
-	it('holds each platform to its own formats', () => {
-		const webp = { type: 'image/webp', size: 100_000 };
-		expect(imageProblem(webp, 'youtube')).toBe('');
-		expect(imageProblem(webp, 'instagram')).toBe('JPEG or PNG only');
+	it('holds it to its formats', () => {
+		expect(imageProblem({ type: 'image/webp', size: 100_000 }, 'instagram')).toBe('JPEG or PNG only');
 	});
 });
 
 describe('imageFits', () => {
 	it('is false without an image', () => {
-		expect(imageFits(null, 'youtube')).toBe(false);
+		expect(imageFits(null, 'instagram')).toBe(false);
 	});
 });
 
 describe('what the picker accepts', () => {
-	it('is the union of the platforms served', () => {
+	it('is what the platforms served take', () => {
 		expect(acceptedTypes(['instagram'])).toEqual(['image/jpeg', 'image/png']);
-		expect(acceptedTypes(['youtube', 'instagram'])).toHaveLength(4);
-		expect(largestAccepted(['youtube'])).toBe(2 * MB);
-		expect(largestAccepted(['youtube', 'instagram'])).toBe(8 * MB);
+		expect(largestAccepted(['instagram'])).toBe(8 * MB);
 	});
 
-	it('falls back to both when none is active', () => {
+	it('falls back to every image platform when none is active', () => {
+		expect(acceptedTypes([])).toEqual(['image/jpeg', 'image/png']);
 		expect(largestAccepted([])).toBe(8 * MB);
 	});
 });

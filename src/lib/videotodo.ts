@@ -15,6 +15,11 @@ import { studioTasks, studioUrl, videoIdOf } from './studio';
  *   the whole record. A scheduled video is listed with the button greyed
  *   until it goes public; a link cannot be submitted before.
  *
+ * - Waiting: a flock upload to YouTube from the moment it is confirmed until
+ *   YouTube has it (no link yet), and with Jestr on until the channel's next
+ *   read lists it — a placeholder with a spinner, so a finished upload is
+ *   never mistaken for a missing one (v0.11.7, the user's request).
+ *
  * A line goes once nothing is left on it. Stored in `app_settings` under
  * `video_todo` as { since, jestr, studio }: `since` is where the list began,
  * so a new install or a newly connected channel does not list everything it
@@ -57,12 +62,21 @@ export interface UploadRow {
 	id: string;
 	title?: string;
 	remote_url?: string;
+	/** `pending` (queued) and `publishing` (uploading) are the waiting ones. */
+	status?: string;
 	created?: string;
 	options?: { paidPromotion?: boolean };
 	expand?: { job?: { thumbnail?: string } };
 }
 
-export const UPLOAD_FIELDS = 'id,title,remote_url,created,options.paidPromotion,expand.job.thumbnail';
+export const UPLOAD_FIELDS = 'id,title,remote_url,status,created,options.paidPromotion,expand.job.thumbnail';
+
+/** What a waiting line is waiting for, in the words its spinner's tooltip uses. */
+export const WAITING = {
+	queued: 'Queued — the worker picks it up in a moment',
+	uploading: 'Uploading to YouTube — the link follows once YouTube has it',
+	listing: "On YouTube — Jestr's button follows once the channel is read again"
+} as const;
 
 export interface TodoLine {
 	/** YouTube's video id. */
@@ -78,6 +92,12 @@ export interface TodoLine {
 	jestr: 'open' | 'waiting' | null;
 	/** When a scheduled video goes public; null once it is (or when not known). */
 	publicAt: string | null;
+	/**
+	 * Why the line is a placeholder for now (WAITING), or null. Without a
+	 * YouTube link yet, `id` is `upload:<target id>` and there is nothing to
+	 * open.
+	 */
+	waiting: string | null;
 }
 
 /** Local midnight of the given day, as an instant: where a fresh list begins. */
@@ -159,6 +179,7 @@ export function todoLines(
 			studio: [] as string[],
 			jestr: null as TodoLine['jestr'],
 			publicAt: publishAt || null,
+			waiting: null as string | null,
 			at
 		};
 		lines.set(id, line);
@@ -168,7 +189,30 @@ export function todoLines(
 	for (const upload of uploads) {
 		const id = videoIdOf(upload.remote_url);
 		const created = instant(upload.created);
-		if (!id || !(created >= since) || state.studio.includes(id)) continue;
+		if (!(created >= since)) continue;
+		if (!id) {
+			if (upload.status !== 'pending' && upload.status !== 'publishing') continue;
+			const key = `upload:${upload.id}`;
+			lines.set(key, {
+				id: key,
+				title: upload.title || 'YouTube upload',
+				channel: '',
+				watchUrl: '',
+				studioUrl: '',
+				studio: [],
+				jestr: null,
+				publicAt: null,
+				waiting: upload.status === 'publishing' ? WAITING.uploading : WAITING.queued,
+				at: created
+			});
+			continue;
+		}
+		// On YouTube, but not read by the stats pass yet: Jestr's part cannot be
+		// known until it is, so the line waits rather than vanishing meanwhile.
+		if (options.jestr && !statsById.has(id) && !state.jestr.includes(id)) {
+			lineFor(id, created, upload.title).waiting = WAITING.listing;
+		}
+		if (state.studio.includes(id)) continue;
 		const tasks = studioTasks(
 			Boolean(upload.options?.paidPromotion),
 			Boolean(upload.expand?.job?.thumbnail),
@@ -191,7 +235,7 @@ export function todoLines(
 	}
 
 	return [...lines.values()]
-		.filter((line) => line.studio.length > 0 || line.jestr !== null)
+		.filter((line) => line.studio.length > 0 || line.jestr !== null || line.waiting !== null)
 		.sort((a, b) => a.at - b.at)
 		.map((line): TodoLine => ({
 			id: line.id,
@@ -201,6 +245,7 @@ export function todoLines(
 			studioUrl: line.studioUrl,
 			studio: line.studio,
 			jestr: line.jestr,
-			publicAt: line.publicAt
+			publicAt: line.publicAt,
+			waiting: line.waiting
 		}));
 }

@@ -1,6 +1,6 @@
 import { PLATFORMS, isPlatformId } from './platforms';
 import { brandKey } from './brands';
-import { parseTagList } from './format';
+import { formatSchedule, isoDate, parseTagList } from './format';
 import type { Brand, PlatformId } from './types';
 
 /**
@@ -13,10 +13,13 @@ import type { Brand, PlatformId } from './types';
  *     "flock": 1,
  *     "brand": "Paper Moon",
  *     "thumbnail": "C:/Users/me/Pictures/thumb.png",
- *     "youtube":   { "title": "…", "description": "…", "tags": ["…"], "playlist": "…" },
- *     "instagram": { "caption": "…" },
- *     "tiktok":    { "caption": "…" }
+ *     "youtube":   { "title": "…", "description": "…", "tags": ["…"], "playlist": "…", "schedule": "2026-10-13 18:00" },
+ *     "instagram": { "caption": "…", "schedule": "2026-10-13 19:30" },
+ *     "tiktok":    { "caption": "…", "schedule": "now" }
  *   }
+ *
+ * `schedule` is the release slot, in local time — the clock where flock is
+ * used — and only fills the Schedule step, where it can still be changed.
  *
  * Only text and what is written alongside it travel this way. TikTok's
  * audience, comments, Duet, Stitch and disclosure, and paid promotion, are
@@ -34,6 +37,13 @@ export interface PastedPlatform {
 	description?: string;
 	tags?: string[];
 	playlist?: string;
+	/** The release slot in local time, or 'now' to go out the moment the worker sees it. */
+	schedule?: Slot | 'now';
+}
+
+export interface Slot {
+	date: string;
+	time: string;
 }
 
 export interface FlockPaste {
@@ -56,7 +66,7 @@ const VERSION_ONE = /"flock"\s*:\s*"?1"?\s*[,}]/;
  * top — so the caller lets the paste through; an error when it is one that
  * cannot be used, so the person learns why nothing filled.
  */
-export function readFlockPaste(text: string): PasteResult | null {
+export function readFlockPaste(text: string, now = Date.now()): PasteResult | null {
 	if (!text || !MARK.test(text)) return null;
 	const body = extractBlock(text);
 	if (!body) return null;
@@ -80,7 +90,7 @@ export function readFlockPaste(text: string): PasteResult | null {
 			error: `The pasted block is flock format ${String(data.flock)}; this flock reads format ${PASTE_VERSION}.`
 		};
 	}
-	return { ok: true, paste: normalise(data) };
+	return { ok: true, paste: normalise(data, now) };
 }
 
 /**
@@ -164,7 +174,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const TOP_KEYS = new Set(['flock', 'brand', 'thumbnail']);
-const PLATFORM_KEYS = new Set(['title', 'description', 'caption', 'tags', 'playlist']);
+const PLATFORM_KEYS = new Set(['title', 'description', 'caption', 'tags', 'playlist', 'schedule']);
+
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * A release slot as a block writes it: "2026-10-13 18:00", in local time.
+ * A T for the space, seconds, and an offset ("…T18:00:00+02:00", "Z") are
+ * taken too — an offset is turned into local time. "now" sends the post the
+ * moment the worker sees it. Null for anything else, a day that does not
+ * exist included.
+ */
+export function parseSchedule(value: unknown): Slot | 'now' | null {
+	if (typeof value !== 'string') return null;
+	const clean = value.trim();
+	if (/^(now|immediately)$/i.test(clean)) return 'now';
+	const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?\s*(Z|[+-]\d{2}:?\d{2})?$/i.exec(clean);
+	if (!m) return null;
+	const [, y, mo, d, h, mi, zone] = m;
+	if (Number(h) > 23 || Number(mi) > 59) return null;
+	if (zone) {
+		const offset = zone.toUpperCase() === 'Z' ? 'Z' : zone.includes(':') ? zone : `${zone.slice(0, 3)}:${zone.slice(3)}`;
+		const at = new Date(`${y}-${mo}-${d}T${pad(Number(h))}:${mi}:00${offset}`);
+		if (Number.isNaN(at.getTime())) return null;
+		return { date: isoDate(at), time: `${pad(at.getHours())}:${pad(at.getMinutes())}` };
+	}
+	const local = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi));
+	if (local.getMonth() !== Number(mo) - 1 || local.getDate() !== Number(d)) return null;
+	return { date: `${y}-${mo}-${d}`, time: `${pad(Number(h))}:${mi}` };
+}
 
 function text(value: unknown): string | undefined {
 	if (typeof value === 'string') return value.trim();
@@ -172,7 +210,7 @@ function text(value: unknown): string | undefined {
 	return undefined;
 }
 
-function normalise(data: Record<string, unknown>): FlockPaste {
+function normalise(data: Record<string, unknown>, now: number): FlockPaste {
 	const notes: string[] = [];
 	const platforms: FlockPaste['platforms'] = {};
 
@@ -190,7 +228,7 @@ function normalise(data: Record<string, unknown>): FlockPaste {
 			notes.push(`Ignored "${rawKey}": expected an object with its text.`);
 			continue;
 		}
-		platforms[key] = readPlatform(key, value, notes);
+		platforms[key] = readPlatform(key, value, notes, now);
 	}
 
 	if (Object.keys(platforms).length === 0 && !thumbnail) {
@@ -199,7 +237,7 @@ function normalise(data: Record<string, unknown>): FlockPaste {
 	return { brand, thumbnail, platforms, notes };
 }
 
-function readPlatform(id: PlatformId, value: Record<string, unknown>, notes: string[]): PastedPlatform {
+function readPlatform(id: PlatformId, value: Record<string, unknown>, notes: string[], now: number): PastedPlatform {
 	const def = PLATFORMS[id];
 	const out: PastedPlatform = {};
 
@@ -242,6 +280,18 @@ function readPlatform(id: PlatformId, value: Record<string, unknown>, notes: str
 		else notes.push(`${def.label} has no playlists.`);
 	}
 
+	if (value.schedule !== undefined) {
+		const slot = parseSchedule(value.schedule);
+		if (!slot) {
+			notes.push(`${def.label}: ignored the schedule "${String(value.schedule)}" — it is written "YYYY-MM-DD HH:mm".`);
+		} else {
+			out.schedule = slot;
+			if (slot !== 'now' && new Date(`${slot.date}T${slot.time}`).getTime() < now) {
+				notes.push(`${def.label}'s time, ${formatSchedule(slot.date, slot.time)}, has passed — pick another on the Schedule step.`);
+			}
+		}
+	}
+
 	if (out.title && out.title.length > def.titleLimit) {
 		notes.push(`${def.label} title is ${out.title.length} characters, over its ${def.titleLimit}.`);
 	}
@@ -275,5 +325,6 @@ export function filledSummary(id: PlatformId, entry: PastedPlatform): string {
 	if (entry.description !== undefined) parts.push(PLATFORMS[id].hasTitle ? 'description' : 'caption');
 	if (entry.tags !== undefined) parts.push(`${entry.tags.length} tag${entry.tags.length === 1 ? '' : 's'}`);
 	if (entry.playlist !== undefined) parts.push(entry.playlist ? 'playlist' : 'no playlist');
+	if (entry.schedule) parts.push(entry.schedule === 'now' ? 'out on pickup' : formatSchedule(entry.schedule.date, entry.schedule.time));
 	return parts.join(', ') || 'ticked, nothing to fill';
 }

@@ -195,9 +195,17 @@
 				<ul>
 					{#each videoTodo.lines as line (line.id)}
 						<li>
-							<a class="vtitle" href={line.watchUrl} target="_blank" rel="noopener" title={lineTitle(line)}>
-								{line.title}
-							</a>
+							{#if line.watchUrl}
+								<a class="vtitle" href={line.watchUrl} target="_blank" rel="noopener" title={lineTitle(line)}>
+									{line.title}
+								</a>
+							{:else}
+								<span class="vtitle" title={`${line.title} — ${line.waiting ?? ''}`}>{line.title}</span>
+							{/if}
+							{#if !line.studioUrl}
+								<!-- Confirmed, but YouTube has no link for it yet. -->
+								<span class="spinner" role="status" title={line.waiting ?? ''} aria-label={line.waiting ?? ''}></span>
+							{:else}
 							<a
 								class="studio"
 								href={line.studioUrl}
@@ -229,6 +237,10 @@
 									</span>
 								{/if}
 							</a>
+							{/if}
+							{#if line.waiting && line.studioUrl}
+								<span class="spinner small" role="status" title={line.waiting} aria-label={line.waiting}></span>
+							{/if}
 							{#if line.jestr}
 								<button
 									class="jbtn"
@@ -640,6 +652,39 @@
 		right: -1px;
 		background: var(--ok);
 		color: var(--bg);
+	}
+
+	/* Waiting on YouTube: a turning ring where the YouTube icon will be (or,
+	   once there, where Jestr's button will be). Still with reduced motion. */
+	.spinner {
+		flex: none;
+		width: 14px;
+		height: 14px;
+		margin: 0 5px;
+		border-radius: 50%;
+		border: 2px solid var(--surface-3);
+		border-top-color: var(--pink-soft);
+		animation: spin 0.9s linear infinite;
+		cursor: help;
+	}
+
+	.spinner.small {
+		width: 11px;
+		height: 11px;
+		margin: 0 8px;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.spinner {
+			animation: none;
+			border-top-color: var(--warn);
+		}
 	}
 
 	.worker {

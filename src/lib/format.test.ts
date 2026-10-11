@@ -3,6 +3,8 @@ import {
 	nextDayMatching,
 	isoDate,
 	startOfWeek,
+	dayStart,
+	rangeLabel,
 	addDays,
 	weekLabel,
 	hourOf,
@@ -122,5 +124,18 @@ describe('week helpers', () => {
 		expect(minuteOf('21:30')).toBe(30);
 		expect(hourOf('')).toBe(0);
 		expect(makeTime(9, 5)).toBe('09:05');
+	});
+});
+
+describe('dayStart and rangeLabel', () => {
+	it('takes a moment back to its local midnight', () => {
+		const d = dayStart(new Date(2026, 9, 12, 21, 30));
+		expect([d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()]).toEqual([2026, 9, 12, 0, 0]);
+	});
+
+	it('labels a run of days', () => {
+		expect(rangeLabel(new Date(2026, 9, 12), new Date(2026, 9, 25))).toBe('12 – 25 Oct 2026');
+		expect(rangeLabel(new Date(2026, 9, 28), new Date(2026, 10, 10))).toBe('28 Oct – 10 Nov 2026');
+		expect(rangeLabel(new Date(2026, 11, 28), new Date(2027, 0, 10))).toBe('28 Dec 2026 – 10 Jan 2027');
 	});
 });

@@ -19,6 +19,8 @@ import {
 
 /** The stats pass writes every 30 s; a minute behind is soon enough for a reminder. */
 const POLL_MS = 60_000;
+/** While a line waits on YouTube, the moment it is there is worth seeing sooner. */
+const WAITING_POLL_MS = 10_000;
 
 /**
  * The sidebar's "To finish" list (rules in videotodo.ts). Polls two queries
@@ -45,10 +47,15 @@ class VideoTodoStore {
 		return todoLines(this.#stats, this.#uploads, state, { jestr: general.value.jestrIntegration });
 	});
 
-	/** Starts polling; the returned function stops it. */
+	#lastRead = 0;
+
+	/** Starts polling — faster while a line waits; the returned function stops it. */
 	start(): () => void {
 		void this.refresh();
-		const timer = setInterval(() => void this.refresh(), POLL_MS);
+		const timer = setInterval(() => {
+			const waiting = this.lines.some((line) => line.waiting);
+			if (waiting || Date.now() - this.#lastRead >= POLL_MS - 1000) void this.refresh();
+		}, WAITING_POLL_MS);
 		const onFocus = () => void this.refresh();
 		window.addEventListener('focus', onFocus);
 		return () => {
@@ -83,6 +90,7 @@ class VideoTodoStore {
 			this.#state = state;
 			this.#stats = stats;
 			this.#uploads = uploads;
+			this.#lastRead = Date.now();
 		} catch {
 			// Unreachable PocketBase: the list stays as it was until the next poll.
 		} finally {

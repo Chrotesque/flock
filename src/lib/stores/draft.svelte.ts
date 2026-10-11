@@ -114,25 +114,31 @@ class DraftStore {
 	 */
 	videos = $state<Record<VideoSlot, SlotVideo>>(emptyVideos());
 
-	/** Platforms that get a video of their own rather than the shared one. */
+	/**
+	 * Platforms that get a video of their own rather than the shared one —
+	 * remembered per browser when changed by hand (`setSplit`). A project
+	 * sets it for its own upload only (`useOwnSplit`), and a reset brings the
+	 * remembered one back.
+	 */
 	split = $state<PlatformId[]>(loadSplit());
 
 	/**
-	 * The custom image: YouTube's thumbnail and Instagram's reel cover, picked
-	 * once and sent to each that takes it (see coverimage.ts). Optional;
-	 * without one each platform uses a frame. TikTok takes a cover *time*, not
-	 * an image.
+	 * The custom image: Instagram's reel cover (see coverimage.ts), still
+	 * named `thumbnail` because the paste format and saved drafts call it so.
+	 * Optional; without one Instagram uses the frame at its cover time.
+	 * TikTok takes a cover *time*, not an image, and YouTube's thumbnail was
+	 * dropped in v0.11.7.
 	 *
-	 * Linked by default. Unlinked, `thumbnail` is YouTube's alone and `cover`
-	 * is Instagram's own picture — for trying a different image on each.
-	 * Every new upload starts linked again.
+	 * The link between images and `cover` stay for the day a second platform
+	 * takes one: with Instagram alone the switch never shows and every upload
+	 * stays linked, so `imageFor('instagram')` is `thumbnail`.
 	 */
 	thumbnail = $state<File | null>(null);
 	cover = $state<File | null>(null);
 	imagesLinked = $state(true);
 
 	/** The image a platform gets, linked or not. */
-	imageFor(platform: 'youtube' | 'instagram'): File | null {
+	imageFor(platform: 'instagram'): File | null {
 		return platform === 'instagram' && !this.imagesLinked ? this.cover : this.thumbnail;
 	}
 
@@ -160,6 +166,11 @@ class DraftStore {
 
 	videoFor(platform: PlatformId): SlotVideo {
 		return this.videos[this.slotFor(platform)];
+	}
+
+	/** This upload's split, leaving the browser's remembered one alone. */
+	useOwnSplit(list: PlatformId[]) {
+		this.split = [...list];
 	}
 
 	setSplit(platform: PlatformId, own: boolean) {
@@ -416,8 +427,10 @@ class DraftStore {
 
 	/**
 	 * Fills the draft from a pasted flock block (flockpaste.ts). Each platform
-	 * it names is ticked and takes what it carries — text, and for YouTube the
-	 * tags into one box and the playlist — over whatever was there. What the
+	 * it names is ticked and takes what it carries — text, its release slot
+	 * (or "now"), and for YouTube the tags into one box and the playlist —
+	 * over whatever was there. A slot is set like a hand-picked one, so the
+	 * Schedule step shows it and a profile does not move it. What the
 	 * block leaves out stays as it was, other platforms included: unticking
 	 * one silently could drop a platform from the upload, where one left
 	 * ticked shows its yellow ! until it is written for.
@@ -436,6 +449,12 @@ class DraftStore {
 			if (entry.playlist !== undefined) options.playlist = entry.playlist;
 			if (Object.keys(options).length > 0) {
 				this.overrides[id] = { ...(this.overrides[id] ?? {}), ...options };
+			}
+			if (entry.schedule === 'now') {
+				this.immediate[id] = true;
+			} else if (entry.schedule) {
+				this.immediate[id] = false;
+				this.schedule[id] = { ...entry.schedule };
 			}
 		}
 		if (named.length > 0) this.composing = named[0][0];
@@ -464,9 +483,11 @@ class DraftStore {
 	 */
 	projectSnapshot(): SavedDraft {
 		const { overrides, dropped } = withoutHandPicked(this.overrides);
+		// Only the slots in use: a pick left in a slot merged back is not kept.
 		const videos: SavedDraft['videos'] = {};
-		for (const [slot, video] of Object.entries(this.videos) as [VideoSlot, SlotVideo][]) {
-			if (video.nasFile) videos[slot] = video.nasFile;
+		for (const { slot } of this.slots) {
+			const file = this.videos[slot].nasFile;
+			if (file) videos[slot] = file;
 		}
 		return {
 			v: SAVED_VERSION,
@@ -504,8 +525,7 @@ class DraftStore {
 		this.schedule = saved.schedule;
 		this.immediate = saved.immediate;
 		this.profile = saved.profile;
-		this.split = saved.split;
-		saveSplit(saved.split);
+		this.useOwnSplit(saved.split);
 		const videos = emptyVideos();
 		for (const [slot, file] of Object.entries(saved.videos) as [VideoSlot, WatchFile][]) {
 			videos[slot].nasFile = file;
@@ -551,7 +571,9 @@ class DraftStore {
 		this.queued = [];
 		this.texts = {};
 		this.composing = null;
-		// The split is kept on purpose — it is the arrangement, not this video.
+		// The split is the arrangement, not this video: the remembered one
+		// comes back, whatever a project used.
+		this.split = loadSplit();
 		this.videos = emptyVideos();
 		this.thumbnail = null;
 		this.cover = null;

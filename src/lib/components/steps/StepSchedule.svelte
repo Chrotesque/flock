@@ -7,11 +7,37 @@
 	import { settings } from '$lib/stores/settings.svelte';
 	import { draft } from '$lib/stores/draft.svelte';
 	import { buildPlan, type PlanRow } from '$lib/plan';
-	import { startOfWeek, isoDate, minuteOf, makeTime } from '$lib/format';
+	import { addDays, dayStart, isoDate, minuteOf, makeTime } from '$lib/format';
 	import { isPlatformId } from '$lib/platforms';
 	import type { PlatformId } from '$lib/types';
 
-	let weekStart = $state(startOfWeek(new Date()));
+	/*
+	 * Not a week but a run of days from today (the user's layout): 14 to
+	 * begin with, 7 to 21 from the dropdown, remembered per browser.
+	 */
+	const DAYS_KEY = 'flock.schedule.days';
+	const DAY_CHOICES = Array.from({ length: 15 }, (_, i) => i + 7);
+
+	function loadDays(): number {
+		try {
+			const n = Number(localStorage.getItem(DAYS_KEY));
+			return DAY_CHOICES.includes(n) ? n : 14;
+		} catch {
+			return 14;
+		}
+	}
+
+	let dayCount = $state(loadDays());
+	let weekStart = $state(dayStart(new Date()));
+
+	function setDays(n: number) {
+		dayCount = n;
+		try {
+			localStorage.setItem(DAYS_KEY, String(n));
+		} catch {
+			// Private windows and blocked site data throw; it is just not kept.
+		}
+	}
 
 	// The cards are the plan rows themselves, so what is dragged around here is
 	// literally what the confirmation screen will list. The platform id doubles
@@ -22,15 +48,7 @@
 	let rows = $derived(all.filter((row) => !row.immediate));
 	let nowRows = $derived(all.filter((row) => row.immediate));
 
-	let weekDays = $derived(
-		new Set(
-			Array.from({ length: 7 }, (_, i) => {
-				const d = new Date(weekStart);
-				d.setDate(d.getDate() + i);
-				return isoDate(d);
-			})
-		)
-	);
+	let weekDays = $derived(new Set(Array.from({ length: dayCount }, (_, i) => isoDate(addDays(weekStart, i)))));
 	let offWeek = $derived(rows.filter((row) => !weekDays.has(row.date)));
 
 	function onDropItem(id: string, date: string, hour: number) {
@@ -41,9 +59,11 @@
 		draft.setSchedule(id, { date, time: makeTime(hour, minuteOf(current.time)) });
 	}
 
+	/** Brings a day into view: as the first day when it is earlier, the last when later. */
 	function jumpTo(iso: string) {
 		const [y, m, d] = iso.split('-').map(Number);
-		weekStart = startOfWeek(new Date(y, m - 1, d));
+		const day = new Date(y, m - 1, d);
+		weekStart = day < weekStart ? day : addDays(day, -(dayCount - 1));
 	}
 
 	function profilesFor(id: PlatformId) {
@@ -56,6 +76,8 @@
 	<WeekCalendar
 		items={rows}
 		bind:weekStart
+		{dayCount}
+		rolling
 		candrag={() => true}
 		dense
 		ondropitem={onDropItem}
@@ -67,7 +89,7 @@
 
 	{#if offWeek.length > 0}
 		<div class="offweek">
-			<span>Scheduled outside this week:</span>
+			<span>Scheduled outside these {dayCount} days:</span>
 			{#each offWeek as row (row.platform)}
 				<button class="jump" onclick={() => jumpTo(row.date)}>
 					<PlatformIcon platform={row.platform} size={13} />
@@ -198,6 +220,15 @@
 
 {#snippet tip()}
 	<p class="tip">Drag an icon to another day or hour. Hover one to read it.</p>
+	<label class="days">
+		Show
+		<select value={dayCount} onchange={(e) => setDays(Number(e.currentTarget.value))} aria-label="Days shown">
+			{#each DAY_CHOICES as n (n)}
+				<option value={n}>{n}</option>
+			{/each}
+		</select>
+		days
+	</label>
 {/snippet}
 
 <style>
@@ -210,6 +241,26 @@
 		margin: 0;
 		font-size: 11.5px;
 		color: var(--text-faint);
+	}
+
+	.days {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		margin-left: 14px;
+		font-size: 12px;
+		color: var(--text-dim);
+	}
+
+	.days select {
+		padding: 4px 8px;
+		border-radius: 7px;
+		border: 1px solid var(--border);
+		background: var(--bg-elev);
+		color: var(--text);
+		font: inherit;
+		font-size: 12px;
+		cursor: pointer;
 	}
 
 	.daymark {

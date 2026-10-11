@@ -61,7 +61,7 @@
 
 		{#if notice.thumbnail}
 			<p class="thumb {notice.thumbnail.state}" title={notice.thumbnail.path}>
-				<span class="what-for">Thumbnail</span>
+				<span class="what-for">Cover</span>
 				{#if notice.thumbnail.state === 'fetching'}
 					fetching from the worker…
 				{:else}

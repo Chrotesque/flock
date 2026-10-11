@@ -7,6 +7,7 @@ import {
 	startOfDay,
 	todoLines,
 	videoUrl,
+	WAITING,
 	type StatsRow,
 	type TodoState,
 	type UploadRow
@@ -137,5 +138,35 @@ describe('todoLines', () => {
 		const long = upload('long', '2026-10-11 10:00:00.000Z', false, 'c.png');
 		const longStat = stat('long', '2026-10-11 10:00:00.000Z', { duration: 900, privacy: 'unlisted' });
 		expect(todoLines([longStat], [old, long], fresh, { jestr: false })).toEqual([]);
+	});
+
+	it('holds a placeholder from confirm until YouTube has the video', () => {
+		const queued: UploadRow = { id: 't1', title: 'Fresh', status: 'pending', created: '2026-10-11 20:50:30.000Z' };
+		const sending: UploadRow = { ...queued, id: 't2', status: 'publishing' };
+		const failed: UploadRow = { ...queued, id: 't3', status: 'failed' };
+		const lines = todoLines([], [queued, sending, failed], fresh, { jestr: false });
+		expect(lines.map((l) => [l.id, l.title, l.waiting, l.watchUrl])).toEqual([
+			['upload:t1', 'Fresh', WAITING.queued, ''],
+			['upload:t2', 'Fresh', WAITING.uploading, '']
+		]);
+	});
+
+	it('with Jestr, keeps waiting until the channel lists the video, then hands over', () => {
+		const up: UploadRow = { id: 't1', title: 'Fresh', status: 'scheduled', remote_url: 'https://www.youtube.com/watch?v=v1', created: '2026-10-11 20:50:30.000Z' };
+		const before = todoLines([], [up], fresh, { jestr: true });
+		expect(before.map((l) => [l.id, l.waiting, l.jestr, l.studioUrl])).toEqual([
+			['v1', WAITING.listing, null, 'https://studio.youtube.com/video/v1/edit']
+		]);
+		const listed = stat('v1', '2026-10-12 19:00:00.000Z', {
+			privacy: 'private',
+			data: { status: { publishAt: '2026-10-12T19:00:00Z' } }
+		});
+		const after = todoLines([listed], [up], fresh, { jestr: true });
+		expect(after.map((l) => [l.id, l.waiting, l.jestr])).toEqual([['v1', null, 'waiting']]);
+	});
+
+	it('without Jestr, a video YouTube has and nothing to set is no line at all', () => {
+		const up: UploadRow = { id: 't1', status: 'scheduled', remote_url: 'https://youtu.be/v1', created: '2026-10-11 20:50:30.000Z' };
+		expect(todoLines([], [up], fresh, { jestr: false })).toEqual([]);
 	});
 });
