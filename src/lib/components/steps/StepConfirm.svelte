@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import PlatformIcon from '../PlatformIcon.svelte';
 	import Modal from '../Modal.svelte';
 	import AdaptationSummary from '../AdaptationSummary.svelte';
@@ -220,7 +221,15 @@
 	function showFirstFrame(event: Event) {
 		const video = event.currentTarget as HTMLVideoElement;
 		if (video.currentTime === 0) video.currentTime = 0.1;
+		// Seen: TikTok's preview rule is met for this slot, and a folder pick's
+		// length — unknown until now — is checked against TikTok's limit.
+		if (shownVideo) draft.markPreviewed(shownVideo.slot, video.duration);
 	}
+
+	// The latest creator info on every visit, as for the Details box.
+	$effect(() => {
+		if (rows.some((row) => row.platform === 'tiktok')) untrack(() => void accounts.checkTikTok());
+	});
 
 	// Which pane the stage shows: the video, or an image at the same size, so
 	// the preview is actually judgeable — Instagram's cover (coverimage.ts),

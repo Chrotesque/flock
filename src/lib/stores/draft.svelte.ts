@@ -216,15 +216,31 @@ class DraftStore {
 		return slots.length > 0 && slots.every((entry) => this.slotHasVideo(entry.slot));
 	}
 
+	/**
+	 * Slots whose video the Review stage has shown. TikTok's guidelines want
+	 * the post previewed before it is sent, so confirm waits for TikTok's;
+	 * picking another video for a slot asks for a new look.
+	 */
+	previewed = $state<Partial<Record<VideoSlot, boolean>>>({});
+
+	/** The stage showed a slot's video; its length, when unknown till now, comes with it. */
+	markPreviewed(slot: VideoSlot, seconds: number) {
+		this.previewed[slot] = true;
+		const video = this.videos[slot];
+		if (!video.duration && Number.isFinite(seconds) && seconds > 0) video.duration = seconds;
+	}
+
 	chooseFile(slot: VideoSlot, file: File | null) {
 		const video = this.videos[slot];
 		video.file = file;
 		if (file) video.nasFile = null;
+		this.previewed[slot] = false;
 	}
 
 	chooseNasFile(slot: VideoSlot, entry: WatchFile | null) {
 		const video = this.videos[slot];
 		video.nasFile = entry;
+		this.previewed[slot] = false;
 		if (entry) {
 			video.file = null;
 			// A referenced file has no bytes here to read a duration out of.
@@ -531,6 +547,7 @@ class DraftStore {
 			videos[slot].nasFile = file;
 		}
 		this.videos = videos;
+		this.previewed = {};
 		this.imagesLinked = saved.imagesLinked;
 		this.queued = saved.queued;
 		this.composing = saved.composing;
@@ -575,6 +592,7 @@ class DraftStore {
 		// comes back, whatever a project used.
 		this.split = loadSplit();
 		this.videos = emptyVideos();
+		this.previewed = {};
 		this.thumbnail = null;
 		this.cover = null;
 		this.imagesLinked = true;

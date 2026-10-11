@@ -39,14 +39,14 @@ describe('disclosureLabel', () => {
 
 	it("uses TikTok's wording for each kind, paid partnership winning when both are ticked", () => {
 		expect(disclosureLabel(readDisclosure({ discloseContent: true, brandOrganic: true }))).toBe(
-			"Your video will be labeled as 'Promotional content'"
+			"Your photo/video will be labeled as 'Promotional content'"
 		);
 		expect(disclosureLabel(readDisclosure({ discloseContent: true, brandContent: true }))).toBe(
-			"Your video will be labeled as 'Paid partnership'"
+			"Your photo/video will be labeled as 'Paid partnership'"
 		);
 		expect(
 			disclosureLabel(readDisclosure({ discloseContent: true, brandOrganic: true, brandContent: true }))
-		).toBe("Your video will be labeled as 'Paid partnership'");
+		).toBe("Your photo/video will be labeled as 'Paid partnership'");
 	});
 });
 
@@ -101,5 +101,27 @@ describe('tiktokProblems', () => {
 
 	it('does not judge the audience against an account it has not read', () => {
 		expect(tiktokProblems({ privacy: 'Public' }, null, 30)).toEqual([]);
+	});
+});
+
+describe('tiktokProblems: an account that cannot post', () => {
+	it('stops the post while TikTok says the account cannot post', () => {
+		const creator = {
+			fetchedAt: '',
+			username: 'owls_nest',
+			nickname: 'Owl',
+			avatar: '',
+			privacyOptions: ['PUBLIC_TO_EVERYONE', 'SELF_ONLY'],
+			commentDisabled: false,
+			duetDisabled: false,
+			stitchDisabled: false,
+			maxDurationSeconds: 600,
+			error: 'TikTok spam_risk_too_many_posts: The creator has reached the daily post cap\nmore detail'
+		};
+		const problems = tiktokProblems({ privacy: 'Public' }, creator, 30);
+		expect(problems).toEqual([
+			'TikTok says @owls_nest cannot post right now — try again later. (TikTok spam_risk_too_many_posts: The creator has reached the daily post cap)'
+		]);
+		expect(tiktokProblems({ privacy: 'Public' }, { ...creator, error: '' }, 30)).toEqual([]);
 	});
 });

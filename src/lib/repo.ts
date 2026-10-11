@@ -692,6 +692,28 @@ export async function requestFolderPick(
 	}
 }
 
+/**
+ * Asks the worker holding the TikTok tokens to read the accounts' creator
+ * info now (worker/index.mjs, `creatorCheckPass`) and waits for it: TikTok's
+ * guidelines want the latest each time the Post to TikTok box is shown.
+ * 'done' once the rows are fresh — a newer ask answered counts, since it
+ * read the same accounts — 'failed' when the worker could not, 'timeout'
+ * when nobody answered (the NAS worker down, say).
+ */
+export async function requestTikTokCheck(giveUpMs = 20_000): Promise<'done' | 'failed' | 'timeout'> {
+	assertDeviceNamed();
+	const id = newId();
+	await setSetting('tiktok_check', { id, status: 'pending', requestedAt: new Date().toISOString() });
+	const started = Date.now();
+	for (;;) {
+		await new Promise((resolve) => setTimeout(resolve, 800));
+		const answer = await getSetting<{ id?: string; status?: string } | null>('tiktok_check', null);
+		if (answer?.status === 'done') return 'done';
+		if (answer?.id === id && (answer.status === 'failed' || answer.status === 'expired')) return 'failed';
+		if (Date.now() - started > giveUpMs) return 'timeout';
+	}
+}
+
 /** By extension, for a download PocketBase did not type. */
 const IMAGE_TYPE_BY_EXT: Record<string, string> = {
 	jpg: 'image/jpeg',

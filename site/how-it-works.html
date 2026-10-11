@@ -90,10 +90,12 @@
       <dd>The authorization code flow with PKCE, requesting <code>user.info.basic</code> and
       <code>video.publish</code>. The refresh token is stored locally and rotated by the worker.</dd>
 
-      <dt>Before every post: creator info</dt>
+      <dt>Before every post, and whenever the TikTok box is shown: creator info</dt>
       <dd><code>/post/publish/creator_info/query/</code> returns the account's display name, the audiences it may
       post to, whether comments, duets and stitches are switched off in its settings, and the longest video it may
-      post. The post screen offers only what this returns, and refuses a video longer than the limit.</dd>
+      post. It is read afresh each time the Post to TikTok box or the review screen is shown. The post screen offers
+      only what this returns, refuses a video longer than the limit, and stops the post with "try again later" when
+      TikTok says the account cannot post right now.</dd>
 
       <dt>Posting: direct post by file</dt>
       <dd><code>/post/publish/video/init/</code> with the caption, the chosen audience, the interaction flags, the
@@ -127,7 +129,7 @@
 <footer class="bottom">
   <div class="wrap">
     <img src="icon.png" alt="">
-    <span>flock, version 0.8.9. Contact: ayarea2@gmail.com</span>
+    <span>flock, version 0.11.8. Contact: ayarea2@gmail.com</span>
     <nav>
       <a href="index.html">Overview</a>
       <a href="https://github.com/Chrotesque/flock">GitHub</a>

@@ -662,10 +662,49 @@ async function folderPickPass(pb) {
 }
 
 /** Writes the answer to a folder request, unless a newer request has replaced it. */
-async function answerPick(pb, ask, patch) {
-	const current = (await pb.getSetting('folder_pick'))?.value;
+function answerPick(pb, ask, patch) {
+	return answerIfCurrent(pb, 'folder_pick', ask, patch);
+}
+
+/** Answers a one-slot request row, unless a newer request has replaced it. */
+async function answerIfCurrent(pb, key, ask, patch) {
+	const current = (await pb.getSetting(key))?.value;
 	if (current?.id !== ask.id) return;
-	await pb.setSetting('folder_pick', { ...ask, ...patch });
+	await pb.setSetting(key, { ...ask, ...patch });
+}
+
+/**
+ * Re-reads the TikTok accounts' creator info when the compose screen asks
+ * (`app_settings` / `tiktok_check`): TikTok's guidelines want the latest
+ * creator info each time the Post to TikTok box is shown, and the half-hourly
+ * read alone can be thirty minutes old — too old to know the account has hit
+ * its daily posting cap. Only the worker holding the TikTok tokens answers;
+ * on the scoring tick, since somebody is looking at the box. An ask older
+ * than a minute has been given up on.
+ */
+let checkingCreators = false;
+const CREATOR_CHECK_MAX_AGE_MS = 60_000;
+
+async function creatorCheckPass(pb, config) {
+	if (checkingCreators || dry || !hb.canPublish() || !hasTikTok(config)) return;
+	const ask = (await pb.getSetting('tiktok_check'))?.value;
+	if (!ask || ask.status !== 'pending' || !ask.id) return;
+	if (Date.now() - Date.parse(ask.requestedAt) > CREATOR_CHECK_MAX_AGE_MS) {
+		await answerIfCurrent(pb, 'tiktok_check', ask, { status: 'expired' });
+		return;
+	}
+	checkingCreators = true;
+	try {
+		await answerIfCurrent(pb, 'tiktok_check', ask, { status: 'running' });
+		// Every account; each failure lands on its own row as `error`.
+		await refreshTikTokCreators(pb, config, log, true);
+		await answerIfCurrent(pb, 'tiktok_check', ask, { status: 'done', doneAt: new Date().toISOString() });
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		await answerIfCurrent(pb, 'tiktok_check', ask, { status: 'failed', error: message.slice(0, 1000) });
+	} finally {
+		checkingCreators = false;
+	}
 }
 
 /**
@@ -1211,6 +1250,7 @@ async function main() {
 		void scorePass(pb, config).catch((err) => log(`score pass failed: ${err.message}`));
 		void folderPickPass(pb).catch((err) => log(`folder pick failed: ${err.message}`));
 		void fileRequestPass(pb).catch((err) => log(`image request failed: ${err.message.split('\n')[0]}`));
+		void creatorCheckPass(pb, config).catch((err) => log(`TikTok account check failed: ${err.message.split('\n')[0]}`));
 	}, Math.max(1, config.scoreSeconds) * 1000);
 
 	// The hold-and-fire platforms, on their own tighter tick — see slotPass.

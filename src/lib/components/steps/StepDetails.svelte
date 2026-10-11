@@ -34,8 +34,11 @@
 		consentLinks,
 		CONSENT_PREFIX,
 		PRIVATE_BLOCKS_BRANDED,
-		BRANDED_BLOCKS_PRIVATE
+		BRANDED_BLOCKS_PRIVATE,
+		DISCLOSURE_INCOMPLETE,
+		DISCLOSURE_TOGGLE
 	} from '$lib/tiktok';
+	import { ago } from '$lib/workerstatus';
 	import { portal } from '$lib/portal';
 	import type { PlatformId, PlaylistIndex, TextTemplate } from '$lib/types';
 
@@ -97,8 +100,7 @@
 	);
 	let showLinkSwitch = $derived(imagePlatforms.length > 1 || !draft.imagesLinked);
 	// The boxes follow the pill being composed, like the playlist box: the
-	// paid-promotion box and the TikTok box show only while TikTok is.
-	let showPaidPromotion = $derived(tiktokActive && composing === 'tiktok');
+	// TikTok box shows only while TikTok is.
 	let showTiktokBox = $derived(tiktokActive && composing === 'tiktok');
 	let playlists = $state<PlaylistIndex | null>(null);
 	let playlistsLoading = $state(false);
@@ -130,11 +132,12 @@
 		draft.overrides.youtube = { ...(draft.overrides.youtube ?? {}), playlist: name };
 	}
 
-	// Per upload as well, and off unless ticked: it changes too often to be a
-	// saved default, and a default of "yes" would mislabel every other video.
-	// TikTok's commercial-content disclosure only: YouTube's paid-promotion
-	// flag never reached viewers through the API (studio.ts) and was dropped
-	// in v0.11.7, so it is ticked in Studio by hand.
+	// Per upload as well, and off unless switched on: it changes too often to
+	// be a saved default, and a default of "yes" would mislabel every other
+	// video. TikTok's commercial-content disclosure, its Content Disclosure
+	// Setting — inside the TikTok box, in TikTok's words, since v0.11.8.
+	// YouTube's paid-promotion flag never reached viewers through the API
+	// (studio.ts), so that is ticked in Studio by hand.
 	let paidPromotion = $derived(Boolean(draft.overrides.tiktok?.discloseContent));
 
 	function setPaidPromotion(on: boolean) {
@@ -153,6 +156,23 @@
 	 * worker's creator row.
 	 */
 	accounts.load();
+
+	// The latest creator info each time the box is shown, as the guidelines
+	// ask: the worker reads it on request (accounts.checkTikTok), at most once
+	// a minute. The line says how fresh what is shown is.
+	$effect(() => {
+		if (showTiktokBox) untrack(() => void accounts.checkTikTok());
+	});
+	let tiktokCheckLine = $derived.by(() => {
+		const check = accounts.tiktokCheck;
+		const read = accounts.tiktok?.fetchedAt ? Date.parse(accounts.tiktok.fetchedAt) : NaN;
+		const when = Number.isFinite(read) ? ago(Date.now() - read) : 'never';
+		if (check.state === 'checking') return 'Checking the account with TikTok…';
+		if (check.state === 'done') return `Checked with TikTok ${when}.`;
+		if (check.state === 'timeout') return `The worker holding the TikTok login did not answer; what is shown was read ${when}.`;
+		if (check.state === 'failed') return `Could not check with TikTok just now; what is shown was read ${when}.`;
+		return '';
+	});
 	let tiktokOptions = $derived(draft.overrides.tiktok ?? {});
 	let tiktokAudience = $derived(String(tiktokOptions.privacy ?? ''));
 	let tiktokDisclosure = $derived(readDisclosure(tiktokOptions));
@@ -991,20 +1011,6 @@
 	<div class="aside">
 	<div class="side">
 
-		{#if showPaidPromotion}
-			<section class="videocard card">
-				<span class="label">
-					Paid promotion
-					<span class="icons"><PlatformIcon platform="tiktok" size={13} /></span>
-				</span>
-				<Checkbox
-					checked={paidPromotion}
-					label="This video contains paid promotion or commercial content"
-					onchange={setPaidPromotion}
-				/>
-			</section>
-		{/if}
-
 		{#if showTiktokBox}
 			<section class="videocard card tiktokbox">
 				<span class="label">
@@ -1017,6 +1023,11 @@
 						Posting as <strong>{accounts.tiktok.nickname || accounts.tiktok.username}</strong>
 						<span class="ttfaint">@{accounts.tiktok.username}</span>
 					</p>
+					{#if tiktokCheckLine}
+						<p class="ttnote ttfaint" class:ttwarn={accounts.tiktokCheck.state === 'failed' || accounts.tiktokCheck.state === 'timeout'}>
+							{tiktokCheckLine}
+						</p>
+					{/if}
 				{:else}
 					<p class="ttline ttfaint">
 						The worker has not read the TikTok account yet. Once it runs, the account and
@@ -1033,7 +1044,11 @@
 					>
 						<option value="">Choose…</option>
 						{#each tiktokAudiences as choice (choice)}
-							<option value={choice} disabled={choice === 'Private' && tiktokBranded}>
+							<option
+								value={choice}
+								disabled={choice === 'Private' && tiktokBranded}
+								title={choice === 'Private' && tiktokBranded ? BRANDED_BLOCKS_PRIVATE : undefined}
+							>
 								{choice}
 							</option>
 						{/each}
@@ -1068,9 +1083,19 @@
 					<p class="ttnote ttfaint">Greyed-out options are switched off in the account's own settings.</p>
 				{/if}
 
+				<button
+					class="ttswitch"
+					role="switch"
+					aria-checked={paidPromotion}
+					title={DISCLOSURE_INCOMPLETE}
+					onclick={() => setPaidPromotion(!paidPromotion)}
+				>
+					<span class="tttrack"><span class="ttknob"></span></span>
+					<span>{DISCLOSURE_TOGGLE}</span>
+				</button>
+
 				{#if tiktokDisclosure.disclosed}
-					<span class="ttlabel">Disclose video content</span>
-					<div class="ttchecks">
+					<div class="ttchecks" title={DISCLOSURE_INCOMPLETE}>
 						<Checkbox
 							checked={tiktokDisclosure.yourBrand}
 							label="Your brand"
@@ -1988,6 +2013,58 @@
 	.ttline {
 		margin: 0;
 		font-size: 12.5px;
+	}
+
+	.ttwarn {
+		color: var(--warn);
+	}
+
+	/* TikTok's Content Disclosure Setting: a switch, off until turned on. */
+	.ttswitch {
+		display: inline-flex;
+		align-items: center;
+		gap: 9px;
+		justify-self: start;
+		padding: 2px 0;
+		font: inherit;
+		font-size: 12.5px;
+		font-weight: 560;
+		color: var(--text);
+		background: none;
+		border: none;
+		cursor: pointer;
+	}
+
+	.tttrack {
+		position: relative;
+		flex: none;
+		width: 30px;
+		height: 17px;
+		border-radius: 999px;
+		background: var(--surface-3);
+		border: 1px solid var(--border-strong);
+		transition: background 0.15s, border-color 0.15s;
+	}
+
+	.ttknob {
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		width: 11px;
+		height: 11px;
+		border-radius: 50%;
+		background: var(--text-dim);
+		transition: transform 0.15s, background 0.15s;
+	}
+
+	.ttswitch[aria-checked='true'] .tttrack {
+		background: var(--accent-grad);
+		border-color: var(--pink);
+	}
+
+	.ttswitch[aria-checked='true'] .ttknob {
+		transform: translateX(13px);
+		background: #fff;
 	}
 
 	.ttline strong {

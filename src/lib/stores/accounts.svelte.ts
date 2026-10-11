@@ -1,4 +1,4 @@
-import { loadAccounts } from '../repo';
+import { loadAccounts, requestTikTokCheck } from '../repo';
 import { accountFor, offerFor, type Offer } from '../accounts';
 import { brands } from './brands.svelte';
 import type { Account, InstagramAccount, PlatformId, TikTokCreator } from '../types';
@@ -48,6 +48,41 @@ class AccountsStore {
 	loaded = $state(false);
 
 	#loading: Promise<void> | null = null;
+
+	/**
+	 * The last on-demand TikTok check (`checkTikTok`): what came of it, and
+	 * when. `idle` until one is asked for.
+	 */
+	tiktokCheck = $state<{ state: 'idle' | 'checking' | 'done' | 'failed' | 'timeout'; at: number }>({
+		state: 'idle',
+		at: 0
+	});
+	#checking: Promise<void> | null = null;
+
+	/**
+	 * Has the worker read the TikTok accounts afresh, then re-reads the rows —
+	 * TikTok's guidelines want the latest creator info whenever the Post to
+	 * TikTok box is shown. At most once a minute after a good check, one at a
+	 * time.
+	 */
+	checkTikTok(): Promise<void> {
+		if (this.#checking) return this.#checking;
+		if (this.tiktokCheck.state === 'done' && Date.now() - this.tiktokCheck.at < 60_000) return Promise.resolve();
+		this.tiktokCheck = { state: 'checking', at: Date.now() };
+		this.#checking = (async () => {
+			let state: 'done' | 'failed' | 'timeout';
+			try {
+				state = await requestTikTokCheck();
+			} catch {
+				state = 'failed';
+			}
+			await this.refresh();
+			this.tiktokCheck = { state, at: Date.now() };
+		})().finally(() => {
+			this.#checking = null;
+		});
+		return this.#checking;
+	}
 
 	/** Loads once; `force` re-reads (Settings does, to list fresh accounts). */
 	load(force = false): Promise<void> {

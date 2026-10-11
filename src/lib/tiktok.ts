@@ -1,6 +1,12 @@
 import { TIKTOK_PRIVACY_LABELS } from './platforms';
 import type { OptionValues, TikTokCreator } from './types';
 
+/** An error's first line, short enough for a line of the compose box. */
+function firstLine(text: string): string {
+	const line = text.split('\n')[0].trim();
+	return line.length > 160 ? `${line.slice(0, 157)}…` : line;
+}
+
 /**
  * TikTok's posting rules, as their Content Sharing Guidelines state them.
  *
@@ -23,7 +29,7 @@ export function audienceChoices(creator: TikTokCreator | null): string[] {
 }
 
 export interface TikTokDisclosure {
-	/** The paid-promotion box on the compose screen, shared with YouTube. */
+	/** The Content Disclosure Setting toggle in the Post to TikTok box. */
 	disclosed: boolean;
 	/** Promotes the author's own business: "Your brand". */
 	yourBrand: boolean;
@@ -42,10 +48,13 @@ export function readDisclosure(options: OptionValues): TikTokDisclosure {
 /** How TikTok will label the post, in their words; null when nothing is disclosed yet. */
 export function disclosureLabel(d: TikTokDisclosure): string | null {
 	if (!d.disclosed) return null;
-	if (d.brandedContent) return "Your video will be labeled as 'Paid partnership'";
-	if (d.yourBrand) return "Your video will be labeled as 'Promotional content'";
+	if (d.brandedContent) return "Your photo/video will be labeled as 'Paid partnership'";
+	if (d.yourBrand) return "Your photo/video will be labeled as 'Promotional content'";
 	return null;
 }
+
+/** The disclosure toggle's label, and the tooltip over it and its two options — TikTok's words. */
+export const DISCLOSURE_TOGGLE = 'Content Disclosure Setting';
 
 export interface ConsentLink {
 	label: string;
@@ -88,6 +97,12 @@ export function tiktokProblems(
 	const problems: string[] = [];
 	const audience = String(options.privacy ?? '');
 	const offered = audienceChoices(creator);
+
+	// TikTok's creator info refused, or said the account cannot post now (its
+	// daily cap, a posting ban): the guidelines say stop and try again later.
+	if (creator?.error) {
+		problems.push(`TikTok says @${creator.username} cannot post right now — try again later. (${firstLine(creator.error)})`);
+	}
 
 	if (!audience) problems.push('Choose who can view the video.');
 	else if (creator && offered.length > 0 && !offered.includes(audience)) {

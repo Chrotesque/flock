@@ -59,6 +59,8 @@ const CREATOR_TTL_MS = 30 * 60_000;
 /** Per account, cached until a minute before it expires — TikTok's last a day. */
 const cache = new Map();
 const keyOf = (account) => account.openId || account.refreshToken;
+/** A refresh in flight per account, which every caller meanwhile shares. */
+const refreshing = new Map();
 
 /**
  * Turns an account's stored refresh token into an access token.
@@ -66,11 +68,25 @@ const keyOf = (account) => account.openId || account.refreshToken;
  * TikTok may hand back a *new* refresh token with every refresh. It is written
  * straight back onto that account's entry in the config file when that
  * happens: the old one may stop working, and losing it means going through the
- * consent flow again.
+ * consent flow again. Which is also why two refreshes of one account never
+ * run side by side — a post, the half-hourly account read and a check the
+ * compose screen asked for can all want a token at once — the second waits
+ * for the first's answer instead of spending a token that may be rotated.
  */
-export async function accessToken(config, account) {
+export function accessToken(config, account) {
 	const cached = cache.get(keyOf(account));
-	if (cached && Date.now() < cached.expiresAt) return cached.token;
+	if (cached && Date.now() < cached.expiresAt) return Promise.resolve(cached.token);
+	const key = keyOf(account);
+	if (!refreshing.has(key)) {
+		refreshing.set(
+			key,
+			refreshAccessToken(config, account).finally(() => refreshing.delete(key))
+		);
+	}
+	return refreshing.get(key);
+}
+
+async function refreshAccessToken(config, account) {
 	const t = config.tiktok;
 	if (!account.refreshToken) throw new Error(`No TikTok refresh token. Run:  ${SETUP}`);
 
@@ -205,11 +221,17 @@ export function privacyLabel(level) {
  * Failing here is deliberate: TikTok rejects a level the account does not
  * offer anyway, and downgrading quietly — public asked for, private posted —
  * would hide a video the user meant to be seen. A private account, and an app
- * TikTok has not audited yet, both cannot post publicly at all.
+ * TikTok has not audited yet, both cannot post publicly at all. A post with
+ * no audience is refused too, never sent as Public: TikTok's guidelines want
+ * it picked by hand with no default (the compose screen enforces the same).
  */
-function resolvePrivacy(wanted, creator) {
-	const label = String(wanted || 'Public');
-	const level = PRIVACY_LEVELS[label] ?? 'PUBLIC_TO_EVERYONE';
+export function resolvePrivacy(wanted, creator) {
+	const label = String(wanted ?? '').trim();
+	if (!label) {
+		throw new Error('No audience was chosen for this TikTok post — TikTok wants it picked by hand. Choose one and upload again.');
+	}
+	const level = PRIVACY_LEVELS[label];
+	if (!level) throw new Error(`"${label}" is not a TikTok audience. Choose one and upload again.`);
 	if (creator.privacyOptions.length > 0 && !creator.privacyOptions.includes(level)) {
 		const offered = creator.privacyOptions.map(privacyLabel).join(', ');
 		throw new Error(

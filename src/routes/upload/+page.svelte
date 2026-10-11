@@ -38,6 +38,23 @@
 
 	let plan = $derived(draft.step === 3 ? buildPlan() : []);
 
+	/**
+	 * Why the confirm tick waits, for TikTok: its posting rules still unmet —
+	 * the account check can turn up a cap on Review, and a folder pick's
+	 * length is only known once the stage has loaded it — or its video not
+	 * previewed yet, which TikTok's guidelines ask for before anything is sent.
+	 */
+	let tiktokHold = $derived.by(() => {
+		if (draft.step !== 3 || !plan.some((row) => row.platform === 'tiktok')) return '';
+		const problem = draft.tiktokProblems[0];
+		if (problem) return `TikTok: ${problem}`;
+		if (!draft.previewed[draft.slotFor('tiktok')]) {
+			const tab = draft.slots.length > 1 ? ", on TikTok's tab" : '';
+			return `TikTok asks for the video to be previewed before it is posted: let it load on the stage${tab}. A video picked from a folder plays through the PC worker.`;
+		}
+		return '';
+	});
+
 	// The confirm button deliberately takes two clicks, the second within two
 	// seconds of the first: this is the point where a multi-GB upload and four
 	// scheduled publishes become real.
@@ -454,7 +471,7 @@
 							class="btn btn-primary nav confirm"
 							class:armed
 							onclick={confirm}
-							disabled={phase === 'uploading' || plan.length === 0}
+							disabled={phase === 'uploading' || plan.length === 0 || Boolean(tiktokHold)}
 							aria-label={armed ? 'Click again within two seconds to upload' : 'Upload and schedule'}
 							title={armed ? 'Click again within two seconds to upload' : 'Upload and schedule'}
 						>
@@ -478,8 +495,11 @@
 				</nav>
 			</header>
 
-			{#if phase === 'error' || (draft.step === 2 && draft.pastPlatforms.length > 0) || (draft.step === 1 && missingVideo.length > 0)}
+			{#if phase === 'error' || (draft.step === 2 && draft.pastPlatforms.length > 0) || (draft.step === 1 && missingVideo.length > 0) || (tiktokHold && phase !== 'uploading')}
 				<div class="notes">
+					{#if tiktokHold && phase !== 'uploading'}
+						<span class="blocked">{tiktokHold}</span>
+					{/if}
 					{#if phase === 'error'}
 						<span class="failure">{failure}</span>
 					{/if}

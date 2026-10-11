@@ -503,15 +503,17 @@ JPEG or PNG up to 8 MB — without one Instagram uses the frame at its cover
 time; see *Instagram* under *The worker* for what lets the worker send it).
 TikTok's API takes no cover image, only a cover *time*, set in its options.
 For YouTube, a playlist dropdown listing the channel's own playlists as the
-worker last read them. For TikTok, a paid-promotion checkbox, off on every new
-upload — TikTok's commercial-content disclosure. For
-TikTok, a *Post to TikTok* box names the account the worker posts as and holds
-the choices TikTok insists are made per post rather than saved: who can view the
-video, picked from the audiences that account offers with nothing preselected;
-whether viewers may comment, Duet or Stitch, all off until ticked and greyed out
-where the account forbids them; and, once the paid-promotion box is on, whether
-it is your brand or branded content, with TikTok's own wording for how the post
-will be labelled. The line TikTok requires about its Music Usage Confirmation
+worker last read them. For
+TikTok, a *Post to TikTok* box names the account the worker posts as — read
+afresh from TikTok each time the box is shown, with a line saying when — and
+holds the choices TikTok insists are made per post rather than saved: who can
+view the video, picked from the audiences that account offers with nothing
+preselected; whether viewers may comment, Duet or Stitch, all off until ticked
+and greyed out where the account forbids them; and the *Content Disclosure
+Setting* switch, off on every new upload, which once on asks whether it is your
+brand or branded content, with TikTok's own wording for how the post will be
+labelled. If TikTok says the account cannot post right now (its daily limit,
+say), the box says so and the upload waits. The line TikTok requires about its Music Usage Confirmation
 sits underneath, and Continue stays off until the box is complete. While writing
 a TikTok caption, everything past roughly the first hundred characters turns
 red: that is the part TikTok hides behind "more" under the video. The whole
@@ -534,7 +536,10 @@ which TikTok and Instagram account each goes out as, and a warning when the
 YouTube channel's authorisation cannot add the playlist after upload;
 confirming is the tick
 button, pressed once and then again within two seconds while it shows "!!!", and
-the copy to the NAS starts there.
+the copy to the NAS starts there. With TikTok in the upload, the tick waits until
+TikTok's video has been shown on the stage (TikTok asks for a preview before
+posting) and fits the account's length limit; a video picked from a folder plays
+through the PC worker, so that has to be running.
 
 **Pasting a prepared upload.** Text written elsewhere — in a chat with an
 assistant, say — can go in with one Ctrl+V anywhere in flock, as a *flock
