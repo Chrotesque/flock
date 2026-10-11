@@ -25,8 +25,8 @@
 
 	function studioTitle(line: TodoLine): string {
 		return line.studio.length
-			? `Open in YouTube Studio to set ${line.studio.join(' and ')} — takes this off the list`
-			: 'Open in YouTube Studio';
+			? `Open in YouTube Studio to set ${line.studio.join(' and ')} — counts as done`
+			: 'Open in YouTube Studio — nothing left to set there';
 	}
 
 	function lineTitle(line: TodoLine): string {
@@ -124,7 +124,6 @@
 							</a>
 							<a
 								class="studio"
-								class:task={line.studio.length > 0}
 								href={line.studioUrl}
 								target="_blank"
 								rel="noopener"
@@ -135,6 +134,24 @@
 								}}
 							>
 								<PlatformIcon platform="youtube" size={15} />
+								<!-- Never a faded logo (YouTube's branding rules forbid
+								     altering it): a yellow dot while something is left to
+								     set in Studio, a green check once nothing is. -->
+								{#if line.studio.length > 0}
+									<span class="badge open" aria-hidden="true"></span>
+								{:else}
+									<span class="badge done" aria-hidden="true">
+										<svg viewBox="0 0 10 10" width="7" height="7" fill="none">
+											<path
+												d="M2.3 5.3 4.3 7.2 7.8 3.2"
+												stroke="currentColor"
+												stroke-width="1.7"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+											/>
+										</svg>
+									</span>
+								{/if}
 							</a>
 							{#if line.jestr}
 								<button
@@ -421,8 +438,11 @@
 		cursor: default;
 	}
 
-	/* The way to the video's edit page in Studio. A dot marks the lines where
-	   something is still to be set there (paid promotion, a Short's cover). */
+	/* The way to the video's edit page in Studio. The logo is always shown as
+	   it is — YouTube's branding rules forbid fading or recolouring it — and a
+	   badge in its corner says the state: yellow while something is still to
+	   be set there (paid promotion, a Short's cover), a green check once
+	   nothing is. */
 	.studio {
 		position: relative;
 		flex: none;
@@ -431,29 +451,36 @@
 		width: 24px;
 		height: 22px;
 		border-radius: 6px;
-		opacity: 0.75;
-		transition: opacity 0.15s, background 0.15s;
-	}
-
-	.studio:hover,
-	.studio.task {
-		opacity: 1;
+		transition: background 0.15s;
 	}
 
 	.studio:hover {
 		background: var(--surface-3);
 	}
 
-	.studio.task::after {
-		content: '';
+	.badge {
 		position: absolute;
-		top: 1px;
-		right: 1px;
-		width: 6px;
-		height: 6px;
+		top: 0;
+		right: 0;
+		display: grid;
+		place-items: center;
 		border-radius: 50%;
-		background: var(--warn);
 		box-shadow: 0 0 0 1.5px var(--bg);
+	}
+
+	.badge.open {
+		width: 7px;
+		height: 7px;
+		background: var(--warn);
+	}
+
+	.badge.done {
+		width: 9px;
+		height: 9px;
+		top: -1px;
+		right: -1px;
+		background: var(--ok);
+		color: var(--bg);
 	}
 
 	.worker {

@@ -522,9 +522,10 @@ second clock.
 **To finish**, in the sidebar, lists YouTube videos with something left to do
 by hand, from the day flock first showed it. Each line has the video's title
 (it opens the video), a YouTube icon that opens its edit page in Studio, and —
-with the Jestr integration on — a *Jestr* button. An amber dot on the icon means
+with the Jestr integration on — a *Jestr* button. A yellow dot on the icon means
 the video still needs paid promotion or its Short's cover set in Studio;
-clicking it opens Studio and counts that as done.
+clicking it opens Studio and counts that as done. A green check means nothing is
+left to set there.
 
 **Jestr integration** (off unless ticked under Settings → *Other*) is for
 creators paid through [Jestr](https://jestr.gg) campaigns, where each video's
