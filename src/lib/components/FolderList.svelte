@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { general, type FolderListKey } from '$lib/stores/general.svelte';
+	import { workers } from '$lib/stores/workers.svelte';
 	import { requestFolderPick } from '$lib/repo';
 	import { folderKind } from '$lib/folders';
+	import { dialogHost } from '$lib/workerstatus';
 
 	/**
 	 * One folder list in Settings — the watch folders or the project folders.
@@ -28,17 +30,23 @@
 	let hasLocal = $derived(folders.some((f) => f.path.trim() && folderKind(f.path) === 'local'));
 	let networkCount = $derived(folders.filter((f) => f.path.trim() && folderKind(f.path) === 'network').length);
 
-	/* `picking` is 'new' for an addition or the id of the row being changed. */
+	/*
+	 * The dialog opens on the machine the PC worker runs on, whichever browser
+	 * asks — so this says which machine that is. `picking` is 'new' for an
+	 * addition or the id of the row being changed.
+	 */
+	let host = $derived(dialogHost(workers.beats, workers.now));
 	let picking = $state<string | null>(null);
 	let pickNote = $state('');
 
 	async function choose(replacing?: string) {
 		picking = replacing ?? 'new';
+		const on = host ?? 'the PC the worker runs on';
 		pickNote = '';
 		try {
 			const path = await requestFolderPick({
-				onWaiting: () =>
-					(pickNote = 'Waiting for the worker to open the dialog — is it running on this PC?')
+				onWaiting: () => (pickNote = `Waiting for the worker on ${on} to open the dialog — is it running?`),
+				onOpen: () => (pickNote = `The folder dialog is open on ${on}: choose the folder there.`)
 			});
 			pickNote = '';
 			if (!path) return;
@@ -57,10 +65,13 @@
 		{picking === 'new' ? 'Waiting…' : 'Choose folder…'}
 	</button>
 	<button class="btn sm ghost" onclick={() => general.addFolder(list)}>Type a path</button>
+	<span class="where">
+		{host ? `Choose folder… opens on ${host}` : 'No PC worker is running to open the folder dialog'}
+	</span>
 </div>
 
 {#if pickNote}
-	<p class="hint warn pick">{pickNote}</p>
+	<p class="hint pick" class:warn={!pickNote.startsWith('The folder dialog is open')}>{pickNote}</p>
 {/if}
 
 {#if folders.length === 0}
@@ -147,8 +158,15 @@
 <style>
 	.actions {
 		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
 		gap: 8px;
 		margin-bottom: 12px;
+	}
+
+	.where {
+		font-size: 11.5px;
+		color: var(--text-faint);
 	}
 
 	.sm {

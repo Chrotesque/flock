@@ -1,4 +1,4 @@
-// Choosing a local watch folder with the Windows folder dialog.
+// Choosing a watch or project folder with the Windows folder dialog.
 //
 // A browser cannot hand back a real path — its folder picker yields a handle
 // and a name, never where the folder is — and the local folders belong to the
@@ -15,6 +15,8 @@ import { execFile } from 'node:child_process';
 
 const SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
+# Add-Type reports progress, which a redirected stderr gets as CLIXML noise.
+$ProgressPreference = 'SilentlyContinue'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -TypeDefinition @'
 using System;
@@ -77,19 +79,28 @@ public static class FlockFolderPicker {
 }
 '@
 
-# A topmost owner off-screen, so the dialog comes up in front of the browser
-# rather than behind it: the worker is a background process, and Windows will
-# not let one of those simply take the foreground.
+# A topmost owner, so the dialog comes up in front of the browser rather than
+# behind it: the worker is a background process, and Windows will not let one
+# of those simply take the foreground. One borderless pixel in the middle of
+# the screen the pointer is on, since the dialog opens over its owner: parked
+# off-screen, as it was, the dialog came up in the top-left corner of the
+# main screen, which on a PC with several monitors is easy to miss.
 $owner = New-Object System.Windows.Forms.Form
 $owner.TopMost = $true
 $owner.ShowInTaskbar = $false
+$owner.FormBorderStyle = 'None'
 $owner.StartPosition = 'Manual'
-$owner.Location = New-Object System.Drawing.Point(-32000, -32000)
 $owner.Size = New-Object System.Drawing.Size(1, 1)
+# The dialog opens with its top-left corner at the owner (about 1200 x 720),
+# so the owner sits that much up and left of the middle.
+$area = [System.Windows.Forms.Screen]::FromPoint([System.Windows.Forms.Cursor]::Position).WorkingArea
+$x = [Math]::Max($area.X, $area.X + [int](($area.Width - 1200) / 2))
+$y = [Math]::Max($area.Y, $area.Y + [int](($area.Height - 720) / 2))
+$owner.Location = New-Object System.Drawing.Point($x, $y)
 $owner.Show()
 $owner.Activate()
 try {
-	$path = [FlockFolderPicker]::Pick($owner.Handle, 'Choose a local watch folder for flock')
+	$path = [FlockFolderPicker]::Pick($owner.Handle, 'Choose a folder for flock')
 	if ($path) { [Console]::Out.Write($path) }
 } finally {
 	$owner.Close()
@@ -97,27 +108,73 @@ try {
 `;
 
 /**
+ * How long the dialog may stay open before the worker gives up on it. Short
+ * enough that a dialog nobody saw does not hold the next request for long —
+ * though a newer request closes it at once anyway (index.mjs).
+ */
+const DIALOG_MAX_MS = 5 * 60_000;
+
+/**
+ * What PowerShell wrote to stderr, readable. A redirected stderr carries
+ * CLIXML — `#< CLIXML` and an XML stream — whose error records are the only
+ * part worth showing; anything else is passed through as it is.
+ */
+export function readStderr(stderr) {
+	const text = String(stderr ?? '').trim();
+	if (!text.startsWith('#< CLIXML')) return text;
+	const errors = [...text.matchAll(/<S S="Error">([\s\S]*?)<\/S>/g)].map((m) =>
+		m[1]
+			.replace(/_x000D_/g, '')
+			.replace(/_x000A_/g, '\n')
+			.replace(/&lt;/g, '<')
+			.replace(/&gt;/g, '>')
+			.replace(/&quot;/g, '"')
+			.replace(/&amp;/g, '&')
+	);
+	return errors.join('').trim();
+}
+
+/**
+ * The PowerShell arguments. No `-WindowStyle Hidden` here, unlike the tray
+ * icon (tray.mjs): started from the background executable the dialog shows
+ * without it (tested 11 Oct 2026), and with it the dialog came up without
+ * the keyboard focus.
+ */
+export function dialogArgs(script) {
+	// -EncodedCommand takes UTF-16LE base64, which spares the script every
+	// layer of quoting between here and PowerShell.
+	const encoded = Buffer.from(script, 'utf16le').toString('base64');
+	return ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded];
+}
+
+/**
  * Opens the dialog and resolves to the chosen folder, or null if it was
  * cancelled. Windows only — elsewhere there is no dialog to open, and a worker
  * in a NAS container has no local folders to offer in the first place.
+ * Aborting `signal` closes the dialog (its PowerShell is ended) and rejects
+ * with an AbortError.
  */
-export function pickFolder() {
+export function pickFolder({ signal } = {}) {
 	if (process.platform !== 'win32') {
 		return Promise.reject(
 			new Error('The folder dialog needs the worker to run on Windows, on the PC with the folders.')
 		);
 	}
-	// -EncodedCommand takes UTF-16LE base64, which spares the script every
-	// layer of quoting between here and PowerShell.
-	const encoded = Buffer.from(SCRIPT, 'utf16le').toString('base64');
 	return new Promise((resolve, reject) => {
 		execFile(
 			'powershell.exe',
-			['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-			{ windowsHide: true, timeout: 10 * 60_000, maxBuffer: 1024 * 1024 },
+			dialogArgs(SCRIPT),
+			{ windowsHide: true, timeout: DIALOG_MAX_MS, maxBuffer: 1024 * 1024, signal },
 			(err, stdout, stderr) => {
+				if (err?.name === 'AbortError') {
+					reject(err);
+					return;
+				}
 				if (err) {
-					reject(new Error(`Folder dialog failed: ${(stderr || err.message).trim().slice(0, 500)}`));
+					const why = err.killed
+						? 'nobody answered it within 5 minutes, on the PC the worker runs on.'
+						: readStderr(stderr) || err.message;
+					reject(new Error(`Folder dialog failed: ${why.slice(0, 500)}`));
 					return;
 				}
 				const path = stdout.trim();

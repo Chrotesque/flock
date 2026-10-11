@@ -607,42 +607,65 @@ async function scorePass(pb, config) {
 }
 
 /**
- * Answers Settings' "Add folder…" by opening the Windows folder dialog here,
- * on the worker's own desktop, and writing the chosen path back to
- * `app_settings` / `folder_pick`. One request at a time; it rides on the
- * scoring tick because somebody is waiting on it just the same.
+ * Answers Settings' "Choose folder…" by opening the Windows folder dialog
+ * here, on the worker's own desktop, and writing the chosen path back to
+ * `app_settings` / `folder_pick`. It rides on the scoring tick because
+ * somebody is waiting on it just the same.
+ *
+ * The dialog opens on this machine whichever browser asked — Settings says
+ * so — so one may come up where nobody is looking. A newer request therefore
+ * closes a dialog still open and is answered instead, and an answer is only
+ * written while the row still holds the request it answers: the dialog of
+ * 11 Oct 2026 that nobody saw held every later request for ten minutes, then
+ * wrote "failed" over the newest one.
  *
  * A request left pending while the worker was off is not honoured when it
  * starts: a dialog springing up minutes after anyone asked for it would only
  * confuse.
  */
-let picking = false;
+let picking = null;
 const PICK_MAX_AGE_MS = 2 * 60_000;
 
 async function folderPickPass(pb) {
-	if (picking || dry || !hb.canLocal()) return;
+	if (dry || !hb.canLocal()) return;
 	const row = await pb.getSetting('folder_pick');
 	const ask = row?.value;
+	if (picking) {
+		if (ask?.status === 'pending' && ask.id && ask.id !== picking.id) picking.controller.abort();
+		return;
+	}
 	if (!ask || ask.status !== 'pending' || !ask.id) return;
 	if (Date.now() - new Date(ask.requestedAt).getTime() > PICK_MAX_AGE_MS) {
-		await pb.setSetting('folder_pick', { ...ask, status: 'expired' });
+		await answerPick(pb, ask, { status: 'expired' });
 		return;
 	}
 
-	picking = true;
+	const controller = new AbortController();
+	picking = { id: ask.id, controller };
 	try {
-		await pb.setSetting('folder_pick', { ...ask, status: 'open' });
+		await answerPick(pb, ask, { status: 'open' });
 		log('folder dialog opened for Settings');
-		const path = await hb.track('Folder dialog open for Settings', () => pickFolder());
-		await pb.setSetting('folder_pick', { ...ask, status: path ? 'done' : 'cancelled', path: path ?? '' });
+		const path = await hb.track('Folder dialog open for Settings', () => pickFolder({ signal: controller.signal }));
+		await answerPick(pb, ask, { status: path ? 'done' : 'cancelled', path: path ?? '' });
 		log(path ? `folder chosen: ${path}` : 'folder dialog cancelled');
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		await pb.setSetting('folder_pick', { ...ask, status: 'failed', error: message.slice(0, 1000) });
-		log(`folder dialog failed: ${message}`);
+		if (controller.signal.aborted) {
+			log('folder dialog closed: a newer request replaced it');
+		} else {
+			const message = err instanceof Error ? err.message : String(err);
+			await answerPick(pb, ask, { status: 'failed', error: message.slice(0, 1000) });
+			log(`folder dialog failed: ${message}`);
+		}
 	} finally {
-		picking = false;
+		picking = null;
 	}
+}
+
+/** Writes the answer to a folder request, unless a newer request has replaced it. */
+async function answerPick(pb, ask, patch) {
+	const current = (await pb.getSetting('folder_pick'))?.value;
+	if (current?.id !== ask.id) return;
+	await pb.setSetting('folder_pick', { ...ask, ...patch });
 }
 
 /**

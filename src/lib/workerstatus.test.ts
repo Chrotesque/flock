@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ago, workerView, STALE_MS, type WorkerBeat } from './workerstatus';
+import { ago, dialogHost, workerView, STALE_MS, type WorkerBeat } from './workerstatus';
 
 const now = Date.parse('2026-10-04T12:00:00Z');
 const beat = (role: WorkerBeat['role'], msAgo: number, extra: Partial<WorkerBeat> = {}): WorkerBeat => ({
@@ -68,5 +68,27 @@ describe('ago', () => {
 		expect(ago(4 * 60_000)).toBe('4 min ago');
 		expect(ago(3 * 3_600_000)).toBe('3 h ago');
 		expect(ago(72 * 3_600_000)).toBe('3 d ago');
+	});
+});
+
+describe('dialogHost', () => {
+	const now = Date.parse('2026-10-11T21:00:00Z');
+	const beat = (role: WorkerBeat['role'], ageMs: number, extra: Partial<WorkerBeat> = {}): WorkerBeat => ({
+		role,
+		beatAt: new Date(now - ageMs).toISOString(),
+		...extra
+	});
+
+	it("names the PC worker's machine", () => {
+		expect(dialogHost({ local: beat('local', 5000, { host: 'Studio-PC' }), nas: beat('nas', 5000, { host: 'nas-box' }) }, now)).toBe('Studio-PC');
+	});
+
+	it('falls back to a lone all worker', () => {
+		expect(dialogHost({ all: beat('all', 5000, { host: 'Desk' }) }, now)).toBe('Desk');
+	});
+
+	it('is null when no worker that opens dialogs is running', () => {
+		expect(dialogHost({ local: beat('local', STALE_MS + 1000, { host: 'Studio-PC' }), nas: beat('nas', 1000) }, now)).toBeNull();
+		expect(dialogHost({ local: beat('local', 1000, { host: 'Studio-PC', stoppedAt: new Date(now).toISOString() }) }, now)).toBeNull();
 	});
 });

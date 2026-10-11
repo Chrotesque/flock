@@ -59,6 +59,20 @@ export function isAlive(beat: WorkerBeat | null | undefined, now: number): boole
 	return Number.isFinite(at) && now - at < STALE_MS;
 }
 
+/**
+ * The machine Settings' folder dialog opens on: the PC worker's (or a lone
+ * `all` worker's), whichever browser asked — null with neither running. The
+ * name is the machine's own, from its heartbeat, which is not the device
+ * name a browser claimed.
+ */
+export function dialogHost(beats: WorkerBeats, now: number): string | null {
+	for (const role of ['local', 'all'] as const) {
+		const beat = beats[role];
+		if (isAlive(beat, now)) return beat?.host || 'the PC the worker runs on';
+	}
+	return null;
+}
+
 /** "just now", "4 min ago", "3 h ago", "2 d ago". */
 export function ago(ms: number): string {
 	const minutes = Math.floor(ms / 60_000);

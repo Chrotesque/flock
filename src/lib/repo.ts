@@ -647,13 +647,14 @@ export function rememberUsedSources(entries: Omit<UsedSource, 'at'>[]): void {
  * unanswered long enough to suggest the worker is not running.
  */
 export async function requestFolderPick(
-	opts: { signal?: AbortSignal; onWaiting?: () => void; giveUpMs?: number } = {}
+	opts: { signal?: AbortSignal; onWaiting?: () => void; onOpen?: () => void; giveUpMs?: number } = {}
 ): Promise<string | null> {
 	const id = newId();
 	await setSetting('folder_pick', { id, status: 'pending', requestedAt: new Date().toISOString() });
 
 	const started = Date.now();
 	let warned = false;
+	let opened = false;
 	for (;;) {
 		await new Promise((resolve) => setTimeout(resolve, 700));
 		if (opts.signal?.aborted) {
@@ -667,6 +668,10 @@ export async function requestFolderPick(
 			error?: string;
 		} | null>('folder_pick', null);
 		if (answer?.id !== id) throw new Error('Another folder request replaced this one.');
+		if (answer.status === 'open' && !opened) {
+			opened = true;
+			opts.onOpen?.();
+		}
 		if (answer.status === 'done') return answer.path || null;
 		if (answer.status === 'cancelled') return null;
 		if (answer.status === 'failed') throw new Error(answer.error || 'The folder dialog failed.');
