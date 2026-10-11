@@ -150,7 +150,9 @@ async function readProject(dir, typedDir, name) {
 /**
  * The projects in one configured folder, each named and pathed the way the
  * folder was typed (see watch.mjs). `error` when the folder itself cannot be
- * read — then nothing under it may be taken for gone.
+ * read — then nothing under it may be taken for gone. `resolved` and `dirs`
+ * are the folder as opened here and every subfolder of it, projects or not
+ * yet: what the folder watcher watches (folderwatch.mjs).
  */
 export async function scanProjectRoot(configured) {
 	const typed = String(configured || '').trim();
@@ -170,12 +172,14 @@ export async function scanProjectRoot(configured) {
 		};
 	}
 	const projects = [];
+	const dirs = [];
 	for (const entry of entries) {
 		if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+		dirs.push(join(resolved, entry.name));
 		const project = await readProject(join(resolved, entry.name), typedJoin(typed, entry.name), entry.name);
 		if (project) projects.push(project);
 	}
-	return { folder: typed, projects };
+	return { folder: typed, resolved, dirs, projects };
 }
 
 export async function scanProjectRoots(configured) {

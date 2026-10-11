@@ -809,6 +809,19 @@ export async function loadTodoStats(since: string): Promise<StatsRow[]> {
 }
 
 /**
+ * Calls back whenever a YouTube `upload_targets` row is created or changes —
+ * a confirm, the worker claiming it, the link arriving — so To finish follows
+ * it live rather than on its next poll.
+ */
+export function subscribeYouTubeTargets(onChange: () => void): () => void {
+	const sub = pb.collection('upload_targets').subscribe('*', (e) => {
+		if (e.record?.platform === 'youtube') onChange();
+	});
+	sub.catch(() => {});
+	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
+}
+
+/**
  * flock's YouTube uploads since the list began: those YouTube has, with what
  * may be left to set in Studio, and those still on their way (no link yet).
  */

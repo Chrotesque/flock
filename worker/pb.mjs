@@ -96,6 +96,13 @@ export function makeClient(baseUrl) {
 			}
 		},
 
+		/** Whether any row of a platform is waiting — one id, for nudging the main loop. */
+		async hasPending(platform) {
+			const filter = encodeURIComponent(`platform="${platform}" && status="pending"`);
+			const res = await request(`/api/collections/upload_targets/records?perPage=1&skipTotal=1&fields=id&filter=${filter}`);
+			return (res.items ?? []).length > 0;
+		},
+
 		/** Projects sent whose file has not been renamed yet (see archivePass). */
 		async projectsToArchive() {
 			const filter = encodeURIComponent('status = "uploaded" && archived_at = ""');

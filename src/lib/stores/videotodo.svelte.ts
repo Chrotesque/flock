@@ -1,4 +1,4 @@
-import { getSetting, loadTodoStats, loadTodoUploads, setSetting } from '../repo';
+import { getSetting, loadTodoStats, loadTodoUploads, setSetting, subscribeYouTubeTargets } from '../repo';
 import { logAction } from '../log';
 import { device } from './device.svelte';
 import { general } from './general.svelte';
@@ -48,10 +48,23 @@ class VideoTodoStore {
 	});
 
 	#lastRead = 0;
+	#soon: ReturnType<typeof setTimeout> | null = null;
 
-	/** Starts polling — faster while a line waits; the returned function stops it. */
+	/**
+	 * Starts polling — faster while a line waits — and follows YouTube's
+	 * upload rows live, so a confirm, a claim or a link shows at once; the
+	 * returned function stops it all.
+	 */
 	start(): () => void {
 		void this.refresh();
+		const stopLive = subscribeYouTubeTargets(() => {
+			// A confirm writes several rows at once; one read covers them.
+			if (this.#soon) clearTimeout(this.#soon);
+			this.#soon = setTimeout(() => {
+				this.#soon = null;
+				void this.refresh();
+			}, 400);
+		});
 		const timer = setInterval(() => {
 			const waiting = this.lines.some((line) => line.waiting);
 			if (waiting || Date.now() - this.#lastRead >= POLL_MS - 1000) void this.refresh();
@@ -60,6 +73,8 @@ class VideoTodoStore {
 		window.addEventListener('focus', onFocus);
 		return () => {
 			clearInterval(timer);
+			stopLive();
+			if (this.#soon) clearTimeout(this.#soon);
 			window.removeEventListener('focus', onFocus);
 		};
 	}
@@ -78,8 +93,14 @@ class VideoTodoStore {
 	 * start stays put rather than moving with the date (and only by a named
 	 * device, like every write).
 	 */
+	#again = false;
+
 	async refresh(): Promise<void> {
-		if (this.#busy) return;
+		// Asked again mid-read (a live update): one more read once this one ends.
+		if (this.#busy) {
+			this.#again = true;
+			return;
+		}
 		this.#busy = true;
 		try {
 			const read = await this.#readState();
@@ -95,6 +116,10 @@ class VideoTodoStore {
 			// Unreachable PocketBase: the list stays as it was until the next poll.
 		} finally {
 			this.#busy = false;
+			if (this.#again) {
+				this.#again = false;
+				void this.refresh();
+			}
 		}
 	}
 

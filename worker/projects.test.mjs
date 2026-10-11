@@ -129,6 +129,12 @@ describe('scanning a project folder', () => {
 		assert.equal(byName.Cats.videos[0].opened, join(root, 'Cats', 'final.mp4'));
 
 		assert.equal(byName.Dogs.manifestName, 'upload.json');
+		// Every subfolder is watched, projects or not yet; hidden ones are not.
+		assert.equal(scan.resolved, root);
+		assert.deepEqual(
+			[...scan.dirs].sort(),
+			['Again', 'Broken', 'Cats', 'Dogs', 'Editing', 'Empty', 'Sent'].map((d) => join(root, d))
+		);
 		assert.equal(byName.Broken.manifest, '{"flock": 1, "youtube": {');
 	});
 

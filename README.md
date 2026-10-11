@@ -465,8 +465,9 @@ Anything else on the clipboard pastes as usual.
 A project folder holds one subfolder per video. Add project folders in
 Settings, local or on the network, like watch folders.
 
-- **A subfolder becomes a project when a `flock.json` appears in it.** That
-  file is a flock block, as above. In it, a bare file name like `"thumb.png"`
+- **A subfolder becomes a project when a `flock.json` appears in it**, within
+  a second or two (the worker watches the folders). That file is a flock
+  block, as above. In it, a bare file name like `"thumb.png"`
   means an image in the same subfolder.
 - **New projects** in the sidebar lists them. Click one to open Upload, filled
   from the file, with the subfolder's videos in a *Project Folder* box.

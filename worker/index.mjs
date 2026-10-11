@@ -32,6 +32,7 @@ import { copyToDestination, copyInto } from './archive.mjs';
 import { scanFolders, published } from './watch.mjs';
 import { readWatchConfig } from './folders.mjs';
 import { MANIFEST_NAME, archiveManifest, detachedKey, planProjectWrites, scanProjectRoots } from './projects.mjs';
+import { makeFolderWatcher } from './folderwatch.mjs';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { basename } from 'node:path';
@@ -337,53 +338,97 @@ function rootSummary(roots) {
 /**
  * Lists the watch folders and the project folders so the compose screen can
  * show them. The folders are configured in the SPA, so they are read back out
- * of settings each pass rather than duplicated into the worker's own config.
+ * of settings each time rather than duplicated into the worker's own config.
  *
- * The network's are written by whoever publishes; a PC worker that is not
- * covering still reads them, for the previews it serves. The PC's own are
- * the `local` worker's, and only work while it runs on the PC they are on.
+ * Two kinds, each scanned on its own (`scanKind`): the network's, written by
+ * whoever publishes — a PC worker that is not covering still reads them, for
+ * the previews it serves — and the PC's own, the `local` worker's, which only
+ * work while it runs on the PC they are on. The regular pass scans both; a
+ * change in a watched project folder scans its kind at once (`folderWatcher`).
  */
-async function watchPass(pb, config) {
-	const row = await pb.getSetting('general');
-	const folders = readWatchConfig(row?.value);
-	const publish = hb.canPublish();
-	const local = hb.canLocal();
+async function watchPass(pb) {
+	lastWatchPass = Date.now();
+	await scanKind(pb, 'network');
+	await scanKind(pb, 'local');
+}
+
+/** When the last full listing ran: a main loop woken early skips the next. */
+let lastWatchPass = 0;
+
+/**
+ * The project folders of each kind this worker writes, watched for changes
+ * (folderwatch.mjs) — a long-running worker only. Null in the one-shot modes.
+ */
+let folderWatcher = null;
+
+/** A scan of a kind in flight, and whether another was asked for meanwhile. */
+const scanning = { network: null, local: null };
+const rescan = { network: false, local: false };
+
+/**
+ * Scans one kind, never twice at once: a scan asked for while one runs makes
+ * that one go round again when it ends, with the settings read afresh, so a
+ * change landing mid-scan is never missed and two scans never write the same
+ * project rows side by side.
+ */
+function scanKind(pb, kind, opts = {}) {
+	if (scanning[kind]) {
+		rescan[kind] = true;
+		return scanning[kind];
+	}
+	scanning[kind] = (async () => {
+		try {
+			do {
+				rescan[kind] = false;
+				await scanKindOnce(pb, kind, opts);
+			} while (rescan[kind]);
+		} finally {
+			scanning[kind] = null;
+		}
+	})();
+	return scanning[kind];
+}
+
+/** Whether this worker writes a kind's listing and project rows — and so watches it. */
+function writesKind(kind) {
+	return kind === 'network' ? hb.canPublish() : hb.canLocal();
+}
+
+async function scanKindOnce(pb, kind, { quiet = false } = {}) {
+	const all = readWatchConfig((await pb.getSetting('general'))?.value);
+	const network = kind === 'network';
+	const watchFolders = network ? all.network : all.local;
+	const projectFolders = network ? all.projects.network : all.projects.local;
+	const write = writesKind(kind);
+	const read = write || (network && hb.canLocal());
 
 	// Swapped in once the scan is done, not emptied before it: a slow share
 	// would otherwise cut off every preview for as long as the scan takes.
-	let nas = new Map();
-	const network = folders.network.length + folders.projects.network.length > 0;
-	if (network && (publish || local)) {
-		const index = await scanFolders(folders.network);
-		const roots = await scanProjectRoots(folders.projects.network);
-		if (publish) {
-			await pb.setSetting('watch_index', {
+	let map = new Map();
+	let watched = [];
+	if (read && watchFolders.length + projectFolders.length > 0) {
+		const index = await scanFolders(watchFolders);
+		const roots = await scanProjectRoots(projectFolders);
+		if (write) {
+			await pb.setSetting(network ? 'watch_index' : 'local_index', {
 				...index,
 				files: index.files.map(published),
 				projectRoots: rootSummary(roots)
 			});
-			await writeProjects(pb, roots, false);
+			await writeProjects(pb, roots, !network);
+			watched = roots.flatMap((root) => (root.resolved ? [root.resolved, ...root.dirs] : []));
 		}
-		nas = playable(index, roots);
-		reportScan('LAN', index, roots);
+		map = playable(index, roots);
+		if (!quiet) reportScan(network ? 'LAN' : 'local', index, roots);
 	}
-	listed.nas = nas;
-	if (!local) return;
+	listed[network ? 'nas' : 'local'] = map;
 
-	let pc = new Map();
-	if (folders.local.length + folders.projects.local.length > 0) {
-		const index = await scanFolders(folders.local);
-		const roots = await scanProjectRoots(folders.projects.local);
-		await pb.setSetting('local_index', {
-			...index,
-			files: index.files.map(published),
-			projectRoots: rootSummary(roots)
-		});
-		await writeProjects(pb, roots, true);
-		pc = playable(index, roots);
-		reportScan('local', index, roots);
+	if (folderWatcher) {
+		const before = folderWatcher.count(kind);
+		folderWatcher.sync(kind, watched);
+		const after = folderWatcher.count(kind);
+		if (after !== before) log(`watching ${after} ${network ? 'LAN' : 'local'} project folder(s) for changes`);
 	}
-	listed.local = pc;
 }
 
 function reportScan(kind, index, roots) {
@@ -500,8 +545,25 @@ async function archivePass(pb) {
  * With no network folder to copy into, a worker that both lists and
  * publishes (`all`, one machine) uses the file where it lies.
  */
+let importing = false;
+
+/**
+ * Also on the scoring tick, so a video picked from the PC is on its way to
+ * the NAS within seconds of the confirm rather than at the next poll — the
+ * NAS worker cannot publish it before. Never two at once: a copy can take a
+ * long time.
+ */
 async function importPass(pb, config) {
-	if (!hb.canLocal()) return;
+	if (importing || !hb.canLocal()) return;
+	importing = true;
+	try {
+		await importPending(pb, config);
+	} finally {
+		importing = false;
+	}
+}
+
+async function importPending(pb, config) {
 	const jobs = await pb.pendingImports();
 	if (jobs.length === 0) return;
 
@@ -782,10 +844,11 @@ async function noteUnready(pb, platform) {
 }
 
 async function pass(pb, config) {
-	await watchPass(pb, config);
+	// A loop woken early for a release (nudgeMain) leaves the folders to the
+	// regular minute: the watcher covers project folders meanwhile.
+	if (Date.now() - lastWatchPass >= config.pollSeconds * 1000 - 2000) await watchPass(pb);
 	await importPass(pb, config);
 	if (!hb.canPublish()) return;
-	await copyPass(pb);
 
 	for (const [platform, adapter] of Object.entries(ADAPTERS)) {
 		if (!dry && !adapter.ready(config)) {
@@ -798,6 +861,42 @@ async function pass(pb, config) {
 		log(`${targets.length} pending for ${platform}`);
 		for (const target of targets) {
 			await handle(pb, config, platform, target);
+		}
+	}
+
+	// After publishing, not before: filing a big video into its NAS folder
+	// would otherwise hold the YouTube upload, and its link, for the copy.
+	await copyPass(pb);
+}
+
+/** Ends the main loop's wait early; set only while it waits. */
+let wakeMain = null;
+
+function sleepMain(ms) {
+	return new Promise((resolve) => {
+		const done = () => {
+			clearTimeout(timer);
+			wakeMain = null;
+			resolve();
+		};
+		const timer = setTimeout(done, ms);
+		wakeMain = done;
+	});
+}
+
+/**
+ * Wakes the main loop when a release it handles is waiting — a YouTube row
+ * just confirmed, or one held until its video is on the NAS — instead of
+ * leaving it to the next poll, up to a minute away. One small query per slot
+ * tick, and only while the loop is asleep.
+ */
+async function nudgeMain(pb, config) {
+	if (!wakeMain || dry || !hb.canPublish()) return;
+	for (const [platform, adapter] of Object.entries(ADAPTERS)) {
+		if (adapter.timing !== 'now' || !adapter.ready(config)) continue;
+		if (await pb.hasPending(platform)) {
+			wakeMain?.();
+			return;
 		}
 	}
 }
@@ -1177,6 +1276,15 @@ async function main() {
 	await hb.start();
 	for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, shutdown);
 
+	// Project folders are watched, so a new flock.json is listed within a
+	// second or two; each scan of a kind says which folders (folderwatch.mjs).
+	folderWatcher = makeFolderWatcher({
+		onChange: (kind) =>
+			void scanKind(pb, kind, { quiet: true }).catch((err) =>
+				log(`${kind === 'network' ? 'LAN' : 'local'} folder scan failed: ${err.message.split('\n')[0]}`)
+			)
+	});
+
 	// The background executable's icon, its way to be seen and stopped — see tray.mjs.
 	if (wantsTray()) {
 		startTray({
@@ -1251,6 +1359,7 @@ async function main() {
 		void folderPickPass(pb).catch((err) => log(`folder pick failed: ${err.message}`));
 		void fileRequestPass(pb).catch((err) => log(`image request failed: ${err.message.split('\n')[0]}`));
 		void creatorCheckPass(pb, config).catch((err) => log(`TikTok account check failed: ${err.message.split('\n')[0]}`));
+		void importPass(pb, config).catch((err) => log(`import pass failed: ${err.message.split('\n')[0]}`));
 	}, Math.max(1, config.scoreSeconds) * 1000);
 
 	// The hold-and-fire platforms, on their own tighter tick — see slotPass.
@@ -1260,6 +1369,7 @@ async function main() {
 		void slotPass(pb, config);
 		void orphanPass(pb, config).catch((err) => log(`orphan check failed: ${err.message}`));
 		void archivePass(pb).catch((err) => log(`project rename failed: ${err.message.split('\n')[0]}`));
+		void nudgeMain(pb, config).catch(() => {});
 	};
 	slotTick();
 	setInterval(slotTick, Math.max(5, config.slotSeconds) * 1000);
@@ -1272,7 +1382,7 @@ async function main() {
 			// picks up wherever it left off.
 			log(`pass failed: ${err instanceof Error ? err.message : err}`);
 		}
-		await new Promise((resolve) => setTimeout(resolve, config.pollSeconds * 1000));
+		await sleepMain(config.pollSeconds * 1000);
 	}
 }
 
