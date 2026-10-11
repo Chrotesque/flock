@@ -2,12 +2,23 @@
 	import '../app.css';
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
-	import { VERSION } from '$lib/version';
 	import { device } from '$lib/stores/device.svelte';
 	import { workers } from '$lib/stores/workers.svelte';
+	import { general } from '$lib/stores/general.svelte';
+	import { jestr } from '$lib/stores/jestr.svelte';
 	import { onMount } from 'svelte';
 
-	onMount(() => workers.start());
+	onMount(() => {
+		void general.load();
+		return workers.start();
+	});
+
+	// The Jestr list polls only while its setting is on; switching it off
+	// stops the polling and empties the list.
+	$effect(() => {
+		if (!general.value.jestrIntegration) return;
+		return jestr.start();
+	});
 
 	/** A held release's slot, as the clock on this machine reads it. */
 	function at(iso: string): string {
@@ -47,13 +58,11 @@
 		{
 			href: '/settings',
 			label: 'Settings',
-			hint: 'Platforms and adaptations',
 			icon: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8-3.5a8 8 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a8 8 0 0 0-2-1.2L15 3H9l-.5 2.6a8 8 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a8 8 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a8 8 0 0 0 2 1.2L9 21h6l.5-2.6a8 8 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6A8 8 0 0 0 20 12Z'
 		},
 		{
 			href: '/log',
 			label: 'Log',
-			hint: 'Everything that changed',
 			icon: 'M5.5 4h13a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm3 4.5h7m-7 3.5h7m-7 3.5h4.5'
 		}
 	];
@@ -87,7 +96,37 @@
 			{/each}
 		</nav>
 
-		<div class="middle">
+		<!-- Every video gone public and not yet linked on Jestr, centred in the
+		     free stretch between the main links and the worker. -->
+		{#if general.value.jestrIntegration && jestr.videos.length > 0}
+			<section class="jestr" aria-label="Videos to link on Jestr">
+				<p class="jestrhead">To link on Jestr <span class="count">{jestr.videos.length}</span></p>
+				<ul>
+					{#each jestr.videos as video (video.id)}
+						<li>
+							<a
+								class="vtitle"
+								href={video.url}
+								target="_blank"
+								rel="noopener"
+								title="{video.title}{video.channel ? ` — ${video.channel}` : ''}"
+							>
+								{video.title}
+							</a>
+							<button
+								class="jbtn"
+								onclick={() => jestr.markLinked(video)}
+								title="Linked on Jestr: take it off this list"
+							>
+								Jestr
+							</button>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
+
+		<div class="lower">
 			{#if needsDevice}
 				<a class="alert" href="{base}/settings" title="This device has no name yet">
 					<span class="bang">!</span>
@@ -124,10 +163,7 @@
 							stroke-linejoin="round"
 						/>
 					</svg>
-					<span class="text">
-						{link.label}
-						<em>{link.hint}</em>
-					</span>
+					<span class="text">{link.label}</span>
 				</a>
 			{/each}
 		</nav>
@@ -140,7 +176,6 @@
 				</span>
 				<em>multi-platform publishing</em>
 			</a>
-			<p class="version">v{VERSION}</p>
 		</div>
 	</aside>
 
@@ -165,22 +200,22 @@
 		   an auto margin and .foot sets its own clearance — so a container gap
 		   would silently add to it. */
 		gap: 0;
-		padding: 20px 14px;
+		/* Less at the bottom than the top: the brand sits low, where the
+		   version used to be (it is on the Settings page now). */
+		padding: 20px 14px 8px;
 		border-right: 1px solid var(--border);
 		background: rgba(16, 14, 26, 0.6);
 		backdrop-filter: blur(10px);
 	}
 
-	/* Brand and version sit together at the bottom; this block is what pushes
-	   them there, so the nav can start flush at the top. */
+	/* The brand, at the very bottom under Settings and Log. */
 	.foot {
-		margin-top: 30px;
+		margin-top: 16px;
 		display: grid;
-		gap: 14px;
 	}
 
-	/* Stacked and centred: the mark sits above the name, the name above the
-	   tagline, all sharing the version's centre line. */
+	/* Stacked and centred: the mark and name on one line, the tagline under
+	   them, sharing one centre line. */
 	.brand {
 		display: flex;
 		flex-direction: column;
@@ -235,15 +270,116 @@
 		gap: 3px;
 	}
 
-	/* The device alert and the worker status, centred in the empty stretch
-	   between the two nav groups: an auto margin on both sides splits the free
-	   space evenly, which also holds Settings and Log at the bottom of the rail
-	   (.foot's own 30px keeps them clear of the brand). */
-	.middle {
-		margin: auto 0;
+	/* Settings and Log: one line each, close together. */
+	.utility {
+		gap: 1px;
+	}
+
+	.utility .navlink {
+		padding: 8px 11px;
+	}
+
+	/* The device alert and the worker status, low in the rail just above
+	   Settings: the auto top margin takes the free space, and the bottom one
+	   keeps a little more room to Settings than the links keep to each other.
+	   With the Jestr list showing, the list's own auto margins take the free
+	   space instead, centring it between the main links and this block. */
+	.lower {
+		margin-top: auto;
+		margin-bottom: 22px;
 		display: grid;
-		gap: 18px;
-		padding: 18px 0;
+		gap: 14px;
+		padding-top: 18px;
+	}
+
+	.jestr + .lower {
+		margin-top: 0;
+	}
+
+	.jestr {
+		margin: auto 0;
+		padding: 18px 0 0;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.jestrhead {
+		margin: 0;
+		text-align: center;
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.count {
+		margin-left: 4px;
+		padding: 1px 6px;
+		border-radius: 999px;
+		background: var(--surface-2);
+		color: var(--text-dim);
+		letter-spacing: 0;
+	}
+
+	.jestr ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		display: grid;
+		gap: 2px;
+		/* A long backlog scrolls rather than pushing the worker off the rail. */
+		max-height: 36vh;
+		overflow-y: auto;
+	}
+
+	.jestr li {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 4px 4px 11px;
+		border-radius: 8px;
+	}
+
+	.jestr li:hover {
+		background: var(--surface-2);
+	}
+
+	.vtitle {
+		flex: 1;
+		min-width: 0;
+		font-size: 12px;
+		line-height: 1.3;
+		color: var(--text-dim);
+		text-decoration: none;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.vtitle:hover {
+		color: var(--text);
+	}
+
+	.jbtn {
+		flex: none;
+		padding: 3px 9px;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		background: var(--surface);
+		color: var(--text-dim);
+		font: inherit;
+		font-size: 11px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: border-color 0.15s, color 0.15s;
+	}
+
+	.jbtn:hover {
+		border-color: var(--text-dim);
+		color: var(--text);
 	}
 
 	.worker {
@@ -389,15 +525,6 @@
 		margin-top: 1px;
 	}
 
-	.version {
-		margin: 0;
-		text-align: center;
-		font-size: 11px;
-		font-family: var(--mono);
-		color: var(--text-faint);
-		letter-spacing: 0.02em;
-	}
-
 	main {
 		overflow-y: auto;
 		padding: 30px 40px 60px;
@@ -411,8 +538,8 @@
 		aside {
 			flex-direction: row;
 			align-items: center;
-			/* Wraps rather than overflowing: brand + version + three nav links do
-			   not fit one row on a phone. */
+			/* Wraps rather than overflowing: brand + five nav links do not fit
+			   one row on a phone. */
 			flex-wrap: wrap;
 			gap: 10px 18px;
 			border-right: none;
@@ -459,12 +586,19 @@
 			grid-auto-flow: column;
 			gap: 2px;
 		}
-		.middle {
+		.utility .navlink {
+			padding: 10px 11px;
+		}
+		.lower {
 			margin: 0;
 			padding: 0;
 			display: flex;
 			align-items: center;
 			gap: 12px;
+		}
+		/* A list does not fit a one-row bar; the wide layout shows it. */
+		.jestr {
+			display: none;
 		}
 		.doing {
 			display: none;

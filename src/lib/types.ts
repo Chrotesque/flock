@@ -250,6 +250,12 @@ export interface GeneralSettings {
 	 */
 	complianceBranding: boolean;
 	/**
+	 * Lists every video that goes public on a connected YouTube channel in the
+	 * sidebar, each with a button that marks it as linked on Jestr (see
+	 * jestr.ts). Off by default: it is one creator's workflow, not flock's.
+	 */
+	jestrIntegration: boolean;
+	/**
 	 * Extra zones for the calendar's second time column, beside the built-in
 	 * US West and US East. IANA names; one the runtime does not know is left
 	 * out of the dropdown rather than shown as a wrong clock.

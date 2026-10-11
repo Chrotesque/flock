@@ -3,6 +3,7 @@ import { PLATFORMS, PLATFORM_IDS, isPlatformId } from './platforms';
 import { DEFAULT_SCHEDULING } from './types';
 import { logAction, assertDeviceNamed } from './log';
 import { newId } from './id';
+import { JESTR_FIELDS, type JestrRow } from './jestr';
 import {
 	FIRST_BRAND_NAME,
 	brandKey,
@@ -684,6 +685,19 @@ export async function loadPlaylists(channelId: string): Promise<PlaylistIndex | 
 	const index = await getSetting<PlaylistIndex | null>(`youtube_playlists:${channelId}`, empty);
 	if (!index || !Array.isArray(index.items)) return null;
 	return index;
+}
+
+/**
+ * The videos gone public on any connected channel since the Jestr list began
+ * — the stats pass's rows, so uploads made outside flock are there too. Only
+ * the fields a line shows come back, not the stored item or its history.
+ */
+export async function loadJestrVideos(since: string): Promise<JestrRow[]> {
+	return pb.collection('video_stats').getFullList<JestrRow>({
+		filter: pb.filter("published_at >= {:since} && privacy = 'public'", { since: new Date(since) }),
+		fields: JESTR_FIELDS,
+		sort: 'published_at'
+	});
 }
 
 /**

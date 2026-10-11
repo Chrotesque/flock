@@ -500,14 +500,24 @@ the worker running. Below that it lists what is currently stored on the NAS,
 which is where you check that an upload actually landed, with each upload's
 brand once there is more than one.
 
-**Settings** comes in two halves. *General* is shared by every brand: *Storage
+**Settings** shows flock's version beside its title, and comes in two halves.
+*General* is shared by every brand: *Storage
 and defaults* holds the NAS folders a finished video is copied into (the filled
 circle marks the default), the NAS watch folder, the local watch folders listed
 under *Locally*, and this browser's device name; *Brands* adds, renames, orders
 and deletes brands and chooses each brand's account per platform (deleting one
 removes its settings and templates, while its uploads stay and anything queued
 still goes out); *Other* holds the compliance
-switch and any extra time zones for the calendar's second clock.
+switch, the Jestr integration and any extra time zones for the calendar's
+second clock.
+
+**Jestr integration** (off unless ticked under Settings → *Other*) is for
+creators paid through [Jestr](https://jestr.gg) campaigns, where each video's
+link has to be handed to Jestr by hand. With it on, the sidebar lists every
+video that goes public on a connected YouTube channel from that day on —
+uploaded through flock or not — with a *Jestr* button beside it; press it once
+the video is linked on Jestr and it leaves the list. The title opens the video,
+to copy its link from. Jestr has no API, so flock cannot check the link itself.
 
 The other half belongs to the brand in view. *Templates* holds reusable blocks of
 text: on the upload screen they appear under the details, and typing a

@@ -13,6 +13,7 @@ export const DEFAULT_GENERAL: GeneralSettings = {
 	watchFolder: '',
 	localFolders: [],
 	complianceBranding: true,
+	jestrIntegration: false,
 	timeZones: []
 };
 
@@ -55,6 +56,7 @@ class GeneralStore {
 						)
 					: [],
 				complianceBranding: stored.complianceBranding ?? true,
+				jestrIntegration: stored.jestrIntegration === true,
 				timeZones: Array.isArray(stored.timeZones) ? stored.timeZones : []
 			};
 			this.#loaded = true;
@@ -125,6 +127,10 @@ class GeneralStore {
 				'settings',
 				`Turned compliance branding ${after.complianceBranding ? 'on' : 'off'}`
 			);
+		}
+
+		if (before.jestrIntegration !== after.jestrIntegration) {
+			logAction('settings', `Turned the Jestr integration ${after.jestrIntegration ? 'on' : 'off'}`);
 		}
 
 		if (before.watchFolder !== after.watchFolder) {
@@ -234,6 +240,12 @@ class GeneralStore {
 
 	setComplianceBranding(on: boolean) {
 		this.value.complianceBranding = on;
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	setJestrIntegration(on: boolean) {
+		this.value.jestrIntegration = on;
 		this.queueSave();
 		this.#queueLog();
 	}

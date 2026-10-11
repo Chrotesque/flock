@@ -19,6 +19,7 @@
 	import { templates } from '$lib/stores/templates.svelte';
 	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
+	import { VERSION } from '$lib/version';
 	import type {
 		FilterRule,
 		OptionValues,
@@ -127,7 +128,7 @@
 <DeviceGate what="Settings">
 		<header class="head">
 			<div>
-				<h1>Settings</h1>
+				<h1>Settings <span class="ver" title="flock's version">v{VERSION}</span></h1>
 				<p>Display order, per-platform defaults, and the adaptation rules.</p>
 			</div>
 			{#if settings.saving}
@@ -213,7 +214,10 @@
 								<span class="who">
 									<span class="name">Other</span>
 									<span class="sub">
-										{general.value.complianceBranding ? 'compliance on' : 'compliance off'}
+										{general.value.complianceBranding ? 'compliance on' : 'compliance off'}{general.value
+											.jestrIntegration
+											? ' · Jestr'
+											: ''}
 									</span>
 								</span>
 							</button>
@@ -386,6 +390,19 @@
 								interface is being reviewed or screenshotted for an API audit —
 								<strong>on is the compliant state</strong>, and YouTube's guidelines expect
 								branding wherever its API has a presence.
+							</p>
+
+							<Checkbox
+								checked={general.value.jestrIntegration}
+								label="Jestr integration"
+								onchange={(next) => general.setJestrIntegration(next)}
+							/>
+							<p class="otherhint">
+								Lists every video that goes public on a connected YouTube channel in the sidebar —
+								uploaded through flock or not — each with a <strong>Jestr</strong> button. Press it
+								once the video is linked to its campaign on jestr.gg, and it leaves the list. Jestr
+								offers no API, so flock cannot see or make the link itself; the list starts on the
+								day this is first switched on.
 							</p>
 
 							<TimeZoneList />
@@ -629,6 +646,21 @@
 
 	h1 {
 		font-size: 23px;
+	}
+
+	/* The version lives here since it left the sidebar: first thing in view
+	   once Settings is open. */
+	.ver {
+		margin-left: 8px;
+		padding: 2px 8px;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		font-family: var(--mono);
+		font-size: 12px;
+		font-weight: 500;
+		letter-spacing: 0.02em;
+		color: var(--text-faint);
+		vertical-align: middle;
 	}
 
 	.head p {
