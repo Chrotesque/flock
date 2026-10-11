@@ -8,7 +8,7 @@
 
 import { readdir, stat } from 'node:fs/promises';
 import { join, extname } from 'node:path';
-import { resolveFolder } from './paths.mjs';
+import { resolveFolder, triedAs } from './paths.mjs';
 
 // Matches what the browser picker accepts, minus the ones nothing here can
 // realistically publish. Keeping it to a list stops stray .part files, sidecar
@@ -84,7 +84,8 @@ async function scanFolder(folder, label) {
 export async function scanWatchFolder(configured) {
 	const folder = await resolveFolder(configured);
 	if (!folder) return null;
-	const scan = await scanFolder(folder, `the watch folder ${configured}`);
+	const tried = folder === configured.trim() ? triedAs(configured) : '';
+	const scan = await scanFolder(folder, `the watch folder ${configured}${tried}`);
 	const typed = configured.trim();
 	if (folder !== typed && /^\\\\/.test(typed)) {
 		const base = typed.replace(/\\+$/, '');
