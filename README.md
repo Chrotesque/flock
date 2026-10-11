@@ -184,16 +184,21 @@ That asks for **upload permission plus read-only access** to the channel. Upload
 is all `videos.insert` needs; read-only is what the Analytics screen's stats
 need, and it cannot change anything. An authorisation made before Analytics
 existed has read the channel fine too, so re-run this only if the worker reports
-a scope error. The one exception is the playlist box on the compose screen:
-putting a video in a playlist requires Google's broader
-`youtube` scope, which the consent screen describes as permanently deleting
-videos, comments and captions. If you want that to work, authorise with:
+a scope error. The exceptions are the playlist box and the paid-promotion
+checkbox on the compose screen: putting a video in a playlist, and setting paid
+promotion when YouTube leaves it off at upload (it can), both mean editing the
+video, which requires Google's broader `youtube` scope — the consent screen
+describes it as permanently deleting videos, comments and captions. If you want
+those to work, authorise each channel with:
 
 ```bash
 pnpm worker:auth --with-playlists
 ```
 
-Otherwise the playlist is skipped and the worker says so in its log.
+Otherwise the playlist is skipped, paid promotion stays as YouTube left it, and
+the review screen warns about both before you confirm. The thumbnail and paid
+promotion are set once YouTube has processed the video, so a YouTube release
+is marked done a minute or two after its upload (longer for a long video).
 
 Check the queue without uploading anything:
 
@@ -458,7 +463,9 @@ US West, US East, or any zone added under Settings → Other — and the night a
 evening hours are tinted. The review screen
 plays the video — a tab per video when platforms have their own — with a tab for the thumbnail at the same size, beside
 what each platform gets and when — and, once the worker has read the accounts,
-which TikTok and Instagram account each goes out as; confirming is the tick
+which TikTok and Instagram account each goes out as, and a warning when the
+YouTube channel's authorisation cannot add the playlist or set paid promotion
+after upload; confirming is the tick
 button, pressed once and then again within two seconds while it shows "!!!", and
 the copy to the NAS starts there.
 
@@ -471,7 +478,9 @@ releases or all of them, and each card names its brand while all are shown.
 
 **Log** lists every change — uploads, calendar moves and settings — with the date,
 time and the machine that made it. Filter by category, search, or click a device
-tag to see only that machine. It cannot be edited or cleared. The *Worker* tab
+tag to see only that machine. It cannot be edited or cleared. A YouTube release's
+entry ends with *Set by hand in Studio: …* when YouTube did not take the
+thumbnail, playlist or paid promotion. The *Worker* tab
 shows what the worker printed, live as it prints it, kept for 14 days — the place to
 look when a thumbnail, playlist or post did not come out as asked. It needs
 `pnpm setup-pb` run once, and fills from the next worker start.

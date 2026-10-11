@@ -6,7 +6,9 @@ import {
 	allowanceWarning,
 	implicitChoices,
 	offerFor,
-	postAllowance
+	postAllowance,
+	youtubeCanEdit,
+	youtubeGrantWarnings
 } from './accounts';
 import type { Account, Brand, PlatformId } from './types';
 
@@ -138,5 +140,42 @@ describe('accountLabel', () => {
 
 	it('falls back to the name', () => {
 		expect(accountLabel(account('tiktok', 't1'))).toBe('Name t1');
+	});
+});
+
+describe('youtubeCanEdit', () => {
+	const channel = (details: Record<string, unknown> | null) => ({ ...account('youtube', 'UC1'), details });
+
+	it('reads what the worker wrote, and nothing else', () => {
+		expect(youtubeCanEdit(channel({ canEdit: true }))).toBe(true);
+		expect(youtubeCanEdit(channel({ canEdit: false }))).toBe(false);
+		expect(youtubeCanEdit(channel({ fetchedAt: 'x' }))).toBeNull();
+		expect(youtubeCanEdit(channel({ canEdit: 'no' }))).toBeNull();
+		expect(youtubeCanEdit(null)).toBeNull();
+	});
+});
+
+describe('youtubeGrantWarnings', () => {
+	const uploadOnly = { ...account('youtube', 'UC1'), details: { canEdit: false } };
+	const canEdit = { ...account('youtube', 'UC1'), details: { canEdit: true } };
+	const unknown = account('youtube', 'UC1');
+	const both = { playlist: 'First Peck', paidPromotion: true };
+
+	it('names the playlist and paid promotion for an upload-only grant', () => {
+		const lines = youtubeGrantWarnings(both, uploadOnly);
+		expect(lines).toHaveLength(2);
+		expect(lines[0]).toContain('"First Peck"');
+		expect(lines[1]).toMatch(/^Paid promotion/);
+	});
+
+	it('says nothing a post does not ask for', () => {
+		expect(youtubeGrantWarnings({ playlist: '  ' }, uploadOnly)).toEqual([]);
+		expect(youtubeGrantWarnings({}, uploadOnly)).toEqual([]);
+	});
+
+	it('says nothing for a grant that can edit, or one not read yet', () => {
+		expect(youtubeGrantWarnings(both, canEdit)).toEqual([]);
+		expect(youtubeGrantWarnings(both, unknown)).toEqual([]);
+		expect(youtubeGrantWarnings(both, null)).toEqual([]);
 	});
 });

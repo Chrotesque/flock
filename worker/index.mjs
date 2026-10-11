@@ -16,7 +16,7 @@
 
 import { requireConfig, hasYouTube, hasTikTok, hasInstagram } from './config.mjs';
 import { makeClient } from './pb.mjs';
-import { publishToYouTube, probeYouTube, refreshYouTubeChannels, youtubeChannels } from './youtube.mjs';
+import { grantCanEdit, publishToYouTube, probeYouTube, refreshYouTubeChannels, youtubeChannels } from './youtube.mjs';
 import { publishToTikTok, probeTikTok, refreshTikTokCreators, creatorInfo, privacyLabel } from './tiktok.mjs';
 import {
 	publishToInstagram,
@@ -237,16 +237,21 @@ async function publishOne(pb, config, platform, target, job, label, claim) {
 }
 
 async function recordResult(pb, platform, target, result, label) {
+	// What the platform did not take and has to be set by hand (YouTube's
+	// thumbnail, playlist, paid promotion) is said on the Log entry.
+	const todo = result.todo?.length ? `Set by hand in Studio: ${result.todo.join(', ')}.` : '';
+	const notes = [result.locked ? 'Stored as private: the API project is not audited yet.' : '', todo];
 	await pb.updateTarget(target.id, {
 		status: result.scheduled ? 'scheduled' : 'published',
 		remote_url: result.url,
-		error: result.locked ? 'Stored as private: the API project is not audited yet.' : '',
+		error: notes.filter(Boolean).join(' '),
 		...(result.scheduled ? {} : { published_at: new Date().toISOString() })
 	});
 
 	const how = result.scheduled ? `scheduled for ${target.scheduled_at}` : `live as ${result.privacyStatus}`;
 	log(`done ${label} — ${how}  ${result.url}`);
-	pb.log(`Published to ${platform}`, `${target.title || '(no title)'} -> ${result.url} (${how})`);
+	if (todo) log(`  ${todo}`);
+	pb.log(`Published to ${platform}`, `${target.title || '(no title)'} -> ${result.url} (${how})${todo ? ` ${todo}` : ''}`);
 }
 
 /**
@@ -679,7 +684,7 @@ async function settleOrphan(pb, config, platform, row) {
 			log(`queued ${label} again — ${verdict.reason}`);
 		} else if (verdict.action === 'finish') {
 			log(`${label} had finished on ${NAMES[platform]} under another run — recording it, not uploading again`);
-			if (platform === 'youtube') log('  its thumbnail and playlist, if any, may not have been applied');
+			if (platform === 'youtube') log('  its thumbnail, playlist and paid promotion, if any, may not have been applied');
 			await recordResult(pb, platform, row, probe.result, label);
 		} else if (verdict.action === 'publish') {
 			log(`${label} was processed but never published — publishing that container`);
@@ -706,6 +711,15 @@ async function showAccounts(config) {
 		const list = await youtubeChannels(config);
 		for (const account of list) {
 			log(`YouTube uploads to "${account.title}"${account.handle ? ` (${account.handle})` : ''}, channel ${account.channelId}`);
+			const canEdit = await grantCanEdit(config, account).catch(() => null);
+			log(
+				canEdit === true
+					? '  can edit after upload: playlists and paid promotion work'
+					: canEdit === false
+						? '  upload-only: no playlists, and paid promotion only if YouTube takes it at upload ' +
+								'(pnpm worker:auth --with-playlists)'
+						: '  whether it can edit after upload is unknown'
+			);
 		}
 		for (const account of config.google.accounts.filter((a) => !a.channelId)) {
 			log(`a Google grant could not be read: ${(account.problem ?? 'unknown').split('\n')[0]}`);

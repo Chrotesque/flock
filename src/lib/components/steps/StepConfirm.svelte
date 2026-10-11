@@ -11,7 +11,15 @@
 	import { loadPreviewServer, toInstant } from '$lib/repo';
 	import { previewCheckUrl, previewVideoUrl, previewProblem, type PreviewSource } from '$lib/preview';
 	import { accounts } from '$lib/stores/accounts.svelte';
-	import { accountLabel, allowanceLabel, allowanceWarning, postAllowance, type Allowance } from '$lib/accounts';
+	import {
+		accountLabel,
+		allowanceLabel,
+		allowanceWarning,
+		postAllowance,
+		youtubeGrantWarnings,
+		YOUTUBE_EDIT_SETUP,
+		type Allowance
+	} from '$lib/accounts';
 	import { imageFits, isImagePlatform, type ImagePlatform } from '$lib/coverimage';
 	import {
 		tiktokProblems,
@@ -73,6 +81,16 @@
 	function tiktokIssues(row: PlanRow): string[] {
 		if (row.platform !== 'tiktok') return [];
 		return tiktokProblems(row.options, accounts.tiktok, draft.videoFor('tiktok').duration);
+	}
+
+	/**
+	 * What the YouTube channel's grant cannot do for this post: an upload-only
+	 * grant adds to no playlist and cannot set paid promotion after upload.
+	 * The release goes out regardless; this says what to do in Studio.
+	 */
+	function grantIssues(row: PlanRow): string[] {
+		if (row.platform !== 'youtube') return [];
+		return youtubeGrantWarnings(row.options, accounts.for('youtube'));
 	}
 
 	/**
@@ -415,6 +433,7 @@
 			{@const label = def.hasTitle ? row.title : firstLine(row.description)}
 			{@const visibility = visibilityWarning(row)}
 			{@const issues = tiktokIssues(row)}
+			{@const grant = grantIssues(row)}
 			{@const account = accountFor(row.platform)}
 			{@const allowance = postAllowance(accounts.for(row.platform))}
 			{@const overAllowance = allowanceWarning(allowance, dueAt(row))}
@@ -470,6 +489,20 @@
 					{/if}
 					{#each issues as issue (issue)}
 						<p class="warnline">
+							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+								<path
+									d="M12 3.5 21 19.5H3L12 3.5Z"
+									stroke="currentColor"
+									stroke-width="1.8"
+									stroke-linejoin="round"
+								/>
+								<path d="M12 10v4M12 16.4v.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+							</svg>
+							{issue}
+						</p>
+					{/each}
+					{#each grant as issue (issue)}
+						<p class="warnline" title="Sign the channel in again with {YOUTUBE_EDIT_SETUP} to let flock edit it after upload.">
 							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
 								<path
 									d="M12 3.5 21 19.5H3L12 3.5Z"

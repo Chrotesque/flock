@@ -7,7 +7,7 @@
 import { request as httpsRequest } from 'node:https';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { accessToken, forgetToken } from './google.mjs';
+import { accessToken, forgetToken, grantedScope } from './google.mjs';
 import { pickAccount } from './accounts.mjs';
 import { fetchOrExplain } from './net.mjs';
 
@@ -59,6 +59,43 @@ const THUMBNAIL_UPLOAD = 'https://www.googleapis.com/upload/youtube/v3/thumbnail
 
 const PRIVACY = { Public: 'public', Unlisted: 'unlisted', Private: 'private' };
 const LICENSE = { 'Standard YouTube License': 'youtube', 'Creative Commons': 'creativeCommon' };
+
+// Any of these lets a grant edit a video after upload: add it to a playlist,
+// or set paid promotion, which videos.insert does not reliably take.
+// youtube.upload alone cannot; `pnpm worker:auth --with-playlists` adds
+// `youtube`.
+const EDIT_SCOPES = [
+	'https://www.googleapis.com/auth/youtube',
+	'https://www.googleapis.com/auth/youtube.force-ssl',
+	'https://www.googleapis.com/auth/youtubepartner'
+];
+
+/** Whether a grant's scope string allows editing a video: true, false, or null when unknown. */
+export function scopeCanEdit(scope) {
+	if (typeof scope !== 'string' || !scope.trim()) return null;
+	const granted = scope.trim().split(/\s+/);
+	return EDIT_SCOPES.some((s) => granted.includes(s));
+}
+
+// The thumbnail and the paid-promotion check wait for YouTube to finish
+// processing. A thumbnail set seconds after the upload, while YouTube was
+// still making its own, did not stay on 11 Oct 2026 although thumbnails.set
+// had accepted it. Shorts finish in a minute or two; a long upload that has
+// not finished by the cap goes ahead anyway rather than holding the queue.
+const PROCESSING_POLL_MS = 15_000;
+const PROCESSING_WAIT_MS = 15 * 60_000;
+
+/**
+ * What a video's processingDetails say for the steps after upload: `wait`
+ * while YouTube is processing or has not made its own thumbnails yet, `done`
+ * once both are finished, `failed` when processing will not finish.
+ */
+export function processingState(details) {
+	const status = details?.processingStatus;
+	if (status === 'failed' || status === 'terminated') return 'failed';
+	if (status === 'succeeded' && details.thumbnailsAvailability === 'available') return 'done';
+	return 'wait';
+}
 
 /**
  * Whether this release can be handed to YouTube to publish later.
@@ -142,6 +179,16 @@ export function youtubeToken(config, account) {
 	return accessToken(grant(config, account));
 }
 
+/**
+ * Whether a channel's grant can edit its videos, from what Google reported on
+ * the last refresh, else what `pnpm worker:auth` wrote down. Null when
+ * neither says.
+ */
+export async function grantCanEdit(config, account) {
+	await youtubeToken(config, account);
+	return scopeCanEdit(grantedScope(account.refreshToken) ?? account.scope);
+}
+
 // The channel each grant uploads to: read once a process for the check before
 // every upload (one unit), and every half hour for the `accounts` rows.
 const CHANNEL_TTL_MS = 30 * 60_000;
@@ -220,10 +267,13 @@ export async function refreshYouTubeChannels(pb, config, log, force = false) {
 			const own = await ownChannel(config, account, { fresh: true });
 			Object.assign(account, { channelId: own.id, title: own.title, handle: own.handle });
 			ids.push(own.id);
+			// For the compose and review screens: a grant that cannot edit
+			// cannot add to a playlist or set paid promotion after upload.
+			const canEdit = await grantCanEdit(config, account);
 			await pb.upsertAccount('youtube', own.id, {
 				handle: own.handle,
 				name: own.title,
-				details: { fetchedAt: now, thumbnail: own.thumbnail },
+				details: { fetchedAt: now, thumbnail: own.thumbnail, ...(canEdit === null ? {} : { canEdit }) },
 				error: '',
 				fetched_at: now
 			});
@@ -337,7 +387,8 @@ function putVideo(uploadUrl, body, { size, mimeType, onProgress }) {
 }
 
 /**
- * Adds the finished video to a playlist by name.
+ * Adds the finished video to a playlist by name; false when there is no such
+ * playlist.
  *
  * Deliberately non-fatal: the video is already up, and losing the whole publish
  * because a playlist was renamed would be a worse outcome than the video simply
@@ -350,7 +401,7 @@ async function addToPlaylist(token, videoId, name, log) {
 
 	if (!match) {
 		log(`playlist "${name}" not found on the channel — video left out of it`);
-		return;
+		return false;
 	}
 	await api(token, '/playlistItems?part=snippet', {
 		method: 'POST',
@@ -359,6 +410,7 @@ async function addToPlaylist(token, videoId, name, log) {
 		})
 	});
 	log(`added to playlist "${match.snippet.title}"`);
+	return true;
 }
 
 /**
@@ -385,6 +437,91 @@ async function setThumbnail(token, videoId, job, pb, log) {
 		throw err;
 	}
 	log(`thumbnail set (${Math.round(image.bytes.length / 1024)} KB)`);
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Waits until YouTube has processed the video and made its own thumbnails,
+ * reading processingDetails (1 unit) every 15 s up to the cap. Returns `done`,
+ * `failed`, `timeout`, or `unreadable` when the reading itself fails — the
+ * steps after it go ahead in every case, and the log says which. `getToken`
+ * is asked on every reading, as the wait can outlast a token.
+ */
+async function waitForProcessing(getToken, videoId, log) {
+	const started = Date.now();
+	log('waiting for YouTube to finish processing before the thumbnail and paid promotion');
+	for (;;) {
+		let details;
+		try {
+			const body = await api(await getToken(), `/videos?part=processingDetails&id=${videoId}`);
+			details = body?.items?.[0]?.processingDetails;
+		} catch (err) {
+			log(`processing could not be read (${err.message.split('\n')[0]}) — going ahead`);
+			return 'unreadable';
+		}
+		const state = processingState(details);
+		const took = Math.round((Date.now() - started) / 1000);
+		if (state === 'done') {
+			log(`processed after ${took} s`);
+			return 'done';
+		}
+		if (state === 'failed') {
+			log(`YouTube reports processing ${details.processingStatus} — going ahead`);
+			return 'failed';
+		}
+		if (Date.now() - started >= PROCESSING_WAIT_MS) {
+			log(`still processing after ${Math.round(took / 60)} min — going ahead`);
+			return 'timeout';
+		}
+		await sleep(PROCESSING_POLL_MS);
+	}
+}
+
+/** Whether YouTube has paid promotion on for a video (1 unit). */
+async function paidPlacement(token, videoId) {
+	const body = await api(token, `/videos?part=paidProductPlacementDetails&id=${videoId}`);
+	return body?.items?.[0]?.paidProductPlacementDetails?.hasPaidProductPlacement === true;
+}
+
+/**
+ * Makes sure paid promotion is on, after processing: read it, edit the video
+ * when it is off and the grant may, read it again. The edit names only this
+ * part, so nothing else on the video is touched (videos.update clears what a
+ * named part omits). Returns whether it is on; logs which way it went.
+ */
+async function ensurePaidPlacement(token, videoId, canEdit, log) {
+	if (await paidPlacement(token, videoId)) {
+		log('paid promotion on (checked after processing)');
+		return true;
+	}
+	if (canEdit === false) {
+		log(
+			'paid promotion skipped: YouTube left it off at upload, and the upload-only grant cannot edit ' +
+				'the video. Tick it in Studio, or re-authorise with `pnpm worker:auth --with-playlists`.'
+		);
+		return false;
+	}
+	try {
+		await api(token, '/videos?part=paidProductPlacementDetails', {
+			method: 'PUT',
+			body: JSON.stringify({ id: videoId, paidProductPlacementDetails: { hasPaidProductPlacement: true } })
+		});
+	} catch (err) {
+		const denied = /\b(403|401)\b/.test(err.message) || err.message.includes('insufficient');
+		log(
+			denied
+				? 'paid promotion skipped: YouTube left it off at upload and refused the edit. Tick it in Studio.'
+				: `paid promotion failed (video is still up): ${err.message.split('\n')[0]}. Tick it in Studio.`
+		);
+		return false;
+	}
+	if (await paidPlacement(token, videoId)) {
+		log('paid promotion set by editing the video');
+		return true;
+	}
+	log('paid promotion failed: YouTube still reports it off after the edit. Tick it in Studio.');
+	return false;
 }
 
 /**
@@ -521,22 +658,28 @@ export async function publishToYouTube({ target, job, pb, config, log, saveHandl
 		);
 	}
 
-	if (job.thumbnail) {
-		try {
-			await setThumbnail(token, videoId, job, pb, log);
-		} catch (err) {
-			log(
-				err.status === 403
-					? 'thumbnail skipped: YouTube refused it. Custom thumbnails need a verified ' +
-							'channel (youtube.com/verify). The video is up without it.'
-					: `thumbnail failed (video is still up): ${err.message}`
-			);
-		}
+	// What did not reach YouTube and has to be set in Studio; the log entry
+	// for the release names it.
+	const todo = [];
+
+	// The insert named paidProductPlacementDetails, so its reply says whether
+	// YouTube took it there. On 11 Oct 2026 it did not, which is why it is
+	// checked again below.
+	const paidWanted = Boolean(options.paidPromotion);
+	if (paidWanted) {
+		const atUpload = result.paidProductPlacementDetails?.hasPaidProductPlacement === true;
+		log(`paid promotion ${atUpload ? 'on' : 'left off by YouTube'} at upload; checking again once processed`);
 	}
+
+	// A long upload (and the wait below) can outlast the hour an access token
+	// lives. A failed refresh must not fail the publish: the video is up, and
+	// a failed row would be uploaded again.
+	const freshToken = () => youtubeToken(config, account).catch(() => token);
+	token = await freshToken();
 
 	if (options.playlist && String(options.playlist).trim()) {
 		try {
-			await addToPlaylist(token, videoId, String(options.playlist), log);
+			if (!(await addToPlaylist(token, videoId, String(options.playlist), log))) todo.push('playlist');
 		} catch (err) {
 			// The default grant is upload-only on purpose, so this is the expected
 			// outcome rather than a fault — name the cause instead of the status.
@@ -547,8 +690,38 @@ export async function publishToYouTube({ target, job, pb, config, log, saveHandl
 							'Re-authorise with `pnpm worker:auth --with-playlists` to allow it.'
 					: `playlist add failed (video is still up): ${err.message}`
 			);
+			todo.push('playlist');
 		}
 	}
 
-	return { videoId, url, scheduled: release.scheduled, privacyStatus: got, locked };
+	if (job.thumbnail || paidWanted) {
+		await waitForProcessing(freshToken, videoId, log);
+		token = await freshToken();
+	}
+
+	if (job.thumbnail) {
+		try {
+			await setThumbnail(token, videoId, job, pb, log);
+		} catch (err) {
+			log(
+				err.status === 403
+					? 'thumbnail skipped: YouTube refused it. Custom thumbnails need a verified ' +
+							'channel (youtube.com/verify). The video is up without it.'
+					: `thumbnail failed (video is still up): ${err.message}`
+			);
+			todo.push('thumbnail');
+		}
+	}
+
+	if (paidWanted) {
+		let on = false;
+		try {
+			on = await ensurePaidPlacement(token, videoId, await grantCanEdit(config, account), log);
+		} catch (err) {
+			log(`paid promotion could not be checked (video is still up): ${err.message.split('\n')[0]}`);
+		}
+		if (!on) todo.push('paid promotion');
+	}
+
+	return { videoId, url, scheduled: release.scheduled, privacyStatus: got, locked, todo };
 }

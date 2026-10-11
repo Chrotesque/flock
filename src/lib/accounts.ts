@@ -116,6 +116,35 @@ export function allowanceWarning(allowance: Allowance | null, dueAt: number, now
 	return `All ${allowance.total} posts of the last 24 hours are used; Instagram refuses this one unless some age out by its time.`;
 }
 
+/**
+ * Whether a YouTube channel's grant can edit a video after upload, as the
+ * worker last read its scopes: true, false, or null until it has said.
+ * Adding to a playlist needs it, and so does paid promotion whenever YouTube
+ * leaves it off at upload (it did on 11 Oct 2026).
+ */
+export function youtubeCanEdit(account: Account | null | undefined): boolean | null {
+	const value = account?.details?.canEdit;
+	return typeof value === 'boolean' ? value : null;
+}
+
+/** The command that gives a channel's grant the right to edit. */
+export const YOUTUBE_EDIT_SETUP = 'pnpm worker:auth --with-playlists';
+
+/**
+ * What an upload-only YouTube grant will not do for this post, one line
+ * each; nothing while the worker has not said what the grant holds.
+ */
+export function youtubeGrantWarnings(options: Record<string, unknown>, account: Account | null | undefined): string[] {
+	if (youtubeCanEdit(account) !== false) return [];
+	const out: string[] = [];
+	const playlist = String(options.playlist ?? '').trim();
+	if (playlist) out.push(`Not added to "${playlist}": this channel's grant is upload-only.`);
+	if (options.paidPromotion) {
+		out.push('Paid promotion may need ticking in Studio: YouTube can leave it off at upload, and this grant cannot set it afterwards.');
+	}
+	return out;
+}
+
 /** "@handle" when there is one (YouTube's already carries the @), else the name, else the id. */
 export function accountLabel(account: Account): string {
 	if (account.handle) return account.handle.startsWith('@') ? account.handle : `@${account.handle}`;

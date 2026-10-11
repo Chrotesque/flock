@@ -14,6 +14,18 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
  */
 const cache = new Map();
 
+/**
+ * The scopes each grant holds, as Google reported them on the last refresh —
+ * whether a channel's grant can edit a video is read from this, since a
+ * config written before scopes were recorded does not say.
+ */
+const scopes = new Map();
+
+/** The scope string Google last reported for a grant, or null before its first refresh here. */
+export function grantedScope(refreshToken) {
+	return scopes.get(refreshToken) ?? null;
+}
+
 export async function accessToken({ clientId, clientSecret, refreshToken }) {
 	const cached = cache.get(refreshToken);
 	if (cached && Date.now() < cached.expiresAt) return cached.token;
@@ -47,6 +59,7 @@ export async function accessToken({ clientId, clientSecret, refreshToken }) {
 	}
 
 	const body = JSON.parse(text);
+	if (typeof body.scope === 'string') scopes.set(refreshToken, body.scope);
 	cache.set(refreshToken, {
 		token: body.access_token,
 		expiresAt: Date.now() + Math.max(0, (body.expires_in ?? 3600) - 60) * 1000

@@ -23,6 +23,7 @@
 	} from '$lib/repo';
 	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
+	import { youtubeCanEdit, YOUTUBE_EDIT_SETUP } from '$lib/accounts';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { mergeTagGroups, tagListLength, parseTagList } from '$lib/format';
 	import { checkTags } from '$lib/tagcheck';
@@ -115,6 +116,8 @@
 
 	// The playlists of the channel the brand in view uploads to.
 	let youtubeChannel = $derived(accounts.for('youtube')?.account_id ?? '');
+	// Whether the channel's grant may add to a playlist; null until the worker has said.
+	let playlistAllowed = $derived(youtubeCanEdit(accounts.for('youtube')));
 
 	async function refreshPlaylists() {
 		playlistsLoading = true;
@@ -1155,9 +1158,16 @@
 						<button class="relink" onclick={refreshPlaylists}>Refresh</button>
 					</p>
 				{/if}
-				<p class="nasnote faint">
-					Adding needs the worker authorised with <code>--with-playlists</code>.
-				</p>
+				{#if playlistAllowed === false}
+					<p class="nasnote bad">
+						This channel's grant is upload-only, so the video will not be added. Sign it in again with
+						<code>{YOUTUBE_EDIT_SETUP}</code>.
+					</p>
+				{:else if playlistAllowed === null}
+					<p class="nasnote faint">
+						Adding needs the worker authorised with <code>--with-playlists</code>.
+					</p>
+				{/if}
 			</FoldBox>
 		{/if}
 
