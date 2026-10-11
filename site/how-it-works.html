@@ -36,10 +36,18 @@
         Nothing can be uploaded or changed until it has one.</p>
       </li>
       <li>
+        <h3>Or start from a prepared upload</h3>
+        <p>Text written elsewhere can go in with one paste, or be saved as a <code>flock.json</code> file in a
+        project folder. A project folder shows in flock's sidebar within seconds; opening it fills the upload
+        from the file, its release times included, and lists the folder's videos. Progress is kept until the
+        upload is sent, and the file is then renamed so it is not listed again.</p>
+      </li>
+      <li>
         <h3>Pick the video</h3>
-        <p>Drop a file on the picker, or pick one out of a watch folder on the NAS. A NAS file is referenced where
-        it lies rather than transferred through the browser, which is how a large video is published. One video
-        goes to every platform unless a platform is given a cut of its own.</p>
+        <p>Drop a file on the picker, or pick one out of a watch folder. A file in a folder on the network is
+        referenced where it lies rather than transferred through the browser, which is how a large video is
+        published; one in a folder on your PC is first copied to the network by the worker. One video goes to
+        every platform unless a platform is given a cut of its own.</p>
       </li>
       <li>
         <h3>Compose, one platform at a time</h3>
@@ -49,25 +57,27 @@
       </li>
       <li>
         <h3>Make the per-post choices</h3>
-        <p>YouTube: playlist, thumbnail and paid promotion. TikTok: who can view the video, whether viewers may
-        comment, duet or stitch, and the commercial-content disclosure. All of these are chosen on this upload,
-        from what the account offers, with nothing preselected.</p>
+        <p>YouTube: the playlist (a thumbnail and paid promotion are set in YouTube Studio). Instagram: an
+        optional cover image. TikTok: who can view the video, whether viewers may comment, duet or stitch, and the
+        Content Disclosure Setting. All of these are chosen on this upload, from what the account offers, with
+        nothing preselected.</p>
       </li>
       <li>
         <h3>Schedule</h3>
-        <p>One card per platform on a week grid. Drag it to a day and hour, type an exact time, pick a saved
-        release pattern, or release immediately.</p>
+        <p>One card per platform on a calendar of the coming days, starting today. Drag it to a day and hour,
+        type an exact time, pick a saved release pattern, or release immediately.</p>
       </li>
       <li>
         <h3>Review and confirm</h3>
-        <p>The video plays beside what each platform will receive and when. The confirm button has to be pressed
-        twice within two seconds. Nothing has left the machine before this point; on confirming, the video is
-        stored and one release per platform is queued.</p>
+        <p>The video plays beside what each platform will receive and when. With TikTok in the upload, confirming
+        waits until the video has been shown, as TikTok asks. The confirm button has to be pressed twice within
+        two seconds. Nothing has left the machine before this point; on confirming, the video is stored and one
+        release per platform is queued.</p>
       </li>
       <li>
         <h3>The worker publishes</h3>
-        <p>A worker process beside the database watches the queue. YouTube is handed the video early and releases
-        it itself at the slot. TikTok cannot schedule, so the worker holds the post until its slot, then reads the
+        <p>A worker process beside the database watches the queue. YouTube is handed the video right away and
+        releases it itself at the slot. TikTok cannot schedule, so the worker holds the post until its slot, then reads the
         creator's details, uploads the file in chunks and polls TikTok until the post is live. Instagram is uploaded
         ahead of time and published on the minute. Every outcome, including a failure and its reason, is written
         back to the release and to the log.</p>
@@ -98,8 +108,9 @@
       TikTok says the account cannot post right now.</dd>
 
       <dt>Posting: direct post by file</dt>
-      <dd><code>/post/publish/video/init/</code> with the caption, the chosen audience, the interaction flags, the
-      cover time and the disclosure toggles, and <code>FILE_UPLOAD</code> as the source. The file is then sent to
+      <dd><code>/post/publish/video/init/</code> with the caption, the chosen audience (a post without one is
+      refused before this call), the interaction flags, the cover time and the disclosure toggles, and
+      <code>FILE_UPLOAD</code> as the source. The file is then sent to
       the upload address TikTok returns, in chunks of 5 to 64 MB.</dd>
 
       <dt>Afterwards: status</dt>
@@ -129,7 +140,7 @@
 <footer class="bottom">
   <div class="wrap">
     <img src="icon.png" alt="">
-    <span>flock, version 0.11.8. Contact: contact@chrotesque.com</span>
+    <span>flock, version 0.11.9. Contact: contact@chrotesque.com</span>
     <nav>
       <a href="index.html">Overview</a>
       <a href="https://github.com/Chrotesque/flock">GitHub</a>

@@ -69,8 +69,8 @@
       </div>
       <div class="card">
         <h3>A release time per platform</h3>
-        <p>Each platform gets its own day and hour on a week grid. Drag a card to move it, type an exact
-        time, or pick a saved pattern such as "Fridays at 21:00".</p>
+        <p>Each platform gets its own day and hour on a calendar of the coming days. Drag a card to move it,
+        type an exact time, or pick a saved pattern such as "Fridays at 21:00".</p>
       </div>
       <div class="card">
         <h3>Publishing from the NAS</h3>
@@ -80,13 +80,20 @@
       <div class="card">
         <h3>Posting to TikTok, TikTok's way</h3>
         <p>Audience, comments, duets, stitches and the commercial-content disclosure are chosen per post,
-        from what the account offers, with nothing preselected.</p>
+        from what the account offers, with nothing preselected, and the video is previewed before it is
+        posted.</p>
       </div>
       <div class="card">
-        <h3>Video from the browser or the NAS</h3>
-        <p>A video can be uploaded through the browser, or picked from a watch folder on the NAS, which is
-        how files above the browser's size limit are published. One upload can send a different cut to
-        each platform.</p>
+        <h3>Video from the browser or a folder</h3>
+        <p>A video can be uploaded through the browser, or picked from a watch folder on your network or
+        your PC; a network file is used where it lies, which is how files above the browser's size limit
+        are published. One upload can send a different cut to each platform.</p>
+      </div>
+      <div class="card">
+        <h3>Prepared uploads</h3>
+        <p>Text written elsewhere, in a chat with an assistant for example, goes in with one paste, or as a
+        file in a project folder: flock lists the project, fills the upload from it, release times included,
+        and keeps its progress until it is sent.</p>
       </div>
       <div class="card">
         <h3>Analytics and a log</h3>
@@ -101,32 +108,34 @@
     <p class="sub">An upload is four steps: Upload, Details, Schedule, Review.</p>
 
     <figure class="shot">
-      <img src="img/upload.jpg" alt="The Upload step: the video box on the left, the local and NAS file lists on the right">
-      <figcaption>Upload: pick the video. Drop a file on the box, or drag one from the lists of what is on this PC
-      and on the NAS; right-click plays it first. One video goes to every platform unless a platform is given a
-      cut of its own with the <em>Own file</em> buttons.</figcaption>
+      <img src="img/upload.jpg" alt="The Upload step: the video box on the left, the file lists on the right">
+      <figcaption>Upload: pick the video. Drop a file on the box, or drag one from the watch folders, or from the
+      project's own folder when the upload came from one; right-click plays it first. One video goes to every
+      platform unless a platform is given a cut of its own with the <em>Own file</em> buttons.</figcaption>
     </figure>
 
     <figure class="shot">
       <img src="img/details.jpg" alt="The Details step composing TikTok, with the Post to TikTok box on the right">
       <figcaption>Details: the text for the platform being composed, switched with the icons at the top. With
-      TikTok selected, the <em>Post to TikTok</em> box names the account, asks who can view the video with
-      nothing preselected, leaves comments, Duet and Stitch off until ticked, and carries TikTok's declaration
-      line. Continue waits until the box is complete.</figcaption>
+      TikTok selected, the <em>Post to TikTok</em> box names the account, read afresh from TikTok, asks who can
+      view the video with nothing preselected, leaves comments, Duet and Stitch off until ticked, holds the
+      <em>Content Disclosure Setting</em>, and carries TikTok's declaration line. Continue waits until the box is
+      complete.</figcaption>
     </figure>
 
     <figure class="shot">
-      <img src="img/schedule.jpg" alt="The Schedule step: a week grid with one card per platform">
-      <figcaption>Schedule: one card per platform on a week grid, dragged to its day and hour, typed exactly,
-      taken from a saved pattern, or released immediately.</figcaption>
+      <img src="img/schedule.jpg" alt="The Schedule step: a calendar with one card per platform">
+      <figcaption>Schedule: one card per platform on a calendar of the coming days, starting today, dragged to its
+      day and hour, typed exactly, taken from a saved pattern, or released immediately.</figcaption>
     </figure>
 
     <figure class="shot">
       <img src="img/review.jpg" alt="The Review step: the video playing beside what each platform will receive">
       <figcaption>Review: the video plays beside what each platform will receive and when, the account each post
-      goes out as, and TikTok's declaration, before anything is uploaded. Confirming stores the video and queues
-      the releases; the worker takes it from there, and a TikTok post may take a few minutes to appear on the
-      profile after it is posted.</figcaption>
+      goes out as, and TikTok's declaration, before anything is uploaded; with TikTok in the upload, confirming
+      waits until the video has been shown. Confirming stores the video and queues the releases; the worker
+      takes it from there, and a TikTok post may take a few minutes to appear on the profile after it is
+      posted.</figcaption>
     </figure>
   </section>
 
@@ -137,14 +146,18 @@
     <div class="split">
       <div>
         <ul class="checks">
-          <li><strong>Who posts is shown.</strong> The account's display name and handle, read from TikTok before
-          every post.</li>
+          <li><strong>Who posts is shown.</strong> The account's display name and handle, read from TikTok each
+          time the post box is shown and again before posting. If TikTok says the account cannot post right now,
+          the post waits, with "try again later".</li>
           <li><strong>The audience is chosen per post.</strong> The list holds exactly the options TikTok reports
-          for the account, and nothing is preselected.</li>
+          for the account, and nothing is preselected. A post without one is refused, never sent as public.</li>
           <li><strong>Interactions are off until switched on.</strong> Comments, Duet and Stitch start unticked,
           and are greyed out where the account has them disabled.</li>
-          <li><strong>Commercial content is disclosed.</strong> "Your brand" and "Branded content" can be declared,
-          with TikTok's own note on how the post will be labelled. Branded content cannot be posted privately.</li>
+          <li><strong>Commercial content is disclosed.</strong> With the <em>Content Disclosure Setting</em> on,
+          "Your brand", "Branded content" or both must be declared, with TikTok's own note on how the post will be
+          labelled. Branded content cannot be posted privately.</li>
+          <li><strong>The video is previewed first.</strong> The review screen plays it, and the post cannot be
+          confirmed until it has been shown. A video longer than the account may post is refused.</li>
           <li><strong>The declaration is on every post.</strong> "By posting, you agree to TikTok's Music Usage
           Confirmation", with the Branded Content Policy added for branded content.</li>
           <li><strong>The post is TikTok's to finish.</strong> The file is uploaded in chunks, the status is polled
@@ -186,8 +199,10 @@
       </li>
       <li>
         <h3>Run the worker</h3>
-        <p><code>pnpm worker</code> polls the queue, publishes at each slot, keeps the tokens fresh and feeds
-        the Analytics screen. It belongs on the machine that stays on.</p>
+        <p><code>pnpm worker</code> publishes each release at its slot, keeps the tokens fresh, lists the
+        watch and project folders and feeds the Analytics screen. It belongs on the machine that stays on;
+        a second, credential-free worker on your PC can look after the PC's own folders. Both also come as
+        a single program that needs no Node.</p>
       </li>
     </ol>
     <p>flock is released under the <a href="https://github.com/Chrotesque/flock/blob/master/LICENSE">MIT
@@ -198,7 +213,7 @@
 <footer class="bottom">
   <div class="wrap">
     <img src="icon.png" alt="">
-    <span>flock, version 0.11.8. Contact: contact@chrotesque.com</span>
+    <span>flock, version 0.11.9. Contact: contact@chrotesque.com</span>
     <nav>
       <a href="how-it-works.html">How it works</a>
       <a href="https://github.com/Chrotesque/flock">GitHub</a>
