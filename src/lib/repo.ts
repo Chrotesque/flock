@@ -673,6 +673,70 @@ export async function requestFolderPick(
 	}
 }
 
+/** By extension, for a download PocketBase did not type. */
+const IMAGE_TYPE_BY_EXT: Record<string, string> = {
+	jpg: 'image/jpeg',
+	jpeg: 'image/jpeg',
+	png: 'image/png',
+	gif: 'image/gif',
+	webp: 'image/webp'
+};
+
+/**
+ * Asks the worker for an image on its machine — the thumbnail a pasted flock
+ * block names by path — and waits for it. A browser cannot open a path, so
+ * the worker reads the file and attaches it to a `file_requests` row
+ * (worker/localfile.mjs: images only, up to 8 MB); the row is deleted here
+ * once the image is in hand, or given up on. Throws with the worker's reason,
+ * or when nobody answers within `giveUpMs`; `onWaiting` fires once the ask
+ * has sat long enough to suggest the worker is not running.
+ */
+export async function requestLocalImage(
+	path: string,
+	opts: { onWaiting?: () => void; giveUpMs?: number } = {}
+): Promise<File> {
+	assertDeviceNamed();
+
+	let id: string;
+	try {
+		id = (await pb.collection('file_requests').create({ path: path.slice(0, 1000), status: 'pending' })).id;
+	} catch (err) {
+		if ((err as { status?: number }).status === 404) {
+			throw new Error('This PocketBase has no file_requests collection yet — run pnpm setup-pb.');
+		}
+		throw err;
+	}
+
+	const started = Date.now();
+	let warned = false;
+	try {
+		for (;;) {
+			await new Promise((resolve) => setTimeout(resolve, 700));
+			const row = await pb.collection('file_requests').getOne(id);
+			if (row.status === 'done' && row.file) {
+				const res = await fetch(pb.files.getURL(row, row.file));
+				if (!res.ok) throw new Error(`The image could not be downloaded (${res.status}).`);
+				const blob = await res.blob();
+				const name = String(row.name || row.file);
+				const ext = name.split('.').pop()?.toLowerCase() ?? '';
+				return new File([blob], name, { type: blob.type || IMAGE_TYPE_BY_EXT[ext] || '' });
+			}
+			if (row.status === 'failed') throw new Error(String(row.error || 'The worker could not read the image.'));
+
+			const waited = Date.now() - started;
+			if (!warned && waited > 8000) {
+				warned = true;
+				opts.onWaiting?.();
+			}
+			if (waited > (opts.giveUpMs ?? 60_000)) {
+				throw new Error('The worker did not answer — it has to be running on the PC that holds the image.');
+			}
+		}
+	} finally {
+		void pb.collection('file_requests').delete(id).catch(() => {});
+	}
+}
+
 /**
  * A channel's playlists, as the worker last listed them — one row per
  * channel. The plain `youtube_playlists` row a worker from before channels

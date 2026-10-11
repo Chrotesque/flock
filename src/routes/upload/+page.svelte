@@ -19,6 +19,7 @@
 	import { imageFits } from '$lib/coverimage';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { PLATFORMS } from '$lib/platforms';
+	import { paste } from '$lib/stores/paste.svelte';
 
 	settings.load();
 	general.load();
@@ -216,6 +217,37 @@
 		disarm();
 		progress = 0;
 	}
+
+	/**
+	 * A pasted flock block, handed over by the layout. This page decides
+	 * whether the draft may take it: never while an upload is being sent or
+	 * part of one is already queued, since the rest would go out with other
+	 * text; after a finished one it starts a new upload first, and after one
+	 * that failed with nothing written it keeps the video and clears the
+	 * error. Depends on the waiting block only — taking it re-runs this once,
+	 * with nothing to do.
+	 */
+	$effect(() => {
+		if (!paste.pending) return;
+		untrack(() => {
+			const block = paste.take();
+			if (!block) return;
+			if (phase === 'uploading') {
+				paste.refuse('An upload is being sent. Paste again once it has finished.');
+				return;
+			}
+			if (queued.length > 0 && phase !== 'done') {
+				paste.refuse('Part of this upload is already queued. Confirm the rest or start over, then paste again.');
+				return;
+			}
+			if (phase === 'done') startOver();
+			if (phase === 'error') {
+				phase = 'idle';
+				failure = '';
+			}
+			void paste.apply(block);
+		});
+	});
 </script>
 
 <div class="page">

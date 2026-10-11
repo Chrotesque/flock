@@ -1,6 +1,7 @@
 import { PLATFORMS, PLATFORM_IDS } from '../platforms';
 import { isoDate, nextDayMatching } from '../format';
 import { tiktokProblems } from '../tiktok';
+import { PASTE_TAG_BOX, type FlockPaste, type PastedPlatform } from '../flockpaste';
 import { settings } from './settings.svelte';
 import { accounts } from './accounts.svelte';
 import { DEFAULT_SCHEDULING } from '../types';
@@ -392,6 +393,33 @@ class DraftStore {
 	/** Active platforms still missing text, for the "why is Continue off" hint. */
 	get incompletePlatforms(): PlatformId[] {
 		return this.activePlatforms.filter((id) => !this.isComplete(id));
+	}
+
+	/**
+	 * Fills the draft from a pasted flock block (flockpaste.ts). Each platform
+	 * it names is ticked and takes what it carries — text, and for YouTube the
+	 * tags into one box and the playlist — over whatever was there. What the
+	 * block leaves out stays as it was, other platforms included: unticking
+	 * one silently could drop a platform from the upload, where one left
+	 * ticked shows its yellow ! until it is written for.
+	 */
+	applyPaste(platforms: FlockPaste['platforms']) {
+		const named = Object.entries(platforms) as [PlatformId, PastedPlatform][];
+		for (const [id, entry] of named) {
+			this.selected[id] = true;
+			const text = this.textFor(id);
+			this.texts[id] = {
+				title: entry.title ?? text.title,
+				description: entry.description ?? text.description
+			};
+			const options: OptionValues = {};
+			if (entry.tags) options[PASTE_TAG_BOX] = entry.tags;
+			if (entry.playlist !== undefined) options.playlist = entry.playlist;
+			if (Object.keys(options).length > 0) {
+				this.overrides[id] = { ...(this.overrides[id] ?? {}), ...options };
+			}
+		}
+		if (named.length > 0) this.composing = named[0][0];
 	}
 
 	/** The brand the per-platform choices above were made for. */

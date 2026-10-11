@@ -7,6 +7,10 @@
 	import { general } from '$lib/stores/general.svelte';
 	import { videoTodo } from '$lib/stores/videotodo.svelte';
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
+	import PasteNotice from '$lib/components/PasteNotice.svelte';
+	import { paste } from '$lib/stores/paste.svelte';
+	import { readFlockPaste } from '$lib/flockpaste';
+	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import type { TodoLine } from '$lib/videotodo';
 
@@ -15,6 +19,20 @@
 		workers.start();
 		return videoTodo.start();
 	});
+
+	/**
+	 * Ctrl+V anywhere: a flock block (flockpaste.ts) fills the upload, and
+	 * anything else pastes wherever it was going, untouched. The paste event
+	 * carries the clipboard without the permission prompt that reading it
+	 * from script would raise. The upload page takes the block from there.
+	 */
+	function onPaste(event: ClipboardEvent) {
+		const result = readFlockPaste(event.clipboardData?.getData('text/plain') ?? '');
+		if (!result) return;
+		event.preventDefault();
+		paste.offer(result);
+		if (result.ok && !isActive('/upload')) void goto(`${base}/upload`);
+	}
 
 	/** "Sun 13 Oct, 08:00" — when a scheduled video goes public. */
 	function goesPublic(iso: string | null): string {
@@ -228,6 +246,9 @@
 		{@render children()}
 	</main>
 </div>
+
+<svelte:document onpaste={onPaste} />
+<PasteNotice />
 
 <style>
 	.shell {

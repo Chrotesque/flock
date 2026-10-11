@@ -476,6 +476,29 @@ after upload; confirming is the tick
 button, pressed once and then again within two seconds while it shows "!!!", and
 the copy to the NAS starts there.
 
+**Pasting a prepared upload.** Text written elsewhere — in a chat with an
+assistant, say — can go in with one Ctrl+V anywhere in flock, as a *flock
+block*: a JSON object with `"flock": 1` at the top. flock opens Upload,
+switches to the brand named, ticks each platform named and fills its text;
+YouTube's tags go into the *Other* box and its playlist is picked. A
+`thumbnail` path is read by the worker from its own disk (JPEG, PNG, GIF or
+WebP, up to 8 MB), so it has to be running on the PC that holds the image.
+A note in the bottom corner says what was filled and what was ignored.
+Anything else on the clipboard pastes as usual. The video is still picked on
+the Upload step, and TikTok's audience and interaction choices and paid
+promotion are never filled: those are chosen by hand on every post.
+
+```json
+{
+  "flock": 1,
+  "brand": "My brand",
+  "thumbnail": "C:/Users/me/Pictures/thumbnail.png",
+  "youtube": { "title": "…", "description": "…", "tags": ["…", "…"], "playlist": "…" },
+  "instagram": { "caption": "…" },
+  "tiktok": { "caption": "…" }
+}
+```
+
 **Calendar** shows every release ever scheduled on a week grid. Things already
 released — or whose slot has passed — are greyed out, and there is a toggle to hide
 them. It opens read-only; press *Edit* twice within two seconds to unlock it, then

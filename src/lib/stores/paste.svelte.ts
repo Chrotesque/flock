@@ -1,0 +1,149 @@
+import { brands } from './brands.svelte';
+import { accounts } from './accounts.svelte';
+import { draft } from './draft.svelte';
+import { loadPlaylists, requestLocalImage } from '../repo';
+import { filledSummary, matchBrand, type FlockPaste, type PasteResult } from '../flockpaste';
+import { IMAGE_PLATFORMS, acceptedTypes, largestAccepted } from '../coverimage';
+import { formatBytes } from '../format';
+import type { PlatformId } from '../types';
+
+export interface PasteNotice {
+	/** A block that could not be used at all; nothing was filled. */
+	error: string;
+	/** The brand the draft was filled for, with more than one brand. */
+	brand: string;
+	platforms: { id: PlatformId; summary: string }[];
+	notes: string[];
+	thumbnail: { path: string; state: 'fetching' | 'waiting' | 'done' | 'failed'; message: string } | null;
+}
+
+const emptyNotice = (): PasteNotice => ({ error: '', brand: '', platforms: [], notes: [], thumbnail: null });
+
+/**
+ * A pasted flock block on its way into the draft (flockpaste.ts), and the
+ * notice saying what it filled.
+ *
+ * The layout's paste listener `offer`s a block and goes to the upload page;
+ * that page `take`s it, because only it knows whether the draft may change —
+ * not while an upload is being sent, and only after a finished one is
+ * cleared — and then `apply`s it. The thumbnail is fetched from the worker
+ * afterwards, so the text is there at once and the image follows.
+ */
+class PasteStore {
+	pending = $state<FlockPaste | null>(null);
+	notice = $state<PasteNotice | null>(null);
+	/** Which paste is current: a slower thumbnail for an older one is dropped. */
+	#seq = 0;
+
+	offer(result: PasteResult) {
+		this.#seq++;
+		if (!result.ok) {
+			this.pending = null;
+			this.notice = { ...emptyNotice(), error: result.error };
+			return;
+		}
+		this.pending = result.paste;
+	}
+
+	take(): FlockPaste | null {
+		const paste = this.pending;
+		this.pending = null;
+		return paste;
+	}
+
+	refuse(reason: string) {
+		this.notice = { ...emptyNotice(), error: reason };
+	}
+
+	dismiss() {
+		this.notice = null;
+	}
+
+	async apply(paste: FlockPaste) {
+		const seq = ++this.#seq;
+		const notes = [...paste.notes];
+
+		// The brand first: switching drops the draft's per-platform choices, so
+		// it has to happen before the block's tags and playlist go in. The draft
+		// is told here rather than by the upload page's effect, which would run
+		// after this and see a brand it had not been told of yet.
+		await brands.load();
+		if (paste.brand) {
+			const match = matchBrand(brands.list, paste.brand);
+			if (match) brands.select(match.id);
+			else notes.push(`No brand is called "${paste.brand}"; filled for ${brands.current?.name ?? 'the brand in view'}.`);
+		}
+		draft.followBrand(brands.currentId);
+		draft.applyPaste(paste.platforms);
+
+		const youtube = paste.platforms.youtube;
+		if (youtube?.playlist) {
+			const note = await this.#matchPlaylist(youtube.playlist);
+			if (note) notes.push(note);
+		}
+
+		this.notice = {
+			error: '',
+			brand: brands.multiple ? (brands.current?.name ?? '') : '',
+			platforms: (Object.entries(paste.platforms) as [PlatformId, NonNullable<FlockPaste['platforms'][PlatformId]>][]).map(
+				([id, entry]) => ({ id, summary: filledSummary(id, entry) })
+			),
+			notes,
+			thumbnail: paste.thumbnail ? { path: paste.thumbnail, state: 'fetching', message: '' } : null
+		};
+		if (paste.thumbnail) await this.#fetchThumbnail(seq, paste.thumbnail);
+	}
+
+	/**
+	 * The channel's own spelling of the playlist, when the block's differs
+	 * only in case; otherwise a note, since the worker matches by exact name.
+	 */
+	async #matchPlaylist(name: string): Promise<string> {
+		try {
+			await accounts.load();
+			const index = await loadPlaylists(accounts.for('youtube')?.account_id ?? '');
+			if (!index) return '';
+			const exact = index.items.find((p) => p.title === name);
+			if (exact) return '';
+			const loose = index.items.find((p) => p.title.toLowerCase() === name.toLowerCase());
+			if (loose) {
+				draft.overrides.youtube = { ...(draft.overrides.youtube ?? {}), playlist: loose.title };
+				return '';
+			}
+			return `The channel has no playlist called "${name}"; pick one in the Playlist box.`;
+		} catch {
+			return '';
+		}
+	}
+
+	async #fetchThumbnail(seq: number, path: string) {
+		// A failure reopens a notice already closed: the image is missing from
+		// the upload, and nothing else would say so.
+		const set = (state: 'fetching' | 'waiting' | 'done' | 'failed', message: string) => {
+			if (seq !== this.#seq) return;
+			const thumbnail = { path, state, message };
+			if (this.notice) this.notice.thumbnail = thumbnail;
+			else if (state === 'failed') this.notice = { ...emptyNotice(), thumbnail };
+		};
+		try {
+			const file = await requestLocalImage(path, {
+				onWaiting: () => set('waiting', 'The worker has not answered yet — is it running?')
+			});
+			if (seq !== this.#seq) return;
+			// What the picker would refuse outright; one platform's limits alone
+			// are said by the Thumbnail / Cover box itself.
+			if (!acceptedTypes(IMAGE_PLATFORMS).includes(file.type)) {
+				throw new Error(`${file.name} is not a JPEG, PNG, GIF or WebP image.`);
+			}
+			if (file.size > largestAccepted(IMAGE_PLATFORMS)) {
+				throw new Error(`${file.name} is ${formatBytes(file.size)}, over the 8 MB limit.`);
+			}
+			draft.thumbnail = file;
+			set('done', `${file.name}, ${formatBytes(file.size)}`);
+		} catch (err) {
+			set('failed', err instanceof Error ? err.message : String(err));
+		}
+	}
+}
+
+export const paste = new PasteStore();

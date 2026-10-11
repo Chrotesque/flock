@@ -81,6 +81,45 @@ export function makeClient(baseUrl) {
 			});
 		},
 
+		/** The compose screen's asks for an image on this machine, oldest first. */
+		async pendingFileRequests() {
+			const filter = encodeURIComponent('status="pending"');
+			const res = await request(
+				`/api/collections/file_requests/records?perPage=10&sort=created&filter=${filter}`
+			);
+			return res.items ?? [];
+		},
+
+		async updateFileRequest(id, data) {
+			return request(`/api/collections/file_requests/records/${id}`, {
+				method: 'PATCH',
+				body: JSON.stringify(data)
+			});
+		},
+
+		/** Answers an ask with the image itself — multipart, which `request` does not do. */
+		async answerFileRequest(id, { bytes, name, type }) {
+			const form = new FormData();
+			form.set('status', 'done');
+			form.set('name', name);
+			form.set('error', '');
+			form.set('file', new Blob([bytes], { type }), name);
+			const path = `/api/collections/file_requests/records/${id}`;
+			const res = await fetchOrExplain(`${baseUrl}${path}`, { method: 'PATCH', body: form });
+			if (!res.ok) throw new Error(`PATCH ${path} -> ${res.status}\n${await res.text()}`);
+		},
+
+		/** Deletes asks made before `before`, answered or not; the page deletes its own once it has the image. */
+		async pruneFileRequests(before) {
+			const filter = encodeURIComponent(`created < "${pbDate(before)}"`);
+			const res = await request(
+				`/api/collections/file_requests/records?perPage=200&fields=id&skipTotal=1&filter=${filter}`
+			);
+			for (const item of res.items ?? []) {
+				await request(`/api/collections/file_requests/records/${item.id}`, { method: 'DELETE' });
+			}
+		},
+
 		async getJob(id) {
 			return request(`/api/collections/upload_jobs/records/${id}`);
 		},

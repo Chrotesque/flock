@@ -237,6 +237,37 @@ const collections = [
 		indexes: ['CREATE INDEX `idx_score_requests_status` ON `score_requests` (`status`)']
 	},
 	{
+		// Images on the worker's machine the SPA asks for by path — the thumbnail
+		// a pasted flock block names. A browser cannot open a path, so it writes
+		// the ask here, the worker attaches the file (images only, 8 MB, the
+		// largest any platform takes), and the page downloads it and deletes the
+		// row. The worker prunes what is left after a day.
+		name: 'file_requests',
+		type: 'base',
+		...RULES,
+		fields: [
+			{ type: 'text', name: 'path', required: true, max: 1000 },
+			{
+				type: 'select',
+				name: 'status',
+				maxSelect: 1,
+				values: ['pending', 'done', 'failed']
+			},
+			{
+				type: 'file',
+				name: 'file',
+				maxSelect: 1,
+				maxSize: 8388608,
+				mimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+			},
+			// The file's own name; PocketBase stores it under a suffixed one.
+			{ type: 'text', name: 'name', max: 300 },
+			{ type: 'text', name: 'error', max: 2000 },
+			...stamps
+		],
+		indexes: ['CREATE INDEX `idx_file_requests_status` ON `file_requests` (`status`)']
+	},
+	{
 		// The newest videos on the channel as the worker last read them, one row
 		// per video and keyed by YouTube's id rather than by anything of flock's:
 		// most of the channel was never published through here. `data` is the

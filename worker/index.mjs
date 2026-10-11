@@ -34,6 +34,7 @@ import { stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { resolveFolder } from './paths.mjs';
 import { pickFolder } from './folderpick.mjs';
+import { readLocalImage } from './localfile.mjs';
 import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
 import { statsPass, unitsToday } from './stats.mjs';
 import { msUntil } from './upload.mjs';
@@ -498,6 +499,62 @@ async function folderPickPass(pb) {
 	}
 }
 
+/**
+ * Answers the compose screen's asks for an image on this machine: the
+ * thumbnail a pasted flock block names by path. The browser cannot open a
+ * path, so the file is read here (localfile.mjs: images only, up to 8 MB)
+ * and attached to the `file_requests` row for the page to download. Rides on
+ * the scoring tick, since somebody is waiting on it.
+ *
+ * An ask older than two minutes has been given up on by the page; a missing
+ * collection (setup-pb not run since this arrived) turns the pass off for
+ * the run with one line, rather than an error every three seconds.
+ */
+let fetchingFiles = false;
+let fileRequestsOff = false;
+let filesPrunedAt = 0;
+const FILE_MAX_AGE_MS = 2 * 60_000;
+
+async function fileRequestPass(pb) {
+	if (fetchingFiles || fileRequestsOff || dry || !hb.canLocal()) return;
+	fetchingFiles = true;
+	try {
+		let rows;
+		try {
+			rows = await pb.pendingFileRequests();
+		} catch (err) {
+			if (!/ -> 404\b/.test(err.message)) throw err;
+			fileRequestsOff = true;
+			log('file_requests is missing — run pnpm setup-pb, then restart; thumbnails named in a paste are not fetched until then');
+			return;
+		}
+
+		for (const row of rows) {
+			const asked = new Date(String(row.created).replace(' ', 'T')).getTime();
+			if (Date.now() - asked > FILE_MAX_AGE_MS) {
+				await pb.updateFileRequest(row.id, { status: 'failed', error: 'The worker picked the request up too late.' });
+				continue;
+			}
+			try {
+				const image = await readLocalImage(row.path);
+				await pb.answerFileRequest(row.id, image);
+				log(`sent ${image.name} to the compose screen (${Math.round(image.bytes.length / 1024)} KB)`);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				await pb.updateFileRequest(row.id, { status: 'failed', error: message.slice(0, 1900) });
+				log(`could not send ${row.path} to the compose screen: ${message.split('\n')[0]}`);
+			}
+		}
+
+		if (Date.now() - filesPrunedAt > 60 * 60_000) {
+			filesPrunedAt = Date.now();
+			await pb.pruneFileRequests(new Date(Date.now() - 24 * 60 * 60_000));
+		}
+	} finally {
+		fetchingFiles = false;
+	}
+}
+
 const noticed = new Map();
 
 /**
@@ -915,6 +972,7 @@ async function main() {
 	setInterval(() => {
 		void scorePass(pb, config).catch((err) => log(`score pass failed: ${err.message}`));
 		void folderPickPass(pb).catch((err) => log(`folder pick failed: ${err.message}`));
+		void fileRequestPass(pb).catch((err) => log(`image request failed: ${err.message.split('\n')[0]}`));
 	}, Math.max(1, config.scoreSeconds) * 1000);
 
 	// The hold-and-fire platforms, on their own tighter tick — see slotPass.

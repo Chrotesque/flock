@@ -1,0 +1,279 @@
+import { PLATFORMS, isPlatformId } from './platforms';
+import { brandKey } from './brands';
+import { parseTagList } from './format';
+import type { Brand, PlatformId } from './types';
+
+/**
+ * The "flock block": a JSON object, typically written by Claude in a chat,
+ * that fills an upload's text when pasted anywhere in flock with Ctrl+V.
+ * A paste is ours only when it carries `"flock": 1`; anything else is left to
+ * paste wherever it was going, untouched.
+ *
+ *   {
+ *     "flock": 1,
+ *     "brand": "Paper Moon",
+ *     "thumbnail": "C:/Users/me/Pictures/thumb.png",
+ *     "youtube":   { "title": "…", "description": "…", "tags": ["…"], "playlist": "…" },
+ *     "instagram": { "caption": "…" },
+ *     "tiktok":    { "caption": "…" }
+ *   }
+ *
+ * Only text and what is written alongside it travel this way. TikTok's
+ * audience, comments, Duet, Stitch and disclosure, and paid promotion, are
+ * never read from a block: TikTok's guidelines want each picked by hand on
+ * every post, and a pre-fill is the default they forbid.
+ */
+
+export const PASTE_VERSION = 1;
+
+/** The YouTube tag box a block's tags land in; the other boxes keep theirs. */
+export const PASTE_TAG_BOX = 'tagsOther';
+
+export interface PastedPlatform {
+	title?: string;
+	description?: string;
+	tags?: string[];
+	playlist?: string;
+}
+
+export interface FlockPaste {
+	brand: string;
+	/** A path on the worker's machine; the worker fetches it (repo.requestLocalImage). */
+	thumbnail: string;
+	/** In the order the block names them. */
+	platforms: Partial<Record<PlatformId, PastedPlatform>>;
+	/** What was ignored or looks wrong, in words for the person who pasted. */
+	notes: string[];
+}
+
+export type PasteResult = { ok: true; paste: FlockPaste } | { ok: false; error: string };
+
+const MARK = /"flock"\s*:/;
+const VERSION_ONE = /"flock"\s*:\s*"?1"?\s*[,}]/;
+
+/**
+ * Reads a paste. Null when it is not a flock block — no `"flock"` key at the
+ * top — so the caller lets the paste through; an error when it is one that
+ * cannot be used, so the person learns why nothing filled.
+ */
+export function readFlockPaste(text: string): PasteResult | null {
+	if (!text || !MARK.test(text)) return null;
+	const body = extractBlock(text);
+	if (!body) return null;
+
+	let data: unknown;
+	try {
+		data = parseLenient(rawPath(body, 'thumbnail'));
+	} catch (err) {
+		// Prose that merely mentions "flock": is not ours; a block that says it
+		// is version 1 but does not parse is, and worth an explanation.
+		if (!VERSION_ONE.test(body)) return null;
+		const why = err instanceof Error ? err.message : String(err);
+		return { ok: false, error: `The pasted flock block is not valid JSON (${why}).` };
+	}
+	if (!isRecord(data) || !('flock' in data)) return null;
+
+	const version = Number(data.flock);
+	if (version !== PASTE_VERSION) {
+		return {
+			ok: false,
+			error: `The pasted block is flock format ${String(data.flock)}; this flock reads format ${PASTE_VERSION}.`
+		};
+	}
+	return { ok: true, paste: normalise(data) };
+}
+
+/**
+ * The object holding the `"flock"` key, out of whatever surrounds it: the
+ * code block's own Copy gives bare JSON, but copying a whole chat message
+ * brings a ```json fence and prose along, braces and all. A fenced block that
+ * mentions flock wins; otherwise the first `{` before the key is followed to
+ * its matching `}`, reading strings properly so a brace inside a caption does
+ * not end the object early. An object that never closes is returned to its
+ * end, so the parse can say what is wrong with it.
+ */
+function extractBlock(text: string): string {
+	for (const match of text.matchAll(/```[a-z]*\s*\n?([\s\S]*?)```/gi)) {
+		if (MARK.test(match[1])) return match[1].trim();
+	}
+	const mark = text.search(MARK);
+	for (let start = text.indexOf('{'); start >= 0 && start < mark; start = text.indexOf('{', start + 1)) {
+		const end = matchingBrace(text, start);
+		if (end < 0) return text.slice(start);
+		if (end > mark) return text.slice(start, end + 1);
+	}
+	return '';
+}
+
+/** Index of the `}` closing the `{` at `start`, or -1 when it never closes. */
+function matchingBrace(text: string, start: number): number {
+	let depth = 0;
+	let inString = false;
+	for (let i = start; i < text.length; i++) {
+		const c = text[i];
+		if (inString) {
+			if (c === '\\') i++;
+			else if (c === '"') inString = false;
+		} else if (c === '"') {
+			inString = true;
+		} else if (c === '{') {
+			depth++;
+		} else if (c === '}') {
+			depth--;
+			if (depth === 0) return i;
+		}
+	}
+	return -1;
+}
+
+/**
+ * Re-escapes a path value so every backslash in it is a separator. A Windows
+ * path written with single backslashes is the one mistake a chat reliably
+ * makes, and JSON would read "C:\Users\me\thumb.png" as an error at `\U` —
+ * or, worse, quietly turn `\t` into a tab. A path holds no escapes, so a
+ * written `\\` and a lone `\` both mean one backslash here.
+ */
+function rawPath(body: string, key: string): string {
+	const value = new RegExp(`("${key}"\\s*:\\s*)"((?:[^"\\\\]|\\\\.)*)"`);
+	return body.replace(value, (_all, head: string, raw: string) =>
+		`${head}${JSON.stringify(raw.replace(/\\\\|\\/g, '\\'))}`
+	);
+}
+
+/**
+ * JSON.parse, and once more with stray backslashes doubled elsewhere, for
+ * the same mistake in any other value. Valid escapes, `\\` included, are left
+ * alone.
+ */
+function parseLenient(body: string): unknown {
+	try {
+		return JSON.parse(body);
+	} catch (err) {
+		const repaired = body.replace(/\\(["\\/bfnrtu]?)/g, (all, next: string) => (next ? all : '\\\\'));
+		if (repaired === body) throw err;
+		try {
+			return JSON.parse(repaired);
+		} catch {
+			throw err;
+		}
+	}
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const TOP_KEYS = new Set(['flock', 'brand', 'thumbnail']);
+const PLATFORM_KEYS = new Set(['title', 'description', 'caption', 'tags', 'playlist']);
+
+function text(value: unknown): string | undefined {
+	if (typeof value === 'string') return value.trim();
+	if (typeof value === 'number') return String(value);
+	return undefined;
+}
+
+function normalise(data: Record<string, unknown>): FlockPaste {
+	const notes: string[] = [];
+	const platforms: FlockPaste['platforms'] = {};
+
+	const brand = text(data.brand) ?? '';
+	const thumbnail = text(data.thumbnail) ?? '';
+
+	for (const [rawKey, value] of Object.entries(data)) {
+		const key = rawKey.trim().toLowerCase();
+		if (TOP_KEYS.has(key)) continue;
+		if (!isPlatformId(key)) {
+			notes.push(`Ignored "${rawKey}": not something flock reads.`);
+			continue;
+		}
+		if (!isRecord(value)) {
+			notes.push(`Ignored "${rawKey}": expected an object with its text.`);
+			continue;
+		}
+		platforms[key] = readPlatform(key, value, notes);
+	}
+
+	if (Object.keys(platforms).length === 0 && !thumbnail) {
+		notes.push('The block names no platform, so there was nothing to fill.');
+	}
+	return { brand, thumbnail, platforms, notes };
+}
+
+function readPlatform(id: PlatformId, value: Record<string, unknown>, notes: string[]): PastedPlatform {
+	const def = PLATFORMS[id];
+	const out: PastedPlatform = {};
+
+	for (const key of Object.keys(value)) {
+		if (!PLATFORM_KEYS.has(key)) notes.push(`${def.label}: ignored "${key}".`);
+	}
+
+	const title = text(value.title);
+	if (title !== undefined) {
+		if (def.hasTitle) out.title = title;
+		else if (title) notes.push(`${def.label} has no title; it was left out — put it in the caption if it belongs there.`);
+	}
+
+	// Either name is fine; a chat uses whichever it thinks of.
+	const description = text(value.description);
+	const caption = text(value.caption);
+	if (description !== undefined && caption !== undefined && description !== caption) {
+		notes.push(`${def.label}: both "description" and "caption" were given; used "description".`);
+	}
+	const body = description ?? caption;
+	if (body !== undefined) out.description = body;
+
+	if (value.tags !== undefined) {
+		if (!def.tagBudget) {
+			notes.push(`${def.label} takes no tags; hashtags belong in its caption.`);
+		} else {
+			const pieces = Array.isArray(value.tags)
+				? value.tags.filter((t): t is string => typeof t === 'string')
+				: typeof value.tags === 'string'
+					? value.tags.split(',')
+					: [];
+			// A leading # is a hashtag habit, not part of a YouTube tag — dropped
+			// before de-duplicating, so "#cats" and "cats" are one tag.
+			out.tags = parseTagList(pieces.map((tag) => tag.trim().replace(/^#+/, '')).join(','));
+		}
+	}
+
+	if (value.playlist !== undefined) {
+		if (id === 'youtube') out.playlist = text(value.playlist) ?? '';
+		else notes.push(`${def.label} has no playlists.`);
+	}
+
+	if (out.title && out.title.length > def.titleLimit) {
+		notes.push(`${def.label} title is ${out.title.length} characters, over its ${def.titleLimit}.`);
+	}
+	if (out.description && out.description.length > def.descriptionLimit) {
+		notes.push(
+			`${def.label} ${def.hasTitle ? 'description' : 'caption'} is ${out.description.length} characters, over its ${def.descriptionLimit}.`
+		);
+	}
+	return out;
+}
+
+/**
+ * The brand a block names, matched loosely: case, spaces and punctuation
+ * aside, so "Owl's Nest" finds a brand called "Owls Nest".
+ */
+export function matchBrand(brands: Brand[], name: string): Brand | null {
+	const loose = (value: string) => brandKey(value).replace(/[^\p{L}\p{N}]/gu, '');
+	const wanted = loose(name);
+	if (!wanted) return null;
+	return (
+		brands.find((b) => brandKey(b.name) === brandKey(name)) ??
+		brands.find((b) => loose(b.name) === wanted) ??
+		null
+	);
+}
+
+/** "title, description, 14 tags, playlist" — what a platform got, for the notice. */
+export function filledSummary(id: PlatformId, entry: PastedPlatform): string {
+	const parts: string[] = [];
+	if (entry.title !== undefined) parts.push('title');
+	if (entry.description !== undefined) parts.push(PLATFORMS[id].hasTitle ? 'description' : 'caption');
+	if (entry.tags !== undefined) parts.push(`${entry.tags.length} tag${entry.tags.length === 1 ? '' : 's'}`);
+	if (entry.playlist !== undefined) parts.push(entry.playlist ? 'playlist' : 'no playlist');
+	return parts.join(', ') || 'ticked, nothing to fill';
+}
