@@ -501,6 +501,12 @@ shows:
 - **System** and **Waiting:** the workers, YouTube's quota, Instagram's daily
   posts, and what is waiting to be uploaded.
 
+Each box is a widget. Drag it by the grip in its corner to move it (or focus
+the grip and use the arrow keys), and click the width button beside it to make
+it a third, half, two thirds or the full width. The arrangement is kept per
+browser; *Reset layout* puts it back. The numbers are read each time the
+dashboard opens and every 30 seconds while it is open.
+
 **Calendar** shows every release on a week grid; past ones are greyed out, and
 a toggle hides them. It opens read-only: press *Edit* twice within two seconds,
 then drag an upcoming release to another day or hour. Past releases stay
