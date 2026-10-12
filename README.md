@@ -485,6 +485,10 @@ Settings, local or on the network, like watch folders.
 
 ### Other screens
 
+**Dashboard** opens from the round button in the top-left corner of every
+page. It comes out of the corner when the pointer gets near; click it to cover
+the page, and click it again (or press Esc) to close. It is empty for now.
+
 **Calendar** shows every release on a week grid; past ones are greyed out, and
 a toggle hides them. It opens read-only: press *Edit* twice within two seconds,
 then drag an upcoming release to another day or hour. Past releases stay

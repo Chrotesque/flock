@@ -8,6 +8,8 @@
 	import { videoTodo } from '$lib/stores/videotodo.svelte';
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
 	import PasteNotice from '$lib/components/PasteNotice.svelte';
+	import DashboardOverlay from '$lib/components/DashboardOverlay.svelte';
+	import { dashboard } from '$lib/stores/dashboard.svelte';
 	import { paste } from '$lib/stores/paste.svelte';
 	import { projects } from '$lib/stores/projects.svelte';
 	import { draft } from '$lib/stores/draft.svelte';
@@ -328,9 +330,14 @@
 		</div>
 	</aside>
 
-	<main class="scroll">
-		{@render children()}
-	</main>
+	<!-- The content area, clipped: the dashboard's button sits on its corner
+	     and the dashboard covers it (DashboardOverlay). -->
+	<div class="content">
+		<main class="scroll" inert={dashboard.open}>
+			{@render children()}
+		</main>
+		<DashboardOverlay />
+	</div>
 </div>
 
 <svelte:document onpaste={onPaste} />
@@ -879,7 +886,20 @@
 		margin-top: 1px;
 	}
 
+	.content {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		min-height: 0;
+		/* clip, not hidden: no scroll container, so nothing sticky inside
+		   loses the page it sticks to in the narrow layout. */
+		overflow: clip;
+	}
+
 	main {
+		flex: 1;
+		min-height: 0;
 		overflow-y: auto;
 		padding: 30px 40px 60px;
 	}

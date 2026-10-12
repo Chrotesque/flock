@@ -1,0 +1,247 @@
+<script lang="ts">
+	import { onMount, tick } from 'svelte';
+	import { cubicInOut } from 'svelte/easing';
+	import { afterNavigate } from '$app/navigation';
+	import { dashboard } from '$lib/stores/dashboard.svelte';
+
+	/**
+	 * The dashboard's way in, on every page: a round button centred on the
+	 * content area's top-left corner, so only its bottom-right quarter shows.
+	 * Far from the pointer it shrinks into the corner with its icon hidden;
+	 * once the pointer comes near it grows to full size. A click spreads the
+	 * dashboard over the whole content area from that corner; the same
+	 * button (then a close mark), Escape or any navigation takes it away.
+	 *
+	 * The layout clips its content area (`overflow: clip`), which is what
+	 * hides the other three quarters — over the sidebar and above the page.
+	 */
+
+	/** The full quarter's radius, px; the icon sits inside it. */
+	const RADIUS = 46;
+	/** Tucked away: the sliver left in the corner. */
+	const TUCKED = 14;
+	/** How near the pointer has to come to the corner, px. */
+	const NEAR = 150;
+
+	let near = $state(false);
+	let focused = $state(false);
+	let button = $state<HTMLButtonElement | null>(null);
+	let panel = $state<HTMLElement | null>(null);
+
+	let out = $derived(near || focused || dashboard.open);
+
+	onMount(() => {
+		// No pointer to come near on a touch screen: always out.
+		if (!matchMedia('(hover: hover)').matches) {
+			near = true;
+			return;
+		}
+		let frame = 0;
+		let x = 0;
+		let y = 0;
+		const measure = () => {
+			frame = 0;
+			const corner = button?.parentElement?.getBoundingClientRect();
+			if (!corner) return;
+			// Measured from the corner, and only from the content side of the
+			// sidebar's edge: the top of the sidebar is close too, and the links
+			// there should not set it off.
+			near = x >= corner.left - 16 && Math.hypot(x - corner.left, y - corner.top) < NEAR;
+		};
+		const onMove = (event: PointerEvent) => {
+			x = event.clientX;
+			y = event.clientY;
+			if (!frame) frame = requestAnimationFrame(measure);
+		};
+		const onLeave = () => (near = false);
+		window.addEventListener('pointermove', onMove, { passive: true });
+		document.documentElement.addEventListener('pointerleave', onLeave);
+		return () => {
+			window.removeEventListener('pointermove', onMove);
+			document.documentElement.removeEventListener('pointerleave', onLeave);
+			if (frame) cancelAnimationFrame(frame);
+		};
+	});
+
+	// Going anywhere means wanting to see that page.
+	afterNavigate(() => dashboard.close());
+
+	async function toggle() {
+		dashboard.toggle();
+		await tick();
+		if (dashboard.open) panel?.focus();
+	}
+
+	function onKey(event: KeyboardEvent) {
+		if (event.key === 'Escape' && dashboard.open) {
+			dashboard.close();
+			button?.focus();
+		}
+	}
+
+	/**
+	 * Spreads from the corner as a circle until it covers the far corner, and
+	 * shrinks back into it on the way out. Instant with reduced motion.
+	 */
+	function reveal(node: HTMLElement) {
+		const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const far = Math.hypot(node.offsetWidth, node.offsetHeight);
+		return {
+			duration: reduced ? 0 : 420,
+			easing: cubicInOut,
+			css: (t: number) => `clip-path: circle(${RADIUS + t * (far - RADIUS)}px at 0 0)`
+		};
+	}
+</script>
+
+<svelte:window onkeydown={onKey} />
+
+{#if dashboard.open}
+	<section
+		class="dashboard"
+		id="dashboard"
+		aria-label="Dashboard"
+		tabindex="-1"
+		bind:this={panel}
+		transition:reveal
+	>
+		<header>
+			<h1>Dashboard</h1>
+			<p>Everything at a glance, from any page.</p>
+		</header>
+		<div class="empty">
+			<p>Nothing here yet.</p>
+		</div>
+	</section>
+{/if}
+
+<button
+	class="orb"
+	class:out
+	class:open={dashboard.open}
+	style:--radius="{RADIUS}px"
+	style:--tucked={TUCKED / RADIUS}
+	bind:this={button}
+	onclick={toggle}
+	onfocus={() => (focused = true)}
+	onblur={() => (focused = false)}
+	aria-expanded={dashboard.open}
+	aria-controls="dashboard"
+	aria-label={dashboard.open ? 'Close the dashboard' : 'Open the dashboard'}
+	title={dashboard.open ? 'Close the dashboard (Esc)' : 'Dashboard'}
+>
+	<span class="glyph" aria-hidden="true">
+		{#if dashboard.open}
+			<svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+				<path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+			</svg>
+		{:else}
+			<!-- Four panes of different heights: a dashboard's layout. -->
+			<svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+				<rect x="3.5" y="3.5" width="7" height="9.5" rx="1.6" stroke="currentColor" stroke-width="1.7" />
+				<rect x="13.5" y="3.5" width="7" height="5.5" rx="1.6" stroke="currentColor" stroke-width="1.7" />
+				<rect x="3.5" y="16" width="7" height="4.5" rx="1.6" stroke="currentColor" stroke-width="1.7" />
+				<rect x="13.5" y="12" width="7" height="8.5" rx="1.6" stroke="currentColor" stroke-width="1.7" />
+			</svg>
+		{/if}
+	</span>
+</button>
+
+<style>
+	/* A full circle centred on the corner; the layout's clip leaves the
+	   bottom-right quarter. Scaled rather than resized, so moving in and out
+	   is one cheap transform. */
+	.orb {
+		position: absolute;
+		top: calc(var(--radius) * -1);
+		left: calc(var(--radius) * -1);
+		z-index: 30;
+		width: calc(var(--radius) * 2);
+		height: calc(var(--radius) * 2);
+		padding: 0;
+		border-radius: 50%;
+		background: var(--surface-2);
+		border: 1px solid var(--border-strong);
+		color: var(--text-dim);
+		transform: scale(var(--tucked));
+		transition:
+			transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+			background 0.15s,
+			border-color 0.15s,
+			color 0.15s,
+			box-shadow 0.15s;
+	}
+
+	.orb.out {
+		transform: scale(1);
+		background: var(--surface-3);
+		color: var(--text);
+	}
+
+	.orb:hover,
+	.orb:focus-visible {
+		background: var(--surface-3);
+		border-color: var(--pink);
+		color: var(--text);
+		box-shadow: var(--glow);
+		outline: none;
+	}
+
+	/* Open is a selected state, so it takes the selection colours. */
+	.orb.open {
+		background: var(--accent-grad);
+		border-color: transparent;
+		color: #fff;
+	}
+
+	/* The icon sits inside the visible quarter, clear of its curved edge. */
+	.glyph {
+		position: absolute;
+		top: calc(var(--radius) + 11px);
+		left: calc(var(--radius) + 11px);
+		display: grid;
+		opacity: 0;
+		transition: opacity 0.12s;
+	}
+
+	.orb.out .glyph {
+		opacity: 1;
+		transition: opacity 0.18s 0.08s;
+	}
+
+	.dashboard {
+		position: absolute;
+		inset: 0;
+		z-index: 25;
+		display: flex;
+		flex-direction: column;
+		overflow-y: auto;
+		padding: 30px 40px 60px 76px;
+		background: var(--bg);
+		outline: none;
+	}
+
+	header h1 {
+		font-size: 23px;
+	}
+
+	header p {
+		margin: 5px 0 0;
+		font-size: 13px;
+		color: var(--text-dim);
+	}
+
+	.empty {
+		flex: 1;
+		display: grid;
+		place-items: center;
+		color: var(--text-faint);
+		font-size: 13px;
+	}
+
+	@media (max-width: 860px) {
+		.dashboard {
+			padding: 22px 18px 50px 64px;
+		}
+	}
+</style>
