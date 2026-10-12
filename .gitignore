@@ -21,3 +21,6 @@ worker/.worker-config.json
 
 # The zipped site folder made for uploading to the static host
 site/*.zip
+
+# local-devtest: this machine's own test extensions (see src/lib/devtest.ts)
+src/local-devtest/

@@ -17,17 +17,23 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import type { TodoLine } from '$lib/videotodo';
+	import { devtestActive, startDevtest } from '$lib/devtest';
 
 	onMount(() => {
 		void general.load();
 		workers.start();
 		const stopProjects = projects.start();
 		const stopTodo = videoTodo.start();
+		const stopDevtest = startDevtest();
 		return () => {
 			stopProjects();
 			stopTodo();
+			stopDevtest();
 		};
 	});
+
+	// A local-devtest module changing something says so on every page.
+	let devtest = $derived(devtestActive());
 
 	/**
 	 * A project in the sidebar opens on the Upload page, which takes it from
@@ -264,6 +270,15 @@
 				<a class="alert" href="{base}/settings" title="This device has no name yet">
 					<span class="bang">!</span>
 					<span class="alerttext">Name this device</span>
+				</a>
+			{/if}
+
+			{#if devtest.length > 0}
+				<a class="devtest" href="{base}/settings?section=devtest" title="Settings → DevTest">
+					<span class="devtesthead">DevTest</span>
+					{#each devtest as line (line)}
+						<span class="devtestline">{line}</span>
+					{/each}
 				</a>
 			{/if}
 
@@ -789,6 +804,36 @@
 		font-weight: 600;
 	}
 
+	.devtest {
+		display: grid;
+		gap: 2px;
+		padding: 8px 11px;
+		border-radius: var(--radius);
+		text-decoration: none;
+		background: rgba(168, 85, 247, 0.1);
+		border: 1px dashed rgba(168, 85, 247, 0.5);
+		color: var(--text-dim);
+		transition: background 0.15s, border-color 0.15s;
+	}
+
+	.devtest:hover {
+		background: rgba(168, 85, 247, 0.18);
+		border-color: var(--purple);
+	}
+
+	.devtesthead {
+		font-size: 11px;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--purple);
+	}
+
+	.devtestline {
+		font-size: 11.5px;
+		line-height: 1.35;
+	}
+
 	.navlink {
 		display: flex;
 		align-items: center;
@@ -904,6 +949,9 @@
 		/* A list does not fit a one-row bar; the wide layout shows it. */
 		.todo,
 		.projects {
+			display: none;
+		}
+		.devtestline {
 			display: none;
 		}
 		.doing {

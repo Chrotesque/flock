@@ -20,6 +20,7 @@
 	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { VERSION } from '$lib/version';
+	import { devtestActive, devtestModules } from '$lib/devtest';
 	import type {
 		FilterRule,
 		OptionValues,
@@ -35,7 +36,11 @@
 	// Fresh, so an account the worker has just listed can be chosen at once.
 	accounts.load(true);
 
-	type Section = 'general' | 'brands' | 'templates' | 'other' | PlatformId;
+	type Section = 'general' | 'brands' | 'templates' | 'other' | 'devtest' | PlatformId;
+
+	// A flask: the DevTest section, listed only while a local-devtest module exists.
+	const DEVTEST_ICON =
+		'M9.5 4h5M10.5 4v5.2L5.6 17.4A1.7 1.7 0 0 0 7.1 20h9.8a1.7 1.7 0 0 0 1.5-2.6L13.5 9.2V4M8 14h8';
 
 	let active = $state<Section>('general');
 	let tab = $state<'defaults' | 'tags' | 'filters' | 'profiles'>('defaults');
@@ -105,7 +110,8 @@
 				section === 'templates' ||
 				section === 'general' ||
 				section === 'other' ||
-				section === 'brands'
+				section === 'brands' ||
+				(section === 'devtest' && devtestModules.length > 0)
 			) {
 				active = section;
 				return;
@@ -222,6 +228,29 @@
 								</span>
 							</button>
 						</li>
+						{#if devtestModules.length > 0}
+							<li class:active={active === 'devtest'}>
+								<button class="pick" onclick={() => (active = 'devtest')}>
+									<span class="ic">
+										<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+											<path
+												d={DEVTEST_ICON}
+												stroke="currentColor"
+												stroke-width="1.6"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+											/>
+										</svg>
+									</span>
+									<span class="who">
+										<span class="name">DevTest</span>
+										<span class="sub">
+											{devtestActive().length > 0 ? 'overriding' : 'nothing overridden'} · local only
+										</span>
+									</span>
+								</button>
+							</li>
+						{/if}
 					</ul>
 
 					<!--
@@ -417,6 +446,40 @@
 							</p>
 
 							<TimeZoneList />
+						</div>
+					{:else if active === 'devtest'}
+						<header class="panelhead">
+							<div class="ident">
+								<span class="ic big">
+									<svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+										<path
+											d={DEVTEST_ICON}
+											stroke="currentColor"
+											stroke-width="1.6"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										/>
+									</svg>
+								</span>
+								<div>
+									<h2>DevTest</h2>
+									<p>
+										Test extensions built in from the <code>src/local-devtest/</code> folder of
+										the machine that deployed flock. They are not part of flock's repository.
+									</p>
+								</div>
+							</div>
+						</header>
+
+						<div class="otherbody">
+							{#each devtestModules as mod (mod.title)}
+								<section class="devtestmod">
+									<h3>{mod.title}</h3>
+									{#if mod.Settings}
+										<mod.Settings />
+									{/if}
+								</section>
+							{/each}
 						</div>
 					{:else if active === 'brands'}
 						<header class="panelhead">
@@ -720,6 +783,21 @@
 		font-size: 11.5px;
 		color: var(--text-faint);
 		line-height: 1.5;
+	}
+
+	.devtestmod h3 {
+		margin: 0 0 12px;
+	}
+
+	.devtestmod + .devtestmod {
+		margin-top: 22px;
+		padding-top: 18px;
+		border-top: 1px solid var(--border);
+	}
+
+	.ident code {
+		font-family: var(--mono);
+		font-size: 11.5px;
 	}
 
 	.second {
