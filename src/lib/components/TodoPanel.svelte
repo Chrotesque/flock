@@ -293,7 +293,9 @@
 		flex-direction: column;
 		gap: 22px;
 		overflow-y: auto;
-		padding: 30px 40px 60px 76px;
+		/* As wide a gap on the right as on the left, where it clears the
+		   dashboard's corner button. */
+		padding: 30px 76px 60px;
 		background: var(--bg);
 		outline: none;
 	}
@@ -363,7 +365,6 @@
 	/* One grid for the head and every row, so the columns line up. */
 	.table {
 		--cols: 44px minmax(0, 1fr) 120px 170px 100px;
-		max-width: 1100px;
 	}
 
 	.table.nojestr {

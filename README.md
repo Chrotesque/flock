@@ -543,7 +543,7 @@ refreshed every 30 seconds while the worker runs.
 - Below, a list of what is stored on the NAS, with a delete per upload.
 
 **To finish**, in the sidebar, is a box for YouTube videos with something left
-to do by hand: grey with a check when nothing needs doing now, a yellow-to-pink
+to do by hand: green with a check when nothing needs doing now, a yellow-to-pink
 outline with an exclamation mark when something does. The number under it is
 how many videos are listed. Click it to open the list over the page.
 

@@ -200,7 +200,7 @@
 
 		<!-- Videos with something left to do by hand — set in Studio, linked on
 		     Jestr — as one icon centred in the free stretch between the main
-		     links and the worker: a grey box with a check cut out when nothing
+		     links and the worker: a muted green box with a check cut out when nothing
 		     needs doing, a yellow-to-pink outline round an exclamation mark
 		     when something does, filled purple with a back arrow while open.
 		     The list itself opens over the content area (TodoPanel). Rules in
@@ -243,7 +243,7 @@
 								<rect class="box due" x="5.5" y="5.5" width="37" height="37" rx="10" stroke="url(#todo-due)" />
 								<path class="bangmark" d="M24 13.5v12.5M24 33.6v0.01" stroke="url(#todo-due)" stroke-linecap="round" />
 							{:else}
-								<!-- Nothing to do: grey, the check cut out of it. -->
+								<!-- Nothing to do: muted green, the check cut out of it. -->
 								<rect class="box idle" x="4" y="4" width="40" height="40" rx="11" />
 								<path class="neg" d="M14 24.8l7 7L34.5 17.5" stroke-linecap="round" stroke-linejoin="round" />
 							{/if}
@@ -557,12 +557,15 @@
 	}
 
 	/* The way into the To finish panel: a box with no button chrome round
-	   it. Grey with a check cut out when nothing needs doing; a yellow-to-pink
+	   it. Muted green with a check cut out when nothing needs doing; a yellow-to-pink
 	   border round a thick exclamation mark when something does; filled
 	   purple with a back arrow cut out while open. Hovered (or focused) it
 	   brightens and glows with a bloom that settles, and an arrow shows on
 	   its right, pointing to where the panel opens. */
 	.tile {
+		--glow: 52, 211, 153;
+		--glow-2: 16, 185, 129;
+		--arrow: #6cc7a0;
 		position: relative;
 		align-self: center;
 		display: grid;
@@ -609,8 +612,20 @@
 			stroke-width 0.2s;
 	}
 
+	.tile.due {
+		--glow: 251, 191, 36;
+		--glow-2: 255, 77, 158;
+		--arrow: var(--pink-soft);
+	}
+
+	.tile.open {
+		--glow: 168, 85, 247;
+		--glow-2: 168, 85, 247;
+	}
+
+	/* Nothing needs attention: green, but quiet. */
 	.box.idle {
-		fill: var(--text-faint);
+		fill: #4f8f74;
 	}
 
 	.box.due {
@@ -636,32 +651,27 @@
 	}
 
 	.tile.due .tileicon {
-		filter: drop-shadow(0 0 5px rgba(251, 191, 36, 0.35)) drop-shadow(0 0 12px rgba(255, 77, 158, 0.25));
+		filter: drop-shadow(0 0 5px rgba(var(--glow), 0.35)) drop-shadow(0 0 12px rgba(var(--glow-2), 0.25));
 	}
 
 	.tile.open .tileicon {
-		filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.65)) drop-shadow(0 0 22px rgba(168, 85, 247, 0.4));
+		filter: drop-shadow(0 0 8px rgba(var(--glow), 0.65)) drop-shadow(0 0 22px rgba(var(--glow-2), 0.4));
 	}
 
 	.tile:hover .tileicon,
 	.tile:focus-visible .tileicon {
-		filter: drop-shadow(0 0 6px rgba(255, 77, 158, 0.6)) drop-shadow(0 0 18px rgba(168, 85, 247, 0.45));
+		filter: drop-shadow(0 0 7px rgba(var(--glow), 0.65)) drop-shadow(0 0 20px rgba(var(--glow-2), 0.45));
 		animation: tilebloom 0.7s ease-out;
-	}
-
-	.tile.due:hover .tileicon,
-	.tile.due:focus-visible .tileicon {
-		filter: drop-shadow(0 0 7px rgba(251, 191, 36, 0.7)) drop-shadow(0 0 20px rgba(255, 77, 158, 0.5));
 	}
 
 	.tile.open:hover .tileicon,
 	.tile.open:focus-visible .tileicon {
-		filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.85)) drop-shadow(0 0 28px rgba(168, 85, 247, 0.55));
+		filter: drop-shadow(0 0 10px rgba(var(--glow), 0.85)) drop-shadow(0 0 28px rgba(var(--glow-2), 0.55));
 	}
 
 	.tile:hover .box.idle,
 	.tile:focus-visible .box.idle {
-		fill: var(--text-dim);
+		fill: #62b392;
 	}
 
 	.tile:hover .box.due,
@@ -679,9 +689,10 @@
 		fill: #b56ef9;
 	}
 
-	/* The arrow: hidden until the pointer is on the box, then sliding in. */
+	/* The arrow: hidden until the pointer is on the box, then sliding in,
+	   in the box's own colour. */
 	.tilearrow {
-		color: var(--pink-soft);
+		color: var(--arrow);
 		opacity: 0;
 		transform: translateX(-6px);
 	}
@@ -694,7 +705,7 @@
 	.tile:focus-visible .tilearrow {
 		opacity: 1;
 		transform: none;
-		filter: drop-shadow(0 0 5px rgba(255, 77, 158, 0.7));
+		filter: drop-shadow(0 0 5px rgba(var(--glow-2), 0.7));
 	}
 
 	/* Open, the box carries the way back itself. */
@@ -705,10 +716,10 @@
 
 	@keyframes tilebloom {
 		0% {
-			filter: drop-shadow(0 0 0 rgba(255, 77, 158, 0)) drop-shadow(0 0 0 rgba(168, 85, 247, 0));
+			filter: drop-shadow(0 0 0 rgba(var(--glow), 0)) drop-shadow(0 0 0 rgba(var(--glow-2), 0));
 		}
 		40% {
-			filter: drop-shadow(0 0 12px rgba(255, 77, 158, 0.9)) drop-shadow(0 0 32px rgba(168, 85, 247, 0.65));
+			filter: drop-shadow(0 0 12px rgba(var(--glow), 0.9)) drop-shadow(0 0 32px rgba(var(--glow-2), 0.65));
 		}
 	}
 
