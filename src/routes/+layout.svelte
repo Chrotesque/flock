@@ -227,12 +227,24 @@
 								target="_blank"
 								rel="noopener"
 								title={studioTitle(line)}
-								aria-label={studioTitle(line)}
+								aria-label={`${studioTitle(line)}. ${paidTitle(line)}`}
 								onclick={() => {
 									if (line.studio.length) void videoTodo.markStudio(line);
 								}}
 							>
 								<PlatformIcon platform="youtube" size={15} />
+								<!-- Paid promotion as YouTube reports it, read by the stats
+								     pass: the top-left corner, opposite the Studio badge. -->
+								<span class="badge paid" class:on={line.paid === true} title={paidTitle(line)} aria-hidden="true">
+									<svg viewBox="0 0 10 10" width="7" height="7" fill="none">
+										<path
+											d="M6.9 3.3C6.6 2.7 5.9 2.4 5 2.4c-1.1 0-1.9.6-1.9 1.4 0 .9.9 1.1 1.9 1.3s1.9.4 1.9 1.3c0 .8-.8 1.4-1.9 1.4-.9 0-1.6-.3-1.9-.9M5 1.3v7.4"
+											stroke="currentColor"
+											stroke-width="1.5"
+											stroke-linecap="round"
+										/>
+									</svg>
+								</span>
 								<!-- Never a faded logo (YouTube's branding rules forbid
 								     altering it): a yellow dot while something is left to
 								     set in Studio, a green check once nothing is. -->
@@ -252,15 +264,6 @@
 									</span>
 								{/if}
 							</a>
-							<!-- What YouTube reports, read by the stats pass; the click on
-							     the icon stays the record of the Studio visit. -->
-							<span
-								class="paid"
-								class:on={line.paid === true}
-								role="img"
-								title={paidTitle(line)}
-								aria-label={paidTitle(line)}>$</span
-							>
 							{/if}
 							{#if line.waiting && line.studioUrl}
 								<span class="spinner small" role="status" title={line.waiting} aria-label={line.waiting}></span>
@@ -694,22 +697,22 @@
 		color: var(--bg);
 	}
 
-	/* Paid promotion as YouTube reports it: green when ticked, red when not
-	   (or not read yet). Beside the logo, never on it. */
-	.paid {
-		flex: none;
-		width: 10px;
-		margin-left: -3px;
-		text-align: center;
-		font-size: 12px;
-		font-weight: 700;
-		line-height: 1;
-		color: var(--danger);
+	/* Paid promotion as YouTube reports it, in the top-left corner: green
+	   when ticked, red when not (or not read yet). A badge over the logo's
+	   corner like the Studio one, so the logo itself stays unaltered. */
+	.badge.paid {
+		width: 9px;
+		height: 9px;
+		top: -1px;
+		right: auto;
+		left: -1px;
+		background: var(--danger);
+		color: var(--bg);
 		cursor: help;
 	}
 
-	.paid.on {
-		color: var(--ok);
+	.badge.paid.on {
+		background: var(--ok);
 	}
 
 	/* Waiting on YouTube: a turning ring where the YouTube icon will be (or,
