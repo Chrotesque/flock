@@ -123,16 +123,17 @@
 		},
 	];
 
+	// Side by side, Log left and Settings right (the user's layout, 0.12.1).
 	const utilities = [
-		{
-			href: '/settings',
-			label: 'Settings',
-			icon: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8-3.5a8 8 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a8 8 0 0 0-2-1.2L15 3H9l-.5 2.6a8 8 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a8 8 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a8 8 0 0 0 2 1.2L9 21h6l.5-2.6a8 8 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6A8 8 0 0 0 20 12Z'
-		},
 		{
 			href: '/log',
 			label: 'Log',
 			icon: 'M5.5 4h13a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm3 4.5h7m-7 3.5h7m-7 3.5h4.5'
+		},
+		{
+			href: '/settings',
+			label: 'Settings',
+			icon: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8-3.5a8 8 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a8 8 0 0 0-2-1.2L15 3H9l-.5 2.6a8 8 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a8 8 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a8 8 0 0 0 2 1.2L9 21h6l.5-2.6a8 8 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6A8 8 0 0 0 20 12Z'
 		}
 	];
 
@@ -421,13 +422,16 @@
 		gap: 3px;
 	}
 
-	/* Settings and Log: one line each, close together. */
+	/* Log and Settings: one row, half the rail each. */
 	.utility {
-		gap: 1px;
+		grid-template-columns: 1fr 1fr;
+		gap: 4px;
 	}
 
 	.utility .navlink {
-		padding: 8px 11px;
+		min-width: 0;
+		gap: 8px;
+		padding: 8px 10px;
 	}
 
 	/* The device alert and the worker status, low in the rail just above
