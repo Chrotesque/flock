@@ -15,6 +15,7 @@ import {
 	ownsLocal,
 	ownsPublishing
 } from './roles.mjs';
+import { WORKER_VERSION } from './version.mjs';
 
 /**
  * `live` is false for the one-shot modes, which write no heartbeat and simply
@@ -71,6 +72,7 @@ export function makeHeartbeat({
 			run,
 			pid: process.pid,
 			host: hostname(),
+			version: WORKER_VERSION,
 			startedAt,
 			beatAt: new Date().toISOString(),
 			covering,

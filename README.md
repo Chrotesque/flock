@@ -281,6 +281,8 @@ This writes `dist/worker/flock-worker.exe`. Copy it and your
 - It takes the same flags as `pnpm worker`, and `flock-worker auth --tiktok`
   connects an account.
 - It reads the config beside itself, or wherever `FLOCK_WORKER_CONFIG` points.
+  A downloaded copy saved as `worker-config.json` (browsers drop the leading
+  dot) is read too.
 - It is unsigned, so Windows may warn the first time.
 
 On Windows the build also writes **`flock-worker-background.exe`**, which runs
@@ -291,7 +293,11 @@ without a window:
 - To start it with Windows, put a shortcut to it in the Startup folder (Win+R,
   `shell:startup`).
 - `flock-worker-background.exe --stop` stops it too.
-- It logs to `flock-worker.log` beside itself.
+- It logs to `flock-worker.log` beside itself. If it cannot start (no config,
+  flock out of reach for five minutes, one already running), a message box
+  says why.
+- Hovering a worker dot in the sidebar shows the machine and the worker's
+  version.
 
 Local folders are paths on the worker's own machine: after moving the worker,
 set them again in Settings.

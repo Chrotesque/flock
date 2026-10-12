@@ -11,6 +11,7 @@
 
 import { spawn } from 'node:child_process';
 import { isSea } from 'node:sea';
+import { exeLogPath } from './filelog.mjs';
 import { TRAY_ICON_PNG } from './trayicon.mjs';
 
 /**
@@ -84,6 +85,74 @@ ${extra}
 $tray.Visible = $false
 $tray.Dispose()
 `;
+}
+
+/**
+ * A message box, in front of whatever is open: a background process may not
+ * take the foreground, so it opens over a topmost one-pixel owner in the
+ * middle of the screen the pointer is on, as folderpick.mjs does its dialog.
+ */
+export function messageScript({ title, text, warn = true }) {
+	return String.raw`
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.ShowInTaskbar = $false
+$owner.FormBorderStyle = 'None'
+$owner.StartPosition = 'Manual'
+$owner.Size = New-Object System.Drawing.Size(1, 1)
+$area = [System.Windows.Forms.Screen]::FromPoint([System.Windows.Forms.Cursor]::Position).WorkingArea
+$x = $area.X + [int]($area.Width / 2)
+$y = $area.Y + [int]($area.Height / 2)
+$owner.Location = New-Object System.Drawing.Point($x, $y)
+$owner.Show()
+$owner.Activate()
+[void][System.Windows.Forms.MessageBox]::Show($owner, ${psQuote(text)}, ${psQuote(title)}, 'OK', ${warn ? "'Warning'" : "'Information'"})
+$owner.Close()
+`;
+}
+
+/**
+ * Shows `messageScript`, resolving once the box is on its way — not when it
+ * is closed, so the worker can exit behind it. Node puts what it starts in a
+ * job that ends with it, which would close the box the moment the worker
+ * exits; a program started by one of those is outside that job (libuv allows
+ * the breakaway), so a first PowerShell starts the box's own and leaves.
+ */
+export function showMessage({ title, text, warn = true }) {
+	const box = Buffer.from(messageScript({ title, text, warn }), 'utf16le').toString('base64');
+	// -WindowStyle Hidden twice, for the reason given in startTray.
+	const starter =
+		"Start-Process powershell.exe -WindowStyle Hidden -ArgumentList " +
+		`'-NoProfile','-NonInteractive','-STA','-WindowStyle','Hidden','-EncodedCommand','${box}'`;
+	return new Promise((resolve) => {
+		const child = spawn(
+			'powershell.exe',
+			['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(starter, 'utf16le').toString('base64')],
+			{ windowsHide: true, stdio: 'ignore' }
+		);
+		const timer = setTimeout(resolve, 10_000);
+		const done = () => {
+			clearTimeout(timer);
+			resolve();
+		};
+		child.on('error', done);
+		child.on('exit', done);
+	});
+}
+
+/**
+ * The executable without a console, stopping on its way up — no config, flock
+ * out of reach, one already running — or after a crash: its icon is not up
+ * yet or goes with it, so this is the only thing anyone would see. Says
+ * where the log is. Does nothing for a run that has a console to print to.
+ */
+export function sayOnScreen(text, { warn = true } = {}) {
+	if (!wantsTray()) return Promise.resolve();
+	const log = exeLogPath();
+	return showMessage({ title: 'flock worker', text: log ? `${text}\n\nIts log: ${log}` : text, warn });
 }
 
 /**

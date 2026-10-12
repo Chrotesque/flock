@@ -20,6 +20,8 @@ export interface WorkerBeat {
 	run?: string;
 	pid?: number;
 	host?: string;
+	/** The worker's build, since 0.13.4; 'dev' when run from a checkout. */
+	version?: string;
 	startedAt?: string;
 	beatAt: string;
 	covering?: boolean;
@@ -89,7 +91,10 @@ function lastSeen(beat: WorkerBeat): number {
 
 function dot(role: WorkerRole, beat: WorkerBeat | null | undefined, now: number): WorkerDot {
 	const name = NAMES[role];
-	const on = beat?.host ? ` on ${beat.host}` : '';
+	// Which copy runs where: a PC worker is carried over by hand, and an old
+	// one still running looks the same as the new one otherwise.
+	const build = beat?.version ? ` (${beat.version === 'dev' ? 'dev' : `v${beat.version}`})` : '';
+	const on = beat?.host ? ` on ${beat.host}${build}` : build;
 	if (!beat) return { role, state: 'down', title: `${name}: never seen` };
 	if (!isAlive(beat, now)) {
 		return { role, state: 'down', title: `${name}${on}: not running, last seen ${ago(now - lastSeen(beat))}` };

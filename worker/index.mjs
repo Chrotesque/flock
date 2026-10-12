@@ -49,8 +49,9 @@ import { makeHeartbeat } from './heartbeat.mjs';
 import { coversNas, ownsPublishing } from './roles.mjs';
 import { watchForUpdate } from './selfupdate.mjs';
 import { askToStop, holdInstance } from './instance.mjs';
-import { startTray, wantsTray } from './tray.mjs';
+import { sayOnScreen, startTray, wantsTray } from './tray.mjs';
 import { exeLogPath } from './filelog.mjs';
+import { WORKER_VERSION } from './version.mjs';
 import { decide, mayBeAlive } from './orphans.mjs';
 import { inJob } from './jobscope.mjs';
 
@@ -1215,11 +1216,18 @@ async function main() {
 	// written anything. The one-shot modes may run beside a polling worker.
 	if (live && !(await holdInstance(config.role, shutdown))) {
 		log(`another ${config.role} worker is already running on this machine — leaving it to it`);
+		await sayOnScreen(
+			`The flock worker (${config.role}) is already running on this computer, so this copy closed again. ` +
+				'Only one runs at a time.\n\nIts icon is in the notification area, perhaps behind the ^ arrow. ' +
+				'If flock does not show it running, end flock-worker-background.exe in Task Manager (Details) ' +
+				'and start this one again.',
+			{ warn: false }
+		);
 		return;
 	}
 	log(
 		`worker started (${dry ? 'dry run' : once ? 'single pass' : statsOnly ? 'stats only' : 'polling'}, ` +
-			`role ${config.role}, pid ${process.pid})`
+			`role ${config.role}, ${WORKER_VERSION === 'dev' ? 'dev' : `v${WORKER_VERSION}`}, pid ${process.pid})`
 	);
 	remote.attach(pb);
 	// A PC worker covers for the NAS one only with credentials of its own.
@@ -1234,6 +1242,19 @@ async function main() {
 		onStartPublishing: () => orphanPass(pb, config).catch((err) => log(`orphan check failed: ${err.message}`))
 	});
 
+	// The background executable's icon, its way to be seen and stopped — see
+	// tray.mjs. Up before PocketBase answers, so it is there while the worker
+	// waits for the network at boot, rather than nothing at all.
+	if (live && wantsTray()) {
+		startTray({
+			title: `flock worker${WORKER_VERSION === 'dev' ? '' : ` v${WORKER_VERSION}`} (${config.role})`,
+			url: `${config.pocketbaseUrl}/`,
+			logPath: exeLogPath(),
+			onStop: shutdown,
+			log
+		});
+	}
+
 	// Started at boot, or straight after a resume, the NAS or the Tailscale link
 	// to it may not be up yet. Waiting beats dying on the first probe; the
 	// one-shot modes fail fast, since there somebody is watching.
@@ -1243,7 +1264,13 @@ async function main() {
 			break;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
-			if (once || dry || statsOnly || attempt >= 30) throw err;
+			if (once || dry || statsOnly) throw err;
+			if (attempt >= 30) {
+				throw new Error(
+					`${message}\nGave up after five minutes. Check that this machine can open flock in a browser ` +
+						'at that address, then start the worker again.'
+				);
+			}
 			log(`${message} — retrying in 10s (${attempt}/30)`);
 			await new Promise((resolve) => setTimeout(resolve, 10_000));
 		}
@@ -1300,17 +1327,6 @@ async function main() {
 				log(`${kind === 'network' ? 'LAN' : 'local'} folder scan failed: ${err.message.split('\n')[0]}`)
 			)
 	});
-
-	// The background executable's icon, its way to be seen and stopped — see tray.mjs.
-	if (wantsTray()) {
-		startTray({
-			title: `flock worker (${config.role})`,
-			url: `${config.pocketbaseUrl}/`,
-			logPath: exeLogPath(),
-			onStop: shutdown,
-			log
-		});
-	}
 
 	// The Upload step's player — see preview.mjs. Only for a worker that stays
 	// up; the address is published where the page looks for it, and left there
@@ -1411,5 +1427,6 @@ main()
 		console.error(`\n${message}\n`);
 		remote.push(`stopped: ${message}`);
 		await remote.flush().catch(() => {});
+		await sayOnScreen(`The flock worker has stopped.\n\n${message}`);
 		process.exit(1);
 	});

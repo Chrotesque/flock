@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { psQuote, trayScript, wantsTray } from './tray.mjs';
+import { messageScript, psQuote, trayScript, wantsTray } from './tray.mjs';
 
 describe('wantsTray', () => {
 	const exe = { env: {}, platform: 'win32', sea: true, tty: undefined };
@@ -53,6 +53,28 @@ describe('trayScript', () => {
 
 	it('fits on a Windows command line once encoded', () => {
 		const encoded = Buffer.from(script, 'utf16le').toString('base64');
+		assert.ok(encoded.length < 30_000, `${encoded.length} characters`);
+	});
+});
+
+describe('messageScript', () => {
+	const text = "No worker configuration: C:\\Joe's\\.worker-config.json does not exist.\n\nIts log: C:\\x\\flock-worker.log";
+
+	it('puts the text and title in quoted, line breaks and all', () => {
+		const script = messageScript({ title: 'flock worker', text });
+		assert.match(script, /C:\\Joe''s\\\.worker-config\.json does not exist\.\n\nIts log/);
+		assert.match(script, /'flock worker', 'OK', 'Warning'\)/);
+		assert.doesNotMatch(script, /\$\{/);
+	});
+
+	it('is a plain notice when it is not a warning', () => {
+		assert.match(messageScript({ title: 't', text: 'x', warn: false }), /'OK', 'Information'\)/);
+	});
+
+	it('fits on a Windows command line, encoded twice over as showMessage sends it', () => {
+		const box = Buffer.from(messageScript({ title: 'flock worker', text: text + 'x'.repeat(2000) }), 'utf16le').toString('base64');
+		const starter = `Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-EncodedCommand','${box}'`;
+		const encoded = Buffer.from(starter, 'utf16le').toString('base64');
 		assert.ok(encoded.length < 30_000, `${encoded.length} characters`);
 	});
 });

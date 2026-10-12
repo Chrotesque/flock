@@ -34,9 +34,24 @@ function configDir() {
 	return url ? dirname(fileURLToPath(url)) : dirname(resolve(process.argv[1] ?? '.'));
 }
 
+/**
+ * The config file in `dir`. A browser that downloads `.worker-config.json`
+ * saves it without the leading dot — Chrome, Edge and Firefox all trim it —
+ * and an executable fetched that way found no config and stopped. So beside
+ * the executable, where a download lands, `worker-config.json` is read when
+ * the dotted one is not there. Only there: in the checkout, only the dotted
+ * name is gitignored.
+ */
+export function configFile(dir, { sea = isSea(), exists = existsSync } = {}) {
+	const dotted = resolve(dir, '.worker-config.json');
+	if (!sea || exists(dotted)) return dotted;
+	const downloaded = resolve(dir, 'worker-config.json');
+	return exists(downloaded) ? downloaded : dotted;
+}
+
 export const CONFIG_PATH = process.env.FLOCK_WORKER_CONFIG
 	? resolve(process.env.FLOCK_WORKER_CONFIG)
-	: resolve(configDir(), '.worker-config.json');
+	: configFile(configDir());
 
 function readFile() {
 	if (!existsSync(CONFIG_PATH)) return {};
@@ -214,6 +229,15 @@ export function requireConfig({ needToken = true, needGoogle = true } = {}) {
 	if (needToken && !hasYouTube(config)) missing.push('google.accounts');
 
 	if (missing.length > 0) {
+		// No file at all is how a copied executable fails: its config stayed
+		// behind. A list of keys the default role wants would only mislead.
+		if (!existsSync(CONFIG_PATH) && !process.env.FLOCK_PB_URL) {
+			throw new Error(
+				`No worker configuration: ${CONFIG_PATH} does not exist.\n` +
+					'Put the .worker-config.json that belongs to this worker there, ' +
+					'or copy .worker-config.example.json and fill it in.'
+			);
+		}
 		const hint = missing.includes('google.accounts')
 			? '\n\nTo connect a YouTube channel, run:  pnpm worker:auth'
 			: '';

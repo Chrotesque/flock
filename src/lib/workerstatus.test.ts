@@ -29,6 +29,19 @@ describe('workerView', () => {
 		]);
 	});
 
+	it('names the build each worker runs, where its beat says', () => {
+		const view = workerView(
+			{
+				local: beat('local', 5000, { host: 'Studio-PC', version: '0.13.4' }),
+				nas: beat('nas', STALE_MS + 60_000, { host: 'nas-box', version: 'dev' })
+			},
+			now
+		);
+		expect(view.dots[0].title).toBe('PC worker on Studio-PC (v0.13.4): running');
+		expect(view.dots[1].title).toMatch(/^NAS worker on nas-box \(dev\): not running/);
+		expect(workerView({ all: beat('all', 5000, { host: 'Desk' }) }, now).dots[0].title).toMatch(/on Desk: running$/);
+	});
+
 	it('marks the PC dot as covering while the NAS is down', () => {
 		const view = workerView(
 			{ local: beat('local', 5000, { covering: true }), nas: beat('nas', STALE_MS + 60_000) },
