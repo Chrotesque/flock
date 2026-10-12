@@ -32,6 +32,12 @@ test('declined and expired permissions count as absent', () => {
 	assert.deepEqual(names(grant.optional), ['business_management']);
 });
 
+test('a token without insights can still post; only the views are lost', () => {
+	const grant = checkGrant(granted(INSTAGRAM_SCOPES.filter((s) => s !== 'instagram_manage_insights')));
+	assert.deepEqual(grant.missing, []);
+	assert.deepEqual(names(grant.optional), ['instagram_manage_insights']);
+});
+
 test('no rows at all means every required permission is missing', () => {
 	assert.equal(checkGrant(undefined).missing.length, 4);
 });

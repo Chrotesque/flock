@@ -50,6 +50,12 @@ export const INSTAGRAM_PERMISSIONS = [
 		use: 'finding a Page that sits in a business portfolio',
 		required: false,
 		without: 'a Page held in a business portfolio may not be found'
+	},
+	{
+		name: 'instagram_manage_insights',
+		use: 'reading how many views each reel has',
+		required: false,
+		without: "no reel views; flock can still post, but not say how the account's reels are doing"
 	}
 ];
 
