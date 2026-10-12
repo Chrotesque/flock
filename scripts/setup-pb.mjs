@@ -344,6 +344,38 @@ const collections = [
 		indexes: ['CREATE UNIQUE INDEX `idx_video_stats_video` ON `video_stats` (`video_id`)']
 	},
 	{
+		// A post's own counts on a platform other than YouTube, one row per post,
+		// written only by the worker (igstats.mjs — Instagram's reels and their
+		// views). Kept apart from video_stats, which is YouTube's item as it is.
+		name: 'post_stats',
+		type: 'base',
+		...RULES,
+		fields: [
+			{ type: 'text', name: 'platform', required: true, max: 20 },
+			{ type: 'text', name: 'post_id', required: true, max: 60 },
+			// The account it is on: the platform's own id (Instagram user id).
+			{ type: 'text', name: 'account', max: 60 },
+			{ type: 'text', name: 'handle', max: 120 },
+			{ type: 'text', name: 'permalink', max: 500 },
+			{ type: 'text', name: 'caption', max: 2200 },
+			{ type: 'date', name: 'published_at' },
+			{ type: 'text', name: 'product_type', max: 20 },
+			{ type: 'number', name: 'views' },
+			{ type: 'number', name: 'reach' },
+			{ type: 'number', name: 'likes' },
+			{ type: 'number', name: 'comments' },
+			{ type: 'json', name: 'data', maxSize: 100000 },
+			// [[iso, views, likes, comments], ...], appended only when one moved.
+			{ type: 'json', name: 'history', maxSize: 500000 },
+			{ type: 'date', name: 'fetched_at' },
+			...stamps
+		],
+		indexes: [
+			'CREATE UNIQUE INDEX `idx_post_stats_post` ON `post_stats` (`platform`, `post_id`)',
+			'CREATE INDEX `idx_post_stats_account` ON `post_stats` (`account`)'
+		]
+	},
+	{
 		// Claimed device names. A browser writes one row here when it is named;
 		// the unique index on `key` is what actually prevents two machines
 		// sharing a name, since a check-then-write would race.

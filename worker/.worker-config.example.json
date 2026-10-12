@@ -9,6 +9,8 @@
   "statsSeconds": 30,
   "statsVideos": 50,
   "statsBudget": 6000,
+  "igStatsSeconds": 600,
+  "igStatsPosts": 100,
   "vidiqKey": "",
   "google": {
     "clientId": "PASTE-CLIENT-ID.apps.googleusercontent.com",

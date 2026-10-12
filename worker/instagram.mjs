@@ -625,6 +625,26 @@ const accountErrors = new Map();
  * records the error beside them; a row for an account no longer configured
  * goes.
  */
+// What the stats pass reads of each post; views and reach come from insights,
+// which need instagram_manage_insights (igstats.mjs).
+const MEDIA_FIELDS =
+	'id,timestamp,media_type,media_product_type,permalink,caption,like_count,comments_count,insights.metric(views,reach)';
+
+/** The account's newest posts, `limit` at most, newest first, with their insights; pages of 50. */
+export async function listMedia(ig, limit = 100) {
+	const out = [];
+	let after = '';
+	while (out.length < limit) {
+		const page = await graph(ig, `/${ig.igUserId}/media`, {
+			params: { fields: MEDIA_FIELDS, limit: String(Math.min(50, limit - out.length)), after }
+		});
+		out.push(...(page.data ?? []));
+		after = page.paging?.next ? (page.paging.cursors?.after ?? '') : '';
+		if (!after) break;
+	}
+	return out;
+}
+
 export async function refreshInstagramAccounts(pb, config, log, force = false) {
 	if (!force && Date.now() - accountsAt < ACCOUNT_TTL_MS) return;
 	accountsAt = Date.now();

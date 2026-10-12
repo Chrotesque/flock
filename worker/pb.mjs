@@ -230,6 +230,31 @@ export function makeClient(baseUrl) {
 			});
 		},
 
+		/** Every `post_stats` row of a platform (igstats.mjs). */
+		async listPostStats(platform) {
+			const filter = encodeURIComponent(`platform = '${platform}'`);
+			const out = [];
+			for (let page = 1; ; page++) {
+				const res = await request(`/api/collections/post_stats/records?perPage=500&page=${page}&filter=${filter}`);
+				out.push(...(res.items ?? []));
+				if (page >= (res.totalPages ?? 1)) return out;
+			}
+		},
+
+		async createPostStats(data) {
+			return request('/api/collections/post_stats/records', {
+				method: 'POST',
+				body: JSON.stringify(data)
+			});
+		},
+
+		async updatePostStats(id, data) {
+			return request(`/api/collections/post_stats/records/${id}`, {
+				method: 'PATCH',
+				body: JSON.stringify(data)
+			});
+		},
+
 		videoUrl(job) {
 			return `${baseUrl}/api/files/upload_jobs/${job.id}/${encodeURIComponent(job.video)}`;
 		},

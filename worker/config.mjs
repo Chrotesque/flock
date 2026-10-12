@@ -133,7 +133,12 @@ export function loadConfig() {
 		statsSeconds: Number(process.env.FLOCK_STATS_SECONDS ?? file.statsSeconds ?? 30),
 		statsVideos: Number(process.env.FLOCK_STATS_VIDEOS ?? file.statsVideos ?? 50),
 		// Units the pass may spend in a day before it pauses until Google's reset.
-		statsBudget: Number(process.env.FLOCK_STATS_BUDGET ?? file.statsBudget ?? 6000)
+		statsBudget: Number(process.env.FLOCK_STATS_BUDGET ?? file.statsBudget ?? 6000),
+		// The Instagram stats pass (igstats.mjs): every account's newest posts with
+		// their views. Instagram's insights lag up to 48 hours, so there is no
+		// point reading them often. 0 turns the pass off.
+		igStatsSeconds: Number(process.env.FLOCK_IG_STATS_SECONDS ?? file.igStatsSeconds ?? 600),
+		igStatsPosts: Number(process.env.FLOCK_IG_STATS_POSTS ?? file.igStatsPosts ?? 100)
 	};
 }
 

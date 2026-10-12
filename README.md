@@ -224,6 +224,10 @@ The worker keeps each Page's own token, which does not expire.
 - **Covers:** a cover image is placed on your Page as an *unpublished* photo
   (it never appears there), handed to Instagram, then deleted. If that fails,
   the reel uses its *Cover frame*.
+- **Reel views:** with `instagram_manage_insights` granted, the worker also
+  reads each account's newest 100 posts and their views every 10 minutes, into
+  PocketBase's `post_stats` (`igStatsPosts`, `igStatsSeconds`; 0 turns it off).
+  No screen shows them yet.
 
 ### vidIQ (optional)
 

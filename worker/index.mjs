@@ -41,6 +41,7 @@ import { pickFolder } from './folderpick.mjs';
 import { readLocalImage } from './localfile.mjs';
 import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
 import { statsPass, unitsToday } from './stats.mjs';
+import { instagramStatsPass } from './igstats.mjs';
 import { msUntil } from './upload.mjs';
 import { startPreviewServer } from './preview.mjs';
 import { makeRemoteLog } from './remotelog.mjs';
@@ -1292,6 +1293,7 @@ async function main() {
 	// not touch the publishing queue.
 	if (statsOnly) {
 		await statsPass({ pb, config, log, every: true });
+		if (hasInstagram(config)) await instagramStatsPass({ pb, config, log });
 		log(`stats pass complete — ${unitsToday()} unit(s) spent`);
 		return;
 	}
@@ -1381,6 +1383,26 @@ async function main() {
 		};
 		void tick();
 		setInterval(() => void tick(), Math.max(5, config.statsSeconds) * 1000);
+	}
+
+	// Instagram's views, on their own slower tick and by the same workers.
+	if (config.igStatsSeconds > 0 && hasInstagram(config) && (ownsPublishing(config.role) || covers)) {
+		log(`instagram stats: newest ${config.igStatsPosts} posts of each account every ${config.igStatsSeconds}s`);
+		let igBusy = false;
+		const igTick = async () => {
+			if (igBusy || !hb.canPublish()) return;
+			igBusy = true;
+			try {
+				await instagramStatsPass({ pb, config, log });
+			} catch (err) {
+				log(`instagram stats pass failed: ${err.message.split('
+')[0]}`);
+			} finally {
+				igBusy = false;
+			}
+		};
+		void igTick();
+		setInterval(() => void igTick(), Math.max(60, config.igStatsSeconds) * 1000);
 	}
 
 	// Its own interval rather than a counter inside the main loop: an upload can
