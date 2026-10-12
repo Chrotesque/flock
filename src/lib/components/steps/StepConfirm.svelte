@@ -524,11 +524,17 @@
 						</p>
 					{/each}
 					{#if disclosure}
-						<!-- TikTok's declaration line, worded as their guidelines require. -->
+						<!-- TikTok's label and declaration, worded as their guidelines require.
+						     ' and ' as an expression: Svelte trims spaces at the edges of a block. -->
+						{#if disclosureLabel(disclosure)}
+							<p class="consent">{disclosureLabel(disclosure)}</p>
+						{/if}
 						<p class="consent">
-							{#if disclosureLabel(disclosure)}{disclosureLabel(disclosure)} {/if}{CONSENT_PREFIX}{#each consentLinks(disclosure) as link, i (link.url)}{#if i > 0}
-									and
-								{/if}<a href={link.url} target="_blank" rel="noopener">{link.label}</a>{/each}.
+							{CONSENT_PREFIX}{#each consentLinks(disclosure) as link, i (link.url)}{#if i > 0}{' and '}{/if}<a
+									href={link.url}
+									target="_blank"
+									rel="noopener">{link.label}</a
+								>{/each}.
 						</p>
 					{/if}
 					<p class="meta">
@@ -544,7 +550,8 @@
 						{#if row.platform === 'youtube' && row.options.playlist}
 							<span class="dot">·</span>playlist: {row.options.playlist}
 						{/if}
-						{#if (row.platform === 'youtube' && row.options.paidPromotion) || (row.platform === 'tiktok' && row.options.discloseContent)}
+						<!-- TikTok's disclosure has its own label line above, in TikTok's words. -->
+						{#if row.platform === 'youtube' && row.options.paidPromotion}
 							<span class="dot">·</span>paid promotion
 						{/if}
 						{#if row.hits > 0}

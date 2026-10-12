@@ -1116,8 +1116,9 @@
 					{/if}
 				{/if}
 
+				<!-- ' and ' as an expression: Svelte trims spaces at the edges of a block. -->
 				<p class="ttconsent">
-					{CONSENT_PREFIX}{#each tiktokConsent as link, i (link.url)}{#if i > 0} and {/if}<a
+					{CONSENT_PREFIX}{#each tiktokConsent as link, i (link.url)}{#if i > 0}{' and '}{/if}<a
 							href={link.url}
 							target="_blank"
 							rel="noopener">{link.label}</a
