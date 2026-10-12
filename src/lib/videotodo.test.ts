@@ -165,6 +165,21 @@ describe('todoLines', () => {
 		expect(after.map((l) => [l.id, l.waiting, l.jestr])).toEqual([['v1', null, 'waiting']]);
 	});
 
+	it('says whether YouTube reports paid promotion, and null before the video is read', () => {
+		const ticked = stat('soon', '2026-10-11 15:06:56.000Z', {
+			data: { paidProductPlacementDetails: { hasPaidProductPlacement: true } }
+		});
+		const unticked = stat('soon', '2026-10-11 15:06:56.000Z', {
+			data: { paidProductPlacementDetails: { hasPaidProductPlacement: false } }
+		});
+		expect(todoLines([ticked], uploads, fresh, { jestr: false })[0].paid).toBe(true);
+		expect(todoLines([unticked], uploads, fresh, { jestr: false })[0].paid).toBe(false);
+		expect(todoLines([stat('soon', '2026-10-11 15:06:56.000Z')], uploads, fresh, { jestr: false })[0].paid).toBe(false);
+		expect(todoLines([], uploads, fresh, { jestr: false })[0].paid).toBeNull();
+		const queued: UploadRow = { id: 't1', status: 'pending', created: '2026-10-11 20:50:30.000Z' };
+		expect(todoLines([], [queued], fresh, { jestr: false })[0].paid).toBeNull();
+	});
+
 	it('without Jestr, a video YouTube has is no line once Studio was opened for it', () => {
 		const up: UploadRow = { id: 't1', status: 'scheduled', remote_url: 'https://www.youtube.com/watch?v=v1', created: '2026-10-11 20:50:30.000Z' };
 		expect(todoLines([], [up], fresh, { jestr: false }).map((l) => l.studio)).toEqual([['thumbnail', 'paid promotion']]);

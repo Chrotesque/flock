@@ -9,6 +9,12 @@ import { studioTasks, studioUrl, videoIdOf } from './studio';
  * - Studio: every flock upload YouTube has, for its thumbnail (a Short's
  *   cover) and paid promotion, which flock does not set (studio.ts).
  *   Opening it through the icon counts as done.
+ *
+ * Beside that, each line says whether YouTube reports paid promotion on
+ * the video (`paid`), from the stats row: tested on 12 Oct 2026 with an
+ * untouched private upload, which read false until it was ticked in Studio
+ * and true on the next read. It only informs — the click is still the
+ * record — since "not ticked" is also right for a video without any.
  * - Jestr, only with `general.jestrIntegration` on: every video gone public
  *   on a connected channel — through flock or not — until its Jestr button
  *   says it is linked on jestr.gg. Jestr has no API (checked 11 Oct 2026: no
@@ -52,11 +58,12 @@ export interface StatsRow {
 		snippet?: { channelTitle?: string };
 		status?: { publishAt?: string };
 		liveStreamingDetails?: Record<string, unknown>;
+		paidProductPlacementDetails?: { hasPaidProductPlacement?: boolean };
 	};
 }
 
 export const STATS_FIELDS =
-	'video_id,title,published_at,duration,privacy,data.snippet.channelTitle,data.status.publishAt,data.liveStreamingDetails';
+	'video_id,title,published_at,duration,privacy,data.snippet.channelTitle,data.status.publishAt,data.liveStreamingDetails,data.paidProductPlacementDetails.hasPaidProductPlacement';
 
 /** A flock YouTube upload (`upload_targets` row) with only what the list reads. */
 export interface UploadRow {
@@ -91,6 +98,8 @@ export interface TodoLine {
 	jestr: 'open' | 'waiting' | null;
 	/** When a scheduled video goes public; null once it is (or when not known). */
 	publicAt: string | null;
+	/** Whether YouTube reports paid promotion on it; null until the stats pass has read it. */
+	paid: boolean | null;
 	/**
 	 * Why the line is a placeholder for now (WAITING), or null. Without a
 	 * YouTube link yet, `id` is `upload:<target id>` and there is nothing to
@@ -178,6 +187,7 @@ export function todoLines(
 			studio: [] as string[],
 			jestr: null as TodoLine['jestr'],
 			publicAt: publishAt || null,
+			paid: stat ? stat.data?.paidProductPlacementDetails?.hasPaidProductPlacement === true : null,
 			waiting: null as string | null,
 			at
 		};
@@ -201,6 +211,7 @@ export function todoLines(
 				studio: [],
 				jestr: null,
 				publicAt: null,
+				paid: null,
 				waiting: upload.status === 'publishing' ? WAITING.uploading : WAITING.queued,
 				at: created
 			});
@@ -239,6 +250,7 @@ export function todoLines(
 			studio: line.studio,
 			jestr: line.jestr,
 			publicAt: line.publicAt,
+			paid: line.paid,
 			waiting: line.waiting
 		}));
 }

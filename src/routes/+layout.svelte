@@ -86,6 +86,12 @@
 			: 'Open in YouTube Studio — nothing left to set there';
 	}
 
+	function paidTitle(line: TodoLine): string {
+		if (line.paid) return 'Paid promotion is ticked on YouTube';
+		if (line.paid === false) return 'Paid promotion is not ticked on YouTube — tick it in Studio if this video has any';
+		return 'Paid promotion not detected yet — the channel has not been read since the upload';
+	}
+
 	function lineTitle(line: TodoLine): string {
 		const parts = [line.title, line.channel, line.publicAt ? `goes public ${goesPublic(line.publicAt)}` : ''];
 		return parts.filter(Boolean).join(' — ');
@@ -246,6 +252,15 @@
 									</span>
 								{/if}
 							</a>
+							<!-- What YouTube reports, read by the stats pass; the click on
+							     the icon stays the record of the Studio visit. -->
+							<span
+								class="paid"
+								class:on={line.paid === true}
+								role="img"
+								title={paidTitle(line)}
+								aria-label={paidTitle(line)}>$</span
+							>
 							{/if}
 							{#if line.waiting && line.studioUrl}
 								<span class="spinner small" role="status" title={line.waiting} aria-label={line.waiting}></span>
@@ -637,9 +652,8 @@
 
 	/* The way to the video's edit page in Studio. The logo is always shown as
 	   it is — YouTube's branding rules forbid fading or recolouring it — and a
-	   badge in its corner says the state: yellow while something is still to
-	   be set there (paid promotion, a Short's cover), a green check once
-	   nothing is. */
+	   badge in its corner says the state: yellow until Studio was opened
+	   through it (thumbnail, paid promotion), a green check after. */
 	.studio {
 		position: relative;
 		flex: none;
@@ -678,6 +692,24 @@
 		right: -1px;
 		background: var(--ok);
 		color: var(--bg);
+	}
+
+	/* Paid promotion as YouTube reports it: green when ticked, red when not
+	   (or not read yet). Beside the logo, never on it. */
+	.paid {
+		flex: none;
+		width: 10px;
+		margin-left: -3px;
+		text-align: center;
+		font-size: 12px;
+		font-weight: 700;
+		line-height: 1;
+		color: var(--danger);
+		cursor: help;
+	}
+
+	.paid.on {
+		color: var(--ok);
 	}
 
 	/* Waiting on YouTube: a turning ring where the YouTube icon will be (or,
