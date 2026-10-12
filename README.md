@@ -487,7 +487,19 @@ Settings, local or on the network, like watch folders.
 
 **Dashboard** opens from the round button in the top-left corner of every
 page. It comes out of the corner when the pointer gets near; click it to cover
-the page, and click it again (or press Esc) to close. It is empty for now.
+the page, and click it again (or press Esc) to close. For the brand in view it
+shows:
+
+- **Today, this week and this month:** videos out on YouTube and the views on
+  them, the views the channel gained, and posts on Instagram and TikTok.
+- **Needs attention:** failed posts, posts never sent, uploads that hang,
+  videos not yet copied to the NAS, a stopped worker, and the like. Each links
+  to the upload's overview in the Log.
+- **Coming up:** the next seven days of posts, empty days included.
+- **Latest releases:** the five newest videos, their first two days as a line,
+  and whether they are ahead of what the channel usually has at that age.
+- **System** and **Waiting:** the workers, YouTube's quota, Instagram's daily
+  posts, and what is waiting to be uploaded.
 
 **Calendar** shows every release on a week grid; past ones are greyed out, and
 a toggle hides them. It opens read-only: press *Edit* twice within two seconds,

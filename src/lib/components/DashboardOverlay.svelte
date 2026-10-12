@@ -3,6 +3,7 @@
 	import { cubicInOut } from 'svelte/easing';
 	import { afterNavigate } from '$app/navigation';
 	import { dashboard } from '$lib/stores/dashboard.svelte';
+	import Dashboard from './Dashboard.svelte';
 
 	/**
 	 * The dashboard's way in, on every page: a round button centred on the
@@ -105,13 +106,7 @@
 		bind:this={panel}
 		transition:reveal
 	>
-		<header>
-			<h1>Dashboard</h1>
-			<p>Everything at a glance, from any page.</p>
-		</header>
-		<div class="empty">
-			<p>Nothing here yet.</p>
-		</div>
+		<Dashboard />
 	</section>
 {/if}
 
@@ -257,23 +252,6 @@
 		outline: none;
 	}
 
-	header h1 {
-		font-size: 23px;
-	}
-
-	header p {
-		margin: 5px 0 0;
-		font-size: 13px;
-		color: var(--text-dim);
-	}
-
-	.empty {
-		flex: 1;
-		display: grid;
-		place-items: center;
-		color: var(--text-faint);
-		font-size: 13px;
-	}
 
 	@media (max-width: 860px) {
 		.dashboard {

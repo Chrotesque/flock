@@ -15,6 +15,7 @@ import {
 } from './brands';
 import type { WorkerBeat, WorkerBeats, WorkerRole } from './workerstatus';
 import type { UploadRecord } from './uploadrecord';
+import type { DashTarget, StatsVideo } from './dashboard';
 import type {
 	Account,
 	Brand,
@@ -1126,6 +1127,75 @@ export async function listTargets(jobId?: string): Promise<UploadTarget[]> {
 export async function listVideoStats(): Promise<VideoStats[]> {
 	const rows = await pb.collection('video_stats').getFullList({ sort: '-published_at' });
 	return rows as unknown as VideoStats[];
+}
+
+/** A video for the dashboard: the counters, the samples, its channel and a thumbnail — not the whole item. */
+export interface DashVideo extends StatsVideo {
+	id: string;
+	channelId: string;
+	thumb: string;
+}
+
+/** Every watched video, slim (the dashboard filters by channel itself, as Analytics does). */
+export async function loadDashVideos(): Promise<DashVideo[]> {
+	const rows = await pb.collection('video_stats').getFullList<
+		Omit<DashVideo, 'channelId' | 'thumb'> & {
+			data?: { snippet?: { channelId?: string; thumbnails?: { medium?: { url?: string }; default?: { url?: string } } } };
+		}
+	>({
+		sort: '-published_at',
+		fields:
+			'id,video_id,title,published_at,privacy,views,duration,history,data.snippet.channelId,data.snippet.thumbnails.medium.url,data.snippet.thumbnails.default.url'
+	});
+	return rows.map(({ data, ...row }) => ({
+		...row,
+		history: Array.isArray(row.history) ? row.history : [],
+		channelId: data?.snippet?.channelId ?? '',
+		thumb: data?.snippet?.thumbnails?.medium?.url ?? data?.snippet?.thumbnails?.default?.url ?? ''
+	}));
+}
+
+/** Every post, with the brand and what the dashboard reads of its job (dashboard.ts). */
+export async function loadDashTargets(): Promise<(DashTarget & { brand: string })[]> {
+	type Row = {
+		id: string;
+		job: string;
+		platform: PlatformId;
+		status: string;
+		scheduled_at: string;
+		published_at?: string;
+		error?: string;
+		remote_url?: string;
+		title: string;
+		options?: { visibility?: string; privacy?: string };
+		expand?: { job?: { brand?: string; title?: string; created?: string; source_local?: boolean; error?: string } };
+	};
+	const rows = await pb.collection('upload_targets').getFullList<Row>({
+		expand: 'job',
+		fields:
+			'id,job,platform,status,scheduled_at,published_at,error,remote_url,title,options.visibility,options.privacy,' +
+			'expand.job.brand,expand.job.title,expand.job.created,expand.job.source_local,expand.job.error'
+	});
+	return rows.map((row) => {
+		const job = row.expand?.job;
+		return {
+			id: row.id,
+			job: row.job,
+			platform: row.platform,
+			status: row.status,
+			scheduled_at: row.scheduled_at,
+			published_at: row.published_at ?? '',
+			error: row.error ?? '',
+			remote_url: row.remote_url ?? '',
+			title: row.title,
+			visibility: String(row.options?.visibility ?? row.options?.privacy ?? ''),
+			jobTitle: job?.title ?? '',
+			jobCreated: job?.created ?? '',
+			importing: Boolean(job?.source_local),
+			jobError: job?.error ?? '',
+			brand: job?.brand ?? ''
+		};
+	});
 }
 
 export async function getStatsStatus(): Promise<StatsStatus | null> {
