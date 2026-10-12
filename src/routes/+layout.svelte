@@ -563,9 +563,9 @@
 	   brightens and glows with a bloom that settles, and an arrow shows on
 	   its right, pointing to where the panel opens. */
 	.tile {
-		--glow: 52, 211, 153;
-		--glow-2: 16, 185, 129;
-		--arrow: #6cc7a0;
+		--glow: 101, 124, 115;
+		--glow-2: 80, 98, 91;
+		--arrow: #849a91;
 		position: relative;
 		align-self: center;
 		display: grid;
@@ -609,6 +609,7 @@
 		vector-effect: non-scaling-stroke;
 		transition:
 			fill 0.2s,
+			opacity 0.2s,
 			stroke-width 0.2s;
 	}
 
@@ -623,9 +624,11 @@
 		--glow-2: 168, 85, 247;
 	}
 
-	/* Nothing needs attention: green, but quiet. */
+	/* Nothing needs attention: green, but quiet — barely green, and a
+	   little faded until the pointer is on it. */
 	.box.idle {
-		fill: #4f8f74;
+		fill: #50625b;
+		opacity: 0.75;
 	}
 
 	.box.due {
@@ -671,7 +674,8 @@
 
 	.tile:hover .box.idle,
 	.tile:focus-visible .box.idle {
-		fill: #62b392;
+		fill: #657c73;
+		opacity: 1;
 	}
 
 	.tile:hover .box.due,
