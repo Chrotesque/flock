@@ -2,7 +2,10 @@
 // screen can show it. The console stays the primary output; this is a copy
 // that must never slow the worker down or take it down, so lines are queued
 // and written in the background, and a PocketBase that cannot take them only
-// costs the copy.
+// costs the copy. A line printed while an upload is handled carries its job
+// id (jobscope.mjs), for the Log's upload overview.
+
+import { currentJob } from './jobscope.mjs';
 
 /** A top-level line seen again within this long is not written again. */
 export const REPEAT_WINDOW_MS = 60 * 60_000;
@@ -81,7 +84,8 @@ export function makeRemoteLog({ run, warn = (m) => console.error(m) } = {}) {
 		draining = (async () => {
 			while (pb && !dead && queue.length > 0) {
 				try {
-					await pb.appendWorkerLog({ message: queue[0], run });
+					const { message, job } = queue[0];
+					await pb.appendWorkerLog(job ? { message, run, job } : { message, run });
 					queue.shift();
 					if (failing) failing = false;
 				} catch (err) {
@@ -113,7 +117,7 @@ export function makeRemoteLog({ run, warn = (m) => console.error(m) } = {}) {
 	return {
 		push(message) {
 			if (dead || !keep(message)) return;
-			queue.push(redact(message).slice(0, MESSAGE_MAX));
+			queue.push({ message: redact(message).slice(0, MESSAGE_MAX), job: currentJob() });
 			if (queue.length > QUEUE_MAX) queue.splice(0, queue.length - QUEUE_MAX);
 			schedule();
 		},

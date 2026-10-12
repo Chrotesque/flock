@@ -13,6 +13,7 @@ import { Readable } from 'node:stream';
 import { resolveFolder } from './paths.mjs';
 import { fetchOrExplain } from './net.mjs';
 import { mimeFromName, pbDate } from './upload.mjs';
+import { currentJob } from './jobscope.mjs';
 
 export function makeClient(baseUrl) {
 	async function request(path, options = {}) {
@@ -395,16 +396,19 @@ export function makeClient(baseUrl) {
 		/**
 		 * Fire-and-forget, exactly like the SPA's logAction: a failed log write
 		 * must never take down the publish it describes. `device` is the machine
-		 * that acted, and for these rows that machine is the worker.
+		 * that acted, and for these rows that machine is the worker. Written
+		 * while an upload is handled, the row names its job (jobscope.mjs).
 		 */
 		log(action, detail = '') {
+			const job = currentJob();
 			request('/api/collections/activity_log/records', {
 				method: 'POST',
 				body: JSON.stringify({
 					category: 'upload',
 					action: action.slice(0, 200),
 					detail: detail.slice(0, 1900),
-					device: 'worker'
+					device: 'worker',
+					...(job ? { job } : {})
 				})
 			}).catch(() => {});
 		}

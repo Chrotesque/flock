@@ -1,5 +1,5 @@
 import { loadAccounts, requestTikTokCheck } from '../repo';
-import { accountFor, offerFor, type Offer } from '../accounts';
+import { accountFor, accountLabel, offerFor, type Offer } from '../accounts';
 import { brands } from './brands.svelte';
 import type { Account, InstagramAccount, PlatformId, TikTokCreator } from '../types';
 
@@ -125,6 +125,23 @@ class AccountsStore {
 	get instagram(): InstagramAccount | null {
 		const account = this.for('instagram');
 		return account ? toInstagram(account) : null;
+	}
+
+	/**
+	 * Who a post goes out as, in words, as the worker last read it. TikTok's
+	 * rules ask for the creator's display name wherever a post is confirmed;
+	 * YouTube is named by channel, which is the question with brands. '' until
+	 * the worker has run with the platform set up, rather than a guess.
+	 */
+	postingAs(platform: PlatformId): string {
+		if (platform === 'tiktok' && this.tiktok) {
+			const creator = this.tiktok;
+			return creator.nickname ? `${creator.nickname} (@${creator.username})` : `@${creator.username}`;
+		}
+		if (platform === 'instagram' && this.instagram) return `@${this.instagram.username}`;
+		const account = this.for(platform);
+		if (account) return account.name || accountLabel(account);
+		return '';
 	}
 }
 

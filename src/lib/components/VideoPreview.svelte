@@ -15,13 +15,15 @@
 	 * Plays one listed file in a dialog. The bytes come from the worker's own
 	 * loopback server (see preview.ts), so opening asks it about the file first
 	 * and only then points the player there — a player that cannot load its
-	 * source never says why.
+	 * source never says why. With `url`, a file PocketBase holds (one sent
+	 * from the browser) plays straight from there instead.
 	 */
 	let {
 		open = $bindable(false),
 		file,
-		source
-	}: { open?: boolean; file: WatchFile | null; source: PreviewSource } = $props();
+		source,
+		url = ''
+	}: { open?: boolean; file: WatchFile | null; source: PreviewSource; url?: string } = $props();
 
 	// The player's height cap, shared by the video and the width worked out
 	// from its shape, so the two cannot disagree.
@@ -42,7 +44,8 @@
 	$effect(() => {
 		if (!open || !file) return;
 		const controller = new AbortController();
-		void connect(file, source, controller.signal);
+		if (url) phase = { kind: 'playing', src: url };
+		else void connect(file, source, controller.signal);
 		return () => {
 			controller.abort();
 			phase = { kind: 'asking' };
@@ -107,7 +110,9 @@
 		<div class="head">
 			<h2>{file?.name}</h2>
 			{#if file}
-				<p>{formatBytes(file.size)} · {source === 'local' ? 'on this PC' : 'on the NAS'}</p>
+				<p>
+					{formatBytes(file.size)} · {url ? 'stored in flock' : source === 'local' ? 'on this PC' : 'on the NAS'}
+				</p>
 			{/if}
 		</div>
 	{/snippet}

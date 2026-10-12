@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeRepeatFilter, makeRemoteLog, redact } from './remotelog.mjs';
+import { inJob } from './jobscope.mjs';
 
 test('a repeated top-level line is written once per window', () => {
 	let now = 0;
@@ -39,6 +40,24 @@ test('lines pushed before PocketBase is known are written in order once attached
 	assert.deepEqual(written, [
 		{ message: 'first', run: 'r1' },
 		{ message: '  second', run: 'r1' }
+	]);
+});
+
+test('a line printed while an upload is handled carries its job', async () => {
+	const written = [];
+	const log = makeRemoteLog({ run: 'r1', warn: () => {} });
+	await inJob('job1', async () => {
+		log.push('claimed youtube "x"');
+		await new Promise((resolve) => setTimeout(resolve, 1));
+		log.push('  50%');
+	});
+	log.push('watch folder: 3 video(s)');
+	log.attach({ appendWorkerLog: async (row) => written.push(row), pruneWorkerLog: async () => {} });
+	await log.flush();
+	assert.deepEqual(written, [
+		{ message: 'claimed youtube "x"', run: 'r1', job: 'job1' },
+		{ message: '  50%', run: 'r1', job: 'job1' },
+		{ message: 'watch folder: 3 video(s)', run: 'r1' }
 	]);
 });
 

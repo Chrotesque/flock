@@ -13,6 +13,7 @@ import {
 	type SettingsRowRef
 } from './brands';
 import type { WorkerBeat, WorkerBeats, WorkerRole } from './workerstatus';
+import type { UploadRecord } from './uploadrecord';
 import type {
 	Account,
 	Brand,
@@ -452,6 +453,8 @@ export interface CreateJobInput {
 	/** The brand the upload is made for; its name is snapshotted with it. */
 	brand: Brand | null;
 	targets: TargetPlan[];
+	/** What was confirmed, kept on the Log row (uploadrecord.ts). */
+	record?: UploadRecord;
 }
 
 /**
@@ -518,10 +521,56 @@ export async function createJob(
 		`Uploaded "${input.title || 'untitled'}"`,
 		`${sourceName}${input.source ? (input.source.local ? ' (from a local folder)' : ' (from the watch folder)') : ''} → ${input.targets.length} ` +
 			`platform(s): ${input.targets.map((t) => t.platform).join(', ')}` +
-			(input.brand ? ` · ${input.brand.name}` : '')
+			(input.brand ? ` · ${input.brand.name}` : ''),
+		{ job: job.id, data: input.record }
 	);
 
 	return job;
+}
+
+/**
+ * An upload as it stands now, for its page in the Log: the job (null once
+ * deleted) and its targets.
+ */
+export async function loadUploadState(jobId: string): Promise<{ job: UploadJob | null; targets: UploadTarget[] }> {
+	const [job, targets] = await Promise.all([
+		pb
+			.collection('upload_jobs')
+			.getOne<UploadJob>(jobId)
+			.catch(() => null),
+		pb
+			.collection('upload_targets')
+			.getFullList<UploadTarget>({ filter: pb.filter('job = {:job}', { job: jobId }) })
+			.catch(() => [] as UploadTarget[])
+	]);
+	return { job, targets };
+}
+
+/**
+ * The job an "Uploaded" row from before 0.12.0 was written for, which names
+ * no job: the one with that file name created in the minutes before it.
+ * Null when none is left (deleted) or none matches.
+ */
+export async function findLoggedJob(fileName: string, loggedAt: string): Promise<UploadJob | null> {
+	const at = new Date(loggedAt);
+	if (!fileName || Number.isNaN(at.getTime())) return null;
+	const rows = await pb
+		.collection('upload_jobs')
+		.getList<UploadJob>(1, 1, {
+			filter: pb.filter('video_name = {:name} && created >= {:from} && created <= {:to}', {
+				name: fileName,
+				from: new Date(at.getTime() - 15 * 60_000),
+				to: new Date(at.getTime() + 60_000)
+			}),
+			sort: '-created'
+		})
+		.catch(() => null);
+	return rows?.items[0] ?? null;
+}
+
+/** A stored file's address, for the upload's page to play or show. */
+export function jobFileUrl(job: UploadJob, name: string): string {
+	return pb.files.getURL(job, name);
 }
 
 /**
@@ -1183,7 +1232,7 @@ export async function deleteJob(id: string): Promise<void> {
 	assertDeviceNamed();
 	// upload_targets cascade-delete with the job.
 	await pb.collection('upload_jobs').delete(id);
-	logAction('upload', 'Deleted a stored upload', id);
+	logAction('upload', 'Deleted a stored upload', id, { job: id });
 }
 
 /**
@@ -1198,6 +1247,7 @@ export async function rescheduleTarget(id: string, scheduledAt: string): Promise
 	logAction(
 		'calendar',
 		`Rescheduled ${before.platform}`,
-		`${new Date(before.scheduled_at).toLocaleString()} → ${new Date(scheduledAt).toLocaleString()}`
+		`${new Date(before.scheduled_at).toLocaleString()} → ${new Date(scheduledAt).toLocaleString()}`,
+		{ job: before.job }
 	);
 }

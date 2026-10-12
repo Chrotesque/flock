@@ -7,14 +7,18 @@
 	import StepConfirm from '$lib/components/steps/StepConfirm.svelte';
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
 	import PlatformSwitch from '$lib/components/PlatformSwitch.svelte';
-	import { draft, type Step } from '$lib/stores/draft.svelte';
+	import { draft, type SlotVideo, type Step, type VideoSlot } from '$lib/stores/draft.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
-	import { buildPlan } from '$lib/plan';
+	import { buildPlan, type PlanRow } from '$lib/plan';
 	import { base } from '$app/paths';
-	import { createJob, rememberTags, rememberUsedSources } from '$lib/repo';
+	import { createJob, rememberTags, rememberUsedSources, toInstant } from '$lib/repo';
+	import { RECORD_VERSION, type UploadRecord } from '$lib/uploadrecord';
+	import { allowanceWarning, postAllowance, youtubeGrantWarnings } from '$lib/accounts';
+	import { devtestActive } from '$lib/devtest';
+	import { VERSION } from '$lib/version';
 	import { formatBytes } from '$lib/format';
 	import { imageFits } from '$lib/coverimage';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
@@ -116,6 +120,94 @@
 		null
 	);
 
+	interface Group {
+		slot: VideoSlot;
+		video: SlotVideo;
+		rows: PlanRow[];
+	}
+
+	/**
+	 * What one video's part of the upload confirmed, for its Log row
+	 * (uploadrecord.ts): the file, each post's text as typed and as sent,
+	 * its options, slot and account, and what the Review step warned about.
+	 */
+	function recordFor(group: Group, everyGroup: Group[], cover: File | null): UploadRecord {
+		const { file, nasFile, duration } = group.video;
+		const destination = general.defaultDestination;
+		return {
+			v: RECORD_VERSION,
+			version: VERSION,
+			confirmedAt: new Date().toISOString(),
+			timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? '',
+			brand: brands.current?.name ?? '',
+			project: draft.project ? (projects.byId(draft.project)?.name ?? '') : '',
+			video: {
+				name: file?.name ?? nasFile?.name ?? '',
+				size: file?.size ?? nasFile?.size ?? 0,
+				duration: Math.round(duration || 0),
+				source: file ? 'browser' : nasFile?.local ? 'local' : 'nas',
+				path: file ? '' : (nasFile?.path ?? ''),
+				previewed: Boolean(draft.previewed[group.slot])
+			},
+			others: everyGroup
+				.filter((other) => other.slot !== group.slot)
+				.map((other) => ({
+					name: other.video.file?.name ?? other.video.nasFile?.name ?? '',
+					platforms: other.rows.map((row) => row.platform)
+				})),
+			destination: destination ? { label: destination.label, path: destination.path } : null,
+			cover: cover ? { name: cover.name, size: cover.size } : null,
+			devtest: devtestActive(),
+			targets: group.rows.map((row) => {
+				const typed = draft.textFor(row.platform);
+				const profileId = draft.profile[row.platform];
+				const profile = profileId
+					? (settings.get(row.platform)?.scheduling.profiles.find((p) => p.id === profileId)?.name ?? '')
+					: '';
+				return {
+					platform: row.platform,
+					account: accounts.postingAs(row.platform),
+					accountId: accounts.for(row.platform)?.account_id ?? '',
+					typed: { title: typed.title, description: typed.description },
+					title: row.title,
+					description: row.description,
+					rules: row.allHits
+						.filter((hit) => hit.count > 0 || hit.error)
+						.map((hit) => ({
+							find: hit.find,
+							replace: hit.replace,
+							count: hit.count,
+							...(hit.error ? { error: hit.error } : {})
+						})),
+					options: row.options,
+					immediate: row.immediate,
+					date: row.date,
+					time: row.time,
+					scheduledAt: toInstant(row.date, row.time),
+					profile,
+					warnings: reviewWarnings(row)
+				};
+			})
+		};
+	}
+
+	/** The Review step's warnings for a post, in its words — none of them stop the confirm. */
+	function reviewWarnings(row: PlanRow): string[] {
+		const out: string[] = [];
+		if (row.platform === 'youtube') {
+			out.push(...youtubeGrantWarnings(row.options, accounts.for('youtube')));
+			if (row.options.visibility === 'Private') out.push('Private: uploaded as private and left private.');
+		}
+		if (row.platform === 'tiktok') {
+			const privacy = String(row.options.privacy ?? '');
+			if (privacy && privacy !== 'Public') out.push(`Posted for ${privacy.toLowerCase()} only.`);
+		}
+		const due = row.immediate ? Date.now() : Date.parse(toInstant(row.date, row.time));
+		const allowance = allowanceWarning(postAllowance(accounts.for(row.platform)), due);
+		if (allowance) out.push(allowance);
+		return out;
+	}
+
 	async function confirm() {
 		if (!armed) {
 			armed = true;
@@ -132,13 +224,14 @@
 		// One job per distinct video, each carrying the targets it serves. The
 		// worker publishes a target from its own job's file, so it needs no idea
 		// that the platforms were ever split.
-		const groups = draft.slots
+		const everyGroup = draft.slots
 			.map((entry) => ({
 				...entry,
 				video: draft.videos[entry.slot],
 				rows: plan.filter((row) => entry.platforms.includes(row.platform))
 			}))
-			.filter((group) => group.rows.length > 0 && !draft.queued.includes(group.slot));
+			.filter((group) => group.rows.length > 0);
+		const groups = everyGroup.filter((group) => !draft.queued.includes(group.slot));
 		// Progress is by bytes actually transferred; a watch-folder pick sends none.
 		const total = groups.reduce((sum, g) => sum + (g.video.file?.size ?? 0), 0);
 		let sent = 0;
@@ -155,20 +248,21 @@
 					transfer: Boolean(file),
 					local: Boolean(nasFile?.local)
 				};
+				// Instagram's cover, sent only if it fits — the picker has already
+				// said when it does not. YouTube gets no thumbnail any more
+				// (coverimage.ts).
+				const cover =
+					group.platforms.includes('instagram') && imageFits(draft.imageFor('instagram'), 'instagram')
+						? draft.imageFor('instagram')
+						: null;
 				const job = await createJob(
 					{
 						title: label.title,
 						description: label.description,
 						file,
 						source: nasFile,
-						// Instagram's cover, sent only if it fits — the picker has
-						// already said when it does not. YouTube gets no thumbnail any
-						// more (coverimage.ts).
 						thumbnail: null,
-						cover:
-							group.platforms.includes('instagram') && imageFits(draft.imageFor('instagram'), 'instagram')
-								? draft.imageFor('instagram')
-								: null,
+						cover,
 						duration,
 						destination: general.defaultDestination,
 						brand: brands.current ?? null,
@@ -181,7 +275,8 @@
 							options: row.options,
 							date: row.date,
 							time: row.time
-						}))
+						})),
+						record: $state.snapshot(recordFor(group, everyGroup, cover)) as UploadRecord
 					},
 					(fraction) => (progress = total > 0 ? (sent + fraction * size) / total : fraction)
 				);

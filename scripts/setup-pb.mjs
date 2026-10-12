@@ -374,11 +374,17 @@ const collections = [
 			// Browsers cannot read the OS hostname, so this is the name the user
 			// gave this browser (stored per-device in localStorage).
 			{ type: 'text', name: 'device', max: 120 },
+			// The upload_jobs id a row is about, as plain text: a relation would
+			// be emptied when the job is deleted, and the log outlives jobs.
+			{ type: 'text', name: 'job', max: 20 },
+			// On an upload's own row: everything that was confirmed (uploadrecord.ts).
+			{ type: 'json', name: 'data', maxSize: 1000000 },
 			...stamps
 		],
 		indexes: [
 			'CREATE INDEX `idx_activity_log_created` ON `activity_log` (`created`)',
-			'CREATE INDEX `idx_activity_log_category` ON `activity_log` (`category`)'
+			'CREATE INDEX `idx_activity_log_category` ON `activity_log` (`category`)',
+			'CREATE INDEX `idx_activity_log_job` ON `activity_log` (`job`)'
 		]
 	},
 	{
@@ -392,9 +398,14 @@ const collections = [
 			{ type: 'text', name: 'message', required: true, max: 2000 },
 			// One random id per worker start, to tell runs apart.
 			{ type: 'text', name: 'run', max: 20 },
+			// The upload_jobs id the line was printed for, when it was.
+			{ type: 'text', name: 'job', max: 20 },
 			...stamps
 		],
-		indexes: ['CREATE INDEX `idx_worker_log_created` ON `worker_log` (`created`)']
+		indexes: [
+			'CREATE INDEX `idx_worker_log_created` ON `worker_log` (`created`)',
+			'CREATE INDEX `idx_worker_log_job` ON `worker_log` (`job`)'
+		]
 	},
 	{
 		name: 'app_settings',

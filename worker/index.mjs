@@ -52,6 +52,7 @@ import { askToStop, holdInstance } from './instance.mjs';
 import { startTray, wantsTray } from './tray.mjs';
 import { exeLogPath } from './filelog.mjs';
 import { decide, mayBeAlive } from './orphans.mjs';
+import { inJob } from './jobscope.mjs';
 
 /**
  * One entry per platform that can actually publish, and how it is timed.
@@ -136,7 +137,12 @@ let hb;
 /** Rows this run is publishing; any other `publishing` row is an orphan. */
 const inHand = new Set();
 
-async function handle(pb, config, platform, target) {
+/** One target, with everything it prints tagged as its job's (jobscope.mjs). */
+function handle(pb, config, platform, target) {
+	return inJob(target.job, () => handleTarget(pb, config, platform, target));
+}
+
+async function handleTarget(pb, config, platform, target) {
 	const adapter = ADAPTERS[platform];
 	const label = `${platform} "${target.title || target.description?.slice(0, 40) || target.id}"`;
 
@@ -284,26 +290,30 @@ async function copyPass(pb) {
 			continue;
 		}
 		if (!hb.canPublish()) return;
-		try {
-			const result = await hb.track(
-				`Filing "${job.title || job.video_name || job.id}" into its destination`,
-				() => copyToDestination({ job, pb, log: (m) => log(`  ${m}`) }),
-				{ publishing: true }
-			);
-			await pb.updateJob(job.id, { status: 'done', error: '' });
-			log(`copied "${job.title}" -> ${result.path}`);
-			pb.log(
-				'Copied to the NAS',
-				`${job.title || '(untitled)'} -> ${result.path}` +
-					(result.renamed ? ' (renamed: a file of that name was already there)' : '')
-			);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			// Left `stored` on purpose so the next pass retries — an unreachable
-			// share is usually temporary, and the video is safe in PocketBase.
-			await pb.updateJob(job.id, { error: message.slice(0, 1900) });
-			log(`copy FAILED for "${job.title}": ${message}`);
-		}
+		await inJob(job.id, () => copyOne(pb, job));
+	}
+}
+
+async function copyOne(pb, job) {
+	try {
+		const result = await hb.track(
+			`Filing "${job.title || job.video_name || job.id}" into its destination`,
+			() => copyToDestination({ job, pb, log: (m) => log(`  ${m}`) }),
+			{ publishing: true }
+		);
+		await pb.updateJob(job.id, { status: 'done', error: '' });
+		log(`copied "${job.title}" -> ${result.path}`);
+		pb.log(
+			'Copied to the NAS',
+			`${job.title || '(untitled)'} -> ${result.path}` +
+				(result.renamed ? ' (renamed: a file of that name was already there)' : '')
+		);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		// Left `stored` on purpose so the next pass retries — an unreachable
+		// share is usually temporary, and the video is safe in PocketBase.
+		await pb.updateJob(job.id, { error: message.slice(0, 1900) });
+		log(`copy FAILED for "${job.title}": ${message}`);
 	}
 }
 
@@ -575,43 +585,47 @@ async function importPending(pb, config) {
 			log(`would copy local ${job.source_path} into the watch folder`);
 			continue;
 		}
-		try {
-			if (!watch && config.role === 'all') {
-				await pb.updateJob(job.id, { source_local: false, error: '' });
-				log(`"${job.title}" is published from ${job.source_path}, where it lies — no network watch folder to copy it into`);
-				continue;
-			}
-			if (!watch) throw new Error('No network watch folder is set to copy local videos into.');
-			const from = job.source_path;
-			let info;
-			try {
-				info = await stat(from);
-			} catch (err) {
-				throw new Error(`Local video is gone: ${from} (${err.code || err.message})`);
-			}
-			const dir = await resolveFolder(watch);
-			const result = await hb.track(`Copying "${job.title || basename(from)}" to the NAS`, () =>
-				copyInto({
-					source: { stream: createReadStream(from), size: info.size },
-					dir,
-					wanted: job.video_name || basename(from),
-					log: (m) => log(`  ${m}`)
-				})
-			);
-			await pb.updateJob(job.id, {
-				source_path: result.path,
-				source_origin: from,
-				source_local: false,
-				error: ''
-			});
-			log(`imported "${job.title}" -> ${result.path}`);
-			pb.log('Copied a local video to the NAS', `${from} -> ${result.path}`);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			// Left marked local so the next pass retries.
-			await pb.updateJob(job.id, { error: message.slice(0, 1900) });
-			log(`import FAILED for "${job.title}": ${message}`);
+		await inJob(job.id, () => importOne(pb, config, job, watch));
+	}
+}
+
+async function importOne(pb, config, job, watch) {
+	try {
+		if (!watch && config.role === 'all') {
+			await pb.updateJob(job.id, { source_local: false, error: '' });
+			log(`"${job.title}" is published from ${job.source_path}, where it lies — no network watch folder to copy it into`);
+			return;
 		}
+		if (!watch) throw new Error('No network watch folder is set to copy local videos into.');
+		const from = job.source_path;
+		let info;
+		try {
+			info = await stat(from);
+		} catch (err) {
+			throw new Error(`Local video is gone: ${from} (${err.code || err.message})`);
+		}
+		const dir = await resolveFolder(watch);
+		const result = await hb.track(`Copying "${job.title || basename(from)}" to the NAS`, () =>
+			copyInto({
+				source: { stream: createReadStream(from), size: info.size },
+				dir,
+				wanted: job.video_name || basename(from),
+				log: (m) => log(`  ${m}`)
+			})
+		);
+		await pb.updateJob(job.id, {
+			source_path: result.path,
+			source_origin: from,
+			source_local: false,
+			error: ''
+		});
+		log(`imported "${job.title}" -> ${result.path}`);
+		pb.log('Copied a local video to the NAS', `${from} -> ${result.path}`);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		// Left marked local so the next pass retries.
+		await pb.updateJob(job.id, { error: message.slice(0, 1900) });
+		log(`import FAILED for "${job.title}": ${message}`);
 	}
 }
 
@@ -1003,8 +1017,10 @@ async function orphanPass(pb, config) {
 			if (!adapter.ready(config)) continue;
 			for (const row of await pb.stalePublishing(platform)) {
 				if (inHand.has(row.id) || !hb.canPublish()) continue;
-				await settleOrphan(pb, config, platform, row).catch((err) =>
-					log(`could not check ${platform} ${row.id} with the platform: ${err.message.split('\n')[0]} — asking again later`)
+				await inJob(row.job, () =>
+					settleOrphan(pb, config, platform, row).catch((err) =>
+						log(`could not check ${platform} ${row.id} with the platform: ${err.message.split('\n')[0]} — asking again later`)
+					)
 				);
 			}
 		}

@@ -495,6 +495,13 @@ by category, search, or click a machine to see only its entries. It cannot be
 edited or cleared. Its *Worker* tab shows the worker's output live, kept for 14
 days: the place to look when a post did not come out as asked.
 
+Click an upload in the Log to open its overview. It shows the video (click its
+name to play it), each post's text as typed and as sent, every setting, the
+account and the slot as confirmed, and the warnings the Review step showed.
+Beside that is what happened next: each post's state and link, and everything
+the worker logged about the upload. Uploads from before flock 0.12.0 show what
+their stored upload still holds.
+
 **Analytics** shows the newest 50 videos on the channel of the brand in view,
 refreshed every 30 seconds while the worker runs.
 

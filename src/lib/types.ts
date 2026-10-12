@@ -496,6 +496,10 @@ export interface LogEntry {
 	action: string;
 	detail: string;
 	device: string;
+	/** The upload_jobs id the row is about, when it is about one. */
+	job?: string;
+	/** An upload's record (uploadrecord.ts), on the row written at its confirm. */
+	data?: unknown;
 	created: string;
 }
 
@@ -505,6 +509,8 @@ export interface WorkerLine {
 	message: string;
 	/** Random per worker start. */
 	run: string;
+	/** The upload_jobs id the line was printed for, when it was. */
+	job?: string;
 	created: string;
 }
 

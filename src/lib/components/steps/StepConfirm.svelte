@@ -13,7 +13,6 @@
 	import { previewCheckUrl, previewVideoUrl, previewProblem, type PreviewSource } from '$lib/preview';
 	import { accounts } from '$lib/stores/accounts.svelte';
 	import {
-		accountLabel,
 		allowanceLabel,
 		allowanceWarning,
 		postAllowance,
@@ -38,26 +37,12 @@
 	let destination = $derived(general.defaultDestination);
 
 	/**
-	 * Who the post goes out as, as the worker last read it. TikTok's rules
-	 * ask for the creator's display name wherever a post is confirmed;
-	 * Instagram's account is shown for the same reason. Absent until the
-	 * worker has run with that platform set up, in which case nothing is shown
-	 * rather than a guess. Re-read on every visit, so Instagram's post count
-	 * is as fresh as the worker's last read.
+	 * Who the post goes out as (`accounts.postingAs`), re-read on every
+	 * visit, so Instagram's post count is as fresh as the worker's last read.
 	 */
 	accounts.load(true);
 
-	function accountFor(platform: PlatformId): string {
-		if (platform === 'tiktok' && accounts.tiktok) {
-			const creator = accounts.tiktok;
-			return creator.nickname ? `${creator.nickname} (@${creator.username})` : `@${creator.username}`;
-		}
-		if (platform === 'instagram' && accounts.instagram) return `@${accounts.instagram.username}`;
-		// YouTube's channel, by name: with brands, which channel is the question.
-		const account = accounts.for(platform);
-		if (account) return account.name || accountLabel(account);
-		return '';
-	}
+	const accountFor = (platform: PlatformId): string => accounts.postingAs(platform);
 
 	/** When the row goes out, for the allowance check: now, for an immediate post. */
 	function dueAt(row: PlanRow): number {

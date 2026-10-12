@@ -106,11 +106,27 @@ export function assertDeviceNamed(): void {
  * back the action it is describing, so failures are swallowed rather than
  * surfaced. The timestamp is PocketBase's `created`, so entries are ordered by
  * the server's clock rather than whichever machine wrote them.
+ *
+ * `job` names the upload a row is about, so the Log can gather everything
+ * that happened to one upload; `data` is the upload's own record
+ * (uploadrecord.ts), only on the row written at the confirm.
  */
-export function logAction(category: LogCategory, action: string, detail = ''): void {
+export function logAction(
+	category: LogCategory,
+	action: string,
+	detail = '',
+	extra: { job?: string; data?: unknown } = {}
+): void {
 	void pb
 		.collection('activity_log')
-		.create({ category, action, detail: trim(detail, DETAIL_MAX), device: deviceName() })
+		.create({
+			category,
+			action,
+			detail: trim(detail, DETAIL_MAX),
+			device: deviceName(),
+			...(extra.job ? { job: extra.job } : {}),
+			...(extra.data !== undefined ? { data: extra.data } : {})
+		})
 		.catch(() => {});
 }
 
@@ -127,8 +143,39 @@ function trim(text: string, max: number): string {
  * audit trail you can erase from the app it audits is not one.
  */
 export async function listLog(limit = 400): Promise<LogEntry[]> {
-	const res = await pb.collection('activity_log').getList(1, limit, { sort: '-created' });
+	// Without `data`: an upload's record is only read on its own page.
+	const res = await pb.collection('activity_log').getList(1, limit, {
+		sort: '-created',
+		fields: 'id,category,action,detail,device,job,created'
+	});
 	return res.items as unknown as LogEntry[];
+}
+
+/** One row, record included; null when there is no such row. */
+export async function getLogEntry(id: string): Promise<LogEntry | null> {
+	try {
+		return (await pb.collection('activity_log').getOne(id)) as unknown as LogEntry;
+	} catch {
+		return null;
+	}
+}
+
+/** Every row about one upload, oldest first, records included. */
+export async function listJobLog(job: string): Promise<LogEntry[]> {
+	const rows = await pb.collection('activity_log').getFullList({
+		filter: pb.filter('job = {:job}', { job }),
+		sort: 'created'
+	});
+	return rows as unknown as LogEntry[];
+}
+
+/** The worker's console lines printed for one upload, oldest first (kept 14 days). */
+export async function listJobWorkerLines(job: string): Promise<WorkerLine[]> {
+	const rows = await pb.collection('worker_log').getFullList({
+		filter: pb.filter('job = {:job}', { job }),
+		sort: 'created'
+	});
+	return rows as unknown as WorkerLine[];
 }
 
 /**

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { listLog, deviceName, listWorkerLog, subscribeWorkerLog } from '$lib/log';
 	import { toneOf, depthOf } from '$lib/workerlog';
 	import type { LogCategory, LogEntry, WorkerLine } from '$lib/types';
@@ -112,6 +113,18 @@
 			minute: '2-digit',
 			second: '2-digit'
 		});
+	}
+
+	/**
+	 * The upload page a row leads to: any row naming its job, and an
+	 * "Uploaded" row from before rows named one, found by its file name.
+	 */
+	function overviewOf(entry: LogEntry): string {
+		if (entry.job) return `${base}/log/upload?job=${encodeURIComponent(entry.job)}`;
+		if (entry.category === 'upload' && entry.device !== 'worker' && entry.action.startsWith('Uploaded "')) {
+			return `${base}/log/upload?log=${encodeURIComponent(entry.id)}`;
+		}
+		return '';
 	}
 
 	function dateOf(entry: { created: string }): string {
@@ -231,7 +244,16 @@
 								</span>
 								<span class="cat {entry.category}">{entry.category}</span>
 								<span class="what">
-									<span class="action">{entry.action}</span>
+									{#if overviewOf(entry)}
+										<a class="action open" href={overviewOf(entry)} title="The whole upload: what was chosen and what happened">
+											{entry.action}
+											<svg viewBox="0 0 16 16" width="11" height="11" fill="none" aria-hidden="true">
+												<path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+											</svg>
+										</a>
+									{:else}
+										<span class="action">{entry.action}</span>
+									{/if}
 									{#if entry.detail}
 										<span class="detail">{entry.detail}</span>
 									{/if}
@@ -485,6 +507,29 @@
 		display: block;
 		font-size: 13px;
 		font-weight: 550;
+	}
+
+	.open {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		color: var(--text);
+		text-decoration: none;
+	}
+
+	.open svg {
+		flex: none;
+		color: var(--text-faint);
+		transition: transform 0.15s, color 0.15s;
+	}
+
+	.open:hover {
+		color: var(--pink-soft);
+	}
+
+	.open:hover svg {
+		color: var(--pink);
+		transform: translateX(2px);
 	}
 
 	.detail {
