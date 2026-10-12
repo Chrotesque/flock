@@ -15,7 +15,7 @@
 	import { buildPlan, type PlanRow } from '$lib/plan';
 	import { base } from '$app/paths';
 	import { createJob, rememberTags, rememberUsedSources, toInstant } from '$lib/repo';
-	import { RECORD_VERSION, type UploadRecord } from '$lib/uploadrecord';
+	import { RECORD_VERSION, timingOfTargets, type UploadRecord } from '$lib/uploadrecord';
 	import { allowanceWarning, postAllowance, youtubeGrantWarnings } from '$lib/accounts';
 	import { devtestActive } from '$lib/devtest';
 	import { VERSION } from '$lib/version';
@@ -134,6 +134,36 @@
 	function recordFor(group: Group, everyGroup: Group[], cover: File | null): UploadRecord {
 		const { file, nasFile, duration } = group.video;
 		const destination = general.defaultDestination;
+		const targets = group.rows.map((row) => {
+			const typed = draft.textFor(row.platform);
+			const profileId = draft.profile[row.platform];
+			const profile = profileId
+				? (settings.get(row.platform)?.scheduling.profiles.find((p) => p.id === profileId)?.name ?? '')
+				: '';
+			return {
+				platform: row.platform,
+				account: accounts.postingAs(row.platform),
+				accountId: accounts.for(row.platform)?.account_id ?? '',
+				typed: { title: typed.title, description: typed.description },
+				title: row.title,
+				description: row.description,
+				rules: row.allHits
+					.filter((hit) => hit.count > 0 || hit.error)
+					.map((hit) => ({
+						find: hit.find,
+						replace: hit.replace,
+						count: hit.count,
+						...(hit.error ? { error: hit.error } : {})
+					})),
+				options: row.options,
+				immediate: row.immediate,
+				date: row.date,
+				time: row.time,
+				scheduledAt: toInstant(row.date, row.time),
+				profile,
+				warnings: reviewWarnings(row)
+			};
+		});
 		return {
 			v: RECORD_VERSION,
 			version: VERSION,
@@ -158,36 +188,8 @@
 			destination: destination ? { label: destination.label, path: destination.path } : null,
 			cover: cover ? { name: cover.name, size: cover.size } : null,
 			devtest: devtestActive(),
-			targets: group.rows.map((row) => {
-				const typed = draft.textFor(row.platform);
-				const profileId = draft.profile[row.platform];
-				const profile = profileId
-					? (settings.get(row.platform)?.scheduling.profiles.find((p) => p.id === profileId)?.name ?? '')
-					: '';
-				return {
-					platform: row.platform,
-					account: accounts.postingAs(row.platform),
-					accountId: accounts.for(row.platform)?.account_id ?? '',
-					typed: { title: typed.title, description: typed.description },
-					title: row.title,
-					description: row.description,
-					rules: row.allHits
-						.filter((hit) => hit.count > 0 || hit.error)
-						.map((hit) => ({
-							find: hit.find,
-							replace: hit.replace,
-							count: hit.count,
-							...(hit.error ? { error: hit.error } : {})
-						})),
-					options: row.options,
-					immediate: row.immediate,
-					date: row.date,
-					time: row.time,
-					scheduledAt: toInstant(row.date, row.time),
-					profile,
-					warnings: reviewWarnings(row)
-				};
-			})
+			targets,
+			timing: timingOfTargets(targets)
 		};
 	}
 

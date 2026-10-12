@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+	inferTiming,
+	leadWords,
 	loggedFileName,
+	matchLoggedJob,
+	uploadRowTimings,
 	mergeTimeline,
 	optionLines,
 	readUploadRecord,
@@ -39,7 +43,8 @@ const record: UploadRecord = {
 			profile: 'Morning',
 			warnings: []
 		}
-	]
+	],
+	timing: [{ platform: 'youtube', immediate: false, slot: '2026-10-13T07:00:00.000Z' }]
 };
 
 describe('readUploadRecord', () => {
@@ -170,5 +175,69 @@ describe('mergeTimeline', () => {
 		);
 		expect(merged.map((e) => e.id)).toEqual(['r1', 'l1', 'r2', 'l2']);
 		expect(merged[1]).toMatchObject({ kind: 'console', by: 'worker', text: 'claimed youtube "x"' });
+	});
+});
+
+describe('immediately or at a slot', () => {
+	it('works out an old post from its slot against when it was stored', () => {
+		// The slot of an immediate post is the minute it was confirmed.
+		expect(inferTiming('youtube', '2026-10-11 22:27:00.000Z', '2026-10-11 22:27:24.000Z').immediate).toBe(true);
+		expect(inferTiming('tiktok', '2026-09-08 15:43:00.000Z', '2026-09-08 15:43:48.000Z').immediate).toBe(true);
+		// Every scheduled one so far was 3 min to days ahead.
+		expect(inferTiming('tiktok', '2026-09-07 15:55:00.000Z', '2026-09-07 15:51:42.000Z').immediate).toBe(false);
+		expect(inferTiming('youtube', '2026-10-12 10:00:00.000Z', '2026-10-12 01:26:36.000Z')).toEqual({
+			platform: 'youtube',
+			immediate: false,
+			slot: '2026-10-12 10:00:00.000Z',
+			inferred: true
+		});
+	});
+
+	it('keeps the exact timing a record carries, and derives it for one without', () => {
+		expect(readUploadRecord(JSON.parse(JSON.stringify(record)))!.timing).toEqual([
+			{ platform: 'youtube', immediate: false, slot: '2026-10-13T07:00:00.000Z' }
+		]);
+		const withNow = { ...record, timing: [{ platform: 'youtube', immediate: true, slot: 'x' }] };
+		expect(readUploadRecord(withNow)!.timing[0].immediate).toBe(true);
+	});
+
+	it('finds the job of an old row by file name and time, newest first', () => {
+		const jobs = [
+			{ id: 'a', video_name: 'clip.mp4', created: '2026-10-12 10:00:00.000Z' },
+			{ id: 'b', video_name: 'clip.mp4', created: '2026-10-12 10:05:00.000Z' },
+			{ id: 'c', video_name: 'other.mp4', created: '2026-10-12 10:06:00.000Z' },
+			{ id: 'd', video_name: 'clip.mp4', created: '2026-10-12 11:00:00.000Z' }
+		];
+		expect(matchLoggedJob('clip.mp4', '2026-10-12 10:06:00.000Z', jobs)?.id).toBe('b');
+		expect(matchLoggedJob('clip.mp4', '2026-10-12 12:00:00.000Z', jobs)).toBeNull();
+	});
+
+	it('gives each upload row its posts: exact from the record, else worked out', () => {
+		const rows = [
+			{ id: 'new', action: 'Uploaded "x"', detail: '', device: 'Desk', job: 'j1', created: '2026-10-12 10:00:30.000Z', data: { timing: [{ platform: 'tiktok', immediate: true, slot: 's' }] } },
+			{ id: 'old', action: 'Uploaded "y"', detail: 'clip.mp4 (from the watch folder) → 2 platform(s): youtube, instagram', device: 'Desk', created: '2026-10-12 01:26:40.000Z' },
+			{ id: 'gone', action: 'Uploaded "z"', detail: 'lost.mp4 → 1 platform(s): youtube', device: 'Desk', created: '2026-10-01 10:00:00.000Z' },
+			{ id: 'worker', action: 'Published to youtube', detail: '', device: 'worker', job: 'j2', created: '2026-10-12 01:28:00.000Z' }
+		];
+		const jobs = [{ id: 'j2', video_name: 'clip.mp4', created: '2026-10-12 01:26:36.000Z' }];
+		const targets = [
+			{ job: 'j2', platform: 'instagram' as const, scheduled_at: '2026-10-12 10:00:00.000Z' },
+			{ job: 'j2', platform: 'youtube' as const, scheduled_at: '2026-10-12 01:26:00.000Z' }
+		];
+		const map = uploadRowTimings(rows, jobs, targets);
+		expect(map.get('new')).toEqual([{ platform: 'tiktok', immediate: true, slot: 's' }]);
+		expect(map.get('old')?.map((t) => [t.platform, t.immediate, t.inferred])).toEqual([
+			['youtube', true, true],
+			['instagram', false, true]
+		]);
+		expect(map.has('gone')).toBe(false);
+		expect(map.has('worker')).toBe(false);
+	});
+
+	it('says how far ahead a slot was set', () => {
+		expect(leadWords('2026-10-12T01:26:00Z', '2026-10-12T10:00:00Z')).toBe('8 h 34 min after it was confirmed');
+		expect(leadWords('2026-10-12T01:26:00Z', '2026-10-14T04:26:00Z')).toBe('2 days 3 h after it was confirmed');
+		expect(leadWords('2026-10-12T01:26:00Z', '2026-10-12T01:26:00Z')).toBe('');
+		expect(leadWords('2026-10-12T01:00:00Z', '2026-10-12T01:45:00Z')).toBe('45 min after it was confirmed');
 	});
 });

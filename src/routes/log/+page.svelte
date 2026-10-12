@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	import { listLog, deviceName, listWorkerLog, subscribeWorkerLog } from '$lib/log';
+	import { loadUploadTimes } from '$lib/repo';
+	import { isUploadRow, uploadRowTimings, type PostTiming } from '$lib/uploadrecord';
+	import TimingChip from '$lib/components/TimingChip.svelte';
 	import { toneOf, depthOf } from '$lib/workerlog';
 	import type { LogCategory, LogEntry, WorkerLine } from '$lib/types';
 
@@ -33,8 +36,10 @@
 		workerError = null;
 		// Separate, so a PocketBase without worker_log yet still shows the log.
 		const [actions, worker] = await Promise.allSettled([listLog(), listWorkerLog()]);
-		if (actions.status === 'fulfilled') entries = actions.value;
-		else error = actions.reason instanceof Error ? actions.reason.message : String(actions.reason);
+		if (actions.status === 'fulfilled') {
+			entries = actions.value;
+			void loadTimings(actions.value);
+		} else error = actions.reason instanceof Error ? actions.reason.message : String(actions.reason);
 		if (worker.status === 'fulfilled') workerLines = worker.value;
 		else
 			workerError = worker.reason instanceof Error ? worker.reason.message : String(worker.reason);
@@ -44,6 +49,20 @@
 	$effect(() => {
 		void load();
 	});
+
+	/** How each upload row's posts were sent, by row id (uploadRowTimings). */
+	let timings = $state<Map<string, PostTiming[]>>(new Map());
+
+	/**
+	 * Exact from the rows' records; rows from before records were kept are
+	 * worked out from their jobs, which are read only when there are any.
+	 */
+	async function loadTimings(rows: LogEntry[]) {
+		timings = uploadRowTimings(rows, [], []);
+		if (!rows.some((row) => isUploadRow(row) && !timings.has(row.id))) return;
+		const times = await loadUploadTimes().catch(() => null);
+		if (times) timings = uploadRowTimings(rows, times.jobs, times.targets);
+	}
 
 	// Live: the worker's lines arrive as it prints them.
 	$effect(() =>
@@ -253,6 +272,13 @@
 										</a>
 									{:else}
 										<span class="action">{entry.action}</span>
+									{/if}
+									{#if timings.get(entry.id)}
+										<span class="timings">
+											{#each timings.get(entry.id) ?? [] as timing (timing.platform)}
+												<TimingChip {timing} />
+											{/each}
+										</span>
 									{/if}
 									{#if entry.detail}
 										<span class="detail">{entry.detail}</span>
@@ -530,6 +556,13 @@
 	.open:hover svg {
 		color: var(--pink);
 		transform: translateX(2px);
+	}
+
+	.timings {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 5px;
+		margin-top: 5px;
 	}
 
 	.detail {

@@ -143,10 +143,11 @@ function trim(text: string, max: number): string {
  * audit trail you can erase from the app it audits is not one.
  */
 export async function listLog(limit = 400): Promise<LogEntry[]> {
-	// Without `data`: an upload's record is only read on its own page.
+	// Of an upload's record only how each post was sent (`data.timing`); the
+	// rest is read on the upload's own page.
 	const res = await pb.collection('activity_log').getList(1, limit, {
 		sort: '-created',
-		fields: 'id,category,action,detail,device,job,created'
+		fields: 'id,category,action,detail,device,job,created,data.timing'
 	});
 	return res.items as unknown as LogEntry[];
 }

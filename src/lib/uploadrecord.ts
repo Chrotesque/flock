@@ -32,6 +32,12 @@ export interface UploadRecord {
 	devtest: string[];
 	targets: RecordTarget[];
 	/**
+	 * Per post, whether it was sent to go out immediately or at a slot — what
+	 * the targets say too, kept apart so the Log list can ask PocketBase for
+	 * just this (`data.timing`) rather than whole records.
+	 */
+	timing: PostTiming[];
+	/**
 	 * Built from the stored upload, because it was logged before records were
 	 * kept: what the job holds now, without what only the confirm knew.
 	 */
@@ -136,6 +142,7 @@ function readTarget(raw: unknown): RecordTarget | null {
 export function readUploadRecord(raw: unknown): UploadRecord | null {
 	const r = obj(raw);
 	if (typeof r.v !== 'number' || !Array.isArray(r.targets)) return null;
+	const targets = r.targets.map(readTarget).filter((t): t is RecordTarget => t !== null);
 	const video = obj(r.video);
 	const source = str(video.source);
 	const destination = obj(r.destination);
@@ -162,7 +169,8 @@ export function readUploadRecord(raw: unknown): UploadRecord | null {
 		destination: r.destination ? { label: str(destination.label), path: str(destination.path) } : null,
 		cover: r.cover ? { name: str(cover.name), size: num(cover.size) } : null,
 		devtest: strings(r.devtest),
-		targets: r.targets.map(readTarget).filter((t): t is RecordTarget => t !== null),
+		targets,
+		timing: readTiming(r.timing) ?? timingOfTargets(targets),
 		...(r.reconstructed === true ? { reconstructed: true } : {})
 	};
 }
@@ -176,6 +184,7 @@ export function readUploadRecord(raw: unknown): UploadRecord | null {
  */
 export function recordFromJob(job: UploadJob, targets: UploadTarget[]): UploadRecord {
 	const local = Boolean(job.source_local || job.source_origin);
+	const sorted = [...targets].sort((a, b) => platformOrder(a.platform) - platformOrder(b.platform));
 	return {
 		v: RECORD_VERSION,
 		version: '',
@@ -195,24 +204,23 @@ export function recordFromJob(job: UploadJob, targets: UploadTarget[]): UploadRe
 		destination: job.destination_path ? { label: job.destination_label, path: job.destination_path } : null,
 		cover: job.cover ? { name: job.cover, size: 0 } : null,
 		devtest: [],
-		targets: [...targets]
-			.sort((a, b) => platformOrder(a.platform) - platformOrder(b.platform))
-			.map((t) => ({
-				platform: t.platform,
-				account: '',
-				accountId: t.account ?? '',
-				typed: { title: t.title, description: t.description },
-				title: t.title,
-				description: t.description,
-				rules: [],
-				options: t.options ?? {},
-				immediate: false,
-				date: '',
-				time: '',
-				scheduledAt: t.scheduled_at,
-				profile: '',
-				warnings: []
-			})),
+		timing: sorted.map((t) => inferTiming(t.platform, t.scheduled_at, job.created)),
+		targets: sorted.map((t) => ({
+			platform: t.platform,
+			account: '',
+			accountId: t.account ?? '',
+			typed: { title: t.title, description: t.description },
+			title: t.title,
+			description: t.description,
+			rules: [],
+			options: t.options ?? {},
+			immediate: inferTiming(t.platform, t.scheduled_at, job.created).immediate,
+			date: '',
+			time: '',
+			scheduledAt: t.scheduled_at,
+			profile: '',
+			warnings: []
+		})),
 		reconstructed: true
 	};
 }
@@ -382,4 +390,126 @@ export function mergeTimeline(
 			return a.index - b.index;
 		})
 		.map(({ entry }) => entry);
+}
+
+/* ---- immediately or at a slot ---- */
+
+export interface PostTiming {
+	platform: PlatformId;
+	/** Sent to go out as soon as the worker picked it up, not at a slot. */
+	immediate: boolean;
+	/** The slot's instant; for an immediate post, the minute it was confirmed. */
+	slot: string;
+	/** Worked out from the stored times: an upload from before records were kept. */
+	inferred?: boolean;
+}
+
+/** What each post of a record was confirmed as, from its targets. */
+export function timingOfTargets(targets: RecordTarget[]): PostTiming[] {
+	return targets.map((t) => ({ platform: t.platform, immediate: t.immediate, slot: t.scheduledAt }));
+}
+
+/** A stored `timing` list; null when there is none (a record written before it existed). */
+export function readTiming(raw: unknown): PostTiming[] | null {
+	if (!Array.isArray(raw)) return null;
+	return raw
+		.map((entry) => {
+			const t = obj(entry);
+			if (!isPlatformId(str(t.platform))) return null;
+			return {
+				platform: t.platform as PlatformId,
+				immediate: t.immediate === true,
+				slot: str(t.slot),
+				...(t.inferred === true ? { inferred: true } : {})
+			};
+		})
+		.filter((t): t is PostTiming => t !== null);
+}
+
+const at = (iso: string) => Date.parse(iso.replace(' ', 'T'));
+
+/**
+ * For an upload from before records were kept: an immediate post's slot is
+ * the minute it was confirmed, so it is never after the upload was stored,
+ * while a slot can only be picked in the future. Every upload up to 0.12.0
+ * fits: immediate ones 0.4 to 0.9 min before, scheduled ones 3 min to days
+ * after. A minute's grace covers the browser's clock against the server's.
+ */
+export function inferTiming(platform: PlatformId, slot: string, storedAt: string): PostTiming {
+	const s = at(slot);
+	const stored = at(storedAt);
+	const immediate = Number.isFinite(s) && Number.isFinite(stored) && s <= stored + 60_000;
+	return { platform, immediate, slot, inferred: true };
+}
+
+/**
+ * The job an "Uploaded" row from before 0.12.0 was written for: the newest
+ * with that file name stored in the 15 minutes before the row (a browser
+ * upload takes the time its bytes take). The same rule as `findLoggedJob`,
+ * for a list already in hand.
+ */
+export function matchLoggedJob<T extends { video_name: string; created: string }>(
+	name: string,
+	loggedAt: string,
+	jobs: T[]
+): T | null {
+	const logged = at(loggedAt);
+	if (!name || !Number.isFinite(logged)) return null;
+	let best: T | null = null;
+	for (const job of jobs) {
+		const stored = at(job.created);
+		if (job.video_name !== name || !(stored >= logged - 15 * 60_000 && stored <= logged + 60_000)) continue;
+		if (!best || stored > at(best.created)) best = job;
+	}
+	return best;
+}
+
+/** Whether a Log row is the one an upload's confirm wrote ("Uploaded …" from a browser). */
+export function isUploadRow(row: { action: string; device: string }): boolean {
+	return row.device !== 'worker' && row.action.startsWith('Uploaded "');
+}
+
+/**
+ * Each "Uploaded" row's posts with how they were sent, for the Log list:
+ * exact from the row's record (`data.timing`), else worked out from the
+ * job it was written for (by id, or by file name and time for a row from
+ * before rows named one) and that job's targets. A row whose job is gone
+ * has no entry.
+ */
+export function uploadRowTimings(
+	rows: { id: string; action: string; detail: string; device: string; job?: string; created: string; data?: unknown }[],
+	jobs: { id: string; video_name: string; created: string }[],
+	targets: { job: string; platform: PlatformId; scheduled_at: string }[]
+): Map<string, PostTiming[]> {
+	const out = new Map<string, PostTiming[]>();
+	for (const row of rows) {
+		if (!isUploadRow(row)) continue;
+		const exact = readTiming(obj(row.data).timing);
+		if (exact && exact.length > 0) {
+			out.set(row.id, exact);
+			continue;
+		}
+		const job = row.job ? jobs.find((j) => j.id === row.job) : matchLoggedJob(loggedFileName(row.detail), row.created, jobs);
+		if (!job) continue;
+		const posts = targets
+			.filter((t) => t.job === job.id)
+			.sort((a, b) => platformOrder(a.platform) - platformOrder(b.platform))
+			.map((t) => inferTiming(t.platform, t.scheduled_at, job.created));
+		if (posts.length > 0) out.set(row.id, posts);
+	}
+	return out;
+}
+
+/** "8 h 34 min after it was confirmed" — how far ahead a slot was set. '' when it was not ahead. */
+export function leadWords(confirmedAt: string, slot: string): string {
+	const minutes = Math.round((at(slot) - at(confirmedAt)) / 60_000);
+	if (!Number.isFinite(minutes) || minutes < 1) return '';
+	const days = Math.floor(minutes / 1440);
+	const hours = Math.floor((minutes % 1440) / 60);
+	const mins = minutes % 60;
+	const parts =
+		days > 0
+			? [`${days} ${days === 1 ? 'day' : 'days'}`, hours ? `${hours} h` : '']
+			: [hours ? `${hours} h` : '', mins ? `${mins} min` : ''];
+	return `${parts.filter(Boolean).join(' ')} after it was confirmed`;
 }

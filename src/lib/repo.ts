@@ -3,6 +3,7 @@ import { PLATFORMS, PLATFORM_IDS, isPlatformId } from './platforms';
 import { DEFAULT_SCHEDULING } from './types';
 import { logAction, assertDeviceNamed } from './log';
 import { newId } from './id';
+import { formatSchedule } from './format';
 import { STATS_FIELDS, UPLOAD_FIELDS, type StatsRow, type UploadRow } from './videotodo';
 import {
 	FIRST_BRAND_NAME,
@@ -516,11 +517,16 @@ export async function createJob(
 	}
 
 	const sourceName = input.file ? input.file.name : (input.source?.name ?? 'unknown');
+	// Each post with how it was sent — immediately, or for which slot — so the
+	// Log line answers that on its own, and a search for "immediately" works.
+	const immediate = new Set(input.record?.timing.filter((t) => t.immediate).map((t) => t.platform));
 	logAction(
 		'upload',
 		`Uploaded "${input.title || 'untitled'}"`,
 		`${sourceName}${input.source ? (input.source.local ? ' (from a local folder)' : ' (from the watch folder)') : ''} → ${input.targets.length} ` +
-			`platform(s): ${input.targets.map((t) => t.platform).join(', ')}` +
+			`platform(s): ${input.targets
+				.map((t) => `${t.platform} ${immediate.has(t.platform) ? 'immediately' : `scheduled for ${formatSchedule(t.date, t.time)}`}`)
+				.join('; ')}` +
 			(input.brand ? ` · ${input.brand.name}` : ''),
 		{ job: job.id, data: input.record }
 	);
@@ -566,6 +572,25 @@ export async function findLoggedJob(fileName: string, loggedAt: string): Promise
 		})
 		.catch(() => null);
 	return rows?.items[0] ?? null;
+}
+
+/**
+ * Every job's file name and stored time and every post's slot, for the Log
+ * to work out how uploads from before 0.12.0 were sent (uploadRowTimings).
+ */
+export async function loadUploadTimes(): Promise<{
+	jobs: { id: string; video_name: string; created: string }[];
+	targets: { job: string; platform: PlatformId; scheduled_at: string }[];
+}> {
+	const [jobs, targets] = await Promise.all([
+		pb.collection('upload_jobs').getFullList<{ id: string; video_name: string; created: string }>({
+			fields: 'id,video_name,created'
+		}),
+		pb.collection('upload_targets').getFullList<{ job: string; platform: PlatformId; scheduled_at: string }>({
+			fields: 'job,platform,scheduled_at'
+		})
+	]);
+	return { jobs, targets };
 }
 
 /** A stored file's address, for the upload's page to play or show. */

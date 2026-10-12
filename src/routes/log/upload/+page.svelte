@@ -4,12 +4,14 @@
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
 	import VideoPreview from '$lib/components/VideoPreview.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import TimingChip from '$lib/components/TimingChip.svelte';
 	import { getLogEntry, listJobLog, listJobWorkerLines } from '$lib/log';
 	import { findLoggedJob, jobFileUrl, loadUploadState } from '$lib/repo';
 	import { PLATFORMS } from '$lib/platforms';
 	import { formatBytes, formatDuration, formatSchedule } from '$lib/format';
 	import { depthOf, toneOf } from '$lib/workerlog';
 	import {
+		leadWords,
 		loggedFileName,
 		mergeTimeline,
 		optionLines,
@@ -17,6 +19,7 @@
 		recordFromJob,
 		slotMoved,
 		statusWords,
+		type PostTiming,
 		type RecordTarget,
 		type TimelineEntry,
 		type UploadRecord
@@ -136,11 +139,35 @@
 		return targets.find((t) => t.platform === platform);
 	}
 
-	function when(t: RecordTarget): string {
-		if (t.immediate) return 'Immediately, as soon as the worker picked it up';
-		const zone = record?.timeZone && record.timeZone !== localZone ? ` (${record.timeZone})` : '';
-		const slot = t.date ? `${formatSchedule(t.date, t.time)}${zone}` : at(t.scheduledAt);
-		return t.profile ? `${slot} · profile "${t.profile}"` : slot;
+	/** How a post was sent; the record's own word, or worked out for an old upload. */
+	function timingOf(t: RecordTarget): PostTiming {
+		return (
+			record?.timing.find((entry) => entry.platform === t.platform) ?? {
+				platform: t.platform,
+				immediate: t.immediate,
+				slot: t.scheduledAt
+			}
+		);
+	}
+
+	/** Under the chip: when it was confirmed, or how far ahead the slot was, and the profile. */
+	function whenLine(t: RecordTarget, timing: PostTiming): string {
+		if (!record) return '';
+		const parts = timing.immediate
+			? [`Confirmed ${at(record.confirmedAt)}; out as soon as the worker picked it up`]
+			: [
+					t.date && record.timeZone && record.timeZone !== localZone
+						? `${formatSchedule(t.date, t.time)} in ${record.timeZone}`
+						: '',
+					leadWords(record.confirmedAt, timing.slot),
+					t.profile ? `profile "${t.profile}"` : ''
+				];
+		return parts.filter(Boolean).join(' · ');
+	}
+
+	/** What `published_at` means: YouTube's is when the upload finished, not when it went public. */
+	function publishedLabel(platform: PlatformId): string {
+		return platform === 'youtube' ? 'Uploaded to YouTube' : 'Published';
 	}
 
 	function typedDiffers(t: RecordTarget): boolean {
@@ -221,6 +248,13 @@
 				slot as it stands — the Calendar may have moved it since.
 			</p>
 		{/if}
+
+		<div class="sent">
+			<span class="sentlabel">How it was sent</span>
+			{#each record.timing as timing (timing.platform)}
+				<TimingChip {timing} />
+			{/each}
+		</div>
 
 		{#if record.devtest.length > 0}
 			<div class="devtest">
@@ -332,20 +366,27 @@
 						{/if}
 					</header>
 
+					<div class="timingblock">
+						<TimingChip timing={timingOf(t)} big icon={false} />
+						<span class="note">{whenLine(t, timingOf(t))}</span>
+						{#if timingOf(t).inferred}
+							<span class="note faint">
+								Worked out from the stored times: uploaded before flock kept a record of each upload. A post
+								sent to go out immediately has the minute it was confirmed as its slot.
+							</span>
+						{/if}
+						{#if now && !record.reconstructed && slotMoved(t.scheduledAt, now.scheduled_at)}
+							<span class="note warn">Moved since, to {at(now.scheduled_at)}</span>
+						{/if}
+					</div>
+
 					<dl class="facts">
-						<dt>When</dt>
-						<dd>
-							{when(t)}
-							{#if now && !record.reconstructed && slotMoved(t.scheduledAt, now.scheduled_at)}
-								<span class="note warn">Moved since, to {at(now.scheduled_at)}</span>
-							{/if}
-						</dd>
 						{#if now?.remote_url}
 							<dt>Link</dt>
 							<dd><a href={now.remote_url} target="_blank" rel="noopener">{now.remote_url}</a></dd>
 						{/if}
 						{#if now?.published_at}
-							<dt>Published</dt>
+							<dt>{publishedLabel(t.platform)}</dt>
 							<dd>{at(now.published_at)}</dd>
 						{/if}
 						{#if now?.error}
@@ -508,6 +549,29 @@
 
 	.banner.error {
 		color: var(--danger);
+	}
+
+	.sent {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 7px;
+		margin-bottom: 16px;
+	}
+
+	.sentlabel {
+		margin-right: 4px;
+		font-size: 11px;
+		font-weight: 650;
+		letter-spacing: 0.09em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.timingblock {
+		display: grid;
+		justify-items: start;
+		gap: 5px;
 	}
 
 	.devtest {
