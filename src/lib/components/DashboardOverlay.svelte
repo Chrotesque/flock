@@ -3,6 +3,7 @@
 	import { cubicInOut } from 'svelte/easing';
 	import { afterNavigate } from '$app/navigation';
 	import { dashboard } from '$lib/stores/dashboard.svelte';
+	import { todoPanel } from '$lib/stores/todopanel.svelte';
 	import Dashboard from './Dashboard.svelte';
 
 	/**
@@ -68,6 +69,8 @@
 	afterNavigate(() => dashboard.close());
 
 	async function toggle() {
+		// One panel over the content area at a time.
+		todoPanel.close();
 		dashboard.toggle();
 		await tick();
 		if (dashboard.open) panel?.focus();

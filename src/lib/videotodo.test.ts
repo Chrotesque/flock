@@ -180,6 +180,23 @@ describe('todoLines', () => {
 		expect(todoLines([], [queued], fresh, { jestr: false })[0].paid).toBeNull();
 	});
 
+	it('carries the thumbnail and whether it is a Short, once the video is read', () => {
+		const read = stat('soon', '2026-10-11 15:06:56.000Z', {
+			data: { snippet: { thumbnails: { medium: { url: 'https://i.ytimg.com/vi/soon/mqdefault.jpg' } } } }
+		});
+		const line = todoLines([read], uploads, fresh, { jestr: false })[0];
+		expect([line.thumb, line.thumbLarge, line.short]).toEqual([
+			'https://i.ytimg.com/vi/soon/mqdefault.jpg',
+			'https://i.ytimg.com/vi/soon/mqdefault.jpg',
+			true
+		]);
+		const big = { ...read, data: { snippet: { thumbnails: { ...read.data?.snippet?.thumbnails, maxres: { url: 'max.jpg' } } } } };
+		expect(todoLines([big], uploads, fresh, { jestr: false })[0].thumbLarge).toBe('max.jpg');
+		const long = todoLines([{ ...read, duration: 900 }], uploads, fresh, { jestr: false })[0];
+		expect(long.short).toBe(false);
+		expect(todoLines([], uploads, fresh, { jestr: false }).map((l) => [l.thumb, l.short])).toEqual([['', false]]);
+	});
+
 	it('without Jestr, a video YouTube has is no line once Studio was opened for it', () => {
 		const up: UploadRow = { id: 't1', status: 'scheduled', remote_url: 'https://www.youtube.com/watch?v=v1', created: '2026-10-11 20:50:30.000Z' };
 		expect(todoLines([], [up], fresh, { jestr: false }).map((l) => l.studio)).toEqual([['thumbnail', 'paid promotion']]);

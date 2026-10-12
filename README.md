@@ -137,7 +137,7 @@ Good to know:
   `pnpm worker:auth --with-playlists` to have videos added to a playlist.
   Without it the playlist is skipped, and the Review step says so.
 - **Thumbnails and paid promotion are set in YouTube Studio**, not by flock.
-  The sidebar's *To finish* list links each video's Studio page.
+  *To finish* in the sidebar links each video's Studio page.
 - **Stats cost API quota.** Analytics reads the newest 50 videos every 30
   seconds, about a third of the daily quota that uploads also use. `statsSeconds`,
   `statsVideos` and `statsBudget` in the config adjust it; at the budget,
@@ -542,17 +542,22 @@ refreshed every 30 seconds while the worker runs.
   `940 (+9)`. Refresh resets those.
 - Below, a list of what is stored on the NAS, with a delete per upload.
 
-**To finish**, in the sidebar, lists YouTube videos with something left to do
-by hand.
+**To finish**, in the sidebar, is a box for YouTube videos with something left
+to do by hand: grey with a check when nothing needs doing now, a yellow-to-pink
+outline with an exclamation mark when something does. The number under it is
+how many videos are listed. Click it to open the list over the page.
 
-- The title opens the video, and the YouTube icon its page in Studio.
-- From confirm until YouTube has the video, the line shows a turning ring:
+- Each row has the thumbnail (hover it to see it larger), the title (opens the
+  video), whether YouTube reports paid promotion (green $ ticked, red not), and
+  a *Studio* button opening the video in YouTube Studio — a yellow dot until it
+  was opened from here, a check after.
+- From confirm until YouTube has the video, the row shows a turning ring:
   the upload went through, and YouTube is still to answer.
 - With the **Jestr integration** on (Settings → *Other*), every video on a
   connected channel is listed with a *Jestr* button; press it once the video is
   linked on [Jestr](https://jestr.gg). A scheduled video's button works once it
   is public.
-- Settings → *Other* can hide the list, for a clean screen recording, say.
+- Settings → *Other* can hide it, for a clean screen recording, say.
   Nothing on it is lost.
 
 ### Settings
@@ -565,8 +570,8 @@ by hand.
 - *Brands:* add, rename, order and delete brands, and pick each brand's
   accounts. Deleting a brand keeps its uploads, and anything queued still goes
   out.
-- *Other:* YouTube's official branding, the Jestr integration, whether the
-  *To finish* list shows, and extra time zones for the calendar.
+- *Other:* YouTube's official branding, the Jestr integration, whether
+  *To finish* shows, and extra time zones for the calendar.
 
 **The brand in view** has:
 

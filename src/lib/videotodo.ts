@@ -55,7 +55,7 @@ export interface StatsRow {
 	duration?: number;
 	privacy?: string;
 	data?: {
-		snippet?: { channelTitle?: string };
+		snippet?: { channelTitle?: string; thumbnails?: { medium?: { url?: string }; maxres?: { url?: string } } };
 		status?: { publishAt?: string };
 		liveStreamingDetails?: Record<string, unknown>;
 		paidProductPlacementDetails?: { hasPaidProductPlacement?: boolean };
@@ -63,7 +63,7 @@ export interface StatsRow {
 }
 
 export const STATS_FIELDS =
-	'video_id,title,published_at,duration,privacy,data.snippet.channelTitle,data.status.publishAt,data.liveStreamingDetails,data.paidProductPlacementDetails.hasPaidProductPlacement';
+	'video_id,title,published_at,duration,privacy,data.snippet.channelTitle,data.status.publishAt,data.liveStreamingDetails,data.paidProductPlacementDetails.hasPaidProductPlacement,data.snippet.thumbnails.medium.url,data.snippet.thumbnails.maxres.url';
 
 /** A flock YouTube upload (`upload_targets` row) with only what the list reads. */
 export interface UploadRow {
@@ -100,6 +100,16 @@ export interface TodoLine {
 	publicAt: string | null;
 	/** Whether YouTube reports paid promotion on it; null until the stats pass has read it. */
 	paid: boolean | null;
+	/**
+	 * YouTube's 16:9 thumbnail (320×180) once the stats pass has read the
+	 * video, '' before. A private video's is a signed address that changes
+	 * with every read.
+	 */
+	thumb: string;
+	/** The 1280×720 one for the enlarged preview, or `thumb` where YouTube has none. */
+	thumbLarge: string;
+	/** A Short, whose preview is the middle of that thumbnail, upright. */
+	short: boolean;
 	/**
 	 * Why the line is a placeholder for now (WAITING), or null. Without a
 	 * YouTube link yet, `id` is `upload:<target id>` and there is nothing to
@@ -188,6 +198,9 @@ export function todoLines(
 			jestr: null as TodoLine['jestr'],
 			publicAt: publishAt || null,
 			paid: stat ? stat.data?.paidProductPlacementDetails?.hasPaidProductPlacement === true : null,
+			thumb: stat?.data?.snippet?.thumbnails?.medium?.url ?? '',
+			thumbLarge: stat?.data?.snippet?.thumbnails?.maxres?.url ?? stat?.data?.snippet?.thumbnails?.medium?.url ?? '',
+			short: Boolean(stat) && kindOf({ duration: Number(stat?.duration), live }) === 'short',
 			waiting: null as string | null,
 			at
 		};
@@ -212,6 +225,9 @@ export function todoLines(
 				jestr: null,
 				publicAt: null,
 				paid: null,
+				thumb: '',
+				thumbLarge: '',
+				short: false,
 				waiting: upload.status === 'publishing' ? WAITING.uploading : WAITING.queued,
 				at: created
 			});
@@ -251,6 +267,9 @@ export function todoLines(
 			jestr: line.jestr,
 			publicAt: line.publicAt,
 			paid: line.paid,
+			thumb: line.thumb,
+			thumbLarge: line.thumbLarge,
+			short: line.short,
 			waiting: line.waiting
 		}));
 }

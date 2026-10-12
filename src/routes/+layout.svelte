@@ -6,10 +6,11 @@
 	import { workers } from '$lib/stores/workers.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { videoTodo } from '$lib/stores/videotodo.svelte';
-	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
 	import PasteNotice from '$lib/components/PasteNotice.svelte';
 	import DashboardOverlay from '$lib/components/DashboardOverlay.svelte';
+	import TodoPanel from '$lib/components/TodoPanel.svelte';
 	import { dashboard } from '$lib/stores/dashboard.svelte';
+	import { todoPanel } from '$lib/stores/todopanel.svelte';
 	import { paste } from '$lib/stores/paste.svelte';
 	import { projects } from '$lib/stores/projects.svelte';
 	import { draft } from '$lib/stores/draft.svelte';
@@ -18,7 +19,6 @@
 	import { readFlockPaste } from '$lib/flockpaste';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import type { TodoLine } from '$lib/videotodo';
 	import { devtestActive, startDevtest } from '$lib/devtest';
 
 	onMount(() => {
@@ -73,29 +73,26 @@
 		if (result.ok && !isActive('/upload')) void goto(`${base}/upload`);
 	}
 
-	/** "Sun 13 Oct, 08:00" — when a scheduled video goes public. */
-	function goesPublic(iso: string | null): string {
-		const date = iso ? new Date(iso) : null;
-		if (!date || Number.isNaN(date.getTime())) return '';
-		return date.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+	/**
+	 * The To finish tile opens the panel over the content area, spreading
+	 * from the tile's own height on the content area's left edge.
+	 */
+	let content = $state<HTMLElement | null>(null);
+
+	function toggleTodo(event: MouseEvent) {
+		const tile = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		const top = content?.getBoundingClientRect().top ?? 0;
+		dashboard.close();
+		todoPanel.toggle(tile.top + tile.height / 2 - top);
 	}
 
-	function studioTitle(line: TodoLine): string {
-		return line.studio.length
-			? `Open in YouTube Studio to set ${line.studio.join(' and ')} — counts as done`
-			: 'Open in YouTube Studio — nothing left to set there';
-	}
-
-	function paidTitle(line: TodoLine): string {
-		if (line.paid) return 'Paid promotion is ticked on YouTube';
-		if (line.paid === false) return 'Paid promotion is not ticked on YouTube — tick it in Studio if this video has any';
-		return 'Paid promotion not detected yet — the channel has not been read since the upload';
-	}
-
-	function lineTitle(line: TodoLine): string {
-		const parts = [line.title, line.channel, line.publicAt ? `goes public ${goesPublic(line.publicAt)}` : ''];
-		return parts.filter(Boolean).join(' — ');
-	}
+	/**
+	 * Something can be done right now: Studio steps still open on a video, or
+	 * a public one to link on Jestr. A greyed Jestr button, an upload on its
+	 * way and YouTube's paid-promotion reading are not — the last only
+	 * informs, and "not ticked" is right for a video without any.
+	 */
+	let needsDoing = $derived(videoTodo.lines.some((line) => line.studio.length > 0 || line.jestr === 'open'));
 
 	/** A held release's slot, as the clock on this machine reads it. */
 	function at(iso: string): string {
@@ -202,87 +199,62 @@
 		{/if}
 
 		<!-- Videos with something left to do by hand — set in Studio, linked on
-		     Jestr — centred in the free stretch between the main links and the
-		     worker. Rules in videotodo.ts; Settings → Other can hide it. -->
-		{#if general.value.showTodo && videoTodo.lines.length > 0}
+		     Jestr — as one icon centred in the free stretch between the main
+		     links and the worker: a grey box with a check cut out when nothing
+		     needs doing, a yellow-to-pink outline round an exclamation mark
+		     when something does, filled purple with a back arrow while open.
+		     The list itself opens over the content area (TodoPanel). Rules in
+		     videotodo.ts; Settings → Other can hide it. -->
+		{#if general.value.showTodo}
 			<section class="todo" aria-label="Videos to finish">
-				<p class="todohead">To finish <span class="count">{videoTodo.lines.length}</span></p>
-				<ul>
-					{#each videoTodo.lines as line (line.id)}
-						<li>
-							{#if line.watchUrl}
-								<a class="vtitle" href={line.watchUrl} target="_blank" rel="noopener" title={lineTitle(line)}>
-									{line.title}
-								</a>
+				<button
+					id="todo-tile"
+					class="tile"
+					class:open={todoPanel.open}
+					class:due={needsDoing}
+					onclick={toggleTodo}
+					aria-expanded={todoPanel.open}
+					aria-controls="todo-panel"
+					aria-label="To finish, {videoTodo.lines.length} {videoTodo.lines.length === 1 ? 'video' : 'videos'}"
+					title={todoPanel.open
+						? 'Close To finish (Esc)'
+						: needsDoing
+							? 'To finish: something needs doing'
+							: 'To finish: nothing to do right now'}
+				>
+					<span class="tileart">
+						<svg class="tileicon" viewBox="0 0 48 48" width="128" height="128" fill="none" aria-hidden="true">
+							<defs>
+								<!-- In the icon's own units: an exclamation mark is a
+								     line with no width, which a box-relative gradient
+								     would not paint at all. -->
+								<linearGradient id="todo-due" gradientUnits="userSpaceOnUse" x1="4" y1="44" x2="44" y2="4">
+									<stop offset="0" style="stop-color: var(--warn)" />
+									<stop offset="1" style="stop-color: var(--pink)" />
+								</linearGradient>
+							</defs>
+							{#if todoPanel.open}
+								<!-- Open: filled purple, the way back cut out of it. -->
+								<rect class="box open" x="4" y="4" width="40" height="40" rx="11" />
+								<path class="neg back" d="M27.5 14.5L18 24l9.5 9.5" stroke-linecap="round" stroke-linejoin="round" />
+							{:else if needsDoing}
+								<!-- Something to do: the colour on the border, a thick
+								     exclamation mark in the middle. -->
+								<rect class="box due" x="5.5" y="5.5" width="37" height="37" rx="10" stroke="url(#todo-due)" />
+								<path class="bangmark" d="M24 13.5v12.5M24 33.6v0.01" stroke="url(#todo-due)" stroke-linecap="round" />
 							{:else}
-								<span class="vtitle" title={`${line.title} — ${line.waiting ?? ''}`}>{line.title}</span>
+								<!-- Nothing to do: grey, the check cut out of it. -->
+								<rect class="box idle" x="4" y="4" width="40" height="40" rx="11" />
+								<path class="neg" d="M14 24.8l7 7L34.5 17.5" stroke-linecap="round" stroke-linejoin="round" />
 							{/if}
-							{#if !line.studioUrl}
-								<!-- Confirmed, but YouTube has no link for it yet. -->
-								<span class="spinner" role="status" title={line.waiting ?? ''} aria-label={line.waiting ?? ''}></span>
-							{:else}
-							<a
-								class="studio"
-								href={line.studioUrl}
-								target="_blank"
-								rel="noopener"
-								title={studioTitle(line)}
-								aria-label={`${studioTitle(line)}. ${paidTitle(line)}`}
-								onclick={() => {
-									if (line.studio.length) void videoTodo.markStudio(line);
-								}}
-							>
-								<PlatformIcon platform="youtube" size={15} />
-								<!-- Paid promotion as YouTube reports it, read by the stats
-								     pass: the top-left corner, opposite the Studio badge. -->
-								<span class="badge paid" class:on={line.paid === true} title={paidTitle(line)} aria-hidden="true">
-									<svg viewBox="0 0 10 10" width="7" height="7" fill="none">
-										<path
-											d="M6.9 3.3C6.6 2.7 5.9 2.4 5 2.4c-1.1 0-1.9.6-1.9 1.4 0 .9.9 1.1 1.9 1.3s1.9.4 1.9 1.3c0 .8-.8 1.4-1.9 1.4-.9 0-1.6-.3-1.9-.9M5 1.3v7.4"
-											stroke="currentColor"
-											stroke-width="1.5"
-											stroke-linecap="round"
-										/>
-									</svg>
-								</span>
-								<!-- Never a faded logo (YouTube's branding rules forbid
-								     altering it): a yellow dot while something is left to
-								     set in Studio, a green check once nothing is. -->
-								{#if line.studio.length > 0}
-									<span class="badge open" aria-hidden="true"></span>
-								{:else}
-									<span class="badge done" aria-hidden="true">
-										<svg viewBox="0 0 10 10" width="7" height="7" fill="none">
-											<path
-												d="M2.3 5.3 4.3 7.2 7.8 3.2"
-												stroke="currentColor"
-												stroke-width="1.7"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-											/>
-										</svg>
-									</span>
-								{/if}
-							</a>
-							{/if}
-							{#if line.waiting && line.studioUrl}
-								<span class="spinner small" role="status" title={line.waiting} aria-label={line.waiting}></span>
-							{/if}
-							{#if line.jestr}
-								<button
-									class="jbtn"
-									disabled={line.jestr === 'waiting'}
-									onclick={() => videoTodo.markJestr(line)}
-									title={line.jestr === 'waiting'
-										? `Goes public ${goesPublic(line.publicAt)}; link it on Jestr after that`
-										: 'Linked on Jestr: take it off this list'}
-								>
-									Jestr
-								</button>
-							{/if}
-						</li>
-					{/each}
-				</ul>
+						</svg>
+						<!-- Where it opens, shown on hover; open, the box itself points back. -->
+						<svg class="tilearrow" viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+							<path d="M9 5.5l6.5 6.5L9 18.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
+						</svg>
+					</span>
+					<span class="tilecount" aria-hidden="true">{videoTodo.lines.length}</span>
+				</button>
 			</section>
 		{/if}
 
@@ -349,11 +321,13 @@
 	</aside>
 
 	<!-- The content area, clipped: the dashboard's button sits on its corner
-	     and the dashboard covers it (DashboardOverlay). -->
-	<div class="content">
-		<main class="scroll" inert={dashboard.open}>
+	     and the dashboard covers it (DashboardOverlay), as does the To finish
+	     panel the sidebar tile opens (TodoPanel). -->
+	<div class="content" bind:this={content}>
+		<main class="scroll" inert={dashboard.open || todoPanel.open}>
 			{@render children()}
 		</main>
+		<TodoPanel />
 		<DashboardOverlay />
 	</div>
 </div>
@@ -559,10 +533,8 @@
 	.todo {
 		margin: auto 0;
 		padding: 18px 0 0;
-		min-height: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
 	}
 
 	.todohead {
@@ -584,168 +556,190 @@
 		letter-spacing: 0;
 	}
 
-	.todo ul {
-		margin: 0;
-		padding: 0;
-		list-style: none;
+	/* The way into the To finish panel: a box with no button chrome round
+	   it. Grey with a check cut out when nothing needs doing; a yellow-to-pink
+	   border round a thick exclamation mark when something does; filled
+	   purple with a back arrow cut out while open. Hovered (or focused) it
+	   brightens and glows with a bloom that settles, and an arrow shows on
+	   its right, pointing to where the panel opens. */
+	.tile {
+		position: relative;
+		align-self: center;
 		display: grid;
-		/* minmax(0, …): an auto column grows to the longest title, pushing the
-		   icon and the button out of the rail instead of shortening the title. */
-		grid-template-columns: minmax(0, 1fr);
-		overflow-x: hidden;
-		gap: 2px;
-		/* A long backlog scrolls rather than pushing the worker off the rail. */
-		max-height: 36vh;
-		overflow-y: auto;
+		justify-items: center;
+		gap: 6px;
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--text-faint);
+		font: inherit;
+		cursor: pointer;
 	}
 
-	.todo li {
+	.tile:focus-visible {
+		outline: none;
+	}
+
+	.tileart {
+		position: relative;
 		display: flex;
 		align-items: center;
-		min-width: 0;
+		/* The arrow's room hangs to the right without pushing the box off
+		   centre, and is kept while hidden, so nothing moves when it shows. */
+		margin-right: -28px;
 		gap: 6px;
-		padding: 4px 4px 4px 11px;
-		border-radius: 8px;
 	}
 
-	.todo li:hover {
-		background: var(--surface-2);
+	.tileicon,
+	.tilearrow {
+		display: block;
+		overflow: visible;
+		transition:
+			opacity 0.2s,
+			filter 0.25s,
+			transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
 
-	.vtitle {
-		flex: 1;
-		min-width: 0;
-		font-size: 12px;
-		line-height: 1.3;
-		color: var(--text-dim);
-		text-decoration: none;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+	/* Strokes keep their pixel width at any size. */
+	.tileicon *,
+	.tilearrow path {
+		vector-effect: non-scaling-stroke;
+		transition:
+			fill 0.2s,
+			stroke-width 0.2s;
 	}
 
-	.vtitle:hover {
-		color: var(--text);
+	.box.idle {
+		fill: var(--text-faint);
 	}
 
-	.jbtn {
-		flex: none;
-		padding: 3px 9px;
-		border-radius: 999px;
-		border: 1px solid var(--border);
-		background: var(--surface);
-		color: var(--text-dim);
-		font: inherit;
-		font-size: 11px;
-		font-weight: 600;
-		cursor: pointer;
-		transition: border-color 0.15s, color 0.15s;
+	.box.due {
+		stroke-width: 5px;
 	}
 
-	.jbtn:hover:not(:disabled) {
-		border-color: var(--text-dim);
-		color: var(--text);
+	.box.open {
+		fill: var(--purple);
 	}
 
-	/* Scheduled: nothing to link on Jestr until the video is public. */
-	.jbtn:disabled {
-		opacity: 0.4;
-		cursor: default;
+	/* A mark cut out of a filled box: the rail's own dark. */
+	.neg {
+		stroke: var(--bg-elev);
+		stroke-width: 9px;
 	}
 
-	/* The way to the video's edit page in Studio. The logo is always shown as
-	   it is — YouTube's branding rules forbid fading or recolouring it — and a
-	   badge in its corner says the state: yellow until Studio was opened
-	   through it (thumbnail, paid promotion), a green check after. */
-	.studio {
-		position: relative;
-		flex: none;
-		display: grid;
-		place-items: center;
-		width: 24px;
-		height: 22px;
-		border-radius: 6px;
-		transition: background 0.15s;
+	.neg.back {
+		stroke-width: 9.5px;
 	}
 
-	.studio:hover {
-		background: var(--surface-3);
+	.bangmark {
+		stroke-width: 11px;
 	}
 
-	.badge {
-		position: absolute;
-		top: 0;
-		right: 0;
-		display: grid;
-		place-items: center;
-		border-radius: 50%;
-		box-shadow: 0 0 0 1.5px var(--bg);
+	.tile.due .tileicon {
+		filter: drop-shadow(0 0 5px rgba(251, 191, 36, 0.35)) drop-shadow(0 0 12px rgba(255, 77, 158, 0.25));
 	}
 
-	.badge.open {
-		width: 7px;
-		height: 7px;
-		background: var(--warn);
+	.tile.open .tileicon {
+		filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.65)) drop-shadow(0 0 22px rgba(168, 85, 247, 0.4));
 	}
 
-	.badge.done {
-		width: 9px;
-		height: 9px;
-		top: -1px;
-		right: -1px;
-		background: var(--ok);
-		color: var(--bg);
+	.tile:hover .tileicon,
+	.tile:focus-visible .tileicon {
+		filter: drop-shadow(0 0 6px rgba(255, 77, 158, 0.6)) drop-shadow(0 0 18px rgba(168, 85, 247, 0.45));
+		animation: tilebloom 0.7s ease-out;
 	}
 
-	/* Paid promotion as YouTube reports it, in the top-left corner: green
-	   when ticked, red when not (or not read yet). A badge over the logo's
-	   corner like the Studio one, so the logo itself stays unaltered. */
-	.badge.paid {
-		width: 9px;
-		height: 9px;
-		top: -1px;
-		right: auto;
-		left: -1px;
-		background: var(--danger);
-		color: var(--bg);
-		cursor: help;
+	.tile.due:hover .tileicon,
+	.tile.due:focus-visible .tileicon {
+		filter: drop-shadow(0 0 7px rgba(251, 191, 36, 0.7)) drop-shadow(0 0 20px rgba(255, 77, 158, 0.5));
 	}
 
-	.badge.paid.on {
-		background: var(--ok);
+	.tile.open:hover .tileicon,
+	.tile.open:focus-visible .tileicon {
+		filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.85)) drop-shadow(0 0 28px rgba(168, 85, 247, 0.55));
 	}
 
-	/* Waiting on YouTube: a turning ring where the YouTube icon will be (or,
-	   once there, where Jestr's button will be). Still with reduced motion. */
-	.spinner {
-		flex: none;
-		width: 14px;
-		height: 14px;
-		margin: 0 5px;
-		border-radius: 50%;
-		border: 2px solid var(--surface-3);
-		border-top-color: var(--pink-soft);
-		animation: spin 0.9s linear infinite;
-		cursor: help;
+	.tile:hover .box.idle,
+	.tile:focus-visible .box.idle {
+		fill: var(--text-dim);
 	}
 
-	.spinner.small {
-		width: 11px;
-		height: 11px;
-		margin: 0 8px;
+	.tile:hover .box.due,
+	.tile:focus-visible .box.due {
+		stroke-width: 6.5px;
 	}
 
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
+	.tile:hover .bangmark,
+	.tile:focus-visible .bangmark {
+		stroke-width: 12.5px;
+	}
+
+	.tile:hover .box.open,
+	.tile:focus-visible .box.open {
+		fill: #b56ef9;
+	}
+
+	/* The arrow: hidden until the pointer is on the box, then sliding in. */
+	.tilearrow {
+		color: var(--pink-soft);
+		opacity: 0;
+		transform: translateX(-6px);
+	}
+
+	.tilearrow path {
+		stroke-width: 3px;
+	}
+
+	.tile:hover .tilearrow,
+	.tile:focus-visible .tilearrow {
+		opacity: 1;
+		transform: none;
+		filter: drop-shadow(0 0 5px rgba(255, 77, 158, 0.7));
+	}
+
+	/* Open, the box carries the way back itself. */
+	.tile.open .tilearrow {
+		opacity: 0;
+		transform: translateX(-6px);
+	}
+
+	@keyframes tilebloom {
+		0% {
+			filter: drop-shadow(0 0 0 rgba(255, 77, 158, 0)) drop-shadow(0 0 0 rgba(168, 85, 247, 0));
+		}
+		40% {
+			filter: drop-shadow(0 0 12px rgba(255, 77, 158, 0.9)) drop-shadow(0 0 32px rgba(168, 85, 247, 0.65));
 		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.spinner {
+		.tile:hover .tileicon,
+		.tile:focus-visible .tileicon {
 			animation: none;
-			border-top-color: var(--warn);
 		}
+		.tilearrow {
+			transition: opacity 0.2s;
+			transform: none;
+		}
+	}
+
+	/* How many videos are on the list, the only words under the box. */
+	.tilecount {
+		min-width: 26px;
+		padding: 2px 10px;
+		border-radius: 999px;
+		text-align: center;
+		font-size: 13.5px;
+		font-weight: 650;
+		background: var(--surface-2);
+		color: var(--text-dim);
+		transition: color 0.2s;
+	}
+
+	.tile:hover .tilecount,
+	.tile:focus-visible .tilecount,
+	.tile.open .tilecount {
+		color: var(--text);
 	}
 
 	.worker {
@@ -1005,7 +999,7 @@
 			align-items: center;
 			gap: 12px;
 		}
-		/* A list does not fit a one-row bar; the wide layout shows it. */
+		/* Neither fits a one-row bar; the wide layout shows them. */
 		.todo,
 		.projects {
 			display: none;
