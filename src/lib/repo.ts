@@ -897,8 +897,9 @@ export function subscribeYouTubeTargets(onChange: () => void): () => void {
 }
 
 /**
- * flock's YouTube uploads since the list began: those YouTube has, with what
- * may be left to set in Studio, and those still on their way (no link yet).
+ * flock's YouTube uploads since the list began: those YouTube has, each with
+ * its thumbnail and paid promotion to set in Studio, and those still on their
+ * way (no link yet).
  */
 export async function loadTodoUploads(since: string): Promise<UploadRow[]> {
 	return pb.collection('upload_targets').getFullList<UploadRow>({
@@ -906,7 +907,6 @@ export async function loadTodoUploads(since: string): Promise<UploadRow[]> {
 			"platform = 'youtube' && created >= {:since} && (remote_url != '' || status = 'pending' || status = 'publishing')",
 			{ since: new Date(since) }
 		),
-		expand: 'job',
 		fields: UPLOAD_FIELDS,
 		sort: 'created'
 	});

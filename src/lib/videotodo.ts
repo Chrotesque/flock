@@ -6,8 +6,9 @@ import { studioTasks, studioUrl, videoIdOf } from './studio';
  * left to do by hand, each with a YouTube icon that opens the video's edit
  * page in Studio.
  *
- * - Studio: a flock upload whose paid promotion or Short's cover YouTube's
- *   API cannot set (studio.ts). Opening it through the icon counts as done.
+ * - Studio: every flock upload YouTube has, for its thumbnail (a Short's
+ *   cover) and paid promotion, which flock does not set (studio.ts).
+ *   Opening it through the icon counts as done.
  * - Jestr, only with `general.jestrIntegration` on: every video gone public
  *   on a connected channel — through flock or not — until its Jestr button
  *   says it is linked on jestr.gg. Jestr has no API (checked 11 Oct 2026: no
@@ -65,11 +66,9 @@ export interface UploadRow {
 	/** `pending` (queued) and `publishing` (uploading) are the waiting ones. */
 	status?: string;
 	created?: string;
-	options?: { paidPromotion?: boolean };
-	expand?: { job?: { thumbnail?: string } };
 }
 
-export const UPLOAD_FIELDS = 'id,title,remote_url,status,created,options.paidPromotion,expand.job.thumbnail';
+export const UPLOAD_FIELDS = 'id,title,remote_url,status,created';
 
 /** What a waiting line is waiting for, in the words its spinner's tooltip uses. */
 export const WAITING = {
@@ -213,15 +212,9 @@ export function todoLines(
 			lineFor(id, created, upload.title).waiting = WAITING.listing;
 		}
 		if (state.studio.includes(id)) continue;
-		const tasks = studioTasks(
-			Boolean(upload.options?.paidPromotion),
-			Boolean(upload.expand?.job?.thumbnail),
-			statsById.get(id)?.duration
-		);
-		if (tasks.length === 0) continue;
 		const stat = statsById.get(id);
 		lineFor(id, Number.isFinite(instant(stat?.published_at)) ? instant(stat?.published_at) : created, upload.title).studio =
-			tasks;
+			studioTasks(stat?.duration);
 	}
 
 	if (options.jestr) {

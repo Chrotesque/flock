@@ -26,13 +26,11 @@ const stat = (id: string, published: string, extra: Partial<StatsRow> = {}): Sta
 	...extra
 });
 
-const upload = (id: string, created: string, paid: boolean, thumbnail: string): UploadRow => ({
+const upload = (id: string, created: string): UploadRow => ({
 	id: `t-${id}`,
 	title: `Upload ${id}`,
 	remote_url: `https://www.youtube.com/watch?v=${id}`,
-	created,
-	options: { paidPromotion: paid },
-	expand: { job: { thumbnail } }
+	created
 });
 
 describe('startOfDay', () => {
@@ -101,11 +99,11 @@ describe('todoLines', () => {
 		}),
 		stat('hidden', '2026-10-11 09:00:00.000Z', { privacy: 'unlisted' })
 	];
-	const uploads = [upload('soon', '2026-10-11 15:06:41.000Z', true, 'cover.png')];
+	const uploads = [upload('soon', '2026-10-11 15:06:41.000Z')];
 
-	it('without Jestr, lists only uploads with something to set in Studio', () => {
+	it('without Jestr, lists only flock uploads, each with its cover and paid promotion to set', () => {
 		const lines = todoLines(stats, uploads, fresh, { jestr: false });
-		expect(lines.map((l) => [l.id, l.studio, l.jestr])).toEqual([['soon', ['paid promotion', 'Shorts cover'], null]]);
+		expect(lines.map((l) => [l.id, l.studio, l.jestr])).toEqual([['soon', ['Shorts cover', 'paid promotion'], null]]);
 		expect(lines[0].studioUrl).toBe('https://studio.youtube.com/video/soon/edit');
 		expect(lines[0].title).toBe('Video soon');
 	});
@@ -128,16 +126,18 @@ describe('todoLines', () => {
 		expect(todoLines(stats, uploads, { ...state, jestr: ['early', 'late', 'soon'] }, { jestr: true })).toEqual([]);
 	});
 
-	it('lists an upload the worker has not read yet by its own title, cover as a maybe', () => {
-		const lines = todoLines([], [upload('new', '2026-10-11 16:00:00.000Z', false, 'c.png')], fresh, { jestr: true });
-		expect(lines.map((l) => [l.id, l.title, l.studio])).toEqual([['new', 'Upload new', ['Shorts cover']]]);
+	it('lists an upload the worker has not read yet by its own title, with the plain thumbnail', () => {
+		const lines = todoLines([], [upload('new', '2026-10-11 16:00:00.000Z')], fresh, { jestr: true });
+		expect(lines.map((l) => [l.id, l.title, l.studio])).toEqual([['new', 'Upload new', ['thumbnail', 'paid promotion']]]);
 	});
 
-	it('leaves out uploads from before the start, and a long video’s thumbnail', () => {
-		const old = upload('before', '2026-10-10 17:00:00.000Z', true, 'c.png');
-		const long = upload('long', '2026-10-11 10:00:00.000Z', false, 'c.png');
+	it('leaves out uploads from before the start; a long video gets its thumbnail', () => {
+		const old = upload('before', '2026-10-10 17:00:00.000Z');
+		const long = upload('long', '2026-10-11 10:00:00.000Z');
 		const longStat = stat('long', '2026-10-11 10:00:00.000Z', { duration: 900, privacy: 'unlisted' });
-		expect(todoLines([longStat], [old, long], fresh, { jestr: false })).toEqual([]);
+		expect(todoLines([longStat], [old, long], fresh, { jestr: false }).map((l) => [l.id, l.studio])).toEqual([
+			['long', ['thumbnail', 'paid promotion']]
+		]);
 	});
 
 	it('holds a placeholder from confirm until YouTube has the video', () => {
@@ -165,8 +165,9 @@ describe('todoLines', () => {
 		expect(after.map((l) => [l.id, l.waiting, l.jestr])).toEqual([['v1', null, 'waiting']]);
 	});
 
-	it('without Jestr, a video YouTube has and nothing to set is no line at all', () => {
-		const up: UploadRow = { id: 't1', status: 'scheduled', remote_url: 'https://youtu.be/v1', created: '2026-10-11 20:50:30.000Z' };
-		expect(todoLines([], [up], fresh, { jestr: false })).toEqual([]);
+	it('without Jestr, a video YouTube has is no line once Studio was opened for it', () => {
+		const up: UploadRow = { id: 't1', status: 'scheduled', remote_url: 'https://www.youtube.com/watch?v=v1', created: '2026-10-11 20:50:30.000Z' };
+		expect(todoLines([], [up], fresh, { jestr: false }).map((l) => l.studio)).toEqual([['thumbnail', 'paid promotion']]);
+		expect(todoLines([], [up], { ...fresh, studio: ['v1'] }, { jestr: false })).toEqual([]);
 	});
 });

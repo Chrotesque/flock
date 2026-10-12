@@ -12,7 +12,8 @@ import { SHORT_MAX_SECONDS } from './videokind';
  *   vertical cover a Short's shelf and feed show is a frame of the video
  *   until it is set in Studio.
  *
- * The worker still sends both, in case YouTube ever honours them.
+ * Since 0.11.7 flock sends neither (the worker still handles rows queued
+ * before), so every upload leaves both to Studio.
  */
 
 /** A video's edit page in YouTube Studio, where both are set. */
@@ -37,20 +38,19 @@ export function isShortLength(seconds: number | null | undefined): boolean | nul
 	return s <= SHORT_MAX_SECONDS;
 }
 
-export const STUDIO_PAID = 'paid promotion';
+export const STUDIO_THUMBNAIL = 'thumbnail';
 export const STUDIO_COVER = 'Shorts cover';
+export const STUDIO_PAID = 'paid promotion';
 
 /**
- * What has to be set by hand in Studio for an upload: paid promotion when
- * ticked, and the cover when a thumbnail was picked for a Short — or for a
- * video whose length is not known yet, which is more likely a Short than not
- * here.
+ * What is left to set by hand in Studio after any flock upload: always the
+ * thumbnail (a Short's cover for a Short) and paid promotion — flock sets
+ * neither, and only the person knows whether a video has paid promotion
+ * (the user's call, 12 Oct 2026: there is always something to do). A video
+ * whose length is not read yet gets the plain thumbnail.
  */
-export function studioTasks(paidPromotion: boolean, hasThumbnail: boolean, seconds: number | null | undefined): string[] {
-	const tasks: string[] = [];
-	if (paidPromotion) tasks.push(STUDIO_PAID);
-	if (hasThumbnail && isShortLength(seconds) !== false) tasks.push(STUDIO_COVER);
-	return tasks;
+export function studioTasks(seconds: number | null | undefined): string[] {
+	return [isShortLength(seconds) ? STUDIO_COVER : STUDIO_THUMBNAIL, STUDIO_PAID];
 }
 
 /** The same, said before upload on the Review and Details steps, one line each. */

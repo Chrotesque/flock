@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { STUDIO_COVER, STUDIO_PAID, isShortLength, studioNotes, studioTasks, studioUrl, videoIdOf } from './studio';
+import {
+	STUDIO_COVER,
+	STUDIO_PAID,
+	STUDIO_THUMBNAIL,
+	isShortLength,
+	studioNotes,
+	studioTasks,
+	studioUrl,
+	videoIdOf
+} from './studio';
 
 describe('studioUrl and videoIdOf', () => {
 	it('opens the video’s edit page', () => {
@@ -25,17 +34,13 @@ describe('isShortLength', () => {
 });
 
 describe('studioTasks', () => {
-	it('lists paid promotion and a Short’s cover', () => {
-		expect(studioTasks(true, true, 30)).toEqual([STUDIO_PAID, STUDIO_COVER]);
+	it('always leaves the cover and paid promotion for a Short', () => {
+		expect(studioTasks(30)).toEqual([STUDIO_COVER, STUDIO_PAID]);
 	});
 
-	it('counts a video of unknown length as a possible Short', () => {
-		expect(studioTasks(false, true, undefined)).toEqual([STUDIO_COVER]);
-	});
-
-	it('has nothing for a long video’s thumbnail, or with nothing ticked', () => {
-		expect(studioTasks(false, true, 600)).toEqual([]);
-		expect(studioTasks(false, false, 30)).toEqual([]);
+	it('the thumbnail and paid promotion for a long video, or one of unknown length', () => {
+		expect(studioTasks(600)).toEqual([STUDIO_THUMBNAIL, STUDIO_PAID]);
+		expect(studioTasks(undefined)).toEqual([STUDIO_THUMBNAIL, STUDIO_PAID]);
 	});
 });
 
