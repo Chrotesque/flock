@@ -187,18 +187,54 @@
 		outline: none;
 	}
 
-	/* Open is a selected state, so it takes the selection colours. */
+	/* Open is a selected state, so it takes the selection colours, and
+	   glows in them: a bloom on opening that settles into a steady halo. */
 	.orb.open {
 		background: var(--accent-grad);
 		border-color: transparent;
 		color: #fff;
+		box-shadow:
+			0 0 18px 6px rgba(255, 77, 158, 0.6),
+			0 0 50px 18px rgba(168, 85, 247, 0.4);
+		animation: bloom 0.8s ease-out;
+	}
+
+	.orb.open:hover,
+	.orb.open:focus-visible {
+		box-shadow:
+			0 0 22px 8px rgba(255, 77, 158, 0.75),
+			0 0 60px 22px rgba(168, 85, 247, 0.5);
+	}
+
+	@keyframes bloom {
+		0% {
+			box-shadow:
+				0 0 0 0 rgba(255, 77, 158, 0),
+				0 0 0 0 rgba(168, 85, 247, 0);
+		}
+		40% {
+			box-shadow:
+				0 0 34px 14px rgba(255, 77, 158, 0.85),
+				0 0 100px 40px rgba(168, 85, 247, 0.55);
+		}
+		100% {
+			box-shadow:
+				0 0 18px 6px rgba(255, 77, 158, 0.6),
+				0 0 50px 18px rgba(168, 85, 247, 0.4);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.orb.open {
+			animation: none;
+		}
 	}
 
 	/* The icon sits inside the visible quarter, clear of its curved edge. */
 	.glyph {
 		position: absolute;
-		top: calc(var(--radius) + 11px);
-		left: calc(var(--radius) + 11px);
+		top: calc(var(--radius) + 7px);
+		left: calc(var(--radius) + 7px);
 		display: grid;
 		opacity: 0;
 		transition: opacity 0.12s;
