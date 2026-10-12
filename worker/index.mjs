@@ -1395,8 +1395,7 @@ async function main() {
 			try {
 				await instagramStatsPass({ pb, config, log });
 			} catch (err) {
-				log(`instagram stats pass failed: ${err.message.split('
-')[0]}`);
+				log(`instagram stats pass failed: ${err.message.split('\n')[0]}`);
 			} finally {
 				igBusy = false;
 			}
