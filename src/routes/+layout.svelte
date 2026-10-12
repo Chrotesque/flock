@@ -19,7 +19,7 @@
 	import { readFlockPaste } from '$lib/flockpaste';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { devtestActive, startDevtest } from '$lib/devtest';
+	import { DEVTEST_ICON, devtestActive, devtestPages, startDevtest } from '$lib/devtest';
 
 	onMount(() => {
 		void general.load();
@@ -147,6 +147,13 @@
 		const path = page.url.pathname.replace(base, '') || '/';
 		return path.startsWith(href);
 	}
+
+	/** A local page's link: its own id in the address, or the first with none. */
+	function isLocalActive(id: string): boolean {
+		if (!isActive('/devtest')) return false;
+		const wanted = page.url.searchParams.get('page');
+		return devtestPages.some((p) => p.id === wanted) ? wanted === id : devtestPages[0]?.id === id;
+	}
 </script>
 
 <div class="shell">
@@ -170,6 +177,34 @@
 				</a>
 			{/each}
 		</nav>
+
+		<!-- Pages a local-devtest module brings (devtest.ts): not in flock's
+		     repository, so a build without the folder has none of these. -->
+		{#if devtestPages.length > 0}
+			<nav class="local" aria-label="Local pages">
+				{#each devtestPages as local (local.id)}
+					<a
+						href="{base}/devtest?page={encodeURIComponent(local.id)}"
+						class="navlink"
+						class:active={isLocalActive(local.id)}
+					>
+						<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+							<path
+								d={local.icon ?? DEVTEST_ICON}
+								stroke="currentColor"
+								stroke-width="1.7"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+						<span class="text">
+							{local.label}
+							<em>{local.hint ?? 'Local only'}</em>
+						</span>
+					</a>
+				{/each}
+			</nav>
+		{/if}
 
 		<!-- Project folders that hold a flock JSON file and have not been sent
 		     yet, right under Upload: one press opens the upload, filled from
@@ -915,6 +950,27 @@
 		color: var(--pink);
 	}
 
+	/* Local pages: set apart from the main links by a dashed line, in
+	   DevTest's purple rather than the selection pink, like its sidebar line. */
+	.local {
+		margin-top: 10px;
+		padding-top: 10px;
+		border-top: 1px dashed rgba(168, 85, 247, 0.4);
+	}
+
+	.local .navlink svg {
+		color: var(--purple);
+	}
+
+	.local .navlink.active {
+		background: rgba(168, 85, 247, 0.12);
+		box-shadow: inset 0 0 0 1px rgba(168, 85, 247, 0.4);
+	}
+
+	.local .navlink.active svg {
+		color: var(--purple);
+	}
+
 	.text {
 		font-size: 13.5px;
 		font-weight: 560;
@@ -969,6 +1025,12 @@
 		nav {
 			grid-auto-flow: column;
 			gap: 2px;
+		}
+		.local {
+			margin: 0;
+			padding: 0 0 0 10px;
+			border-top: none;
+			border-left: 1px dashed rgba(168, 85, 247, 0.4);
 		}
 		.text em {
 			display: none;

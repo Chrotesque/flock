@@ -20,7 +20,7 @@
 	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { VERSION } from '$lib/version';
-	import { devtestActive, devtestModules } from '$lib/devtest';
+	import { DEVTEST_ICON, devtestActive, devtestModules } from '$lib/devtest';
 	import type {
 		FilterRule,
 		OptionValues,
@@ -38,9 +38,9 @@
 
 	type Section = 'general' | 'brands' | 'templates' | 'other' | 'devtest' | PlatformId;
 
-	// A flask: the DevTest section, listed only while a local-devtest module exists.
-	const DEVTEST_ICON =
-		'M9.5 4h5M10.5 4v5.2L5.6 17.4A1.7 1.7 0 0 0 7.1 20h9.8a1.7 1.7 0 0 0 1.5-2.6L13.5 9.2V4M8 14h8';
+	// The DevTest section lists only while a local-devtest module has settings;
+	// one bringing just a page (a sidebar link) has nothing to show here.
+	const devtestSettings = devtestModules.filter((mod) => mod.Settings);
 
 	let active = $state<Section>('general');
 	let tab = $state<'defaults' | 'tags' | 'filters' | 'profiles'>('defaults');
@@ -111,7 +111,7 @@
 				section === 'general' ||
 				section === 'other' ||
 				section === 'brands' ||
-				(section === 'devtest' && devtestModules.length > 0)
+				(section === 'devtest' && devtestSettings.length > 0)
 			) {
 				active = section;
 				return;
@@ -228,7 +228,7 @@
 								</span>
 							</button>
 						</li>
-						{#if devtestModules.length > 0}
+						{#if devtestSettings.length > 0}
 							<li class:active={active === 'devtest'}>
 								<button class="pick" onclick={() => (active = 'devtest')}>
 									<span class="ic">
@@ -472,7 +472,7 @@
 						</header>
 
 						<div class="otherbody">
-							{#each devtestModules as mod (mod.title)}
+							{#each devtestSettings as mod (mod.title)}
 								<section class="devtestmod">
 									<h3>{mod.title}</h3>
 									{#if mod.Settings}
