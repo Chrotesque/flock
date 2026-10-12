@@ -31,6 +31,7 @@ export const DEFAULT_GENERAL: GeneralSettings = {
 	projectFolders: [],
 	complianceBranding: true,
 	jestrIntegration: false,
+	showTodo: true,
 	timeZones: []
 };
 
@@ -73,6 +74,7 @@ class GeneralStore {
 				projectFolders: readFolders(stored.projectFolders),
 				complianceBranding: stored.complianceBranding ?? true,
 				jestrIntegration: stored.jestrIntegration === true,
+				showTodo: stored.showTodo !== false,
 				timeZones: Array.isArray(stored.timeZones) ? stored.timeZones : []
 			};
 			this.#loaded = true;
@@ -147,6 +149,10 @@ class GeneralStore {
 
 		if (before.jestrIntegration !== after.jestrIntegration) {
 			logAction('settings', `Turned the Jestr integration ${after.jestrIntegration ? 'on' : 'off'}`);
+		}
+
+		if (before.showTodo !== after.showTodo) {
+			logAction('settings', `${after.showTodo ? 'Showed' : 'Hid'} the To finish list`);
 		}
 
 		for (const key of ['watchFolders', 'projectFolders'] as const) this.#logFolders(key, before, after);
@@ -271,6 +277,12 @@ class GeneralStore {
 
 	setJestrIntegration(on: boolean) {
 		this.value.jestrIntegration = on;
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	setShowTodo(on: boolean) {
+		this.value.showTodo = on;
 		this.queueSave();
 		this.#queueLog();
 	}

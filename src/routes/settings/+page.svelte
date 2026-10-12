@@ -217,7 +217,7 @@
 										{general.value.complianceBranding ? 'compliance on' : 'compliance off'}{general.value
 											.jestrIntegration
 											? ' · Jestr'
-											: ''}
+											: ''}{general.value.showTodo ? '' : ' · To finish hidden'}
 									</span>
 								</span>
 							</button>
@@ -403,6 +403,17 @@
 								button beside its YouTube icon. Press it once the video is linked to its campaign on
 								jestr.gg. Jestr offers no API, so flock cannot see or make the link itself. A
 								scheduled video is listed straight away, its button usable once it is public.
+							</p>
+
+							<Checkbox
+								checked={general.value.showTodo}
+								label="Show the To finish list"
+								onchange={(next) => general.setShowTodo(next)}
+							/>
+							<p class="otherhint">
+								The sidebar's list of videos with something left to do by hand. Switch it off for a
+								clean screen, while recording a demo for example; nothing on the list is lost, and it
+								comes back as it was when switched on again. Applies to every computer using flock.
 							</p>
 
 							<TimeZoneList />

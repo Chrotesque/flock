@@ -515,6 +515,8 @@ by hand.
   connected channel is listed with a *Jestr* button; press it once the video is
   linked on [Jestr](https://jestr.gg). A scheduled video's button works once it
   is public.
+- Settings → *Other* can hide the list, for a clean screen recording, say.
+  Nothing on it is lost.
 
 ### Settings
 
@@ -526,8 +528,8 @@ by hand.
 - *Brands:* add, rename, order and delete brands, and pick each brand's
   accounts. Deleting a brand keeps its uploads, and anything queued still goes
   out.
-- *Other:* YouTube's official branding, the Jestr integration, and extra time
-  zones for the calendar.
+- *Other:* YouTube's official branding, the Jestr integration, whether the
+  *To finish* list shows, and extra time zones for the calendar.
 
 **The brand in view** has:
 

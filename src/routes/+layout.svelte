@@ -188,8 +188,8 @@
 
 		<!-- Videos with something left to do by hand — set in Studio, linked on
 		     Jestr — centred in the free stretch between the main links and the
-		     worker. Rules in videotodo.ts. -->
-		{#if videoTodo.lines.length > 0}
+		     worker. Rules in videotodo.ts; Settings → Other can hide it. -->
+		{#if general.value.showTodo && videoTodo.lines.length > 0}
 			<section class="todo" aria-label="Videos to finish">
 				<p class="todohead">To finish <span class="count">{videoTodo.lines.length}</span></p>
 				<ul>

@@ -257,6 +257,11 @@ export interface GeneralSettings {
 	 */
 	jestrIntegration: boolean;
 	/**
+	 * Whether the sidebar shows the To finish list. On by default; off hides
+	 * it everywhere (for a clean screen recording, say) without losing a mark.
+	 */
+	showTodo: boolean;
+	/**
 	 * Extra zones for the calendar's second time column, beside the built-in
 	 * US West and US East. IANA names; one the runtime does not know is left
 	 * out of the dropdown rather than shown as a wrong clock.
