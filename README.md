@@ -557,6 +557,10 @@ how many things are listed. Click it to open the list over the page.
   shows its platform and brand and links to the upload's overview in the Log;
   *Dismiss* takes it off the list once dealt with (the Log keeps it). The rest
   go by themselves once fixed.
+- A failed post has **Retry** too, here and on its overview in the Log: press it
+  twice within two seconds to send it again. It goes out at its slot if that is
+  still ahead (the button shows the time), or at once if it has passed. A post
+  the platform already has a link for is never retried.
 - Each video row has the thumbnail (hover it to see it larger), the title (opens the
   video), whether YouTube reports paid promotion (green $ ticked, red not), and
   a *Studio* button opening the video in YouTube Studio — a yellow dot until it

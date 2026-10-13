@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
 	addDismissed,
 	attentionItems,
+	canRetry,
 	DISMISSED_CAP,
 	hasFailure,
 	readDismissed,
+	retryWhen,
 	systemProblems,
 	targetProblems
 } from './attention';
@@ -88,6 +90,46 @@ describe('targetProblems', () => {
 			label
 		);
 		expect(again.key).not.toBe(first.key);
+	});
+});
+
+describe('targetProblems after a change', () => {
+	it('counts the grace from the last change, so a post just retried is not flagged at once', () => {
+		const retried = target({ id: 'r', status: 'pending', scheduled_at: iso(now - 3 * H), updated: iso(now - 60_000) });
+		expect(targetProblems([retried], NOW, label)).toEqual([]);
+		const forgotten = { ...retried, updated: iso(now - 20 * 60_000) };
+		expect(targetProblems([forgotten], NOW, label).map((p) => p.kind)).toEqual(['unsent']);
+		const claimed = target({ id: 'c', status: 'publishing', scheduled_at: iso(now - 5 * H), updated: iso(now - 30 * 60_000) });
+		expect(targetProblems([claimed], NOW, label)).toEqual([]);
+	});
+
+	it('offers a retry for a failure the platform has no link for', () => {
+		const [plain] = targetProblems([target({ id: 'f', status: 'failed', scheduled_at: iso(now - H) })], NOW, label);
+		expect(plain.retry).toEqual({ target: 'f', slot: iso(now - H) });
+		const [linked] = targetProblems(
+			[target({ id: 'f', status: 'failed', scheduled_at: iso(now - H), remote_url: 'https://example.com/p' })],
+			NOW,
+			label
+		);
+		expect(linked.retry).toBeUndefined();
+	});
+});
+
+describe('canRetry and retryWhen', () => {
+	it('retries only a failed post without a link', () => {
+		expect(canRetry({ status: 'failed' })).toBe(true);
+		expect(canRetry({ status: 'failed', remote_url: 'https://example.com/p' })).toBe(false);
+		expect(canRetry({ status: 'pending' })).toBe(false);
+		expect(canRetry({ status: 'published', remote_url: '' })).toBe(false);
+	});
+
+	it('sends it at its slot while that is ahead, else at once', () => {
+		expect(retryWhen(iso(now + H), NOW)?.getTime()).toBe(now + H);
+		expect(retryWhen('2026-10-14 16:00:00.000Z', new Date('2026-10-14T15:00:00Z'))?.toISOString()).toBe(
+			'2026-10-14T16:00:00.000Z'
+		);
+		expect(retryWhen(iso(now - H), NOW)).toBeNull();
+		expect(retryWhen('', NOW)).toBeNull();
 	});
 });
 

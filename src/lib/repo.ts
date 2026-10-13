@@ -3,8 +3,9 @@ import { PLATFORMS, PLATFORM_IDS, isPlatformId } from './platforms';
 import { DEFAULT_SCHEDULING } from './types';
 import { logAction, assertDeviceNamed } from './log';
 import { newId } from './id';
-import { formatSchedule } from './format';
+import { firstLine, formatSchedule } from './format';
 import { STATS_FIELDS, UPLOAD_FIELDS, type StatsRow, type UploadRow } from './videotodo';
+import { canRetry, retryWhen } from './attention';
 import {
 	FIRST_BRAND_NAME,
 	brandKey,
@@ -1360,6 +1361,33 @@ export async function rescheduleTarget(id: string, scheduledAt: string): Promise
 		'calendar',
 		`Rescheduled ${before.platform}`,
 		`${new Date(before.scheduled_at).toLocaleString()} → ${new Date(scheduledAt).toLocaleString()}`,
+		{ job: before.job }
+	);
+}
+
+/**
+ * Sends a failed post again: back to `pending`, its error and the old
+ * attempt's handle cleared, so the worker takes it up like a new one — at
+ * its slot while that is still ahead, at once after (retryWhen). Read afresh
+ * first and refused unless it still failed and the platform has no link for
+ * it (canRetry): a post the platform has is never sent twice. Logged against
+ * the upload, with what it failed with.
+ */
+export async function retryTarget(id: string): Promise<void> {
+	assertDeviceNamed();
+	const before = await pb.collection('upload_targets').getOne<UploadTarget>(id);
+	if (!canRetry(before)) {
+		throw new Error(
+			before.remote_url ? 'The platform has this post already; not sending it again.' : 'This post has not failed, or not any more.'
+		);
+	}
+	await pb.collection('upload_targets').update(id, { status: 'pending', error: '', handle: null });
+	const when = retryWhen(before.scheduled_at, new Date());
+	logAction(
+		'upload',
+		`Retried ${PLATFORMS[before.platform as PlatformId]?.label ?? before.platform}`,
+		`${before.title || 'Untitled'}: goes out ${when ? `at ${when.toLocaleString()}` : 'now'}. ` +
+			`It had failed with: ${firstLine(before.error || '') || 'no error given'}`,
 		{ job: before.job }
 	);
 }

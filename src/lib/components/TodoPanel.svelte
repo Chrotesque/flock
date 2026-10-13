@@ -13,13 +13,15 @@
 	import { WAITING, type TodoLine } from '$lib/videotodo';
 	import type { Attention } from '$lib/attention';
 	import PlatformIcon from './PlatformIcon.svelte';
+	import RetryButton from './RetryButton.svelte';
 
 	/**
 	 * The To finish list over the whole content area (v0.13.8, the user's
 	 * design): it spreads from the sidebar's tile as a circle and goes back
 	 * into it. First what needs attention (v0.14.7, moved here from the
 	 * dashboard): a row per post gone wrong or the system's trouble, linking
-	 * to the upload's overview, a post's with Dismiss. Then a row per video —
+	 * to the upload's overview, a post's with Dismiss, a failed one's with
+	 * Retry (v0.14.8). Then a row per video —
 	 * preview, title, what YouTube reports about paid promotion, the Studio
 	 * button and Jestr's. Rules in attention.ts and videotodo.ts, state in
 	 * their stores; nothing here decides what is listed.
@@ -140,8 +142,8 @@
 			<div>
 				<h1>To finish <span class="count">{items.length + lines.length}</span></h1>
 				<p class="sub">
-					What needs attention comes first: click a post for its upload in the Log, and dismiss it once dealt
-					with. Then what is left to do by hand on each video: the Studio button opens it in YouTube Studio and
+					What needs attention comes first: click a post for its upload in the Log, retry a failed one, and
+					dismiss it once dealt with. Then what is left to do by hand on each video: the Studio button opens it in YouTube Studio and
 					counts as done; the $ is what YouTube reports about paid promotion.{#if jestr}{' '}Jestr's button goes
 						once the video is linked there.{/if}
 				</p>
@@ -178,7 +180,14 @@
 									<p class="meta" title={item.detail}>{[brandOf(item), item.detail].filter(Boolean).join(' · ')}</p>
 								{/if}
 							</div>
-							<div class="cell">
+							<div class="acts">
+								{#if item.retry}
+									<RetryButton
+										target={item.retry.target}
+										slot={item.retry.slot}
+										onretried={() => void attention.refresh()}
+									/>
+								{/if}
 								{#if item.key}
 									<button
 										class="dismiss"
@@ -448,8 +457,16 @@
 	}
 
 	.attn li {
-		grid-template-columns: 44px minmax(0, 1fr) 120px;
+		grid-template-columns: 44px minmax(0, 1fr) auto;
 		border-left: 3px solid var(--warn);
+	}
+
+	/* Retry (a failed post) and Dismiss, side by side, at the row's end. */
+	.acts {
+		display: flex;
+		align-items: flex-start;
+		justify-content: flex-end;
+		gap: 8px;
 	}
 
 	.attn li.error {

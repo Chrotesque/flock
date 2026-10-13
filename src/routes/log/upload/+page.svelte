@@ -5,6 +5,8 @@
 	import VideoPreview from '$lib/components/VideoPreview.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import TimingChip from '$lib/components/TimingChip.svelte';
+	import RetryButton from '$lib/components/RetryButton.svelte';
+	import { canRetry } from '$lib/attention';
 	import { getLogEntry, listJobLog, listJobWorkerLines } from '$lib/log';
 	import { findLoggedJob, jobFileUrl, loadUploadState } from '$lib/repo';
 	import { PLATFORMS } from '$lib/platforms';
@@ -395,6 +397,12 @@
 						{/if}
 					</dl>
 
+					{#if now && canRetry(now)}
+						<div class="retryrow">
+							<RetryButton target={now.id} slot={now.scheduled_at} onretried={() => void load(page.url.searchParams)} />
+						</div>
+					{/if}
+
 					{#if t.warnings.length > 0}
 						<ul class="warnings">
 							{#each t.warnings as warning (warning)}<li>{warning}</li>{/each}
@@ -698,6 +706,11 @@
 
 	.bad {
 		color: var(--danger);
+	}
+
+	/* A failed post's Retry, under its error. */
+	.retryrow {
+		display: flex;
 	}
 
 	.other {

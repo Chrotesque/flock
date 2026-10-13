@@ -29,6 +29,8 @@ export interface Attention {
 	platform: PlatformId | '';
 	/** The post's brand id; '' for a system item. */
 	brand: string;
+	/** A failed post that may be sent again (`canRetry`): its row and slot. */
+	retry?: { target: string; slot: string };
 }
 
 const MIN = 60_000;
@@ -52,7 +54,10 @@ const byLevel = (a: Attention, b: Attention) => (a.level === b.level ? 0 : a.lev
  * nothing and it stays private.
  *
  * A failure's key carries the row's `updated`, so a post retried and failing
- * again comes back after its first failure was dismissed.
+ * again comes back after its first failure was dismissed. The grace before
+ * "never sent" and "uploading for" also counts from the row's last change,
+ * so a post just retried, its slot long gone, is not flagged in the seconds
+ * before the worker takes it up again.
  */
 export function targetProblems(targets: DashTarget[], now: Date, label: (p: PlatformId) => string): Attention[] {
 	const at = now.getTime();
@@ -60,6 +65,8 @@ export function targetProblems(targets: DashTarget[], now: Date, label: (p: Plat
 	const importing = new Set<string>();
 	for (const t of [...targets].sort((a, b) => time(b.scheduled_at) - time(a.scheduled_at))) {
 		const slot = time(t.scheduled_at);
+		const changed = time(t.updated);
+		const sinceChange = (from: number) => at - (Number.isFinite(changed) ? Math.max(from, changed) : from);
 		const name = `${label(t.platform)}: "${nameOf(t)}"`;
 		const post = { job: t.job, platform: t.platform, brand: t.brand ?? '' };
 		if (t.status === 'failed' && at - slot < 7 * DAY) {
@@ -69,7 +76,8 @@ export function targetProblems(targets: DashTarget[], now: Date, label: (p: Plat
 				key: `failed:${t.id}:${t.updated ?? ''}`,
 				text: `${name} failed`,
 				detail: t.error || '',
-				...post
+				...post,
+				...(canRetry(t) ? { retry: { target: t.id, slot: t.scheduled_at } } : {})
 			});
 		} else if (t.importing && t.status === 'pending') {
 			if (!importing.has(t.job) && at - time(t.jobCreated) > 10 * MIN) {
@@ -86,7 +94,7 @@ export function targetProblems(targets: DashTarget[], now: Date, label: (p: Plat
 			}
 		} else if (t.status === 'pending') {
 			const due = t.platform === 'youtube' ? time(t.jobCreated) : slot;
-			if (at - due > 10 * MIN) {
+			if (sinceChange(due) > 10 * MIN) {
 				out.push({
 					level: 'error',
 					kind: 'unsent',
@@ -99,12 +107,12 @@ export function targetProblems(targets: DashTarget[], now: Date, label: (p: Plat
 					...post
 				});
 			}
-		} else if (t.status === 'publishing' && at - Math.max(slot, time(t.jobCreated)) > 90 * MIN) {
+		} else if (t.status === 'publishing' && sinceChange(Math.max(slot, time(t.jobCreated))) > 90 * MIN) {
 			out.push({
 				level: 'warn',
 				kind: 'stuck',
 				key: `stuck:${t.id}`,
-				text: `${name} has been uploading for ${ago(at - Math.max(slot, time(t.jobCreated)))}`,
+				text: `${name} has been uploading for ${ago(sinceChange(Math.max(slot, time(t.jobCreated))))}`,
 				detail: 'Longer than an upload should take; the worker may have lost it.',
 				...post
 			});
@@ -218,6 +226,25 @@ export function attentionItems(
 /** A post did not go out: the sidebar box turns red and pulses. */
 export function hasFailure(items: Attention[]): boolean {
 	return items.some((item) => item.kind === 'failed' || item.kind === 'unsent');
+}
+
+/* ---- retrying ---- */
+
+/**
+ * A post that may be sent again: one that failed and that the platform has
+ * no link for — a post the platform has is never sent twice.
+ */
+export function canRetry(target: { status: string; remote_url?: string }): boolean {
+	return target.status === 'failed' && !target.remote_url;
+}
+
+/**
+ * When a retried post goes out: at its slot while that is still ahead (the
+ * worker holds it, or YouTube does), at once once it has passed — null.
+ */
+export function retryWhen(slot: string, now: Date): Date | null {
+	const at = time(slot);
+	return Number.isFinite(at) && at > now.getTime() ? new Date(at) : null;
 }
 
 /* ---- dismissing ---- */
