@@ -12,6 +12,9 @@
 //                                       the prompt (or given after --token)
 //   pnpm worker:auth --instagram        Instagram through the Facebook Login
 //                                       for Business consent instead
+//   pnpm worker:auth --facebook --token Facebook Pages for reels, the same two
+//                                       ways (any Page, Instagram or not); until
+//                                       it is run, Instagram's Pages are used
 //
 // Each prints a consent URL, collects the code the platform redirects back
 // with, and writes the resulting token into worker/.worker-config.json.
@@ -40,6 +43,7 @@ import {
 	saveGoogleAccounts,
 	saveTikTokAccounts,
 	saveInstagramAccounts,
+	saveFacebookAccounts,
 	CONFIG_PATH
 } from './config.mjs';
 import { mergeAccounts, parseChoice } from './accounts.mjs';
@@ -52,6 +56,7 @@ import {
 	grantedPermissions,
 	listPages
 } from './instagram.mjs';
+import { FACEBOOK_PERMISSIONS, FACEBOOK_SCOPES, checkFacebookGrant } from './facebook.mjs';
 import { fetchOrExplain } from './net.mjs';
 import { accessToken } from './google.mjs';
 
@@ -486,19 +491,21 @@ async function longLivedUserToken(ig, short) {
  * Asked for rather than taken from the command line, so the token stays out
  * of the shell's history.
  */
-async function askForExplorerToken() {
-	const width = Math.max(...INSTAGRAM_PERMISSIONS.map((p) => p.name.length));
+async function askForExplorerToken(permissions = INSTAGRAM_PERMISSIONS, what = 'the Page and the Instagram account') {
+	const width = Math.max(...permissions.map((p) => p.name.length));
 	console.log('\nMake a user token in the Graph API Explorer:\n');
 	console.log('  1. Open https://developers.facebook.com/tools/explorer');
 	console.log('  2. On the right, set "Meta App" to your app and choose "User Token".');
 	console.log('  3. Under "Permissions", add each of these:\n');
-	for (const p of INSTAGRAM_PERMISSIONS) {
+	for (const p of permissions) {
 		console.log(`       ${p.name.padEnd(width)}  ${p.use}${p.required ? '' : ' (optional)'}`);
 	}
-	console.log('\n  4. Click "Generate Access Token" and allow the Page and the Instagram account.');
+	console.log(`\n  4. Click "Generate Access Token" and allow ${what}.`);
 	console.log('  5. Copy the token from the "Access Token" field and paste it here.');
-	console.log('\n  If instagram_content_publish is not in the list, the app lacks the Instagram');
-	console.log('  product set up for Facebook login.');
+	if (permissions === INSTAGRAM_PERMISSIONS) {
+		console.log('\n  If instagram_content_publish is not in the list, the app lacks the Instagram');
+		console.log('  product set up for Facebook login.');
+	}
 
 	const rl = createInterface({ input: stdin, output: stdout });
 	try {
@@ -517,10 +524,10 @@ async function askForExplorerToken() {
  * A failed check is reported and passed: Instagram's own answers later name
  * any missing permission too.
  */
-async function checkInstagramGrant(ig, userToken, fromExplorer) {
+async function checkInstagramGrant(ig, userToken, fromExplorer, check = checkGrant) {
 	let grant;
 	try {
-		grant = checkGrant(await grantedPermissions(ig.apiVersion, userToken));
+		grant = check(await grantedPermissions(ig.apiVersion, userToken));
 	} catch (err) {
 		console.log(`Could not read which permissions were granted: ${err.message}`);
 		return;
@@ -583,11 +590,13 @@ async function choosePages(ig, pages) {
  * chosen. Accounts are added to the list (or refreshed), never dropped: one
  * Facebook login can connect several Instagram accounts at once.
  */
-async function instagram(config) {
-	const ig = config.instagram;
-	const fromExplorer = has('--token');
-	const given = valueOf('--token');
-
+/**
+ * A sixty-day user token for the Meta app, from the Graph API Explorer with
+ * `--token` or from the Facebook Login consent without it: what the Instagram
+ * and the Facebook setups both start from. `scopes` and `permissions` are
+ * what each asks for.
+ */
+async function metaUserToken(ig, { fromExplorer, given, scopes, permissions, what }) {
 	const missing = ['appId', 'appSecret'].filter((key) => !ig[key]);
 	if (missing.length > 0) {
 		throw new Error(
@@ -596,39 +605,49 @@ async function instagram(config) {
 		);
 	}
 
-	let userToken;
 	if (fromExplorer) {
 		// A value after --token is taken as it is; the next flag is not a token.
-		const pasted = given && !given.startsWith('--') ? given : await askForExplorerToken();
-		userToken = await longLivedUserToken(ig, pasted);
-	} else {
-		const state = randomBytes(16).toString('hex');
-		const flow = await obtainCode({
-			redirectUri: ig.redirectUri,
-			state,
-			intro: ig.configId
-				? `\nRequesting the permissions in Facebook Login configuration ${ig.configId}`
-				: `\nRequesting: ${INSTAGRAM_SCOPES.join(', ')}`,
-			buildUrl: (redirectUri) => {
-				const auth = new URL(`https://www.facebook.com/${ig.apiVersion}/dialog/oauth`);
-				auth.searchParams.set('client_id', ig.appId);
-				auth.searchParams.set('redirect_uri', redirectUri);
-				auth.searchParams.set('state', state);
-				auth.searchParams.set('response_type', 'code');
-				if (ig.configId) auth.searchParams.set('config_id', ig.configId);
-				else auth.searchParams.set('scope', INSTAGRAM_SCOPES.join(','));
-				return auth.toString();
-			}
-		});
-
-		const exchange = new URL(`${FACEBOOK_GRAPH}/${ig.apiVersion}/oauth/access_token`);
-		exchange.searchParams.set('client_id', ig.appId);
-		exchange.searchParams.set('client_secret', ig.appSecret);
-		exchange.searchParams.set('redirect_uri', flow.redirectUri);
-		exchange.searchParams.set('code', flow.code);
-		const short = (await graphGet(exchange, 'Code exchange')).access_token;
-		userToken = await longLivedUserToken(ig, short);
+		const pasted = given && !given.startsWith('--') ? given : await askForExplorerToken(permissions, what);
+		return longLivedUserToken(ig, pasted);
 	}
+	const state = randomBytes(16).toString('hex');
+	const flow = await obtainCode({
+		redirectUri: ig.redirectUri,
+		state,
+		intro: ig.configId
+			? `\nRequesting the permissions in Facebook Login configuration ${ig.configId}`
+			: `\nRequesting: ${scopes.join(', ')}`,
+		buildUrl: (redirectUri) => {
+			const auth = new URL(`https://www.facebook.com/${ig.apiVersion}/dialog/oauth`);
+			auth.searchParams.set('client_id', ig.appId);
+			auth.searchParams.set('redirect_uri', redirectUri);
+			auth.searchParams.set('state', state);
+			auth.searchParams.set('response_type', 'code');
+			if (ig.configId) auth.searchParams.set('config_id', ig.configId);
+			else auth.searchParams.set('scope', scopes.join(','));
+			return auth.toString();
+		}
+	});
+
+	const exchange = new URL(`${FACEBOOK_GRAPH}/${ig.apiVersion}/oauth/access_token`);
+	exchange.searchParams.set('client_id', ig.appId);
+	exchange.searchParams.set('client_secret', ig.appSecret);
+	exchange.searchParams.set('redirect_uri', flow.redirectUri);
+	exchange.searchParams.set('code', flow.code);
+	const short = (await graphGet(exchange, 'Code exchange')).access_token;
+	return longLivedUserToken(ig, short);
+}
+
+async function instagram(config) {
+	const ig = config.instagram;
+	const fromExplorer = has('--token');
+	const userToken = await metaUserToken(ig, {
+		fromExplorer,
+		given: valueOf('--token'),
+		scopes: INSTAGRAM_SCOPES,
+		permissions: INSTAGRAM_PERMISSIONS,
+		what: 'the Page and the Instagram account'
+	});
 
 	await checkInstagramGrant(ig, userToken, fromExplorer);
 	const pages = await choosePages(ig, await listPages(ig.apiVersion, userToken));
@@ -673,8 +692,77 @@ async function instagram(config) {
 	);
 }
 
+/**
+ * Picks the Pages reels may go to, any Page the token can act for, asking
+ * when there is a choice; the ones already connected are marked, since
+ * running this again is also how a token is refreshed.
+ */
+async function chooseFacebookPages(known, pages) {
+	if (pages.length === 0) {
+		throw new Error(
+			'The token can act for no Facebook Page. Make sure the Pages were ticked when the token was made, and run this again.'
+		);
+	}
+	if (pages.length === 1) return pages;
+	const connected = new Set(known.map((p) => p.pageId));
+	console.log('\nThese Pages can be posted to:');
+	pages.forEach((p, i) => console.log(`  ${i + 1}. ${p.name}${connected.has(p.id) ? '   (connected)' : ''}`));
+	const rl = createInterface({ input: stdin, output: stdout });
+	try {
+		for (;;) {
+			const picked = parseChoice(
+				await rl.question('Which should flock post reels to? Numbers separated by commas, or "all": '),
+				pages.length
+			);
+			if (picked) return picked.map((i) => pages[i]);
+		}
+	} finally {
+		rl.close();
+	}
+}
+
+/**
+ * Facebook Pages for reels: the same Meta app and user token as Instagram,
+ * then any Page, with or without an Instagram account. The Page tokens are
+ * the only tokens kept; Pages are added or refreshed, never dropped, and the
+ * first run keeps the Instagram accounts' Pages flock was already posting to.
+ */
+async function facebook(config) {
+	const ig = config.instagram;
+	const fromExplorer = has('--token');
+	const userToken = await metaUserToken(ig, {
+		fromExplorer,
+		given: valueOf('--token'),
+		scopes: FACEBOOK_SCOPES,
+		permissions: FACEBOOK_PERMISSIONS,
+		what: 'the Pages reels should go to'
+	});
+	await checkInstagramGrant(ig, userToken, fromExplorer, checkFacebookGrant);
+
+	const pages = await chooseFacebookPages(config.facebook.accounts, await listPages(ig.apiVersion, userToken));
+	const tokenless = pages.filter((page) => !page.accessToken);
+	if (tokenless.length > 0) {
+		throw new Error(
+			`Facebook returned no token for ${tokenless.map((p) => `"${p.name}"`).join(', ')}; ` +
+				'does this Facebook account manage those Pages? Nothing was saved.'
+		);
+	}
+	const chosen = pages.map((page) => ({ pageId: page.id, pageName: page.name, pageAccessToken: page.accessToken }));
+	const accounts = mergeAccounts(config.facebook.accounts, chosen, (a) => a.pageId);
+	saveFacebookAccounts(accounts);
+	console.log(
+		`\nSaved to ${CONFIG_PATH}: ${accounts.length} Facebook Page${accounts.length === 1 ? '' : 's'} for reels ` +
+			'(Page tokens do not expire):'
+	);
+	for (const page of accounts) {
+		console.log(`  ${page.pageName}${chosen.some((c) => c.pageId === page.pageId) ? '' : '   (kept from before)'}`);
+	}
+	console.log('\nChoose which brand posts to which Page in Settings, Brands once the worker has run.\n');
+}
+
 async function run() {
 	if (has('--tiktok')) return tiktok(loadConfig());
+	if (has('--facebook')) return facebook(loadConfig());
 	if (has('--instagram')) return instagram(loadConfig());
 	return google(requireConfig({ needToken: false }));
 }

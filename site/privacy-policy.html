@@ -31,7 +31,7 @@
   <h2>What flock is</h2>
   <p>flock is open-source software, published under the MIT license, that you
   install and run on your own hardware. It schedules and publishes videos to the
-  YouTube channel, Instagram account and TikTok account its operator connects. The author operates
+  YouTube channel, Instagram account, TikTok account and Facebook Page its operator connects. The author operates
   no service, hosts nothing for anyone, and receives no data from any
   installation. This policy describes what the software does with data on the
   machines it runs on; for the author's own installation it is also the
@@ -44,10 +44,11 @@
   Google's handling of data is described in the
   <a href="http://www.google.com/policies/privacy">Google Privacy Policy</a>.</p>
 
-  <h2>Use of Meta's APIs for Instagram</h2>
+  <h2>Use of Meta's APIs for Instagram and Facebook</h2>
   <p>flock uses the Instagram API with Facebook Login to publish videos as reels to
   the Instagram professional account its operator connects, through the Facebook
-  Page that account is linked to. That use is subject to the
+  Page that account is linked to, and the Facebook Pages API to publish videos as reels to the
+  Facebook Pages its operator connects. That use is subject to the
   <a href="https://developers.facebook.com/terms/">Meta Platform Terms</a> and the
   <a href="https://help.instagram.com/581066165581870">Instagram Terms of Use</a>.
   Meta's own handling of data is described in the
@@ -57,7 +58,8 @@
   the connected account's own posts are doing. For the second it reads the
   account's newest posts — each one's link, caption and publish time, its like
   and comment counts, and the views and reach Instagram reports for it — and keeps
-  them on the operator's own equipment. It does not read the account's followers,
+  them on the operator's own equipment. Of a Facebook Page it reads only the Page's name, username and
+  link, to show which Page a reel goes to. It does not read the account's followers,
   the text of comments, or messages, and what it reads is shown to its operator
   only, inside flock.</p>
 
@@ -82,12 +84,12 @@
   </ul>
   <p>From Meta, through Facebook Login, flock asks for:</p>
   <ul>
-    <li><code>pages_show_list</code> and <code>business_management</code> — listing the Facebook Pages the operator manages, including one held in a business portfolio, to find the linked Instagram account</li>
+    <li><code>pages_show_list</code> and <code>business_management</code> — listing the Facebook Pages the operator manages, including one held in a business portfolio, to find the linked Instagram account and the Pages reels go to</li>
     <li><code>instagram_basic</code> — the Instagram account's identifier and username, so flock can show which account a reel will go to</li>
     <li><code>instagram_content_publish</code> — publishing a reel to that account, and reading how many of its daily posts are used</li>
     <li><code>instagram_manage_insights</code> — reading the views and reach of that account's own posts, so flock can show its operator how they are doing</li>
-    <li><code>pages_read_engagement</code> — reading the Page's access details that publishing goes through</li>
-    <li><code>pages_manage_posts</code> — only for a custom reel cover: the image is placed on the Page as an <em>unpublished</em> photo, which never appears on the Page, so Instagram can fetch it, and is deleted as soon as Instagram has it</li>
+    <li><code>pages_read_engagement</code> — reading the Page's name, username and link, and the access details that publishing goes through</li>
+    <li><code>pages_manage_posts</code> — publishing reels to the Facebook Page the operator chooses, at the time the operator chooses; and for a custom Instagram reel cover, placing the image on the Page as an <em>unpublished</em> photo, which never appears on the Page, so Instagram can fetch it, and deleting it as soon as Instagram has it</li>
   </ul>
   <p>From TikTok, flock asks for:</p>
   <ul>
@@ -113,9 +115,9 @@
     <li>a log of actions taken in flock</li>
     <li>a name for each browser that uses it, stored in that browser under <code>flock.device</code></li>
     <li>the Google refresh token, in a configuration file</li>
-    <li>the Facebook Page access token for each connected Instagram account, in the same configuration file</li>
+    <li>the Facebook Page access token for each connected Instagram account and Facebook Page, in the same configuration file</li>
     <li>TikTok's access and refresh tokens, in the same configuration file</li>
-    <li>each connected account's identifier, username and display name, and Instagram's count of posts used today</li>
+    <li>each connected account's identifier, username and display name, each Facebook Page's name, username and link, and Instagram's count of posts used today</li>
     <li>the connected channel's own videos and the connected Instagram accounts' own posts as those services report them — title or caption, link, release time — with their counters (views, likes, comments, and on Instagram reach) and a history of how those changed</li>
     <li>the most recent creator information read from TikTok, as described above</li>
   </ul>
@@ -151,7 +153,7 @@
     <li>revoking flock's access in the TikTok app, under Settings and privacy,
       then Security and permissions, then the list of connected apps; that stops
       every further request, and the stored tokens stop working</li>
-    <li>deleting a published video on YouTube, Instagram or TikTok itself; flock keeps no copy of what those services hold</li>
+    <li>deleting a published video on YouTube, Instagram, TikTok or Facebook itself; flock keeps no copy of what those services hold</li>
   </ul>
 
   <h2>Changes</h2>

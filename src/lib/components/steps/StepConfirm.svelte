@@ -28,6 +28,7 @@
 		consentLinks,
 		CONSENT_PREFIX
 	} from '$lib/tiktok';
+	import { facebookProblems } from '$lib/facebook';
 	import type { PlanRow } from '$lib/plan';
 	import type { PlatformId } from '$lib/types';
 	import type { VideoSlot } from '$lib/stores/draft.svelte';
@@ -60,11 +61,13 @@
 	}
 
 	/**
-	 * TikTok's own rules, checked once more on the resolved options: the
-	 * worker refuses such a post rather than quietly posting another way, so
-	 * it is better said here, while it can still be changed.
+	 * TikTok's own rules, checked once more on the resolved options, and
+	 * Facebook's length limit for a reel: the worker refuses such a post
+	 * rather than quietly posting another way, so it is better said here,
+	 * while it can still be changed.
 	 */
 	function tiktokIssues(row: PlanRow): string[] {
+		if (row.platform === 'facebook') return facebookProblems(draft.videoFor('facebook').duration);
 		if (row.platform !== 'tiktok') return [];
 		return tiktokProblems(row.options, accounts.tiktok, draft.videoFor('tiktok').duration);
 	}

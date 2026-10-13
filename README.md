@@ -10,16 +10,15 @@
 flock schedules a video out to YouTube, Instagram, TikTok and Facebook, with
 its own text and its own release time for each platform.
 
-- **Write for each platform separately.** YouTube and Facebook take a title
-  and a description, Instagram and TikTok a caption.
+- **Write for each platform separately.** YouTube takes a title and a
+  description, Instagram, TikTok and Facebook a caption.
 - **Automate the edits you always make.** Each platform can have "replace X
   with Y" rules, applied when you confirm.
 - **See exactly what goes out** before anything is sent.
 - **Your PC can be off at release time.** The video and the schedule go to a
   PocketBase instance (on a NAS, say), and a worker publishes from there.
 
-YouTube, TikTok and Instagram publish for real. Facebook does not yet: its
-options are placeholders.
+All four publish for real. Facebook takes reels on a Page.
 
 ## Requirements
 
@@ -228,6 +227,35 @@ The worker keeps each Page's own token, which does not expire.
   reads each account's newest 100 posts and their views every 10 minutes, into
   PocketBase's `post_stats` (`igStatsPosts`, `igStatsSeconds`; 0 turns it off).
   No screen shows them yet.
+
+### Facebook
+
+Every video goes out as a public Reel on a Facebook **Page**: MP4 (or MOV),
+3 to 90 seconds. Facebook holds a reel for its release time itself, so the
+worker uploads it as soon as the slot is within four weeks; a slot less than
+ten minutes away goes out at once. A Page allows 30 reels a day through the
+API.
+
+It uses the same Meta app as Instagram, which has to be **Live** (*App Mode* at
+the top of the app's dashboard): in Development mode, Facebook shows the reels
+only to people with a role on the app. Going Live needs the privacy policy,
+terms and data deletion addresses filled in under *App settings → Basic*;
+posting to your own Pages needs no App Review.
+
+The Pages your Instagram accounts are linked to are ready to use without
+another step. For other Pages, or to choose which:
+
+```bash
+pnpm worker:auth --facebook --token
+```
+
+It works like the Instagram setup: it lists the permissions (`pages_show_list`,
+`pages_read_engagement`, `pages_manage_posts`), takes a token from the
+Graph API Explorer, lists every Page the token can post to, and keeps each
+Page's own token. Running it again adds or refreshes Pages and drops none.
+`pnpm worker:facebook` shows which Pages the worker posts to.
+
+Then choose each brand's Page in Settings → *Brands*.
 
 ### vidIQ (optional)
 

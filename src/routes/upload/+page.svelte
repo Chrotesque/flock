@@ -17,6 +17,7 @@
 	import { createJob, rememberTags, rememberUsedSources, toInstant } from '$lib/repo';
 	import { RECORD_VERSION, timingOfTargets, type UploadRecord } from '$lib/uploadrecord';
 	import { allowanceWarning, postAllowance, youtubeGrantWarnings } from '$lib/accounts';
+	import { facebookProblems } from '$lib/facebook';
 	import { devtestActive } from '$lib/devtest';
 	import { VERSION } from '$lib/version';
 	import { formatBytes } from '$lib/format';
@@ -58,6 +59,16 @@
 		}
 		return '';
 	});
+
+	/** Why the confirm tick waits, for Facebook: a video it would not take as a reel. */
+	let facebookHold = $derived.by(() => {
+		if (draft.step !== 3 || !plan.some((row) => row.platform === 'facebook')) return '';
+		const problem = facebookProblems(draft.videoFor('facebook').duration)[0];
+		return problem ? `Facebook: ${problem}` : '';
+	});
+
+	/** Whatever holds the confirm tick back, TikTok's rules first. */
+	let confirmHold = $derived(tiktokHold || facebookHold);
 
 	// The confirm button deliberately takes two clicks, the second within two
 	// seconds of the first: this is the point where a multi-GB upload and four
@@ -450,9 +461,6 @@
 						processed and become visible on the profile.
 					</p>
 				{/if}
-				{#if plan.some((row) => row.platform === 'facebook')}
-					<p class="caveat">Facebook is not connected yet, so that release stays queued.</p>
-				{/if}
 				{#if project}
 					<!-- The worker renames the project's file, so the folder is off
 					     the list for good and the text stays beside the video. -->
@@ -568,7 +576,7 @@
 							class="btn btn-primary nav confirm"
 							class:armed
 							onclick={confirm}
-							disabled={phase === 'uploading' || plan.length === 0 || Boolean(tiktokHold)}
+							disabled={phase === 'uploading' || plan.length === 0 || Boolean(confirmHold)}
 							aria-label={armed ? 'Click again within two seconds to upload' : 'Upload and schedule'}
 							title={armed ? 'Click again within two seconds to upload' : 'Upload and schedule'}
 						>
@@ -592,10 +600,10 @@
 				</nav>
 			</header>
 
-			{#if phase === 'error' || (draft.step === 2 && draft.pastPlatforms.length > 0) || (draft.step === 1 && missingVideo.length > 0) || (tiktokHold && phase !== 'uploading')}
+			{#if phase === 'error' || (draft.step === 2 && draft.pastPlatforms.length > 0) || (draft.step === 1 && missingVideo.length > 0) || (confirmHold && phase !== 'uploading')}
 				<div class="notes">
-					{#if tiktokHold && phase !== 'uploading'}
-						<span class="blocked">{tiktokHold}</span>
+					{#if confirmHold && phase !== 'uploading'}
+						<span class="blocked">{confirmHold}</span>
 					{/if}
 					{#if phase === 'error'}
 						<span class="failure">{failure}</span>

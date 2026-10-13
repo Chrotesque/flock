@@ -120,7 +120,7 @@ function base(ig) {
  * the way back.
  */
 function token(ig) {
-	if (!ig.pageAccessToken) throw new Error(`Instagram is not set up. ${REAUTH}`);
+	if (!ig.pageAccessToken) throw new Error(`${ig.label ?? 'Instagram'} is not set up. ${ig.reauth ?? REAUTH}`);
 	return ig.pageAccessToken;
 }
 
@@ -129,19 +129,20 @@ function profileUrl(ig) {
 	return ig.username ? `https://www.instagram.com/${ig.username}/` : 'https://www.instagram.com/';
 }
 
-class GraphError extends Error {
-	constructor(err, status) {
+/** A Graph API error, named for the platform asked (`label`: Instagram, or Facebook for facebook.mjs). */
+export class GraphError extends Error {
+	constructor(err, status, label = 'Instagram') {
 		const code = err.code ?? status;
 		const sub = err.error_subcode ? `/${err.error_subcode}` : '';
 		const trace = err.fbtrace_id ? ` (trace ${err.fbtrace_id})` : '';
-		super(`Instagram ${code}${sub}: ${err.error_user_msg || err.message || 'unknown error'}${trace}`);
+		super(`${label} ${code}${sub}: ${err.error_user_msg || err.message || 'unknown error'}${trace}`);
 		this.code = Number(err.code ?? status);
 		this.subcode = Number(err.error_subcode ?? 0);
 		this.status = status;
 	}
 }
 
-async function parse(res) {
+async function parse(res, label = 'Instagram') {
 	const text = await res.text();
 	let json = {};
 	try {
@@ -149,16 +150,17 @@ async function parse(res) {
 	} catch {
 		// Reported below with the status.
 	}
-	if (!res.ok || json.error) throw new GraphError(json.error ?? { message: text.slice(0, 300) }, res.status);
+	if (!res.ok || json.error) throw new GraphError(json.error ?? { message: text.slice(0, 300) }, res.status, label);
 	return json;
 }
 
 /**
  * One Graph API call. Parameters go in the query for a GET or DELETE and the
  * form body for a POST; objects and arrays are sent as JSON, which is how the
- * API takes a list of collaborators.
+ * API takes a list of collaborators. `ig` is any Page-token holder with an
+ * `apiVersion` — facebook.mjs passes its Pages, with `label` and `reauth`.
  */
-async function graph(ig, path, { method = 'GET', params = {} } = {}) {
+export async function graph(ig, path, { method = 'GET', params = {} } = {}) {
 	const url = new URL(`${base(ig)}${path}`);
 	const form = new URLSearchParams();
 	for (const [key, value] of Object.entries(params)) {
@@ -173,11 +175,17 @@ async function graph(ig, path, { method = 'GET', params = {} } = {}) {
 				method,
 				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 				body: form
-			})
+			}),
+			ig.label
 		);
 	}
 	url.search = form.toString();
-	return parse(await fetchOrExplain(url, { method }));
+	return parse(await fetchOrExplain(url, { method }), ig.label);
+}
+
+/** A failed status poll worth trying again: no network, a server error or a rate limit. */
+export function transientGraphError(err) {
+	return isNetworkError(err) || (err instanceof GraphError && (err.status >= 500 || RATE_LIMIT_CODES.has(err.code)));
 }
 
 /** What a Graph error means for the person reading the log. */

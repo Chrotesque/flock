@@ -672,20 +672,20 @@
 												upload.
 											</p>
 										</div>
-										<button class="btn sm" onclick={resetDefaults}>Reset</button>
+										{#if def.fields.length > 0}
+											<button class="btn sm" onclick={resetDefaults}>Reset</button>
+										{/if}
 									</div>
 
-									<OptionEditor
-										fields={def.fields}
-										values={entry.defaults}
-										onchange={() => onDefaultsChanged(entry.defaults)}
-									/>
-
-									<p class="footnote">
-										Every option above is a placeholder invented to give the interface something real
-										to show. Once the {def.label} API is connected, expect this whole set to be
-										replaced.
-									</p>
+									{#if def.fields.length > 0}
+										<OptionEditor
+											fields={def.fields}
+											values={entry.defaults}
+											onchange={() => onDefaultsChanged(entry.defaults)}
+										/>
+									{:else}
+										<p class="footnote">{def.fieldNote}</p>
+									{/if}
 								</div>
 							{:else if tab === 'profiles'}
 								<ProfileEditor

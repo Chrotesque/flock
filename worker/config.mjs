@@ -15,6 +15,8 @@ import { ownsPublishing, parseRole } from './roles.mjs';
 import { readAlertSettings, readSeen } from './alerts.mjs';
 import {
 	googleAccounts,
+	facebookAccounts,
+	facebookReady,
 	instagramAccounts,
 	instagramReady,
 	rotatedTokenPatch,
@@ -108,6 +110,13 @@ export function loadConfig() {
 				process.env.INSTAGRAM_REDIRECT_URI || instagram.redirectUri || 'http://localhost:8766/instagram',
 			apiVersion: instagram.apiVersion || 'v23.0',
 			accounts: instagramAccounts(instagram, process.env)
+		},
+		// Facebook Pages for reels (facebook.mjs): the same Meta app and Graph
+		// version as Instagram, and each Page's token. Until `pnpm worker:auth
+		// --facebook` writes a list, the Instagram accounts' Pages are it.
+		facebook: {
+			apiVersion: file.facebook?.apiVersion || instagram.apiVersion || 'v23.0',
+			accounts: facebookAccounts(file.facebook, instagram, process.env)
 		},
 		pollSeconds: Number(process.env.FLOCK_POLL_SECONDS || file.pollSeconds || 60),
 		// The hold-and-fire platforms are checked on their own, tighter tick, so
@@ -217,6 +226,15 @@ export function hasTikTok(config) {
 /** Whether the Instagram adapter has at least one account it can publish to. */
 export function hasInstagram(config) {
 	return config.instagram.accounts.some(instagramReady);
+}
+
+export function hasFacebook(config) {
+	return config.facebook.accounts.some(facebookReady);
+}
+
+/** Writes the Facebook Page list; from then on it is Facebook's own, not the Instagram accounts' Pages. */
+export function saveFacebookAccounts(accounts) {
+	saveSection('facebook', { accounts });
 }
 
 /**

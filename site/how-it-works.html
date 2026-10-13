@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How it works — flock</title>
-<meta name="description" content="How flock takes a video from the compose screen to YouTube, TikTok and Instagram, and what the TikTok integration does call by call.">
+<meta name="description" content="How flock takes a video from the compose screen to YouTube, TikTok, Instagram and Facebook, and what the TikTok integration does call by call.">
 <link rel="icon" href="favicon.ico" sizes="48x48">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
@@ -52,7 +52,7 @@
       <li>
         <h3>Compose, one platform at a time</h3>
         <p>Tick the platforms this video goes to. Each has its own text: a title and a description for YouTube,
-        a caption for TikTok and Instagram. Templates drop reusable blocks in, and adaptation rules, replace this
+        a caption for TikTok, Instagram and Facebook. Templates drop reusable blocks in, and adaptation rules, replace this
         with that on this platform, run exactly once, at confirmation.</p>
       </li>
       <li>
@@ -79,14 +79,15 @@
         <p>A worker process beside the database watches the queue. YouTube is handed the video right away and
         releases it itself at the slot. TikTok cannot schedule, so the worker holds the post until its slot, then reads the
         creator's details, uploads the file in chunks and polls TikTok until the post is live. Instagram is uploaded
-        ahead of time and published on the minute. Every outcome, including a failure and its reason, is written
+        ahead of time and published on the minute. A Facebook reel goes to the Page up to four weeks ahead,
+        and Facebook releases it at the slot itself. Every outcome, including a failure and its reason, is written
         back to the release and to the log.</p>
       </li>
       <li>
         <h3>Connecting an account</h3>
         <p>Each platform is connected once, from the terminal, through that platform's own consent page, using a
         developer app you register there: a Google Cloud OAuth client for YouTube, a TikTok for Developers app for
-        TikTok, a Meta app for Instagram. The keys and the resulting tokens are kept in the worker's configuration
+        TikTok, a Meta app for Instagram and Facebook. The keys and the resulting tokens are kept in the worker's configuration
         file on your hardware and refreshed by the worker. Revoking access on the platform ends it.</p>
       </li>
     </ol>

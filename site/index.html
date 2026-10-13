@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>flock — multi-platform video publishing</title>
-<meta name="description" content="flock is an open-source, self-hosted scheduler that publishes one video to YouTube, TikTok and Instagram, each with its own text and its own release time.">
+<meta name="description" content="flock is an open-source, self-hosted scheduler that publishes one video to YouTube, TikTok, Instagram and Facebook, each with its own text and its own release time.">
 <link rel="icon" href="favicon.ico" sizes="48x48">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
@@ -31,11 +31,12 @@
       <h1>One video, every platform, each on its own schedule.</h1>
       <p class="lead">flock is an open-source, self-hosted publishing tool. You write the text for each
       platform separately, choose a video and a release time per platform, and a worker on your own
-      storage publishes it to YouTube, TikTok and Instagram when the time comes.</p>
+      storage publishes it to YouTube, TikTok, Instagram and Facebook when the time comes.</p>
       <div class="pills">
         <span class="pill">YouTube</span>
         <span class="pill">TikTok</span>
         <span class="pill">Instagram</span>
+        <span class="pill">Facebook</span>
         <span class="pill">Self-hosted</span>
         <span class="pill">Open source, MIT</span>
       </div>
@@ -52,7 +53,7 @@
     <p>flock is software you run yourself: a small database (PocketBase), a worker process on a machine
     that stays on, and the web app in your browser, all on your own hardware and your own network. There
     is no hosted service and no account with the author. Each installation connects its own YouTube,
-    TikTok and Instagram accounts through those platforms' own consent pages, using developer apps the
+    TikTok, Instagram and Facebook accounts through those platforms' own consent pages, using developer apps the
     installer registers, so keys and tokens never leave the installer's configuration file.
     The code is on <a href="https://github.com/Chrotesque/flock">GitHub</a> under the MIT license.</p>
   </section>
@@ -194,7 +195,7 @@
       <li>
         <h3>Connect your accounts</h3>
         <p>Register a developer app on each platform you use (Google Cloud for YouTube, TikTok for
-        Developers, a Meta app for Instagram), paste its keys into the worker's configuration file, and run
+        Developers, a Meta app for Instagram and Facebook), paste its keys into the worker's configuration file, and run
         the consent flow once per platform from the terminal. The README walks through each portal.</p>
       </li>
       <li>

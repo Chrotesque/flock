@@ -126,23 +126,14 @@
 				</div>
 			{/if}
 
-			<OptionEditor fields={def.fields} bind:values onchange={override} />
-
-			<!--
-				Only three of the four are placeholders now. Saying otherwise in the
-				YouTube panel is both wrong and actively misleading in a screenshot —
-				its options map to real videos.insert fields.
-			-->
-			{#if platform === 'youtube'}
+			{#if def.fields.length > 0}
+				<OptionEditor fields={def.fields} bind:values onchange={override} />
 				<p class="footnote">
-					These options map to real YouTube Data API fields and are applied when the video is
-					uploaded.
+					These options map to real fields of {def.label}'s publishing API and are applied when the
+					worker publishes.
 				</p>
 			{:else}
-				<p class="footnote">
-					These options are placeholders. They exist so the flow can be judged before the real
-					{def.label} API is wired up.
-				</p>
+				<p class="footnote">{def.fieldNote}</p>
 			{/if}
 		{:else}
 			<section class="preview">

@@ -122,6 +122,37 @@ export function instagramReady(account) {
 	return Boolean(account?.igUserId && account.pageId && account.pageAccessToken);
 }
 
+const FB_FIELDS = ['pageId', 'pageName', 'pageAccessToken'];
+
+function cleanFacebook(entry) {
+	const out = {};
+	for (const key of FB_FIELDS) out[key] = typeof entry?.[key] === 'string' ? entry[key] : '';
+	return out;
+}
+
+/**
+ * The Facebook Pages reels go to, from the config's `facebook` section: its
+ * `accounts` once `pnpm worker:auth --facebook` has written them (any Page,
+ * with or without Instagram). Until then, the Pages the Instagram accounts are
+ * reached through — the same Meta grant and Page tokens, so connecting
+ * Instagram connected their Pages too. One entry per Page.
+ */
+export function facebookAccounts(section = {}, instagram = {}, env = {}) {
+	const own = Array.isArray(section?.accounts);
+	const list = own ? section.accounts.map(cleanFacebook) : instagramAccounts(instagram, env).map(cleanFacebook);
+	const seen = new Set();
+	return list.filter((page) => {
+		if (!page.pageId || seen.has(page.pageId)) return false;
+		seen.add(page.pageId);
+		return true;
+	});
+}
+
+/** Whether a Page entry has everything publishing needs. */
+export function facebookReady(page) {
+	return Boolean(page?.pageId && page.pageAccessToken);
+}
+
 /**
  * Adds accounts to a list, replacing any with the same id (a fresh token for
  * an account already there) and keeping every other account as it was.

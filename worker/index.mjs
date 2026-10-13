@@ -15,7 +15,15 @@
 // (roles.mjs) splits the work between a NAS and a PC worker; the default,
 // `all`, does everything.
 
-import { loadConfig, requireConfig, hasYouTube, hasTikTok, hasInstagram, saveSection } from './config.mjs';
+import { loadConfig, requireConfig, hasYouTube, hasTikTok, hasInstagram, hasFacebook, saveSection } from './config.mjs';
+import {
+	LEAD_SECONDS as FACEBOOK_LEAD_SECONDS,
+	facebookAccount,
+	probeFacebook,
+	publishReadyReel,
+	publishToFacebook,
+	refreshFacebookPages
+} from './facebook.mjs';
 import {
 	FAILED_WINDOW_MS,
 	addSeen,
@@ -75,9 +83,14 @@ import { inJob } from './jobscope.mjs';
  * up the moment they exist and the platform releases at the slot. `slot`
  * platforms cannot, so the worker holds each row and starts only when the
  * slot comes — less `lead` seconds, for one that needs a head start to be
- * ready on the minute. Facebook has no entry and its rows are left alone.
- * A platform whose credentials are missing is skipped with a notice rather
- * than failed: its rows wait in the queue for the day it is set up.
+ * ready on the minute. Facebook is a `slot` platform with a lead of four
+ * weeks: Facebook holds a reel for its time itself (as YouTube does) but only
+ * up to 29 days ahead, so a row is taken up once its slot is within reach, and
+ * `holds: false` says the worker does not sit on it until then.
+ * `publishReady` finishes a post another run left processed but unpublished
+ * (orphans.mjs). A platform whose credentials are missing is skipped with a
+ * notice rather than failed: its rows wait in the queue for the day it is set
+ * up.
  */
 const ADAPTERS = {
 	youtube: {
@@ -99,10 +112,21 @@ const ADAPTERS = {
 	instagram: {
 		publish: publishToInstagram,
 		probe: probeInstagram,
+		publishReady,
 		timing: 'slot',
 		lead: (config) => Math.max(0, Number(config.instagramLeadSeconds) || 0),
 		ready: hasInstagram,
 		setup: 'pnpm worker:auth --instagram --token'
+	},
+	facebook: {
+		publish: publishToFacebook,
+		probe: probeFacebook,
+		publishReady: publishReadyReel,
+		timing: 'slot',
+		holds: false,
+		lead: () => FACEBOOK_LEAD_SECONDS,
+		ready: hasFacebook,
+		setup: 'pnpm worker:auth --facebook'
 	}
 };
 
@@ -112,6 +136,7 @@ const checkVidiq = process.argv.includes('--vidiq');
 const statsOnly = process.argv.includes('--stats');
 const checkTikTok = process.argv.includes('--tiktok');
 const checkInstagram = process.argv.includes('--instagram');
+const checkFacebook = process.argv.includes('--facebook');
 const checkYouTube = process.argv.includes('--youtube');
 const stopOnly = process.argv.includes('--stop');
 // Started by Windows at sign-in (Start with Windows, alerts.mjs autostartCommand).
@@ -142,7 +167,7 @@ function inWords(ms) {
 /** Targets already reported as waiting on an import, so that is said once. */
 const waitingImport = new Set();
 
-const NAMES = { youtube: 'YouTube', tiktok: 'TikTok', instagram: 'Instagram' };
+const NAMES = { youtube: 'YouTube', tiktok: 'TikTok', instagram: 'Instagram', facebook: 'Facebook' };
 
 /**
  * Who does what, and what is being done — set in main. The one-shot modes get
@@ -200,7 +225,9 @@ async function handleTarget(pb, config, platform, target) {
 		log(`claimed ${label}`);
 
 		const name = `${NAMES[platform] ?? platform}: "${target.title || target.description?.slice(0, 60) || target.id}"`;
-		const until = adapter.timing === 'slot' && msUntil(target.scheduled_at) > 0 ? target.scheduled_at : undefined;
+		// A platform the worker holds a post for until its minute; Facebook holds its own.
+		const until =
+			adapter.timing === 'slot' && adapter.holds !== false && msUntil(target.scheduled_at) > 0 ? target.scheduled_at : undefined;
 		await hb.track(`Publishing to ${name}`, () => publishOne(pb, config, platform, target, job, label, claim), {
 			publishing: true,
 			until
@@ -1011,6 +1038,9 @@ async function accountPass(pb, config) {
 	if (hasInstagram(config)) {
 		await refreshInstagramAccounts(pb, config, log).catch((err) => log(`instagram: ${err.message}`));
 	}
+	if (hasFacebook(config)) {
+		await refreshFacebookPages(pb, config, log).catch((err) => log(`facebook: ${err.message}`));
+	}
 }
 
 /** What each orphan was last seen doing, and which have been reported. */
@@ -1085,8 +1115,8 @@ async function settleOrphan(pb, config, platform, row) {
 			if (platform === 'youtube') log('  its thumbnail, playlist and paid promotion, if any, may not have been applied');
 			await recordResult(pb, platform, row, probe.result, label);
 		} else if (verdict.action === 'publish') {
-			log(`${label} was processed but never published — publishing that container`);
-			const result = await hb.track(`Publishing to ${NAMES[platform]}: "${row.title || row.id}"`, () => publishReady(config, handle), {
+			log(`${label} was processed but never published — publishing it now`);
+			const result = await hb.track(`Publishing to ${NAMES[platform]}: "${row.title || row.id}"`, () => adapter.publishReady(config, handle, row), {
 				publishing: true
 			});
 			await recordResult(pb, platform, row, result, label);
@@ -1194,7 +1224,7 @@ async function restartForUpdate() {
 	process.exit(0);
 }
 
-/** Who the TikTok and Instagram tokens post as — the check that a setup worked. */
+/** Who the platforms' tokens post as — the check that a setup worked. */
 async function showAccounts(config) {
 	if (checkYouTube) {
 		if (!hasYouTube(config)) throw new Error('YouTube is not set up. Run:  pnpm worker:auth');
@@ -1230,6 +1260,17 @@ async function showAccounts(config) {
 			}
 		}
 	}
+	if (checkFacebook) {
+		if (!hasFacebook(config)) throw new Error('Facebook is not set up. Run:  pnpm worker:auth --facebook');
+		for (const entry of config.facebook.accounts) {
+			try {
+				const page = facebookAccount(config, entry.pageId);
+				log(`Facebook posts reels to the Page "${page.pageName}" (id ${page.pageId})`);
+			} catch (err) {
+				log(`Facebook Page ${entry.pageName || entry.pageId}: ${err.message.split('\n')[0]}`);
+			}
+		}
+	}
 	if (checkInstagram) {
 		if (!hasInstagram(config)) {
 			throw new Error('Instagram is not set up. Run:  pnpm worker:auth --instagram --token');
@@ -1261,7 +1302,7 @@ async function main() {
 		return;
 	}
 	// Likewise for the platforms' account checks.
-	if (checkYouTube || checkTikTok || checkInstagram) {
+	if (checkYouTube || checkTikTok || checkInstagram || checkFacebook) {
 		await showAccounts(requireConfig({ needToken: false, needGoogle: false }));
 		return;
 	}

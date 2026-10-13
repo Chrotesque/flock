@@ -3,13 +3,11 @@ import type { PlatformDefinition, PlatformId } from './types';
 /**
  * The platform registry.
  *
- * YouTube's, Instagram's and TikTok's sets are REAL — every field maps to
- * something the platform's publish call actually accepts, and the matching
- * worker adapter (worker/youtube.mjs, instagram.mjs, tiktok.mjs) is what maps
- * it. Facebook's is still an INVENTED placeholder that exists to give the UI
- * something plausible to render; expect to throw most of it away once that
- * API is wired up. The character limits and `hasTitle` mirror reality
- * throughout.
+ * Every set is REAL — each field maps to something the platform's publish
+ * call actually accepts, and the matching worker adapter (worker/youtube.mjs,
+ * instagram.mjs, tiktok.mjs, facebook.mjs) is what maps it. Facebook's is
+ * empty since 0.16.0: a reel on a Page has nothing to choose but its caption.
+ * The character limits and `hasTitle` mirror reality throughout.
  */
 
 /**
@@ -223,26 +221,18 @@ export const PLATFORMS: Record<PlatformId, PlatformDefinition> = {
 		id: 'facebook',
 		label: 'Facebook',
 		color: '#3b82f6',
-		hasTitle: true,
+		// A reel shows its description and nothing else, so it is caption-only
+		// like Instagram (the Reels API takes a title, which no viewer sees).
+		hasTitle: false,
 		titleLimit: 255,
 		descriptionLimit: 63206,
-		fieldNote: 'Title is the video headline, description is the post body.',
-		fields: [
-			{ key: 'page', label: 'Publish as', type: 'text', placeholder: 'Page name' },
-			{ key: 'visibility', label: 'Visibility', type: 'select', choices: ['Public', 'Friends', 'Only me'] },
-			{ key: 'distribution', label: 'Distribution', type: 'select', choices: ['Feed', 'Reels', 'Feed + Reels'] },
-			{ key: 'taggedSponsor', label: 'Tagged sponsor', type: 'text', placeholder: 'None' },
-			{ key: 'crosspostToInstagram', label: 'Crosspost to Instagram', type: 'bool' },
-			{ key: 'allowEmbedding', label: 'Allow embedding', type: 'bool' }
-		],
-		defaults: {
-			page: '',
-			visibility: 'Public',
-			distribution: 'Feed + Reels',
-			taggedSponsor: '',
-			crosspostToInstagram: false,
-			allowEmbedding: true
-		}
+		fieldNote: 'Caption only. Published as a public Reel on the Page; Facebook takes no other options for one.',
+		// Nothing to choose: the Page is the brand's (Settings → Brands), a reel on
+		// a Page is always public, and the slot is the release time. The invented
+		// options that stood here until 0.16.0 are dropped from saved defaults by
+		// mergeDefaults.
+		fields: [],
+		defaults: {}
 	}
 };
 

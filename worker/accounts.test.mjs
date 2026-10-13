@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+	facebookAccounts,
+	facebookReady,
 	googleAccounts,
 	tiktokAccounts,
 	rotatedTokenPatch,
@@ -155,4 +157,21 @@ test('a rotated token goes to the flat key of a section from before the list', (
 test('a rotated token for an account the file does not hold writes nothing', () => {
 	assert.equal(rotatedTokenPatch({ accounts: [tt('a')] }, tt('z'), 'new'), null);
 	assert.equal(rotatedTokenPatch({ clientKey: 'k' }, tt('z'), 'new'), null);
+});
+
+test("facebookAccounts: the Instagram accounts' Pages until Facebook has its own list", () => {
+	const instagram = { accounts: [ig('1'), ig('2'), ig('3', { pageId: 'page1' })] };
+	assert.deepEqual(facebookAccounts(undefined, instagram), [
+		{ pageId: 'page1', pageName: 'Page 1', pageAccessToken: 'tok1' },
+		{ pageId: 'page2', pageName: 'Page 2', pageAccessToken: 'tok2' }
+	]);
+	const own = { accounts: [{ pageId: 'p9', pageName: 'Owls Nest', pageAccessToken: 't9', extra: 'x' }, { pageName: 'no id' }] };
+	assert.deepEqual(facebookAccounts(own, instagram), [{ pageId: 'p9', pageName: 'Owls Nest', pageAccessToken: 't9' }]);
+	assert.deepEqual(facebookAccounts({ accounts: [] }, instagram), []);
+});
+
+test('facebookReady: a Page and its token', () => {
+	assert.equal(facebookReady({ pageId: 'p', pageAccessToken: 't' }), true);
+	assert.equal(facebookReady({ pageId: 'p', pageAccessToken: '' }), false);
+	assert.equal(facebookReady(null), false);
 });
