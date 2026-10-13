@@ -12,6 +12,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isSea } from 'node:sea';
 import { ownsPublishing, parseRole } from './roles.mjs';
+import { readAlertSettings, readSeen } from './alerts.mjs';
 import {
 	googleAccounts,
 	instagramAccounts,
@@ -138,7 +139,12 @@ export function loadConfig() {
 		// their views. Instagram's insights lag up to 48 hours, so there is no
 		// point reading them often. 0 turns the pass off.
 		igStatsSeconds: Number(process.env.FLOCK_IG_STATS_SECONDS ?? file.igStatsSeconds ?? 600),
-		igStatsPosts: Number(process.env.FLOCK_IG_STATS_POSTS ?? file.igStatsPosts ?? 100)
+		igStatsPosts: Number(process.env.FLOCK_IG_STATS_POSTS ?? file.igStatsPosts ?? 100),
+		// The warning card of the worker with a tray icon (alerts.mjs): where and
+		// how it shows, set in its settings window, and the warnings dismissed on
+		// this PC. Per machine, like everything in this file.
+		alerts: readAlertSettings(file.alerts),
+		alertSeen: readSeen(file.alerts)
 	};
 }
 

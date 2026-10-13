@@ -15,7 +15,19 @@
 // (roles.mjs) splits the work between a NAS and a PC worker; the default,
 // `all`, does everything.
 
-import { loadConfig, requireConfig, hasYouTube, hasTikTok, hasInstagram } from './config.mjs';
+import { loadConfig, requireConfig, hasYouTube, hasTikTok, hasInstagram, saveSection } from './config.mjs';
+import {
+	FAILED_WINDOW_MS,
+	addSeen,
+	cardItems,
+	readAlertSettings,
+	readDismissed,
+	runName,
+	sameWarnings,
+	toShow,
+	undelivered
+} from './alerts.mjs';
+import { isSea } from 'node:sea';
 import { makeClient } from './pb.mjs';
 import { grantCanEdit, publishToYouTube, probeYouTube, refreshYouTubeChannels, youtubeChannels } from './youtube.mjs';
 import { publishToTikTok, probeTikTok, refreshTikTokCreators, creatorInfo, privacyLabel } from './tiktok.mjs';
@@ -102,6 +114,8 @@ const checkTikTok = process.argv.includes('--tiktok');
 const checkInstagram = process.argv.includes('--instagram');
 const checkYouTube = process.argv.includes('--youtube');
 const stopOnly = process.argv.includes('--stop');
+// Started by Windows at sign-in (Start with Windows, alerts.mjs autostartCommand).
+const autostart = process.argv.includes('--autostart');
 
 function stamp() {
 	return new Date().toLocaleTimeString();
@@ -1089,6 +1103,55 @@ async function settleOrphan(pb, config, platform, row) {
 }
 
 /**
+ * The tray icon (tray.mjs), when this worker has one, and the warnings its
+ * card was last told of.
+ */
+let tray = null;
+let warned = [];
+let alertBusy = false;
+let alertError = '';
+
+/** A failed post is on screen within this long — the card is a person's to see, so seconds are plenty. */
+const ALERT_SECONDS = 20;
+
+/**
+ * Whether a post did not go out (alerts.mjs): reads the failed and waiting
+ * posts and flock's own dismissals, leaves out what was dismissed on this PC,
+ * and tells the card only when the list changed. A read that fails keeps the
+ * card as it is and says so once.
+ */
+async function alertPass(pb, config) {
+	if (!tray || alertBusy) return;
+	alertBusy = true;
+	try {
+		const [targets, dismissedRow] = await Promise.all([
+			pb.undeliveredCandidates(new Date(Date.now() - FAILED_WINDOW_MS)),
+			pb.getSetting('todo_attention')
+		]);
+		const items = config.alerts.enabled
+			? toShow(undelivered(targets), { dismissed: readDismissed(dismissedRow?.value), seen: config.alertSeen })
+			: [];
+		if (alertError) log('warnings: reading flock works again');
+		alertError = '';
+		if (sameWarnings(items, warned)) return;
+		const added = items.filter((item) => !warned.some((w) => w.key === item.key));
+		warned = items;
+		if (items.length === 0) {
+			tray.send('hide');
+			return;
+		}
+		tray.send('show', { items: cardItems(items, config.pocketbaseUrl) });
+		if (added.length) log(`warning shown: ${added.map((item) => `${item.label} "${item.title}" ${item.kind === 'failed' ? 'failed' : 'was never sent'}`).join('; ')}`);
+	} catch (err) {
+		const message = err.message.split('\n')[0];
+		if (message !== alertError) log(`warnings: could not read flock (${message})`);
+		alertError = message;
+	} finally {
+		alertBusy = false;
+	}
+}
+
+/**
  * Ctrl-c, SIGTERM or `--stop`: a last heartbeat on the way out, so the
  * sidebar turns red and a PC worker takes over at once rather than after the
  * stale window. A second ctrl-c does not wait for it.
@@ -1217,6 +1280,9 @@ async function main() {
 	// written anything. The one-shot modes may run beside a polling worker.
 	if (live && !(await holdInstance(config.role, shutdown))) {
 		log(`another ${config.role} worker is already running on this machine — leaving it to it`);
+		// Windows starting it at sign-in beside one already running (an old
+		// Startup-folder shortcut, say) is no news worth a message box.
+		if (autostart) return;
 		await sayOnScreen(
 			`The flock worker (${config.role}) is already running on this computer, so this copy closed again. ` +
 				'Only one runs at a time.\n\nIts icon is in the notification area, perhaps behind the ^ arrow. ' +
@@ -1246,13 +1312,37 @@ async function main() {
 	// The background executable's icon, its way to be seen and stopped — see
 	// tray.mjs. Up before PocketBase answers, so it is there while the worker
 	// waits for the network at boot, rather than nothing at all.
+	// It also carries the warning card for a post that did not go out, its
+	// settings window and Start with Windows (alerts.mjs).
 	if (live && wantsTray()) {
-		startTray({
+		if (autostart) log('started by Windows at sign-in');
+		tray = startTray({
 			title: `flock worker${WORKER_VERSION === 'dev' ? '' : ` v${WORKER_VERSION}`} (${config.role})`,
 			url: `${config.pocketbaseUrl}/`,
 			logPath: exeLogPath(),
+			// Only the executable can be started by Windows; `pnpm worker` is a script.
+			exePath: isSea() ? process.execPath : '',
+			runName: runName(config.role),
+			settings: config.alerts,
+			log,
 			onStop: shutdown,
-			log
+			onDismiss: (keys) => {
+				config.alertSeen = addSeen(config.alertSeen, keys);
+				saveSection('alerts', { seen: config.alertSeen });
+				warned = warned.filter((item) => !keys.includes(item.key));
+				log(`warning dismissed on this PC (${keys.length} post${keys.length === 1 ? '' : 's'}); they stay in flock's To finish`);
+			},
+			onSettings: (settings) => {
+				config.alerts = readAlertSettings(settings);
+				saveSection('alerts', config.alerts);
+				log(
+					`warning settings saved: ${config.alerts.enabled ? 'on' : 'off'}, ${config.alerts.screen} screen, ` +
+						`${config.alerts.position}, ${config.alerts.size}`
+				);
+				// Tell the card again, in its new place and look.
+				warned = [];
+				void alertPass(pb, config);
+			}
 		});
 	}
 
@@ -1320,6 +1410,14 @@ async function main() {
 
 	await hb.start();
 	for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, shutdown);
+
+	// The warning card: every worker with a tray icon looks, whatever its role,
+	// so whichever PC runs flock's worker shows it.
+	if (tray) {
+		log(`warnings: ${config.alerts.enabled ? `on, ${config.alerts.screen} screen, ${config.alerts.position}` : 'off'} — set from the tray icon`);
+		void alertPass(pb, config);
+		setInterval(() => void alertPass(pb, config), ALERT_SECONDS * 1000);
+	}
 
 	// Project folders are watched, so a new flock.json is listed within a
 	// second or two; each scan of a kind says which folders (folderwatch.mjs).

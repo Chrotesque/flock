@@ -2,16 +2,24 @@
 //
 // flock-worker-background.exe has no window, so the icon is what says it is
 // running and what stops it. Node cannot draw one itself; a hidden Windows
-// PowerShell (5.1, on every Windows) shows it through WinForms' NotifyIcon,
-// the same way folderpick.mjs opens its dialog. The menu opens flock or the
-// log, or stops the worker: the helper prints "stop", the worker shuts down as
-// on ctrl-c. The helper holds a handle on the worker's process and closes the
-// icon itself once that has exited — after a stop or a crash alike — so no
-// stale icon is left behind.
+// PowerShell (5.1, on every Windows) compiles a small C# WinForms program
+// (trayapp.mjs) and runs it: the icon and its menu, and since 0.15.0 the
+// warning card for a post that did not go out (alerts.mjs), its settings
+// window and Start with Windows. The worker and the helper talk in lines over
+// the helper's stdin and stdout (alerts.mjs encodeLine): the menu's Stop
+// shuts the worker down as on ctrl-c. The helper holds a handle on the
+// worker's process and closes the icon itself once that has exited — after a
+// stop or a crash alike — so no stale icon is left behind.
 
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { isSea } from 'node:sea';
+import { decodeLine, encodeLine } from './alerts.mjs';
 import { exeLogPath } from './filelog.mjs';
+import { TRAY_APP_CS } from './trayapp.mjs';
 import { TRAY_ICON_PNG } from './trayicon.mjs';
 
 /**
@@ -32,59 +40,93 @@ export function psQuote(value) {
 }
 
 /**
- * The helper. `extra` runs just before the message loop — the tests use it to
- * press Stop without anyone clicking.
+ * Windows PowerShell compiling the helper (trayapp.mjs) and running `call` —
+ * App.Start, or App.Render for a look at the card and the window. The C#
+ * goes in a single-quoted here-string, inside which nothing is expanded.
  */
-export function trayScript({ pid, title, url, logPath, extra = '' }) {
-	return String.raw`
-$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-$worker = [System.Diagnostics.Process]::GetProcessById(${Number(pid)})
-$url = ${psQuote(url)}
-$log = ${psQuote(logPath)}
-try {
-	$png = [Convert]::FromBase64String(${psQuote(TRAY_ICON_PNG)})
-	$bitmap = New-Object System.Drawing.Bitmap (New-Object System.IO.MemoryStream (,$png))
-	$icon = [System.Drawing.Icon]::FromHandle($bitmap.GetHicon())
-} catch {
-	$icon = [System.Drawing.SystemIcons]::Application
+export function trayHostScript(call) {
+	return [
+		"$ErrorActionPreference = 'Stop'",
+		// Add-Type reports progress, which a redirected stderr gets as CLIXML noise.
+		"$ProgressPreference = 'SilentlyContinue'",
+		'Add-Type -AssemblyName System.Windows.Forms, System.Drawing, System.Web.Extensions',
+		"Add-Type -IgnoreWarnings -ReferencedAssemblies System.Windows.Forms, System.Drawing, System.Web.Extensions -TypeDefinition @'",
+		TRAY_APP_CS.trim(),
+		"'@",
+		call
+	].join('\r\n');
 }
-$tray = New-Object System.Windows.Forms.NotifyIcon
-$tray.Icon = $icon
-$tray.Text = ${psQuote(title.slice(0, 63))}
-$menu = New-Object System.Windows.Forms.ContextMenuStrip
-if ($url) {
-	$open = $menu.Items.Add('Open flock')
-	$open.Font = New-Object System.Drawing.Font ($open.Font, [System.Drawing.FontStyle]::Bold)
-	$open.add_Click({ Start-Process $url })
-	$tray.add_DoubleClick({ Start-Process $url })
+
+/** The call that starts the helper for this worker; `settings` are the card's (alerts.mjs). */
+export function trayStartCall({ pid, title, url, logPath, exePath = '', runName = 'flock worker', settings = {} }) {
+	const settings64 = Buffer.from(JSON.stringify(settings), 'utf8').toString('base64');
+	return (
+		`[FlockTray.App]::Start(${Number(pid)}, ${psQuote(String(title).slice(0, 63))}, ${psQuote(url)}, ` +
+		`${psQuote(logPath)}, ${psQuote(exePath)}, ${psQuote(runName)}, ${psQuote(settings64)}, ${psQuote(TRAY_ICON_PNG)})`
+	);
 }
-if ($log) {
-	$logItem = $menu.Items.Add('Open log')
-	$logItem.add_Click({ Start-Process notepad.exe -ArgumentList ('"' + $log + '"') })
+
+/**
+ * The few lines that run a script from `file` and delete it once read. The
+ * helper is far past what fits on a command line (32,767 characters, and
+ * -EncodedCommand doubles them twice over), so it goes through a file — read
+ * by a bootstrap that is itself an encoded command, which, like the helper
+ * always was, no execution policy applies to.
+ */
+export function bootstrapScript(file) {
+	return (
+		`$p = ${psQuote(file)}; $s = [IO.File]::ReadAllText($p); ` +
+		'Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue; . ([ScriptBlock]::Create($s))'
+	);
 }
-[void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
-$stop = $menu.Items.Add('Stop flock worker')
-$stop.add_Click({
-	$stop.Enabled = $false
-	$tray.Text = 'flock worker: stopping'
-	[Console]::Out.WriteLine('stop')
-	[Console]::Out.Flush()
-})
-$tray.ContextMenuStrip = $menu
-$tray.Visible = $true
-[Console]::Out.WriteLine('ready')
-[Console]::Out.Flush()
-$watch = New-Object System.Windows.Forms.Timer
-$watch.Interval = 1000
-$watch.add_Tick({ if ($worker.HasExited) { $watch.Stop(); [System.Windows.Forms.Application]::Exit() } })
-$watch.Start()
-${extra}
-[System.Windows.Forms.Application]::Run()
-$tray.Visible = $false
-$tray.Dispose()
-`;
+
+function spawnScript(script, stdio) {
+	const file = join(tmpdir(), `flock-tray-${process.pid}-${randomBytes(4).toString('hex')}.ps1`);
+	// With a byte order mark, so Windows PowerShell reads a path with any letters in it as UTF-8.
+	writeFileSync(file, String.fromCharCode(0xfeff) + script, 'utf8');
+	// -WindowStyle Hidden as well as windowsHide: PowerShell hiding its own
+	// console is also its first ShowWindow call, which Windows would otherwise
+	// apply the hidden start-up state to — the menu's, or the card's.
+	const child = spawn(
+		'powershell.exe',
+		[
+			'-NoProfile',
+			'-NonInteractive',
+			'-STA',
+			'-ExecutionPolicy',
+			'Bypass',
+			'-WindowStyle',
+			'Hidden',
+			'-EncodedCommand',
+			Buffer.from(bootstrapScript(file), 'utf16le').toString('base64')
+		],
+		{ windowsHide: true, stdio }
+	);
+	child.on('exit', () => {
+		try {
+			unlinkSync(file);
+		} catch {
+			// Deleted by the script itself, as it should be.
+		}
+	});
+	return child;
+}
+
+/**
+ * Draws the card in each size and the settings window to PNGs in `dir`,
+ * showing nothing on screen. Resolves to the helper's errors, if any.
+ */
+export function renderTrayPreview(dir) {
+	const child = spawnScript(trayHostScript(`[FlockTray.App]::Render(${psQuote(dir)}, ${psQuote(TRAY_ICON_PNG)})`), [
+		'ignore',
+		'pipe',
+		'pipe'
+	]);
+	let errors = '';
+	child.stderr.setEncoding('utf8');
+	child.stderr.on('data', (text) => (errors += text));
+	child.stdout.resume();
+	return new Promise((resolve) => child.on('exit', (code) => resolve(code ? errors.trim() || `exit ${code}` : '')));
 }
 
 /**
@@ -156,21 +198,28 @@ export function sayOnScreen(text, { warn = true } = {}) {
 }
 
 /**
- * Starts the helper; `onStop` runs when its Stop is chosen. Resolves to
- * nothing useful — the icon looks after itself from there, and a helper that
- * fails only costs the icon, never the worker.
+ * Starts the helper. `onStop` runs when its Stop is chosen, `onDismiss(keys)`
+ * when the card's Dismiss is pressed, `onSettings(settings)` when its window
+ * saves. Returns `send(type, payload)` for the card — `show` with the
+ * warnings, `hide` — and the process. A helper that fails, or goes, costs the
+ * icon and the card, never the worker.
  */
-export function startTray({ title, url, logPath, onStop, log, extra = '' }) {
-	const script = trayScript({ pid: process.pid, title, url, logPath, extra });
-	const encoded = Buffer.from(script, 'utf16le').toString('base64');
-	// -WindowStyle Hidden as well as windowsHide: PowerShell hiding its own
-	// console is also its first ShowWindow call, which Windows would otherwise
-	// apply the hidden start-up state to — the menu's.
-	const child = spawn(
-		'powershell.exe',
-		['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded],
-		{ windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }
-	);
+export function startTray({
+	title,
+	url,
+	logPath,
+	exePath = '',
+	runName = 'flock worker',
+	settings = {},
+	onStop,
+	onDismiss = () => {},
+	onSettings = () => {},
+	log
+}) {
+	const script = trayHostScript(trayStartCall({ pid: process.pid, title, url, logPath, exePath, runName, settings }));
+	const child = spawnScript(script, ['pipe', 'pipe', 'pipe']);
+	// Writing to a helper that has gone must not take the worker with it.
+	child.stdin.on('error', () => {});
 
 	let pending = '';
 	let errors = '';
@@ -179,10 +228,15 @@ export function startTray({ title, url, logPath, onStop, log, extra = '' }) {
 		pending += text;
 		let at;
 		while ((at = pending.indexOf('\n')) >= 0) {
-			const line = pending.slice(0, at).trim();
+			const message = decodeLine(pending.slice(0, at));
 			pending = pending.slice(at + 1);
-			if (line === 'ready') log('tray icon shown: right-click it to open flock or stop the worker');
-			if (line === 'stop') onStop();
+			if (!message) continue;
+			const { type, payload } = message;
+			if (type === 'ready') log('tray icon shown: right-click it for flock, the warning settings or to stop the worker');
+			else if (type === 'stop') onStop();
+			else if (type === 'dismiss' && Array.isArray(payload?.keys)) onDismiss(payload.keys);
+			else if (type === 'settings' && payload) onSettings(payload);
+			else if (type === 'log' && payload?.text) log(`tray: ${payload.text}`);
 		}
 	});
 	child.stderr.setEncoding('utf8');
@@ -191,5 +245,12 @@ export function startTray({ title, url, logPath, onStop, log, extra = '' }) {
 	child.on('exit', (code) => {
 		if (code) log(`tray icon closed (${code}): ${errors.trim().split('\n')[0] || 'no reason given'}`);
 	});
-	return child;
+
+	return {
+		child,
+		send(type, payload) {
+			if (child.exitCode !== null || !child.stdin.writable) return;
+			child.stdin.write(encodeLine(type, payload));
+		}
+	};
 }

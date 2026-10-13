@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { messageScript, psQuote, trayScript, wantsTray } from './tray.mjs';
+import { bootstrapScript, messageScript, psQuote, trayHostScript, trayStartCall, wantsTray } from './tray.mjs';
+import { TRAY_APP_CS } from './trayapp.mjs';
 
 describe('wantsTray', () => {
 	const exe = { env: {}, platform: 'win32', sea: true, tty: undefined };
@@ -30,30 +31,54 @@ describe('psQuote', () => {
 	});
 });
 
-describe('trayScript', () => {
-	const script = trayScript({
+describe('trayStartCall', () => {
+	const call = trayStartCall({
 		pid: 4242,
 		title: 'flock worker (local)',
 		url: 'https://flock.example/',
-		logPath: "C:\\it's\\flock-worker.log"
+		logPath: "C:\\it's\\flock-worker.log",
+		exePath: 'C:\\Program Files\\flock\\flock-worker-background.exe',
+		runName: 'flock worker (local)',
+		settings: { position: 'bottom-left' }
 	});
 
 	it('fills in every value, quoted', () => {
-		assert.match(script, /GetProcessById\(4242\)/);
-		assert.match(script, /\$url = 'https:\/\/flock\.example\/'/);
-		assert.match(script, /\$log = 'C:\\it''s\\flock-worker\.log'/);
-		assert.match(script, /\$tray\.Text = 'flock worker \(local\)'/);
-		assert.doesNotMatch(script, /\$\{/);
+		assert.match(call, /^\[FlockTray\.App\]::Start\(4242, 'flock worker \(local\)', 'https:\/\/flock\.example\/', /);
+		assert.match(call, /'C:\\it''s\\flock-worker\.log', 'C:\\Program Files\\flock\\flock-worker-background\.exe', 'flock worker \(local\)', /);
+		const settings64 = call.match(/'flock worker \(local\)', '([A-Za-z0-9+/=]+)'/)[1];
+		assert.deepEqual(JSON.parse(Buffer.from(settings64, 'base64').toString('utf8')), { position: 'bottom-left' });
 	});
 
 	it('keeps the tooltip within what Windows allows', () => {
-		const long = trayScript({ pid: 1, title: 'x'.repeat(100), url: '', logPath: '' });
-		assert.match(long, new RegExp(`\\$tray\\.Text = 'x{63}'`));
+		const long = trayStartCall({ pid: 1, title: 'x'.repeat(100), url: '', logPath: '' });
+		assert.match(long, /Start\(1, 'x{63}', /);
+	});
+});
+
+describe('trayHostScript', () => {
+	const script = trayHostScript('[FlockTray.App]::Start()');
+
+	it('compiles the helper from a here-string nothing in it can end early', () => {
+		const lines = script.split('\r\n');
+		const open = lines.findIndex((line) => line.endsWith("-TypeDefinition @'"));
+		const close = lines.indexOf("'@");
+		assert.ok(open > 0 && close > open, 'here-string opened and closed');
+		assert.equal(lines.slice(open + 1, close).filter((line) => line.startsWith("'@")).length, 0);
+		assert.equal(lines.at(-1), '[FlockTray.App]::Start()');
 	});
 
-	it('fits on a Windows command line once encoded', () => {
-		const encoded = Buffer.from(script, 'utf16le').toString('base64');
-		assert.ok(encoded.length < 30_000, `${encoded.length} characters`);
+	it('is plain ASCII C# 5, as the compiler and every encoding on the way take it', () => {
+		assert.equal([...TRAY_APP_CS].filter((c) => c.charCodeAt(0) > 127).length, 0);
+		assert.doesNotMatch(TRAY_APP_CS, /\$"|\?\.|=>/);
+	});
+});
+
+describe('bootstrapScript', () => {
+	it('reads the script from its file, deletes it, and fits on a command line', () => {
+		const boot = bootstrapScript("C:\\Users\\Jo's\\AppData\\Local\\Temp\\flock-tray-1-ab.ps1");
+		assert.match(boot, /\$p = 'C:\\Users\\Jo''s\\AppData\\Local\\Temp\\flock-tray-1-ab\.ps1'/);
+		assert.match(boot, /Remove-Item -LiteralPath \$p/);
+		assert.ok(Buffer.from(boot, 'utf16le').toString('base64').length < 2000);
 	});
 });
 

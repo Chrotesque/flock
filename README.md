@@ -293,9 +293,19 @@ On Windows the build also writes **`flock-worker-background.exe`**, which runs
 without a window:
 
 - It shows the flock icon in the notification area: double-click to open
-  flock, right-click to open the log or stop it.
-- To start it with Windows, put a shortcut to it in the Startup folder (Win+R,
-  `shell:startup`).
+  flock, right-click to open the log, the warning settings or stop it.
+- **When a post did not go out** (it failed, or its slot passed unsent), a
+  warning slides in on your second screen and stays on top until you press
+  *Dismiss*. *Open in flock* opens that upload, where *Retry* is. Dismissing
+  it only hides it on this PC: the post stays in flock's *To finish*. A post
+  dismissed or retried in flock leaves the warning by itself.
+- *Warning settings…* in the icon's menu picks the screen (second, main, the
+  one with the mouse, or a particular one), where on it, the size, pulsing,
+  sliding in, and whether the posts are named (off for screen recordings).
+  *Show a test warning* shows how it looks.
+- **Start with Windows** in the same menu starts it when you sign in. It shows
+  in Windows' Settings → Apps → Startup too. If you used to start it from a
+  shortcut in the Startup folder, delete that shortcut.
 - `flock-worker-background.exe --stop` stops it too.
 - It logs to `flock-worker.log` beside itself. If it cannot start (no config,
   flock out of reach for five minutes, one already running), a message box

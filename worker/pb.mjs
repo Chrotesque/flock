@@ -59,6 +59,22 @@ export function makeClient(baseUrl) {
 			return res.items ?? [];
 		},
 
+		/**
+		 * What the warning card looks at (alerts.mjs undelivered): posts that
+		 * failed since `since`, and every one still waiting, each with its job's
+		 * creation, title and whether it is a local pick not on the NAS yet.
+		 */
+		async undeliveredCandidates(since) {
+			const filter = encodeURIComponent(`(status="failed" && scheduled_at >= "${pbDate(since)}") || status="pending"`);
+			const fields = encodeURIComponent(
+				'id,job,platform,status,scheduled_at,updated,title,error,expand.job.created,expand.job.title,expand.job.source_local'
+			);
+			const res = await request(
+				`/api/collections/upload_targets/records?perPage=200&expand=job&fields=${fields}&filter=${filter}`
+			);
+			return res.items ?? [];
+		},
+
 		/** Rows left mid-flight by a crash. Only safe to call when nothing is running. */
 		async stalePublishing(platform) {
 			const filter = encodeURIComponent(`platform="${platform}" && status="publishing"`);
