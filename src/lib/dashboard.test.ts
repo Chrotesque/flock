@@ -5,7 +5,6 @@ import {
 	periodTotals,
 	periods,
 	postsPerPlatform,
-	targetProblems,
 	upcoming,
 	viewsAt,
 	type DashTarget,
@@ -88,8 +87,6 @@ const target = (over: Partial<DashTarget>): DashTarget => ({
 	jobError: '',
 	...over
 });
-const label = (p: string) => p;
-
 describe('postsPerPlatform', () => {
 	it('counts published posts in the period per platform asked for', () => {
 		const counts = postsPerPlatform(
@@ -104,35 +101,6 @@ describe('postsPerPlatform', () => {
 			['instagram', 'tiktok']
 		);
 		expect(counts).toEqual({ tiktok: 1 });
-	});
-});
-
-describe('targetProblems', () => {
-	it('flags failures, posts never sent, long uploads, waiting imports and private slots', () => {
-		const problems = targetProblems(
-			[
-				target({ id: 'f', status: 'failed', scheduled_at: iso(now - 2 * H), error: 'audience not offered' }),
-				target({ id: 'old', status: 'failed', scheduled_at: iso(now - 9 * 24 * H) }),
-				target({ id: 'late', status: 'pending', scheduled_at: iso(now - 30 * 60_000) }),
-				target({ id: 'soon', status: 'pending', scheduled_at: iso(now + H) }),
-				target({ id: 'yt', platform: 'youtube', status: 'pending', jobCreated: iso(now - 20 * 60_000), scheduled_at: iso(now + 5 * H) }),
-				target({ id: 'stuck', status: 'publishing', scheduled_at: iso(now - 2 * H) }),
-				target({ id: 'imp', job: 'k', status: 'pending', importing: true, jobCreated: iso(now - 15 * 60_000) }),
-				target({ id: 'imp2', job: 'k', platform: 'instagram', status: 'pending', importing: true, jobCreated: iso(now - 15 * 60_000) }),
-				target({ id: 'priv', platform: 'youtube', status: 'published', visibility: 'Private', jobCreated: iso(now - 9 * H), scheduled_at: iso(now - H) }),
-				target({ id: 'privnow', platform: 'youtube', status: 'published', visibility: 'Private', jobCreated: iso(now - H), scheduled_at: iso(now - H - 30_000) })
-			],
-			NOW,
-			label
-		);
-		const texts = problems.map((p) => p.text);
-		expect(texts).toContain('tiktok: "Clip" failed');
-		expect(texts.filter((t) => t.endsWith('failed'))).toHaveLength(1);
-		expect(texts.filter((t) => t.endsWith('was never sent'))).toHaveLength(2);
-		expect(texts).toContain('tiktok: "Clip" has been uploading for 2 h');
-		expect(texts.filter((t) => t.includes('not on the NAS yet'))).toHaveLength(1);
-		expect(texts.filter((t) => t.includes('private, with a slot'))).toHaveLength(1);
-		expect(problems.findIndex((p) => p.level === 'warn')).toBeGreaterThan(problems.findLastIndex((p) => p.level === 'error'));
 	});
 });
 

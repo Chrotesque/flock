@@ -13,6 +13,8 @@ describe('readLayout', () => {
 		const read = readLayout([
 			{ id: 'latest', size: 'half' },
 			{ id: 'gone', size: 'full' },
+			// Moved to the To finish panel in 0.14.7; a layout saved before still names it.
+			{ id: 'attention', size: 'half' },
 			{ id: 'today', size: 'enormous' },
 			{ id: 'latest', size: 'third' }
 		]);
@@ -20,7 +22,7 @@ describe('readLayout', () => {
 			{ id: 'latest', size: 'half' },
 			{ id: 'today', size: 'third' }
 		]);
-		expect(ids(read)).toEqual(['latest', 'today', 'week', 'month', 'attention', 'coming', 'system', 'waiting']);
+		expect(ids(read)).toEqual(['latest', 'today', 'week', 'month', 'coming', 'system', 'waiting']);
 	});
 });
 

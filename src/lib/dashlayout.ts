@@ -3,10 +3,11 @@
  * each, on a twelve-column grid that packs them densely. Kept per browser
  * (localStorage `flock.dashboard.layout`), so everyone using flock arranges
  * their own; a saved layout is read field by field, so a widget added later
- * turns up at the end and one removed is dropped.
+ * turns up at the end and one removed is dropped (Needs attention, which moved
+ * to the To finish panel in 0.14.7).
  */
 
-export type WidgetId = 'today' | 'week' | 'month' | 'attention' | 'coming' | 'latest' | 'system' | 'waiting';
+export type WidgetId = 'today' | 'week' | 'month' | 'coming' | 'latest' | 'system' | 'waiting';
 
 export type WidgetSize = 'third' | 'half' | 'twothirds' | 'full';
 
@@ -28,7 +29,6 @@ export const WIDGETS: WidgetDef[] = [
 	{ id: 'today', title: 'Today', size: 'third' },
 	{ id: 'week', title: 'This week', size: 'third' },
 	{ id: 'month', title: 'This month', size: 'third' },
-	{ id: 'attention', title: 'Needs attention', size: 'half' },
 	{ id: 'coming', title: 'Coming up', size: 'half' },
 	{ id: 'latest', title: 'Latest releases', size: 'full' },
 	{ id: 'system', title: 'System', size: 'half' },

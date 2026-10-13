@@ -6,6 +6,7 @@
 	import { workers } from '$lib/stores/workers.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { videoTodo } from '$lib/stores/videotodo.svelte';
+	import { attention } from '$lib/stores/attention.svelte';
 	import PasteNotice from '$lib/components/PasteNotice.svelte';
 	import DashboardOverlay from '$lib/components/DashboardOverlay.svelte';
 	import TodoPanel from '$lib/components/TodoPanel.svelte';
@@ -26,10 +27,12 @@
 		workers.start();
 		const stopProjects = projects.start();
 		const stopTodo = videoTodo.start();
+		const stopAttention = attention.start();
 		const stopDevtest = startDevtest();
 		return () => {
 			stopProjects();
 			stopTodo();
+			stopAttention();
 			stopDevtest();
 		};
 	});
@@ -87,12 +90,25 @@
 	}
 
 	/**
-	 * Something can be done right now: Studio steps still open on a video, or
-	 * a public one to link on Jestr. A greyed Jestr button, an upload on its
-	 * way and YouTube's paid-promotion reading are not — the last only
-	 * informs, and "not ticked" is right for a video without any.
+	 * Something can be done right now: anything that needs attention (a post
+	 * gone wrong, a stopped worker…), Studio steps still open on a video, or a
+	 * public one to link on Jestr. A greyed Jestr button, an upload on its way
+	 * and YouTube's paid-promotion reading are not — the last only informs,
+	 * and "not ticked" is right for a video without any. A post that did not
+	 * go out outranks all of it: the box turns red and pulses.
 	 */
-	let needsDoing = $derived(videoTodo.lines.some((line) => line.studio.length > 0 || line.jestr === 'open'));
+	let needsDoing = $derived(
+		attention.items.length > 0 || videoTodo.lines.some((line) => line.studio.length > 0 || line.jestr === 'open')
+	);
+	let postFailed = $derived(attention.failed);
+	let todoCount = $derived(attention.items.length + videoTodo.lines.length);
+
+	let todoLabel = $derived.by(() => {
+		const parts: string[] = [];
+		if (attention.items.length) parts.push(`${attention.items.length} needing attention`);
+		parts.push(`${videoTodo.lines.length} ${videoTodo.lines.length === 1 ? 'video' : 'videos'}`);
+		return `To finish, ${parts.join(', ')}`;
+	});
 
 	/** A held release's slot, as the clock on this machine reads it. */
 	function at(iso: string): string {
@@ -233,29 +249,34 @@
 			</section>
 		{/if}
 
-		<!-- Videos with something left to do by hand — set in Studio, linked on
-		     Jestr — as one icon centred in the free stretch between the main
-		     links and the worker: a muted green box with a check cut out when nothing
-		     needs doing, a yellow-to-pink outline round an exclamation mark
-		     when something does, filled purple with a back arrow while open.
-		     The list itself opens over the content area (TodoPanel). Rules in
+		<!-- What needs attention and videos with something left to do by hand
+		     — set in Studio, linked on Jestr — as one icon centred in the free
+		     stretch between the main links and the worker: a muted green box
+		     with a check cut out when nothing needs doing, a yellow-to-pink
+		     outline round an exclamation mark when something does, filled red
+		     with the mark cut out, slowly pulsing, when a post did not go out,
+		     filled purple with a back arrow while open. The list itself opens
+		     over the content area (TodoPanel). Rules in attention.ts and
 		     videotodo.ts; Settings → Other can hide it. -->
 		{#if general.value.showTodo}
-			<section class="todo" aria-label="Videos to finish">
+			<section class="todo" aria-label="To finish">
 				<button
 					id="todo-tile"
 					class="tile"
 					class:open={todoPanel.open}
-					class:due={needsDoing}
+					class:failed={postFailed && !todoPanel.open}
+					class:due={needsDoing && !postFailed}
 					onclick={toggleTodo}
 					aria-expanded={todoPanel.open}
 					aria-controls="todo-panel"
-					aria-label="To finish, {videoTodo.lines.length} {videoTodo.lines.length === 1 ? 'video' : 'videos'}"
+					aria-label={todoLabel}
 					title={todoPanel.open
 						? 'Close To finish (Esc)'
-						: needsDoing
-							? 'To finish: something needs doing'
-							: 'To finish: nothing to do right now'}
+						: postFailed
+							? 'To finish: a post did not go out'
+							: needsDoing
+								? 'To finish: something needs doing'
+								: 'To finish: nothing to do right now'}
 				>
 					<span class="tileart">
 						<svg class="tileicon" viewBox="0 0 48 48" width="128" height="128" fill="none" aria-hidden="true">
@@ -272,6 +293,11 @@
 								<!-- Open: filled purple, the way back cut out of it. -->
 								<rect class="box open" x="4" y="4" width="40" height="40" rx="11" />
 								<path class="neg back" d="M27.5 14.5L18 24l9.5 9.5" stroke-linecap="round" stroke-linejoin="round" />
+							{:else if postFailed}
+								<!-- A post did not go out: filled red, the exclamation
+								     mark cut out of it. -->
+								<rect class="box failed" x="4" y="4" width="40" height="40" rx="11" />
+								<path class="neg bang" d="M24 13.5v12.5M24 33.6v0.01" stroke-linecap="round" />
 							{:else if needsDoing}
 								<!-- Something to do: the colour on the border, a thick
 								     exclamation mark in the middle. -->
@@ -288,7 +314,7 @@
 							<path d="M9 5.5l6.5 6.5L9 18.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
 						</svg>
 					</span>
-					<span class="tilecount" aria-hidden="true">{videoTodo.lines.length}</span>
+					<span class="tilecount" aria-hidden="true">{todoCount}</span>
 				</button>
 			</section>
 		{/if}
@@ -593,7 +619,8 @@
 
 	/* The way into the To finish panel: a box with no button chrome round
 	   it. Muted green with a check cut out when nothing needs doing; a yellow-to-pink
-	   border round a thick exclamation mark when something does; filled
+	   border round a thick exclamation mark when something does; filled red
+	   with the mark cut out, pulsing, when a post did not go out; filled
 	   purple with a back arrow cut out while open. Hovered (or focused) it
 	   brightens and glows with a bloom that settles, and an arrow shows on
 	   its right, pointing to where the panel opens. */
@@ -696,6 +723,44 @@
 		filter: drop-shadow(0 0 8px rgba(var(--glow), 0.65)) drop-shadow(0 0 22px rgba(var(--glow-2), 0.4));
 	}
 
+	/* A post did not go out: pure red, breathing slowly, so it never reads as
+	   the yellow-to-pink "something to do". Before the hover rules, which
+	   win on the same footing: hovered it holds still and glows like the
+	   others. */
+	.tile.failed {
+		--glow: 255, 40, 40;
+		--glow-2: 255, 40, 40;
+		--arrow: #ff5a5a;
+	}
+
+	.box.failed {
+		fill: #ff2828;
+	}
+
+	.neg.bang {
+		stroke-width: 10px;
+	}
+
+	.tile.failed .tileicon {
+		animation: alarm 2.8s ease-in-out infinite;
+	}
+
+	.tile.failed .tilecount {
+		color: #ff6464;
+	}
+
+	@keyframes alarm {
+		0%,
+		100% {
+			opacity: 1;
+			filter: drop-shadow(0 0 6px rgba(var(--glow), 0.6)) drop-shadow(0 0 18px rgba(var(--glow-2), 0.35));
+		}
+		50% {
+			opacity: 0.62;
+			filter: drop-shadow(0 0 1px rgba(var(--glow), 0.15)) drop-shadow(0 0 3px rgba(var(--glow-2), 0.1));
+		}
+	}
+
 	.tile:hover .tileicon,
 	.tile:focus-visible .tileicon {
 		filter: drop-shadow(0 0 7px rgba(var(--glow), 0.65)) drop-shadow(0 0 20px rgba(var(--glow-2), 0.45));
@@ -726,6 +791,11 @@
 	.tile:hover .box.open,
 	.tile:focus-visible .box.open {
 		fill: #b56ef9;
+	}
+
+	.tile:hover .box.failed,
+	.tile:focus-visible .box.failed {
+		fill: #ff4040;
 	}
 
 	/* The arrow: hidden until the pointer is on the box, then sliding in,
@@ -766,6 +836,11 @@
 		.tile:hover .tileicon,
 		.tile:focus-visible .tileicon {
 			animation: none;
+		}
+		/* Still red, and glowing, just not breathing. */
+		.tile.failed .tileicon {
+			animation: none;
+			filter: drop-shadow(0 0 6px rgba(var(--glow), 0.6)) drop-shadow(0 0 18px rgba(var(--glow-2), 0.35));
 		}
 		.tilearrow {
 			transition: opacity 0.2s;

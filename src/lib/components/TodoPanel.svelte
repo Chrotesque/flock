@@ -4,19 +4,28 @@
 	import { fade } from 'svelte/transition';
 	import { cubicInOut } from 'svelte/easing';
 	import { afterNavigate } from '$app/navigation';
+	import { base } from '$app/paths';
 	import { todoPanel } from '$lib/stores/todopanel.svelte';
 	import { videoTodo } from '$lib/stores/videotodo.svelte';
+	import { attention } from '$lib/stores/attention.svelte';
+	import { brands } from '$lib/stores/brands.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { WAITING, type TodoLine } from '$lib/videotodo';
+	import type { Attention } from '$lib/attention';
 	import PlatformIcon from './PlatformIcon.svelte';
 
 	/**
 	 * The To finish list over the whole content area (v0.13.8, the user's
 	 * design): it spreads from the sidebar's tile as a circle and goes back
-	 * into it. A row per video — preview, title, what YouTube reports about
-	 * paid promotion, the Studio button and Jestr's. Rules in videotodo.ts,
-	 * state in stores/videotodo.svelte.ts; nothing here decides what is left.
+	 * into it. First what needs attention (v0.14.7, moved here from the
+	 * dashboard): a row per post gone wrong or the system's trouble, linking
+	 * to the upload's overview, a post's with Dismiss. Then a row per video —
+	 * preview, title, what YouTube reports about paid promotion, the Studio
+	 * button and Jestr's. Rules in attention.ts and videotodo.ts, state in
+	 * their stores; nothing here decides what is listed.
 	 */
+
+	brands.load();
 
 	let panel = $state<HTMLElement | null>(null);
 
@@ -41,7 +50,16 @@
 		big = { src: line.thumbLarge || line.thumb, upright, x, y };
 	}
 	let lines = $derived(videoTodo.lines);
+	let items = $derived(attention.items);
 	let jestr = $derived(general.value.jestrIntegration);
+
+	/** A post's brand, named once there are several. */
+	function brandOf(item: Attention): string {
+		return brands.multiple && item.brand ? (brands.byId(item.brand)?.name ?? '') : '';
+	}
+
+	/** A post that did not go out: what turns the sidebar box red. */
+	const isFailure = (item: Attention) => item.kind === 'failed' || item.kind === 'unsent';
 
 	$effect(() => {
 		if (!todoPanel.open) return;
@@ -120,11 +138,12 @@
 	>
 		<header>
 			<div>
-				<h1>To finish <span class="count">{lines.length}</span></h1>
+				<h1>To finish <span class="count">{items.length + lines.length}</span></h1>
 				<p class="sub">
-					What is left to do by hand on each video. The Studio button opens it in YouTube Studio and counts as
-					done; the $ is what YouTube reports about paid promotion.{#if jestr}{' '}Jestr's button goes once the
-						video is linked there.{/if}
+					What needs attention comes first: click a post for its upload in the Log, and dismiss it once dealt
+					with. Then what is left to do by hand on each video: the Studio button opens it in YouTube Studio and
+					counts as done; the $ is what YouTube reports about paid promotion.{#if jestr}{' '}Jestr's button goes
+						once the video is linked there.{/if}
 				</p>
 			</div>
 			<button class="close" onclick={close} aria-label="Close To finish" title="Close (Esc)">
@@ -134,9 +153,52 @@
 			</button>
 		</header>
 
+		{#if items.length > 0}
+			<section class="attn" aria-label="Needs attention">
+				<h2>Needs attention <span class="count">{items.length}</span></h2>
+				<ul>
+					{#each items as item (item.key || item.text)}
+						<li class={item.level} class:alarm={isFailure(item)} animate:flip={{ duration: 200 }} out:fade={{ duration: 160 }}>
+							<span class="what">
+								{#if item.platform}
+									<PlatformIcon platform={item.platform} size={20} />
+								{:else}
+									<span class="sys" aria-hidden="true">!</span>
+								{/if}
+							</span>
+							<div class="info">
+								{#if item.job}
+									<a class="title" href="{base}/log/upload?job={encodeURIComponent(item.job)}" title="Open this upload in the Log">
+										{item.text}
+									</a>
+								{:else}
+									<span class="title">{item.text}</span>
+								{/if}
+								{#if item.detail || brandOf(item)}
+									<p class="meta" title={item.detail}>{[brandOf(item), item.detail].filter(Boolean).join(' · ')}</p>
+								{/if}
+							</div>
+							<div class="cell">
+								{#if item.key}
+									<button
+										class="dismiss"
+										onclick={() => attention.dismiss(item)}
+										title="Dealt with: take it off this list. The upload's overview in the Log keeps it."
+									>
+										Dismiss
+									</button>
+								{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
+
 		{#if lines.length === 0}
-			<p class="empty">Nothing left to finish.</p>
+			{#if items.length === 0}<p class="empty">Nothing left to finish.</p>{/if}
 		{:else}
+			{#if items.length > 0}<h2>Videos <span class="count">{lines.length}</span></h2>{/if}
 			<div class="table" class:nojestr={!jestr}>
 				<div class="thead" aria-hidden="true">
 					<span>Video</span>
@@ -360,6 +422,108 @@
 		text-align: center;
 		font-size: 14px;
 		color: var(--text-faint);
+	}
+
+	h2 {
+		margin: 0 0 -8px;
+		font-size: 13px;
+		font-weight: 650;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--text-dim);
+	}
+
+	h2 .count {
+		font-size: 11.5px;
+		letter-spacing: 0;
+	}
+
+	/* What needs attention: a row per item, its platform (or a "!" for the
+	   system's own trouble), what it is, and Dismiss for a post. Errors carry
+	   a red edge, warnings an amber one; a post that did not go out is red
+	   all round, like the sidebar box. */
+	.attn {
+		display: grid;
+		gap: 18px;
+	}
+
+	.attn li {
+		grid-template-columns: 44px minmax(0, 1fr) 120px;
+		border-left: 3px solid var(--warn);
+	}
+
+	.attn li.error {
+		border-left-color: #ff2828;
+	}
+
+	.attn li.alarm {
+		border-color: rgba(255, 40, 40, 0.55);
+		border-left-color: #ff2828;
+		background: rgba(255, 40, 40, 0.06);
+	}
+
+	.attn li.alarm:hover {
+		border-color: rgba(255, 40, 40, 0.85);
+		border-left-color: #ff2828;
+	}
+
+	.attn .title {
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
+	}
+
+	.attn a.title:hover {
+		color: var(--pink-soft);
+	}
+
+	.attn .meta {
+		overflow: hidden;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow-wrap: anywhere;
+	}
+
+	.what {
+		display: grid;
+		place-items: center;
+	}
+
+	.sys {
+		display: grid;
+		place-items: center;
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		font-size: 13px;
+		font-weight: 800;
+		background: var(--warn);
+		color: var(--bg);
+	}
+
+	.attn li.error .sys {
+		background: #ff2828;
+	}
+
+	.dismiss {
+		padding: 6px 16px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--surface-2);
+		color: var(--text-dim);
+		font: inherit;
+		font-size: 12.5px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: border-color 0.15s, color 0.15s;
+	}
+
+	.dismiss:hover,
+	.dismiss:focus-visible {
+		border-color: var(--text-dim);
+		color: var(--text);
+		outline: none;
 	}
 
 	/* One grid for the head and every row, so the columns line up. */

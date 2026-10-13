@@ -896,6 +896,13 @@ export function subscribeYouTubeTargets(onChange: () => void): () => void {
 	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
 }
 
+/** Every change to any post, on every platform: what needs attention follows them live. */
+export function subscribeTargets(onChange: () => void): () => void {
+	const sub = pb.collection('upload_targets').subscribe('*', () => onChange());
+	sub.catch(() => {});
+	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
+}
+
 /**
  * flock's YouTube uploads since the list began: those YouTube has, each with
  * its thumbnail and paid promotion to set in Studio, and those still on their
@@ -1156,7 +1163,7 @@ export async function loadDashVideos(): Promise<DashVideo[]> {
 }
 
 /** Every post, with the brand and what the dashboard reads of its job (dashboard.ts). */
-export async function loadDashTargets(): Promise<(DashTarget & { brand: string })[]> {
+export async function loadDashTargets(since?: Date): Promise<(DashTarget & { brand: string })[]> {
 	type Row = {
 		id: string;
 		job: string;
@@ -1167,13 +1174,21 @@ export async function loadDashTargets(): Promise<(DashTarget & { brand: string }
 		error?: string;
 		remote_url?: string;
 		title: string;
+		account?: string;
+		updated?: string;
 		options?: { visibility?: string; privacy?: string };
 		expand?: { job?: { brand?: string; title?: string; created?: string; source_local?: boolean; error?: string } };
 	};
 	const rows = await pb.collection('upload_targets').getFullList<Row>({
 		expand: 'job',
+		// With `since`, only what could still need attention: anything not
+		// out yet, and the rest with a slot from then on.
+		...(since
+			? { filter: pb.filter("status = 'pending' || status = 'publishing' || scheduled_at >= {:since}", { since }) }
+			: {}),
 		fields:
-			'id,job,platform,status,scheduled_at,published_at,error,remote_url,title,options.visibility,options.privacy,' +
+			'id,job,platform,status,scheduled_at,published_at,error,remote_url,title,account,updated,' +
+			'options.visibility,options.privacy,' +
 			'expand.job.brand,expand.job.title,expand.job.created,expand.job.source_local,expand.job.error'
 	});
 	return rows.map((row) => {
@@ -1193,7 +1208,9 @@ export async function loadDashTargets(): Promise<(DashTarget & { brand: string }
 			jobCreated: job?.created ?? '',
 			importing: Boolean(job?.source_local),
 			jobError: job?.error ?? '',
-			brand: job?.brand ?? ''
+			brand: job?.brand ?? '',
+			account: row.account ?? '',
+			updated: row.updated ?? ''
 		};
 	});
 }

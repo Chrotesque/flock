@@ -502,9 +502,6 @@ shows:
 
 - **Today, this week and this month:** videos out on YouTube and the views on
   them, the views the channel gained, and posts on Instagram and TikTok.
-- **Needs attention:** failed posts, posts never sent, uploads that hang,
-  videos not yet copied to the NAS, a stopped worker, and the like. Each links
-  to the upload's overview in the Log.
 - **Coming up:** the next seven days of posts, empty days included.
 - **Latest releases:** the five newest videos, their first two days as a line,
   and whether they are ahead of what the channel usually has at that age.
@@ -546,12 +543,21 @@ refreshed every 30 seconds while the worker runs.
   `940 (+9)`. Refresh resets those.
 - Below, a list of what is stored on the NAS, with a delete per upload.
 
-**To finish**, in the sidebar, is a box for YouTube videos with something left
-to do by hand: green with a check when nothing needs doing now, a yellow-to-pink
-outline with an exclamation mark when something does. The number under it is
-how many videos are listed. Click it to open the list over the page.
+**To finish**, in the sidebar, is a box for what needs attention and for
+YouTube videos with something left to do by hand: green with a check when
+nothing needs doing now, a yellow-to-pink outline with an exclamation mark when
+something does, and **solid red, slowly pulsing, when a post did not go out**
+(it failed, or its slot passed and it was never sent). The number under it is
+how many things are listed. Click it to open the list over the page.
 
-- Each row has the thumbnail (hover it to see it larger), the title (opens the
+- **Needs attention** comes first, for every brand: failed posts, posts never
+  sent, uploads that hang, videos not yet copied to the NAS, a private YouTube
+  video given a slot, a stopped worker, a TikTok or Instagram account that
+  cannot post while posts wait for it, and YouTube's stats or quota. Each post
+  shows its platform and brand and links to the upload's overview in the Log;
+  *Dismiss* takes it off the list once dealt with (the Log keeps it). The rest
+  go by themselves once fixed.
+- Each video row has the thumbnail (hover it to see it larger), the title (opens the
   video), whether YouTube reports paid promotion (green $ ticked, red not), and
   a *Studio* button opening the video in YouTube Studio — a yellow dot until it
   was opened from here, a check after.

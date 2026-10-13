@@ -106,9 +106,12 @@ export function postsPerPlatform(
 	return out;
 }
 
-/* ---- what needs attention ---- */
+/* ---- posts ---- */
 
-/** An `upload_targets` row with what the dashboard reads of its job. */
+/**
+ * An `upload_targets` row with what the dashboard reads of its job. What
+ * needs attention about them is attention.ts, shown in the To finish panel.
+ */
 export interface DashTarget {
 	id: string;
 	job: string;
@@ -126,14 +129,12 @@ export interface DashTarget {
 	/** The job's local pick is not on the NAS yet. */
 	importing: boolean;
 	jobError: string;
-}
-
-export interface Attention {
-	level: 'error' | 'warn';
-	text: string;
-	detail: string;
-	/** The upload it is about, for its page in the Log; '' for none. */
-	job: string;
+	/** The job's brand id. */
+	brand?: string;
+	/** The `accounts.account_id` it goes out as; '' for the platform's only account. */
+	account?: string;
+	/** When the row last changed. */
+	updated?: string;
 }
 
 const MIN = 60_000;
@@ -145,76 +146,6 @@ export function ago(ms: number): string {
 	const hours = Math.round(minutes / 60);
 	if (hours < 48) return `${hours} h`;
 	return `${Math.round(hours / 24)} days`;
-}
-
-function nameOf(target: DashTarget): string {
-	return target.title || target.jobTitle || 'Untitled';
-}
-
-/**
- * Posts that went wrong or are about to, newest first within each kind: a
- * failure in the last week; a post past its slot that was never sent (a
- * YouTube post is sent at once, so any left waiting 10 min); one uploading
- * for over 90 min (the time after which a takeover gives up on it too); a
- * local video still not on the NAS; and a private YouTube post that was
- * given a slot — YouTube is handed no release time for it, so the slot does
- * nothing and it stays private.
- */
-export function targetProblems(targets: DashTarget[], now: Date, label: (p: PlatformId) => string): Attention[] {
-	const at = now.getTime();
-	const out: Attention[] = [];
-	const importing = new Set<string>();
-	for (const t of [...targets].sort((a, b) => time(b.scheduled_at) - time(a.scheduled_at))) {
-		const slot = time(t.scheduled_at);
-		const name = `${label(t.platform)}: "${nameOf(t)}"`;
-		if (t.status === 'failed' && at - slot < 7 * 24 * 60 * MIN) {
-			out.push({ level: 'error', text: `${name} failed`, detail: t.error || '', job: t.job });
-		} else if (t.importing && t.status === 'pending') {
-			if (!importing.has(t.job) && at - time(t.jobCreated) > 10 * MIN) {
-				importing.add(t.job);
-				out.push({
-					level: 'warn',
-					text: `"${t.jobTitle || nameOf(t)}" is not on the NAS yet`,
-					detail: `Waiting ${ago(at - time(t.jobCreated))} for the PC worker to copy it${t.jobError ? ` — ${t.jobError}` : ''}`,
-					job: t.job
-				});
-			}
-		} else if (t.status === 'pending') {
-			const due = t.platform === 'youtube' ? time(t.jobCreated) : slot;
-			if (at - due > 10 * MIN) {
-				out.push({
-					level: 'error',
-					text: `${name} was never sent`,
-					detail:
-						t.platform === 'youtube'
-							? `Waiting ${ago(at - due)} for the worker to upload it.`
-							: `Its slot passed ${ago(at - due)} ago.`,
-					job: t.job
-				});
-			}
-		} else if (t.status === 'publishing' && at - Math.max(slot, time(t.jobCreated)) > 90 * MIN) {
-			out.push({
-				level: 'warn',
-				text: `${name} has been uploading for ${ago(at - Math.max(slot, time(t.jobCreated)))}`,
-				detail: 'Longer than an upload should take; the worker may have lost it.',
-				job: t.job
-			});
-		}
-		if (
-			t.platform === 'youtube' &&
-			t.visibility === 'Private' &&
-			slot > time(t.jobCreated) + MIN &&
-			slot > at - 7 * 24 * 60 * MIN
-		) {
-			out.push({
-				level: 'warn',
-				text: `${name} is private, with a slot`,
-				detail: 'YouTube is given no release time for a private video, so it stays private at its slot.',
-				job: t.job
-			});
-		}
-	}
-	return out.sort((a, b) => (a.level === b.level ? 0 : a.level === 'error' ? -1 : 1));
 }
 
 /* ---- coming up ---- */

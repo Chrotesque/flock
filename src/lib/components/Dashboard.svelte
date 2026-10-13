@@ -13,7 +13,6 @@
 	import type { DashVideo } from '$lib/repo';
 	import { allowanceLabel, postAllowance } from '$lib/accounts';
 	import { PLATFORMS } from '$lib/platforms';
-	import { firstLine } from '$lib/format';
 	import { SHORT_MAX_SECONDS } from '$lib/videokind';
 	import { edgeVelocity } from '$lib/autoscroll';
 	import {
@@ -22,9 +21,7 @@
 		periodTotals,
 		periods,
 		postsPerPlatform,
-		targetProblems,
 		upcoming,
-		type Attention,
 		type DashTarget,
 		type PeriodKey
 	} from '$lib/dashboard';
@@ -107,61 +104,6 @@
 	function big(n: number): string {
 		return n >= 100_000 ? compact.format(n) : whole.format(n);
 	}
-
-	/* ---- needs attention ---- */
-
-	let attention = $derived.by((): Attention[] => {
-		const items: Attention[] = targetProblems(brandTargets, now, (p) => PLATFORMS[p].label);
-		for (const dot of workers.view.dots) {
-			// The PC's worker is often off on purpose; what it holds up shows on its own.
-			if (dot.state !== 'down' || dot.role === 'local') continue;
-			items.push({
-				level: 'error',
-				text: dot.role === 'nas' ? 'The NAS worker is not running' : 'The worker is not running',
-				detail: 'Nothing is published or filed until it is back.',
-				job: ''
-			});
-		}
-		const creator = accounts.tiktok;
-		if (creator?.error) {
-			items.push({
-				level: 'error',
-				text: `TikTok says @${creator.username} cannot post right now`,
-				detail: firstLine(creator.error),
-				job: ''
-			});
-		}
-		const allowance = postAllowance(accounts.for('instagram'));
-		if (allowance && allowance.left <= 0) {
-			const due = brandTargets.filter(
-				(t) =>
-					t.platform === 'instagram' &&
-					t.status === 'pending' &&
-					Date.parse(t.scheduled_at.replace(' ', 'T')) - now.getTime() < 24 * 3_600_000
-			).length;
-			if (due > 0) {
-				items.push({
-					level: 'warn',
-					text: `Instagram's ${allowance.total} posts in 24 h are used up`,
-					detail: `${due} ${due === 1 ? 'post is' : 'posts are'} due within a day; Instagram refuses them unless some age out first.`,
-					job: ''
-				});
-			}
-		}
-		if (channelStatus?.error) {
-			items.push({ level: 'warn', text: 'YouTube stats are not being read', detail: channelStatus.error, job: '' });
-		}
-		const status = dashData.status;
-		if (status && status.budget > 0 && status.unitsToday >= status.budget * 0.9) {
-			items.push({
-				level: 'warn',
-				text: 'YouTube quota nearly used up',
-				detail: `${whole.format(status.unitsToday)} of ${whole.format(status.budget)} units today; the stats pause at the budget.`,
-				job: ''
-			});
-		}
-		return items.sort((a, b) => (a.level === b.level ? 0 : a.level === 'error' ? -1 : 1));
-	});
 
 	/* ---- coming up and latest ---- */
 
@@ -358,33 +300,6 @@
 				{/each}
 			</p>
 		{/if}
-	{/if}
-{/snippet}
-
-{#snippet attentionBody()}
-	{#if attention.length === 0}
-		<p class="clear">
-			<svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
-				<path d="m3.5 8.5 3 3 6-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-			</svg>
-			All clear.
-		</p>
-	{:else}
-		<ul class="attention">
-			{#each attention as item, i (i)}
-				<li class={item.level}>
-					<span class="mark" aria-hidden="true"></span>
-					<span class="what">
-						{#if item.job}
-							<a href="{base}/log/upload?job={encodeURIComponent(item.job)}">{item.text}</a>
-						{:else}
-							<strong>{item.text}</strong>
-						{/if}
-						{#if item.detail}<span class="detail" title={item.detail}>{item.detail}</span>{/if}
-					</span>
-				</li>
-			{/each}
-		</ul>
 	{/if}
 {/snippet}
 
@@ -603,8 +518,6 @@
 			</header>
 			{#if item.id === 'today' || item.id === 'week' || item.id === 'month'}
 				{@render numbers(item.id)}
-			{:else if item.id === 'attention'}
-				{@render attentionBody()}
 			{:else if item.id === 'coming'}
 				{@render comingBody()}
 			{:else if item.id === 'latest'}
@@ -891,9 +804,8 @@
 		gap: 5px;
 	}
 
-	/* ---- attention and coming up ---- */
+	/* ---- coming up ---- */
 
-	.attention,
 	.coming,
 	.coming ul,
 	.latest,
@@ -903,66 +815,14 @@
 		padding: 0;
 	}
 
-	.clear {
-		display: flex;
-		align-items: center;
-		gap: 7px;
-		margin: 0;
-		font-size: 13px;
-		color: var(--ok);
-	}
 
-	.attention li {
-		display: flex;
-		gap: 10px;
-		padding: 8px 0;
-		border-bottom: 1px solid var(--border);
-		font-size: 13px;
-	}
 
-	.attention li:last-child {
-		border-bottom: none;
-	}
 
-	.mark {
-		flex: none;
-		width: 8px;
-		height: 8px;
-		margin-top: 5px;
-		border-radius: 50%;
-		background: var(--warn);
-	}
 
-	.attention li.error .mark {
-		background: var(--danger);
-	}
 
-	.what {
-		min-width: 0;
-		overflow-wrap: anywhere;
-	}
 
-	.what a,
-	.what strong {
-		color: var(--text);
-		font-weight: 560;
-		text-decoration: none;
-	}
 
-	.what a:hover {
-		color: var(--pink-soft);
-	}
 
-	.detail {
-		display: -webkit-box;
-		margin-top: 2px;
-		font-size: 12px;
-		color: var(--text-dim);
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 3;
-		line-clamp: 3;
-		overflow: hidden;
-	}
 
 	.coming .day {
 		display: grid;
