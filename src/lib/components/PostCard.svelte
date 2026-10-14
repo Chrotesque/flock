@@ -85,7 +85,7 @@
 		onmouseleave={onLeave}
 		ondragstart={onLeave}
 	>
-		<PlatformIcon {platform} size={17} />
+		<PlatformIcon {platform} size={12} />
 	</div>
 
 	{#if showTip}
@@ -127,36 +127,38 @@
 {/if}
 
 <style>
-	/* ---- compact tile ---- */
+	/* ---- compact tile ----
+	   As tall as the schedule grid's slim hour row and as wide as it is tall;
+	   the platform colour runs round the whole border, since a thick left edge
+	   would push a mark this small off centre. */
 
 	.tile {
-		width: 34px;
-		height: 34px;
+		width: 18px;
+		height: 18px;
 		display: grid;
 		place-items: center;
-		border-radius: 9px;
+		border-radius: 5px;
 		background: var(--surface-2);
-		border: 1px solid var(--border-strong);
-		border-left: 3px solid var(--text-faint);
+		border: 1px solid var(--text-faint);
 		transition: transform 0.08s, box-shadow 0.14s, border-color 0.14s;
 	}
 
 	.tile:hover {
 		transform: translateY(-1px);
-		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+		box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
 	}
 
 	.tile.youtube {
-		border-left-color: #e8484a;
+		border-color: #e8484a;
 	}
 	.tile.instagram {
-		border-left-color: #d6558f;
+		border-color: #d6558f;
 	}
 	.tile.tiktok {
-		border-left-color: #3de0dc;
+		border-color: #3de0dc;
 	}
 	.tile.facebook {
-		border-left-color: #3b82f6;
+		border-color: #3b82f6;
 	}
 
 	.tile.muted {

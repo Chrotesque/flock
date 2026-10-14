@@ -2,9 +2,23 @@
 	import { edgeVelocity } from '$lib/autoscroll';
 	import { portal } from '$lib/portal';
 	import { general } from '$lib/stores/general.svelte';
-	import { BUILT_IN_ZONES, clock, isValidZone, zoneTime } from '$lib/timezones';
-	import { untrack, type Snippet } from 'svelte';
-	import { isoDate, startOfWeek, addDays, weekLabel, hourOf, dayLabel, dayStart, rangeLabel } from '$lib/format';
+	import { calendarZone } from '$lib/stores/calendarzone.svelte';
+	import { clock, zoneTime } from '$lib/timezones';
+	import { tick, untrack, type Snippet } from 'svelte';
+	import {
+		isoDate,
+		startOfWeek,
+		addDays,
+		weekLabel,
+		hourOf,
+		minuteOf,
+		makeTime,
+		dayLabel,
+		dayStart,
+		rangeLabel,
+		relativeTo,
+		MONTH_NAMES
+	} from '$lib/format';
 
 	// The time-grid, shared by the upload wizard's schedule step and the
 	// standalone Calendar so the two cannot drift apart visually. The Calendar
@@ -16,18 +30,26 @@
 	// *looks* like is the caller's `card` snippet (in practice always PostCard).
 	let {
 		items,
+		headItems,
 		weekStart = $bindable(startOfWeek(new Date())),
 		card,
 		toolbar,
 		marker,
 		offscreen,
 		dense = false,
+		quarters = false,
 		dayCount = 7,
 		rolling = false,
 		candrag,
 		ondropitem
 	}: {
 		items: T[];
+		/**
+		 * What the day heads' markers show, when it differs from the cards:
+		 * an item here and not in `items` is marked on its day but sits in no
+		 * hour. Defaults to `items`.
+		 */
+		headItems?: T[];
 		/** The first day shown: a Monday, or with `rolling` any day — today to begin with. */
 		weekStart?: Date;
 		/** How many days are shown side by side. */
@@ -44,22 +66,31 @@
 		 */
 		offscreen?: Snippet<[T, 'up' | 'down', () => void]>;
 		/**
-		 * Cards flow across a cell rather than stacking. For icon-sized cards —
-		 * stacking four of them would treble the row height for no gain.
+		 * Cards flow across a cell rather than stacking, and an hour row is only
+		 * as tall as its label. For icon-sized cards — stacking four of them
+		 * would treble the row height for no gain.
 		 */
 		dense?: boolean;
+		/**
+		 * After a drop, offers that hour's quarters (:00, :15, :30, :45) beside
+		 * the card; a choice comes back through `ondropitem` with its minute.
+		 */
+		quarters?: boolean;
 		/**
 		 * Per item, so a grid can be partly editable — the Calendar allows
 		 * upcoming releases to be moved while released ones stay put. Omitted
 		 * means nothing is draggable.
 		 */
 		candrag?: (item: T) => boolean;
-		/** Fires with the dragged item's id and the cell it was dropped on. */
-		ondropitem?: (id: string, date: string, hour: number) => void;
+		/**
+		 * Fires with the dragged item's id and the cell it was dropped on, and
+		 * again with a `minute` once one is picked from the quarters.
+		 */
+		ondropitem?: (id: string, date: string, hour: number, minute?: number) => void;
 	} = $props();
 
 	const HOURS = Array.from({ length: 24 }, (_, i) => i);
-	const ROW_PX = 56;
+	let rowPx = $derived(dense ? 20 : 56);
 
 	const today = isoDate(new Date());
 
@@ -83,8 +114,8 @@
 		return items.filter((item) => item.date === iso && hourOf(item.time) === hour);
 	}
 
-	function cardsOn(iso: string): T[] {
-		return items.filter((item) => item.date === iso);
+	function markedOn(iso: string): T[] {
+		return (headItems ?? items).filter((item) => item.date === iso);
 	}
 
 	/* ---- drag and drop ----
@@ -111,6 +142,7 @@
 
 	function beginDrag(event: PointerEvent, id: string) {
 		if (!ondropitem || event.button !== 0) return;
+		picker = null;
 		const node = event.currentTarget as HTMLElement;
 		pending = { id, x: event.clientX, y: event.clientY, pointerId: event.pointerId, node };
 		try {
@@ -155,6 +187,7 @@
 		if (id && target) {
 			const [iso, hour] = target.split('#');
 			ondropitem?.(id, iso, Number(hour));
+			if (quarters) void openPicker(id, iso, Number(hour));
 		}
 	}
 
@@ -175,6 +208,40 @@
 			?.closest<HTMLElement>('[data-cell]');
 		over = hit?.dataset.cell ?? null;
 	}
+
+	/* ---- where the card would land ----
+	 *
+	 * A label beside the held card naming the slot under the pointer, in
+	 * words: past a few days the grid's own headers are a long way from the
+	 * pointer. The minutes are the card's own, since a drop keeps them.
+	 */
+	let ghostEl = $state<HTMLDivElement | null>(null);
+	let landEl = $state<HTMLDivElement | null>(null);
+
+	let landing = $derived.by(() => {
+		if (!dragging || !over) return null;
+		const [iso, hour] = over.split('#');
+		const lifted = items.find((item) => item.id === dragging);
+		const time = makeTime(Number(hour), lifted ? minuteOf(lifted.time) : 0);
+		const at = new Date(`${iso}T${time}`);
+		if (Number.isNaN(at.getTime())) return null;
+		const other = zone ? zoneTime(at, zone.zone) : null;
+		return {
+			time,
+			day: `${dayLabel(at.getDay())} ${at.getDate()} ${MONTH_NAMES[at.getMonth()].slice(0, 3)}`,
+			when: relativeTo(iso, time),
+			past: at.getTime() < Date.now(),
+			zone: zone && other ? { label: zone.label, time: clock(other), dayOffset: other.dayOffset } : null
+		};
+	});
+
+	/** Right of the held card, or left of it when that would leave the window. */
+	let landAt = $derived.by(() => {
+		const gap = (ghostEl?.offsetWidth ?? 18) / 2 + 10;
+		const width = landEl?.offsetWidth ?? 160;
+		const left = pointer.x + gap + width > window.innerWidth - 8;
+		return { x: left ? pointer.x - gap : pointer.x + gap, left };
+	});
 
 	/* ---- scrolling while dragging ----
 	 *
@@ -208,36 +275,94 @@
 		scrollFrame = null;
 	}
 
+	/* ---- the quarter-hour picker ----
+	 *
+	 * A drop picks the day and hour; the card lands at once with the minutes
+	 * it had, and a small popover beside it offers the hour's quarters. Esc,
+	 * a press anywhere else or the card scrolling away closes it and keeps
+	 * those minutes. Portalled and fixed like the card's tooltip, and placed
+	 * from the card's own node, so it follows the card as the grid scrolls.
+	 */
+	const QUARTERS = [0, 15, 30, 45];
+
+	let picker = $state<{ id: string; date: string; hour: number } | null>(null);
+	let pickerEl = $state<HTMLDivElement | null>(null);
+	let pickerAt = $state({ x: 0, y: 0, above: false });
+
+	let pickedMinute = $derived.by(() => {
+		const open = picker;
+		if (!open) return null;
+		const item = items.find((entry) => entry.id === open.id);
+		return item ? minuteOf(item.time) : null;
+	});
+
+	async function openPicker(id: string, date: string, hour: number) {
+		picker = { id, date, hour };
+		await tick();
+		placePicker();
+		const buttons = pickerEl?.querySelectorAll<HTMLButtonElement>('button');
+		const current = pickerEl?.querySelector<HTMLButtonElement>('[aria-pressed="true"]');
+		(current ?? buttons?.[0])?.focus({ preventScroll: true });
+	}
+
+	function placePicker() {
+		if (!picker) return;
+		const node = nodes.get(picker.id);
+		const el = scroller;
+		if (!node || !el) {
+			picker = null;
+			return;
+		}
+		const rect = node.getBoundingClientRect();
+		const box = el.getBoundingClientRect();
+		// Scrolled out of the grid: nothing left to point at.
+		if (rect.bottom <= box.top || rect.top >= box.bottom) {
+			picker = null;
+			return;
+		}
+		const height = pickerEl?.offsetHeight ?? 34;
+		const half = (pickerEl?.offsetWidth ?? 220) / 2;
+		const above = rect.bottom + 6 + height > window.innerHeight - 8;
+		pickerAt = {
+			x: Math.min(window.innerWidth - half - 8, Math.max(half + 8, rect.left + rect.width / 2)),
+			y: above ? rect.top - 6 : rect.bottom + 6,
+			above
+		};
+	}
+
+	function pickMinute(minute: number) {
+		const open = picker;
+		picker = null;
+		if (open) ondropitem?.(open.id, open.date, open.hour, minute);
+	}
+
+	function onWindowKey(event: KeyboardEvent) {
+		if (picker && event.key === 'Escape') {
+			event.preventDefault();
+			picker = null;
+		}
+	}
+
+	function onWindowPointer(event: PointerEvent) {
+		if (picker && !pickerEl?.contains(event.target as Node)) picker = null;
+	}
+
+	/** Left and right step through the quarters. */
+	function onPickerKey(event: KeyboardEvent) {
+		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+		const buttons = [...(pickerEl?.querySelectorAll<HTMLButtonElement>('button') ?? [])];
+		const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+		const next = at + (event.key === 'ArrowRight' ? 1 : -1);
+		if (next < 0 || next >= buttons.length) return;
+		event.preventDefault();
+		buttons[next].focus();
+	}
+
 	/* ---- a second clock in the time column ---- */
 
-	const ZONE_KEY = 'flock.calendar.zone';
 	general.load();
 
-	/** Built-ins first, then whatever Settings adds that the runtime knows. */
-	let zoneChoices = $derived([
-		...BUILT_IN_ZONES,
-		...general.value.timeZones.filter((z) => z.label.trim() && isValidZone(z.zone))
-	]);
-
-	function readZone(): string {
-		try {
-			return localStorage.getItem(ZONE_KEY) ?? '';
-		} catch {
-			return '';
-		}
-	}
-
-	let zoneId = $state(readZone());
-	let zone = $derived(zoneChoices.find((z) => z.id === zoneId) ?? null);
-
-	function setZone(id: string) {
-		zoneId = id;
-		try {
-			localStorage.setItem(ZONE_KEY, id);
-		} catch {
-			// The choice just will not survive a reload.
-		}
-	}
+	let zone = $derived(calendarZone.zone);
 
 	/**
 	 * The zone's clock at each local hour, taken on the first day of the week
@@ -272,7 +397,8 @@
 		measure();
 		return {
 			destroy() {
-				nodes.delete(id);
+				// A moved card may have registered its new node already.
+				if (nodes.get(id) === node) nodes.delete(id);
 			}
 		};
 	}
@@ -346,6 +472,7 @@
 			ticking = false;
 			measure();
 			measureGutter();
+			placePicker();
 		});
 	}
 
@@ -407,13 +534,13 @@
 		untrack(() => {
 			const hours = items.map((item) => hourOf(item.time));
 			const earliest = hours.length ? Math.min(...hours) : 8;
-			el.scrollTop = Math.max(0, (earliest - 1) * ROW_PX);
+			el.scrollTop = Math.max(0, (earliest - 1) * rowPx);
 			measure();
 		});
 	});
 </script>
 
-<svelte:window on:resize={onScroll} />
+<svelte:window onresize={onScroll} onkeydown={onWindowKey} onpointerdown={onWindowPointer} />
 
 <header class="bar">
 	<div class="nav">
@@ -432,7 +559,7 @@
 				/></svg
 			>
 		</button>
-		<span class="label">{rangeText}</span>
+		<span class="range">{rangeText}</span>
 		<button
 			class="nav-btn"
 			onclick={() => (weekStart = addDays(weekStart, 7))}
@@ -468,19 +595,20 @@
 	class:zoned={Boolean(zone)}
 	class:dragging={Boolean(dragging)}
 	class:many={dayCount > 10}
+	class:slim={dense}
 	style="--days: {dayCount}"
 >
 	<div class="head" style="padding-right: {gutter}px">
 		<div class="corner">
 			<select
 				class="zonepick"
-				value={zoneId}
-				onchange={(e) => setZone(e.currentTarget.value)}
+				value={calendarZone.id}
+				onchange={(e) => calendarZone.set(e.currentTarget.value)}
 				aria-label="Second time zone"
 				title="Show another zone's clock beside the local one"
 			>
 				<option value="">Local</option>
-				{#each zoneChoices as choice (choice.id)}
+				{#each calendarZone.choices as choice (choice.id)}
 					<option value={choice.id}>{choice.label}</option>
 				{/each}
 			</select>
@@ -493,7 +621,7 @@
 				</div>
 				{#if marker}
 					<div class="markers">
-						{#each cardsOn(day.iso) as item (item.id)}
+						{#each markedOn(day.iso) as item (item.id)}
 							{@render marker(item)}
 						{/each}
 					</div>
@@ -505,15 +633,64 @@
 	{#if dragging}
 		{@const lifted = items.find((item) => item.id === dragging)}
 		{#if lifted}
-			<div class="ghost" style="left: {pointer.x}px; top: {pointer.y}px" use:portal>
+			<div class="ghost" style="left: {pointer.x}px; top: {pointer.y}px" bind:this={ghostEl} use:portal>
 				{@render card(lifted)}
+			</div>
+		{/if}
+		{#if landing}
+			<div
+				class="landing"
+				class:left={landAt.left}
+				class:past={landing.past}
+				style="left: {landAt.x}px; top: {pointer.y}px"
+				bind:this={landEl}
+				use:portal
+			>
+				<div class="landtime">
+					<span>{landing.time}</span>
+					{#if landing.zone}
+						<span class="landzone">
+							{landing.zone.label}
+							{landing.zone.time}{#if landing.zone.dayOffset !== 0}<sup
+									>{landing.zone.dayOffset > 0 ? '+1' : '−1'}</sup
+								>{/if}
+						</span>
+					{/if}
+				</div>
+				<div class="landday">{landing.day} · {landing.past ? 'in the past' : landing.when}</div>
 			</div>
 		{/if}
 	{/if}
 
+	{#if picker && pickedMinute !== null}
+		{@const open = picker}
+		<div
+			class="quarters"
+			class:above={pickerAt.above}
+			style="left: {pickerAt.x}px; top: {pickerAt.y}px"
+			role="toolbar"
+			tabindex="-1"
+			aria-label="Minutes past {makeTime(open.hour, 0)}"
+			bind:this={pickerEl}
+			onkeydown={onPickerKey}
+			use:portal
+		>
+			{#each QUARTERS as minute (minute)}
+				<button
+					class="quarter"
+					class:on={pickedMinute === minute}
+					aria-pressed={pickedMinute === minute}
+					onclick={() => pickMinute(minute)}
+				>
+					{makeTime(open.hour, minute)}
+				</button>
+			{/each}
+		</div>
+	{/if}
+
 	<div class="scrollwrap">
 		<div class="scroller scroll" bind:this={scroller} onscroll={onScroll}>
-			<div class="grid" style="--row: {ROW_PX}px">
+			<div class="grid" style="--row: {rowPx}px">
 				{#each HOURS as hour (hour)}
 					<div class="timelabel" class:offhours={offHours(hour)} class:zoned={Boolean(zone)}>
 						<span>{String(hour).padStart(2, '0')}:00</span>
@@ -618,11 +795,14 @@
 		color: var(--text);
 	}
 
-	.label {
+	/* Not `.label`: that is the global form-label class, whose bottom margin
+	   lifted the range above the arrows beside it. */
+	.range {
 		min-width: 108px;
 		text-align: center;
 		font-size: 12.5px;
 		font-weight: 600;
+		line-height: 1;
 	}
 
 	.sm {
@@ -740,12 +920,19 @@
 		color: var(--pink);
 	}
 
-	/* Which platforms land on this day, readable without scrolling the grid. */
+	/* Which platforms land on this day, readable without scrolling the grid.
+	   `--marker` is the width at which four fit on one row however narrow
+	   the day — a quarter of the row, gaps aside, never over 20px — for the
+	   caller's marker to take. Stretched across the day head, so the
+	   percentage has a width to resolve against when the head stacks. */
 	.markers {
+		--marker: min(20px, calc((100% - 6px) / 4));
 		display: flex;
 		flex-wrap: wrap;
 		justify-content: flex-end;
-		gap: 3px;
+		gap: 2px;
+		flex: 1;
+		align-self: stretch;
 		min-width: 0;
 	}
 
@@ -819,7 +1006,20 @@
 		display: flex;
 		flex-wrap: wrap;
 		justify-content: center;
-		align-content: start;
+		align-content: center;
+		padding: 0 3px;
+		gap: 1px 3px;
+	}
+
+	/* Rows only as tall as the hour label: the label sits in the middle of
+	   its row rather than at the top. */
+	.calendar.slim .timelabel {
+		align-items: center;
+		padding-top: 0;
+	}
+
+	.calendar.slim .timelabel span {
+		line-height: 1;
 	}
 
 	.cell.today {
@@ -851,6 +1051,113 @@
 
 	.grab:active {
 		cursor: grabbing;
+	}
+
+	/* Beside the held card, above it in the stack. */
+	.landing {
+		position: fixed;
+		z-index: 1001;
+		pointer-events: none;
+		transform: translateY(-50%);
+		padding: 5px 9px 6px;
+		border-radius: 8px;
+		background: var(--surface-3);
+		border: 1px solid var(--border-strong);
+		box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+		white-space: nowrap;
+	}
+
+	.landing.left {
+		transform: translate(-100%, -50%);
+	}
+
+	.landtime {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		font-family: var(--mono);
+		font-size: 15px;
+		font-weight: 650;
+		font-variant-numeric: tabular-nums;
+		line-height: 1.2;
+	}
+
+	.landzone {
+		font-size: 11px;
+		font-weight: 500;
+		color: var(--text-faint);
+	}
+
+	.landzone sup {
+		margin-left: 1px;
+		font-size: 8px;
+	}
+
+	.landday {
+		font-size: 11px;
+		color: var(--text-dim);
+	}
+
+	.landing.past {
+		border-color: rgba(251, 191, 36, 0.5);
+	}
+
+	.landing.past .landday {
+		color: var(--warn);
+	}
+
+	/* Above the card's hover tooltip (40), which can open over it. */
+	.quarters {
+		position: fixed;
+		z-index: 50;
+		display: flex;
+		gap: 3px;
+		padding: 4px;
+		border-radius: 9px;
+		background: var(--surface-3);
+		border: 1px solid var(--border-strong);
+		box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+		transform: translateX(-50%);
+		animation: quartersin 0.12s ease;
+	}
+
+	.quarters.above {
+		transform: translate(-50%, -100%);
+	}
+
+	.quarter {
+		padding: 3px 8px;
+		border-radius: 6px;
+		border: 1px solid transparent;
+		font-family: var(--mono);
+		font-size: 12px;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-dim);
+		transition: background 0.12s, color 0.12s, border-color 0.12s;
+	}
+
+	.quarter:hover,
+	.quarter:focus-visible {
+		background: var(--surface-2);
+		border-color: var(--pink-soft);
+		color: var(--text);
+	}
+
+	.quarter.on {
+		background: var(--accent-grad);
+		color: #fff;
+	}
+
+	@keyframes quartersin {
+		from {
+			opacity: 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.quarters {
+			animation: none;
+		}
 	}
 
 	.slot:hover {

@@ -461,11 +461,15 @@ The boxes on the right follow the platform you are writing for:
 Continue unlocks once every platform you ticked is written for and has a video.
 
 **3. Schedule.** A calendar of the coming days, starting today: 14 days, or 7 to
-21 with *Show N days*. Drag a platform's card to another day or hour, or type
+14 with *Show N days* (at most 12 while a second time zone is shown). Drag a
+platform's icon to another day or hour — a label beside it names the slot under
+the pointer — then pick :00, :15, :30 or :45 from the bar that opens; or type
 the exact date and time underneath.
 
 - A platform set to *Profiles* in Settings shows its profiles as buttons here:
   pick one to fill in its next day and time.
+- *Release immediately* takes a platform off the hours: it shows under today's
+  date instead.
 - The dropdown above the hours adds a second time zone's clock.
 
 **4. Review.** The video plays beside exactly what each platform gets and when,

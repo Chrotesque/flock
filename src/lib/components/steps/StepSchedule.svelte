@@ -6,6 +6,7 @@
 	import { PLATFORMS } from '$lib/platforms';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { draft } from '$lib/stores/draft.svelte';
+	import { calendarZone } from '$lib/stores/calendarzone.svelte';
 	import { buildPlan, type PlanRow } from '$lib/plan';
 	import { addDays, dayStart, isoDate, minuteOf, makeTime } from '$lib/format';
 	import { isPlatformId } from '$lib/platforms';
@@ -13,10 +14,14 @@
 
 	/*
 	 * Not a week but a run of days from today (the user's layout): 14 to
-	 * begin with, 7 to 21 from the dropdown, remembered per browser.
+	 * begin with, 7 to 14 from the dropdown, remembered per browser. With a
+	 * second time zone shown at most 12, since its clock widens the time
+	 * column; the choice is kept and comes back once the zone is gone.
 	 */
 	const DAYS_KEY = 'flock.schedule.days';
-	const DAY_CHOICES = Array.from({ length: 15 }, (_, i) => i + 7);
+	const DAY_CHOICES = Array.from({ length: 8 }, (_, i) => i + 7);
+	const MAX_DAYS = 14;
+	const MAX_DAYS_ZONED = 12;
 
 	function loadDays(): number {
 		try {
@@ -28,6 +33,8 @@
 	}
 
 	let dayCount = $state(loadDays());
+	let maxDays = $derived(calendarZone.zone ? MAX_DAYS_ZONED : MAX_DAYS);
+	let shownDays = $derived(Math.min(dayCount, maxDays));
 	let weekStart = $state(dayStart(new Date()));
 
 	function setDays(n: number) {
@@ -45,25 +52,29 @@
 	let all = $derived(buildPlan().map((row) => ({ ...row, id: row.platform })));
 	// A platform releasing on pickup has no slot, so it has no card: placing one
 	// at "now" would claim a release time that is never handed to the platform.
+	// It is marked in today's head instead, in no hour.
 	let rows = $derived(all.filter((row) => !row.immediate));
-	let nowRows = $derived(all.filter((row) => row.immediate));
+	let headRows = $derived(
+		all.map((row) => (row.immediate ? { ...row, date: isoDate(new Date()) } : row))
+	);
 
-	let weekDays = $derived(new Set(Array.from({ length: dayCount }, (_, i) => isoDate(addDays(weekStart, i)))));
+	let weekDays = $derived(new Set(Array.from({ length: shownDays }, (_, i) => isoDate(addDays(weekStart, i)))));
 	let offWeek = $derived(rows.filter((row) => !weekDays.has(row.date)));
 
-	function onDropItem(id: string, date: string, hour: number) {
+	function onDropItem(id: string, date: string, hour: number, minute?: number) {
 		if (!isPlatformId(id)) return;
-		// The minutes ride along, so a profile's 21:30 stays :30 when it is moved
-		// to another day — only the hour comes from the row it was dropped on.
+		// The minutes ride along on the drop, so a profile's 21:30 stays :30 when
+		// it is moved to another day; the grid's quarter picker then calls again
+		// with the minute chosen.
 		const current = draft.scheduleFor(id);
-		draft.setSchedule(id, { date, time: makeTime(hour, minuteOf(current.time)) });
+		draft.setSchedule(id, { date, time: makeTime(hour, minute ?? minuteOf(current.time)) });
 	}
 
 	/** Brings a day into view: as the first day when it is earlier, the last when later. */
 	function jumpTo(iso: string) {
 		const [y, m, d] = iso.split('-').map(Number);
 		const day = new Date(y, m - 1, d);
-		weekStart = day < weekStart ? day : addDays(day, -(dayCount - 1));
+		weekStart = day < weekStart ? day : addDays(day, -(shownDays - 1));
 	}
 
 	function profilesFor(id: PlatformId) {
@@ -75,11 +86,13 @@
 <div class="stage">
 	<WeekCalendar
 		items={rows}
+		headItems={headRows}
 		bind:weekStart
-		{dayCount}
+		dayCount={shownDays}
 		rolling
 		candrag={() => true}
 		dense
+		quarters
 		ondropitem={onDropItem}
 		card={cardFor}
 		marker={dayMarker}
@@ -89,25 +102,13 @@
 
 	{#if offWeek.length > 0}
 		<div class="offweek">
-			<span>Scheduled outside these {dayCount} days:</span>
+			<span>Scheduled outside these {shownDays} days:</span>
 			{#each offWeek as row (row.platform)}
 				<button class="jump" onclick={() => jumpTo(row.date)}>
 					<PlatformIcon platform={row.platform} size={13} />
 					{PLATFORMS[row.platform].label}
 					<em>{row.date}</em>
 				</button>
-			{/each}
-		</div>
-	{/if}
-
-	{#if nowRows.length > 0}
-		<div class="offweek nowstrip">
-			<span>Releasing on pickup, so not on the grid:</span>
-			{#each nowRows as row (row.platform)}
-				<span class="jump static">
-					<PlatformIcon platform={row.platform} size={13} />
-					{PLATFORMS[row.platform].label}
-				</span>
 			{/each}
 		</div>
 	{/if}
@@ -121,13 +122,14 @@
 				<div class="who">
 					<span class="ic"><PlatformIcon platform={id} size={16} /></span>
 					<span class="name">{PLATFORMS[id].label}</span>
+					<span class="nowtick">
+						<Checkbox
+							checked={now}
+							label="Release immediately"
+							onchange={(next) => draft.setImmediate(id, next)}
+						/>
+					</span>
 				</div>
-
-				<Checkbox
-					checked={now}
-					label="Release immediately"
-					onchange={(next) => draft.setImmediate(id, next)}
-				/>
 
 				{#if now}
 					<p class="nownote">
@@ -181,7 +183,11 @@
 {/snippet}
 
 {#snippet dayMarker(row: PlanRow & { id: string })}
-	<span class="daymark {row.platform}" title={PLATFORMS[row.platform].label}>
+	<span
+		class="daymark {row.platform}"
+		class:now={row.immediate}
+		title="{PLATFORMS[row.platform].label} · {row.immediate ? 'released on pickup' : row.time}"
+	>
 		<PlatformIcon platform={row.platform} size={13} />
 	</span>
 {/snippet}
@@ -219,11 +225,11 @@
 {/snippet}
 
 {#snippet tip()}
-	<p class="tip">Drag an icon to another day or hour. Hover one to read it.</p>
+	<p class="tip">Drag an icon to another day or hour, then pick the minutes. Hover one to read it.</p>
 	<label class="days">
 		Show
-		<select value={dayCount} onchange={(e) => setDays(Number(e.currentTarget.value))} aria-label="Days shown">
-			{#each DAY_CHOICES as n (n)}
+		<select value={shownDays} onchange={(e) => setDays(Number(e.currentTarget.value))} aria-label="Days shown">
+			{#each DAY_CHOICES.filter((n) => n <= maxDays) as n (n)}
 				<option value={n}>{n}</option>
 			{/each}
 		</select>
@@ -263,14 +269,27 @@
 		cursor: pointer;
 	}
 
+	/* Sized by the grid's `--marker`, so four fit beside each other on a day. */
 	.daymark {
+		flex: none;
 		display: grid;
 		place-items: center;
-		width: 20px;
-		height: 20px;
-		border-radius: 6px;
+		width: var(--marker, 20px);
+		aspect-ratio: 1;
+		border-radius: 5px;
 		background: var(--surface-3);
 		border: 1px solid var(--border);
+	}
+
+	.daymark :global(svg) {
+		width: 66%;
+		height: 66%;
+	}
+
+	/* Released on pickup: in today's head and no hour, outlined like its
+	   box below. */
+	.daymark.now {
+		border-color: var(--pink);
 	}
 
 	/* Tinted with the platform's own colour so the arrow says *which* card is
@@ -361,10 +380,17 @@
 		align-content: start;
 	}
 
+	/* The name left, the release tick right; a narrow box puts the tick under. */
 	.who {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 8px;
+		gap: 6px 8px;
+	}
+
+	.nowtick {
+		margin-left: auto;
+		font-size: 12px;
 	}
 
 	.ic {
@@ -392,13 +418,6 @@
 		font-size: 11px;
 		line-height: 1.45;
 		color: var(--text-faint);
-	}
-
-	/* Not a button, so it must not borrow .jump's interactive hover. */
-	.nowstrip .static,
-	.nowstrip .static:hover {
-		cursor: default;
-		border-color: var(--border);
 	}
 
 	.chips {
@@ -429,9 +448,10 @@
 		color: #fff;
 	}
 
+	/* Date and time the same width. */
 	.inputs {
 		display: grid;
-		grid-template-columns: 1fr 96px;
+		grid-template-columns: 1fr 1fr;
 		gap: 6px;
 	}
 
