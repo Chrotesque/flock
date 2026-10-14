@@ -1181,7 +1181,7 @@ export async function loadDashTargets(since?: Date): Promise<(DashTarget & { bra
 		title: string;
 		account?: string;
 		updated?: string;
-		options?: { visibility?: string; privacy?: string };
+		options?: { visibility?: string; privacy?: string; jestrCampaign?: boolean };
 		expand?: { job?: { brand?: string; title?: string; created?: string; source_local?: boolean; error?: string } };
 	};
 	const rows = await pb.collection('upload_targets').getFullList<Row>({
@@ -1193,7 +1193,7 @@ export async function loadDashTargets(since?: Date): Promise<(DashTarget & { bra
 			: {}),
 		fields:
 			'id,job,platform,status,scheduled_at,published_at,error,remote_url,title,account,updated,' +
-			'options.visibility,options.privacy,' +
+			'options.visibility,options.privacy,options.jestrCampaign,' +
 			'expand.job.brand,expand.job.title,expand.job.created,expand.job.source_local,expand.job.error'
 	});
 	return rows.map((row) => {
@@ -1209,6 +1209,7 @@ export async function loadDashTargets(since?: Date): Promise<(DashTarget & { bra
 			remote_url: row.remote_url ?? '',
 			title: row.title,
 			visibility: String(row.options?.visibility ?? row.options?.privacy ?? ''),
+			jestr: row.options?.jestrCampaign === true,
 			jobTitle: job?.title ?? '',
 			jobCreated: job?.created ?? '',
 			importing: Boolean(job?.source_local),

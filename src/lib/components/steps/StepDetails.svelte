@@ -12,6 +12,7 @@
 	import { draft } from '$lib/stores/draft.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
+	import { JESTR_PLATFORMS, tickedIn, withTick } from '$lib/jestrcampaign';
 	import { templates, tokenOf } from '$lib/stores/templates.svelte';
 	import {
 		loadPlaylists,
@@ -80,6 +81,15 @@
 	 */
 
 	let youtubeActive = $derived(draft.activePlatforms.includes('youtube'));
+
+	// The Jestr campaign tick: one per upload, written on its YouTube, Instagram
+	// and TikTok posts (jestrcampaign.ts); shown while composing one of those,
+	// and only with the Jestr integration on.
+	let jestrPlatforms = $derived(JESTR_PLATFORMS.filter((p) => draft.activePlatforms.includes(p)));
+	let showJestrBox = $derived(
+		general.value.jestrIntegration && composing !== null && jestrPlatforms.includes(composing)
+	);
+	let jestrTicked = $derived(tickedIn(draft.overrides));
 	let tiktokActive = $derived(draft.activePlatforms.includes('tiktok'));
 	// The image box is the reel cover of Instagram and Facebook
 	// (coverimage.ts): YouTube's thumbnail was dropped in v0.11.7, and TikTok
@@ -1013,6 +1023,16 @@
 
 	<div class="aside">
 	<div class="side">
+
+		{#if showJestrBox}
+			<FoldBox label="Jestr" platforms={jestrPlatforms}>
+				<Checkbox
+					checked={jestrTicked}
+					label="Jestr campaign"
+					onchange={(next) => (draft.overrides = withTick(draft.overrides, next))}
+				/>
+			</FoldBox>
+		{/if}
 
 		{#if showTiktokBox}
 			<section class="videocard card tiktokbox">

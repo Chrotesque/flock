@@ -10,6 +10,7 @@
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { draft } from '$lib/stores/draft.svelte';
+	import { CAMPAIGN_OPTION } from '$lib/jestrcampaign';
 	import type { OptionValues, PlatformId } from '$lib/types';
 
 	let {
@@ -46,14 +47,19 @@
 		draft.overrides[platform] = { ...values };
 	}
 
+	// The Jestr campaign tick rides on the overrides too (jestrcampaign.ts), but
+	// it is the Details box's, not an option: a reset keeps it, and it alone
+	// does not count as the video's options being changed.
 	function resetOverrides() {
 		if (!platform) return;
+		const ticked = draft.overrides[platform]?.[CAMPAIGN_OPTION] === true;
 		delete draft.overrides[platform];
+		if (ticked) draft.overrides[platform] = { [CAMPAIGN_OPTION]: true };
 		draft.overrides = { ...draft.overrides };
 	}
 
 	let hasOverrides = $derived(
-		platform ? Object.keys(draft.overrides[platform] ?? {}).length > 0 : false
+		platform ? Object.keys(draft.overrides[platform] ?? {}).some((key) => key !== CAMPAIGN_OPTION) : false
 	);
 </script>
 

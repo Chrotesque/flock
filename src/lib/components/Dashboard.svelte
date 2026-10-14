@@ -9,6 +9,9 @@
 	import { accounts } from '$lib/stores/accounts.svelte';
 	import { dashData } from '$lib/stores/dashdata.svelte';
 	import { devtestDashboardScopes } from '$lib/devtest';
+	import { general } from '$lib/stores/general.svelte';
+	import { jestrCampaigns } from '$lib/stores/jestrcampaigns.svelte';
+	import { flaggedPosts, isCampaign, type CampaignPosts } from '$lib/jestrcampaign';
 	import { accountLabel, postAllowance } from '$lib/accounts';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import {
@@ -161,6 +164,8 @@
 			},
 			onStatus: (next) => (dashData.status = next)
 		});
+		void jestrCampaigns.load().catch(() => {});
+		const stopMarks = jestrCampaigns.subscribe();
 		const stopReels = subscribeReels((reel, action) => {
 			dashData.putReel(reel, action);
 			if (action !== 'delete') baseIfNew(`instagram:${reel.id}`, reel);
@@ -176,6 +181,7 @@
 			clearTimeout(targetTimer);
 			window.removeEventListener('focus', onFocus);
 			stopStats();
+			stopMarks();
 			stopReels();
 			stopTargets();
 		};
@@ -201,11 +207,12 @@
 		scope
 			? scope.groups().map((g) => ({
 					label: g.label,
+					colour: g.colour,
 					videos: g.channel ? videos.filter((v) => v.channelId === g.channel) : [],
 					reels: g.instagram ? reels.filter((r) => r.account === g.instagram) : [],
 					posts: dashData.targets.filter((t) => t.brand === g.brand)
 				}))
-			: [{ label: '', videos: myVideos, reels: myReels, posts: myTargets }]
+			: [{ label: '', colour: undefined, videos: myVideos, reels: myReels, posts: myTargets }]
 	);
 	const postsInView = $derived(sets.flatMap((set) => set.posts));
 	const noChannel = $derived(!scope && accounts.loaded && !channel && !loneYT);
@@ -213,7 +220,9 @@
 	// Each set's videos and reels pair only among themselves.
 	const releases = $derived(
 		sets.flatMap((set) =>
-			buildReleases(set.videos, set.reels, set.posts).map((r) => (sets.length > 1 ? { ...r, group: set.label } : r))
+			buildReleases(set.videos, set.reels, set.posts).map((r) =>
+				sets.length > 1 ? { ...r, group: set.label, tint: set.colour } : r
+			)
 		)
 	);
 	const groups = $derived(peerGroups(releases));
@@ -266,6 +275,35 @@
 		return sortRows(list, sort);
 	});
 
+	/* ---- Jestr campaigns (jestrcampaign.ts): a column and an Edit mode, with the integration on ---- */
+
+	const jestrOn = $derived(general.value.jestrIntegration);
+	const flagged = $derived(flaggedPosts(dashData.targets));
+
+	function campaignPosts(r: Release): CampaignPosts {
+		const yt = r.posts.youtube;
+		const ig = r.posts.instagram;
+		return {
+			youtube: yt ? { id: yt.id } : undefined,
+			instagram: ig ? { id: ig.id, url: ig.url } : undefined
+		};
+	}
+
+	// Apart from the rows, so a mark redraws a tick rather than every curve.
+	const campaigns = $derived(
+		new Set(inViewList.filter((r) => isCampaign(campaignPosts(r), jestrCampaigns.marks, flagged)).map((r) => r.key))
+	);
+	const campaignCount = $derived(rows.filter((row) => campaigns.has(row.release.key)).length);
+
+	let editing = $state(false);
+	$effect(() => {
+		if (!jestrOn) editing = false;
+	});
+
+	function toggleCampaign(r: Release) {
+		void jestrCampaigns.set(campaignPosts(r), !campaigns.has(r.key), r.title);
+	}
+
 	const totals = $derived.by(() => {
 		const sum = { views: 0, likes: 0, comments: 0, dViews: 0, dLikes: 0, dComments: 0 };
 		for (const row of rows) {
@@ -280,6 +318,9 @@
 	});
 
 	let openKey = $state<string | null>(null);
+
+	/** A brand's menu from the chosen scope, where it was right-clicked. */
+	let brandMenu = $state<{ brand: string; x: number; y: number } | null>(null);
 	let fullRows = $state<Record<string, VideoStats | 'loading' | 'failed'>>({});
 
 	function fullRow(post: Post): VideoStats | null {
@@ -298,6 +339,10 @@
 	}
 
 	async function toggle(release: Release) {
+		if (editing) {
+			toggleCampaign(release);
+			return;
+		}
 		openKey = openKey === release.key ? null : release.key;
 		const yt = release.posts.youtube;
 		if (openKey && yt && !fullRows[yt.record]) {
@@ -519,13 +564,23 @@
 						class:on={!scope && brand.id === brands.currentId}
 						role="radio"
 						aria-checked={!scope && brand.id === brands.currentId}
+						style:--chip={scope ? sets.find((set) => set.label === brand.name)?.colour : undefined}
+						class:tinted={Boolean(scope && sets.find((set) => set.label === brand.name)?.colour)}
 						onclick={() => {
 							for (const s of devtestDashboardScopes) s.release();
 							brands.select(brand.id);
+						}}
+						oncontextmenu={(e) => {
+							if (!scope?.BrandMenu) return;
+							e.preventDefault();
+							brandMenu = { brand: brand.id, x: e.clientX, y: e.clientY };
 						}}>{brand.name}</button
 					>
 				{/each}
 			</div>
+			{#if scope?.BrandMenu && brandMenu}
+				<scope.BrandMenu brand={brandMenu.brand} x={brandMenu.x} y={brandMenu.y} close={() => (brandMenu = null)} />
+			{/if}
 		{/if}
 		<span class="legend">
 			{#each filter.platforms as p (p)}
@@ -557,6 +612,15 @@
 					</li>
 				{/if}
 			</ul>
+			{#if jestrOn}
+				<button
+					class="btn sm"
+					class:editing
+					aria-pressed={editing}
+					onclick={() => (editing = !editing)}
+					title={editing ? 'Stop marking Jestr campaigns' : 'Mark videos as Jestr campaigns'}>{editing ? 'Done' : 'Edit'}</button
+				>
+			{/if}
 			<button class="btn sm" onclick={() => load(true)} disabled={loading} title="Read everything again, and reset the change markers"
 				>Refresh</button
 			>
@@ -615,10 +679,20 @@
 		</p>
 	{/if}
 
-	<section class="card list" aria-label="Every video">
+	{#if editing}
+		<p class="banner editbar">
+			Click a video to mark it as a Jestr campaign, or to take the mark off. <strong>Done</strong> when finished.
+			{#if jestrCampaigns.error}<span class="bad">Not saved: {jestrCampaigns.error}</span>{/if}
+		</p>
+	{/if}
+
+	<!-- The Jestr cell is always the third, hidden without the integration, so
+	     the narrow layouts can hide the others by their place. -->
+	<section class="card list" class:withjestr={jestrOn} class:editing aria-label="Every video">
 		<div class="row cols">
 			<span></span>
 			{@render sortHead('date', 'Video', 'left')}
+			<span class="colhead plain jcell" title="Jestr campaign videos">Jestr</span>
 			{@render sortHead('views', 'Views')}
 			{@render sortHead('likes', 'Likes')}
 			{@render sortHead('comments', 'Comments')}
@@ -631,6 +705,7 @@
 				<span class="vtitle">Total</span>
 				<span class="vmeta">{rows.length} {rows.length === 1 ? 'video' : 'videos'}</span>
 			</span>
+			<span class="jcell num cell" title="Jestr campaign videos among them">{campaignCount}</span>
 			{@render counter(totals.views, totals.dViews)}
 			{@render counter(totals.likes, totals.dLikes)}
 			{@render counter(totals.comments, totals.dComments)}
@@ -641,8 +716,14 @@
 		{#each rows as row (row.release.key)}
 			{@const r = row.release}
 			{@const visibility = visibilityOf(r, filter.platforms)}
-			<div class="item" class:open={openKey === r.key}>
-				<button class="row" onclick={() => toggle(r)} aria-expanded={openKey === r.key}>
+			{@const campaign = campaigns.has(r.key)}
+			<div class="item" class:open={openKey === r.key} class:tinted={Boolean(r.tint)} style:--tint={r.tint}>
+				<button
+					class="row"
+					onclick={() => toggle(r)}
+					aria-expanded={editing ? undefined : openKey === r.key}
+					aria-pressed={editing ? campaign : undefined}
+				>
 					{#if r.thumb}
 						<img class="thumb" src={r.thumb} alt="" loading="lazy" />
 					{:else}
@@ -663,8 +744,16 @@
 								{/each}
 							</span>
 							{#if r.job}<span class="via" title="Uploaded through flock">flock</span>{/if}
-								{#if r.group}<span class="dot">·</span><span class="group">{r.group}</span>{/if}
+								{#if r.group}<span class="dot">·</span><span class="group" style:color={r.tint}>{r.group}</span>{/if}
 						</span>
+					</span>
+					<span class="jcell" class:on={campaign} title={campaign ? 'A Jestr campaign video' : ''}>
+						{#if campaign || editing}
+							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+								<rect x="1.5" y="1.5" width="13" height="13" rx="3.5" class="box" />
+								{#if campaign}<path d="M4.5 8.2 7 10.6l4.6-5" class="tick" />{/if}
+							</svg>
+						{/if}
 					</span>
 					{@render stacked(row, 'views', true)}
 					{@render stacked(row, 'likes')}
@@ -1096,6 +1185,72 @@
 	button.row:hover,
 	.item.open > .row {
 		background: var(--surface-2);
+	}
+
+	.withjestr .row {
+		grid-template-columns: 64px minmax(0, 1fr) 48px 112px 88px 88px 140px 84px;
+	}
+
+	.jcell {
+		display: none;
+	}
+
+	.withjestr .jcell {
+		display: flex;
+		justify-content: center;
+		text-align: center;
+	}
+
+	.jcell svg .box {
+		fill: none;
+		stroke: var(--border-strong);
+		stroke-width: 1.4;
+	}
+
+	.jcell.on svg .box {
+		fill: rgba(52, 211, 153, 0.16);
+		stroke: rgba(52, 211, 153, 0.7);
+	}
+
+	.jcell svg .tick {
+		fill: none;
+		stroke: var(--ok);
+		stroke-width: 1.9;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.editing button.row:hover .jcell svg .box {
+		stroke: var(--pink);
+	}
+
+	.btn.editing {
+		border-color: var(--pink);
+		background: var(--accent-grad-soft);
+		color: var(--text);
+	}
+
+	.editbar {
+		border-color: rgba(255, 77, 158, 0.4);
+	}
+
+	.editbar .bad {
+		margin-left: 8px;
+		color: var(--danger);
+	}
+
+	/* A group's colour (a local scope's, see devtest.ts) washes its rows. */
+	.item.tinted > .row {
+		background: color-mix(in srgb, var(--tint) 13%, transparent);
+	}
+
+	.item.tinted > button.row:hover,
+	.item.tinted.open > .row {
+		background: color-mix(in srgb, var(--tint) 22%, var(--surface-2));
+	}
+
+	.brandchip.tinted:not(.on) {
+		border-color: color-mix(in srgb, var(--chip) 70%, transparent);
 	}
 
 	.row.cols {
@@ -1583,8 +1738,11 @@
 		.row {
 			grid-template-columns: 56px minmax(0, 1fr) 104px 132px 84px;
 		}
-		.row > :nth-child(4),
-		.row > :nth-child(5) {
+		.withjestr .row {
+			grid-template-columns: 56px minmax(0, 1fr) 44px 104px 132px 84px;
+		}
+		.row > :nth-child(5),
+		.row > :nth-child(6) {
 			display: none;
 		}
 		.details {
@@ -1611,7 +1769,10 @@
 		.row {
 			grid-template-columns: 48px minmax(0, 1fr) 96px 76px;
 		}
-		.row > :nth-child(6) {
+		.withjestr .row {
+			grid-template-columns: 48px minmax(0, 1fr) 40px 96px 76px;
+		}
+		.row > :nth-child(7) {
 			display: none;
 		}
 		.thumb {

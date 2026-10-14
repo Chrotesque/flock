@@ -29,6 +29,7 @@
 		CONSENT_PREFIX
 	} from '$lib/tiktok';
 	import { facebookProblems } from '$lib/facebook';
+	import { CAMPAIGN_OPTION } from '$lib/jestrcampaign';
 	import type { PlanRow } from '$lib/plan';
 	import type { PlatformId } from '$lib/types';
 	import type { VideoSlot } from '$lib/stores/draft.svelte';
@@ -541,6 +542,9 @@
 						<!-- TikTok's disclosure has its own label line above, in TikTok's words. -->
 						{#if row.platform === 'youtube' && row.options.paidPromotion}
 							<span class="dot">·</span>paid promotion
+						{/if}
+						{#if row.options[CAMPAIGN_OPTION] === true}
+							<span class="dot">·</span>Jestr campaign
 						{/if}
 						{#if row.hits > 0}
 							<span class="dot">·</span><span class="adapted">{row.hits} adapted</span>

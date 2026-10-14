@@ -48,6 +48,8 @@ export interface DashTarget {
 	account?: string;
 	/** When the row last changed. */
 	updated?: string;
+	/** Ticked as a Jestr campaign at upload (jestrcampaign.ts). */
+	jestr?: boolean;
 }
 
 const MIN = 60_000;

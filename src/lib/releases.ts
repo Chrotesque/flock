@@ -202,6 +202,8 @@ export interface Release {
 	matched: 'job' | 'time' | '';
 	/** The group it was built in, while several are shown together (devtest.ts' dashboard scopes). */
 	group?: string;
+	/** That group's colour, if it has one. */
+	tint?: string;
 }
 
 /** The 11-character video id in a YouTube link; '' when there is none. */

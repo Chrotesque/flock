@@ -38,6 +38,8 @@ export interface DashboardGroup {
 	instagram: string;
 	/** The brand id its posts belong to. */
 	brand: string;
+	/** A CSS colour its rows are tinted with, while several groups are in view. */
+	colour?: string;
 }
 
 /**
@@ -56,6 +58,8 @@ export interface DashboardScope {
 	/** Called when a brand is chosen instead. */
 	release: () => void;
 	groups: () => DashboardGroup[];
+	/** Shown when a brand button is right-clicked while this scope is chosen, at the pointer. */
+	BrandMenu?: Component<{ brand: string; x: number; y: number; close: () => void }>;
 }
 
 export interface DevTestModule {
