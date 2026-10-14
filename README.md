@@ -604,9 +604,10 @@ and link, and everything the worker logged about the upload. Uploads from
 before flock 0.12.0 show what their stored upload still holds, with
 *Immediately* or *Scheduled* worked out from the stored times (dashed).
 
-**An upload made for the wrong brand** can be moved from its overview: pick
-the brand under *Brand*, read what will happen to each post, and press *Move
-to …* twice. The worker does it within seconds:
+**An upload made for the wrong brand** can be moved from its overview: under
+*Brand*, pick where it goes (with two brands, the button already names the
+other one), read what will happen to each post, and press *Move to …* twice.
+The worker does it within seconds:
 
 - A post nothing was sent for yet just goes out as the new brand's account.
 - A YouTube video or Facebook reel already on the old account is deleted

@@ -348,11 +348,14 @@
 					<span class="brandname">{brands.byId(job.brand ?? '')?.name ?? (job.brand_name || 'none')}</span>
 					{#if moving.length === 0 && otherBrands.length > 0}
 						<span class="movepick">
-							<label for="move-to">Move to</label>
-							<select id="move-to" class="select" bind:value={moveTo}>
-								{#if otherBrands.length !== 1}<option value="">Choose a brand…</option>{/if}
-								{#each otherBrands as other (other.id)}<option value={other.id}>{other.name}</option>{/each}
-							</select>
+							<!-- With two brands the other is the only place it can go: the button names it. -->
+							{#if otherBrands.length > 1}
+								<label for="move-to">Move to</label>
+								<select id="move-to" class="select" bind:value={moveTo}>
+									<option value="">Choose a brand…</option>
+									{#each otherBrands as other (other.id)}<option value={other.id}>{other.name}</option>{/each}
+								</select>
+							{/if}
 							<button
 								class="mbtn"
 								class:armed={moveArmed}
