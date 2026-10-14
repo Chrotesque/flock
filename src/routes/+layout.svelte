@@ -123,13 +123,11 @@
 
 	let { children }: { children: Snippet } = $props();
 
+	/** Four panes of different heights, as on the dashboard's corner button. */
+	const DASHBOARD_ICON =
+		'M5.1 3.5h3.8a1.6 1.6 0 0 1 1.6 1.6v6.3a1.6 1.6 0 0 1-1.6 1.6H5.1a1.6 1.6 0 0 1-1.6-1.6V5.1a1.6 1.6 0 0 1 1.6-1.6ZM15.1 3.5h3.8a1.6 1.6 0 0 1 1.6 1.6v2.3a1.6 1.6 0 0 1-1.6 1.6h-3.8a1.6 1.6 0 0 1-1.6-1.6V5.1a1.6 1.6 0 0 1 1.6-1.6ZM5.1 16h3.8a1.6 1.6 0 0 1 1.6 1.6v1.3a1.6 1.6 0 0 1-1.6 1.6H5.1a1.6 1.6 0 0 1-1.6-1.6v-1.3A1.6 1.6 0 0 1 5.1 16ZM15.1 12h3.8a1.6 1.6 0 0 1 1.6 1.6v5.3a1.6 1.6 0 0 1-1.6 1.6h-3.8a1.6 1.6 0 0 1-1.6-1.6v-5.3a1.6 1.6 0 0 1 1.6-1.6Z';
+
 	const links = [
-		{
-			href: '/analytics',
-			label: 'Analytics',
-			hint: 'Reach and performance',
-			icon: 'M4 20V10m5 10V5m5 15v-7m5 7V8'
-		},
 		{
 			href: '/upload',
 			label: 'Upload',
@@ -159,9 +157,17 @@
 	];
 
 	function isActive(href: string): boolean {
-		// No link points at '/' any more — it only redirects to /analytics.
+		// No link points at '/' any more — it only opens the dashboard over Upload.
 		const path = page.url.pathname.replace(base, '') || '/';
 		return path.startsWith(href);
+	}
+
+	/** The Dashboard link spreads it from its own height, like the To finish tile. */
+	function toggleDashboard(event: MouseEvent) {
+		const link = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		const top = content?.getBoundingClientRect().top ?? 0;
+		todoPanel.close();
+		dashboard.toggle(link.top + link.height / 2 - top);
 	}
 
 	/** A local page's link: its own id in the address, or the first with none. */
@@ -175,8 +181,25 @@
 <div class="shell">
 	<aside>
 		<nav>
+			<!-- Not a route: the dashboard opens over whatever page is showing. -->
+			<button
+				class="navlink"
+				class:active={dashboard.open}
+				aria-expanded={dashboard.open}
+				aria-controls="dashboard"
+				onclick={toggleDashboard}
+			>
+				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+					<path d={DASHBOARD_ICON} stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+				</svg>
+				<span class="text">
+					Dashboard
+					<em>Analytics & Dashboard</em>
+				</span>
+			</button>
 			{#each links as link (link.href)}
-				<a href="{base}{link.href}" class="navlink" class:active={isActive(link.href)}>
+				<!-- While the dashboard covers the page, it is the one lit. -->
+				<a href="{base}{link.href}" class="navlink" class:active={isActive(link.href) && !dashboard.open}>
 					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
 						<path
 							d={link.icon}
@@ -1008,6 +1031,15 @@
 		text-decoration: none;
 		color: var(--text-dim);
 		transition: background 0.15s, color 0.15s;
+	}
+
+	/* The Dashboard link is a button: no chrome of its own. */
+	button.navlink {
+		width: 100%;
+		border: 0;
+		background: none;
+		font: inherit;
+		text-align: left;
 	}
 
 	.navlink:hover {

@@ -97,8 +97,8 @@ keeps running when no browser is open. It:
   the slot itself; TikTok and Instagram are held until their slot.
 - lists the watch and project folders, copies videos from your PC to the
   network, and files finished videos into their NAS folder.
-- reads YouTube's numbers for Analytics, and scores titles with vidIQ if you
-  set that up.
+- reads YouTube's and Instagram's numbers for the Dashboard, and scores titles
+  with vidIQ if you set that up.
 
 A platform you have not set up just leaves its releases waiting in the queue.
 
@@ -137,10 +137,11 @@ Good to know:
   Without it the playlist is skipped, and the Review step says so.
 - **Thumbnails and paid promotion are set in YouTube Studio**, not by flock.
   *To finish* in the sidebar links each video's Studio page.
-- **Stats cost API quota.** Analytics reads the newest 50 videos every 30
-  seconds, about a third of the daily quota that uploads also use. `statsSeconds`,
-  `statsVideos` and `statsBudget` in the config adjust it; at the budget,
-  polling pauses until the quota resets, so uploads are never short.
+- **Stats cost API quota.** The Dashboard's YouTube numbers come from the
+  newest 50 videos, read every 30 seconds: about a third of the daily quota
+  that uploads also use. `statsSeconds`, `statsVideos` and `statsBudget` in the
+  config adjust it; at the budget, polling pauses until the quota resets, so
+  uploads are never short.
 
 ### TikTok
 
@@ -542,24 +543,32 @@ Settings, local or on the network, like watch folders.
 
 ### Other screens
 
-**Dashboard** opens from the round button in the top-left corner of every
-page. It comes out of the corner when the pointer gets near; click it to cover
-the page, and click it again (or press Esc) to close. For the brand in view it
-shows:
+**Dashboard**, at the top of the sidebar, opens over whatever page you are on,
+and flock opens on it. Click it again, press Esc or go to another page to close
+it; the round button in the page's top-left corner opens and closes it too. For
+the brand in view it shows:
 
-- **Today, this week and this month:** videos out on YouTube and the views on
-  them, the views the channel gained, and posts on Instagram and TikTok.
-- **Coming up:** the next seven days of posts, empty days included.
-- **Latest releases:** the five newest videos, their first two days as a line,
-  and whether they are ahead of what the channel usually has at that age.
-- **System** and **Waiting:** the workers, YouTube's quota, Instagram's daily
-  posts, and what is waiting to be uploaded.
+- **One filter for all of it:** which platforms (all of them is *Combined*),
+  which kinds (Shorts, long form, live) and whether unlisted and private videos
+  are shown. Click it to change it; the choice is kept per browser.
+- **Today, this week and this month:** videos out, the views on them and the
+  views gained, with each platform's share below.
+- **Coming up:** the next three days, each upload a cluster of platform icons.
+  Hover one for its title and each post's time and state; click it for the
+  upload's overview. The Calendar has the rest.
+- **Every video:** YouTube videos and Instagram reels, with a video posted to
+  both as one row (the same upload, or posted within two hours of each other).
+  Views, likes and comments show the total and each platform's below. A line
+  shows its views from release, with what is usual for its kind dashed, and
+  an arrow per platform says whether it is ahead (green), about usual (grey)
+  or behind (yellow). Sort by any column; click a video for everything YouTube
+  and Instagram report about it. A number that has moved since you opened the
+  dashboard turns green, as in `940 (+9)`; *Refresh* resets those.
+- **Stored on the NAS**, folded away at the bottom: the newest uploads, with a
+  delete per upload (press it twice).
 
-Each box is a widget. Drag it by the grip in its corner to move it (or focus
-the grip and use the arrow keys), and click the width button beside it to make
-it a third, half, two thirds or the full width. The arrangement is kept per
-browser; *Reset layout* puts it back. The numbers are read each time the
-dashboard opens and every 30 seconds while it is open.
+TikTok and Facebook views are not read yet. When each platform was last read,
+and today's YouTube quota, sit at the top right.
 
 **Calendar** shows every release on a week grid; past ones are greyed out, and
 a toggle hides them. It opens read-only: press *Edit* twice within two seconds,
@@ -579,16 +588,6 @@ the Review step showed. Beside that is what happened next: each post's state
 and link, and everything the worker logged about the upload. Uploads from
 before flock 0.12.0 show what their stored upload still holds, with
 *Immediately* or *Scheduled* worked out from the stored times (dashed).
-
-**Analytics** shows the newest 50 videos on the channel of the brand in view,
-refreshed every 30 seconds while the worker runs.
-
-- Click a video for everything YouTube reports about it.
-- Filter by Shorts, long form or live, and show or hide unlisted and private
-  videos. Choices are remembered.
-- A number that has moved since you opened the page turns green, as in
-  `940 (+9)`. Refresh resets those.
-- Below, a list of what is stored on the NAS, with a delete per upload.
 
 **To finish**, in the sidebar, is a box for what needs attention and for
 YouTube videos with something left to do by hand: green with a check when

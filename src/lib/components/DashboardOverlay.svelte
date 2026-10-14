@@ -1,18 +1,22 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { cubicInOut } from 'svelte/easing';
-	import { afterNavigate } from '$app/navigation';
+	import { afterNavigate, replaceState } from '$app/navigation';
+	import { page } from '$app/state';
 	import { dashboard } from '$lib/stores/dashboard.svelte';
 	import { todoPanel } from '$lib/stores/todopanel.svelte';
 	import Dashboard from './Dashboard.svelte';
 
 	/**
-	 * The dashboard's way in, on every page: a round button centred on the
-	 * content area's top-left corner, so only its bottom-right quarter shows.
-	 * Far from the pointer it shrinks into the corner with its icon hidden;
-	 * once the pointer comes near it grows to full size. A click spreads the
-	 * dashboard over the whole content area from that corner; the same
-	 * button (then a close mark), Escape or any navigation takes it away.
+	 * The dashboard over the content area, opened from the sidebar's
+	 * Dashboard link or from a round button centred on the content area's
+	 * top-left corner, so only its bottom-right quarter shows. Far from the
+	 * pointer the button shrinks into the corner with its icon hidden; once
+	 * the pointer comes near it grows to full size. Either way in spreads the
+	 * dashboard over the whole content area — from the corner, or from the
+	 * link's height on the left edge; the corner button (then a close mark),
+	 * the link again, Escape or any navigation takes it away. An address with
+	 * `?dashboard` (where `/` lands) opens it.
 	 *
 	 * The layout clips its content area (`overflow: clip`), which is what
 	 * hides the other three quarters — over the sidebar and above the page.
@@ -65,15 +69,29 @@
 		};
 	});
 
-	// Going anywhere means wanting to see that page.
-	afterNavigate(() => dashboard.close());
+	// Going anywhere means wanting to see that page — unless the address asks
+	// for the dashboard, which then opens and leaves the address.
+	afterNavigate(() => {
+		if (!page.url.searchParams.has('dashboard')) {
+			dashboard.close();
+			return;
+		}
+		todoPanel.close();
+		dashboard.show();
+		const url = new URL(page.url);
+		url.searchParams.delete('dashboard');
+		replaceState(url, page.state);
+	});
 
-	async function toggle() {
+	// However it was opened, the keyboard starts inside it.
+	$effect(() => {
+		if (dashboard.open) void tick().then(() => panel?.focus());
+	});
+
+	function toggle() {
 		// One panel over the content area at a time.
 		todoPanel.close();
-		dashboard.toggle();
-		await tick();
-		if (dashboard.open) panel?.focus();
+		dashboard.toggle(0);
 	}
 
 	function onKey(event: KeyboardEvent) {
@@ -84,16 +102,18 @@
 	}
 
 	/**
-	 * Spreads from the corner as a circle until it covers the far corner, and
-	 * shrinks back into it on the way out. Instant with reduced motion.
+	 * Spreads as a circle from where it was opened on the left edge until it
+	 * covers the farthest corner, and shrinks back there on the way out.
+	 * Instant with reduced motion.
 	 */
 	function reveal(node: HTMLElement) {
 		const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-		const far = Math.hypot(node.offsetWidth, node.offsetHeight);
+		const y = dashboard.originY;
+		const far = Math.hypot(node.offsetWidth, Math.max(y, node.offsetHeight - y));
 		return {
 			duration: reduced ? 0 : 420,
 			easing: cubicInOut,
-			css: (t: number) => `clip-path: circle(${RADIUS + t * (far - RADIUS)}px at 0 0)`
+			css: (t: number) => `clip-path: circle(${RADIUS + t * (far - RADIUS)}px at 0 ${y}px)`
 		};
 	}
 </script>

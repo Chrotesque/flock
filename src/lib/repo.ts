@@ -17,6 +17,7 @@ import {
 import type { WorkerBeat, WorkerBeats, WorkerRole } from './workerstatus';
 import type { UploadRecord } from './uploadrecord';
 import type { DashTarget, StatsVideo } from './dashboard';
+import type { ReelRow, Sample, YouTubeRow } from './releases';
 import type {
 	Account,
 	Brand,
@@ -1217,6 +1218,100 @@ export async function loadDashTargets(since?: Date): Promise<(DashTarget & { bra
 			updated: row.updated ?? ''
 		};
 	});
+}
+
+/* ------------------------------------------------------------------ */
+/* the dashboard: every video and reel, slim (releases.ts)              */
+/* ------------------------------------------------------------------ */
+
+/** A YouTube video for the dashboard, with the channel it is on. */
+export type DashboardVideo = YouTubeRow & { channelId: string };
+/** An Instagram reel for the dashboard, with the account it is on. */
+export type DashboardReel = ReelRow & { account: string };
+
+type VideoRecord = Partial<Omit<VideoStats, 'data'>> & {
+	data?: {
+		snippet?: { channelId?: string; thumbnails?: Record<string, { url?: string }> };
+		liveStreamingDetails?: Record<string, string>;
+	};
+};
+
+/** A `video_stats` record (slim or whole, as realtime sends it) as the dashboard reads it. */
+export function toDashboardVideo(row: VideoRecord): DashboardVideo {
+	const thumbs = row.data?.snippet?.thumbnails ?? {};
+	const live = row.data?.liveStreamingDetails;
+	return {
+		id: row.id ?? '',
+		video_id: row.video_id ?? '',
+		title: row.title ?? '',
+		published_at: row.published_at ?? '',
+		privacy: row.privacy ?? '',
+		views: row.views ?? null,
+		likes: row.likes ?? null,
+		comments: row.comments ?? null,
+		duration: Number(row.duration ?? 0),
+		history: (Array.isArray(row.history) ? row.history : []) as Sample[],
+		live: Boolean(live && Object.keys(live).length > 0),
+		thumb: thumbs.medium?.url ?? thumbs.default?.url ?? '',
+		channelId: row.data?.snippet?.channelId ?? ''
+	};
+}
+
+/** A `post_stats` record as the dashboard reads it. */
+export function toDashboardReel(row: Record<string, unknown>): DashboardReel {
+	const n = (v: unknown) => (typeof v === 'number' ? v : null);
+	return {
+		id: String(row.id ?? ''),
+		post_id: String(row.post_id ?? ''),
+		account: String(row.account ?? ''),
+		published_at: String(row.published_at ?? ''),
+		views: n(row.views),
+		likes: n(row.likes),
+		comments: n(row.comments),
+		reach: n(row.reach),
+		permalink: String(row.permalink ?? ''),
+		caption: String(row.caption ?? ''),
+		history: (Array.isArray(row.history) ? row.history : []) as Sample[]
+	};
+}
+
+/** Every watched video, slim — the counters, samples and what the list shows, not the whole item. */
+export async function loadDashboardVideos(): Promise<DashboardVideo[]> {
+	const rows = await pb.collection('video_stats').getFullList<VideoRecord>({
+		sort: '-published_at',
+		fields:
+			'id,video_id,title,published_at,privacy,views,likes,comments,duration,history,' +
+			'data.snippet.channelId,data.snippet.thumbnails.medium.url,data.snippet.thumbnails.default.url,' +
+			'data.liveStreamingDetails'
+	});
+	return rows.map(toDashboardVideo);
+}
+
+/** One video's whole item, for an opened row. */
+export async function loadVideoStat(id: string): Promise<VideoStats> {
+	return (await pb.collection('video_stats').getOne(id)) as unknown as VideoStats;
+}
+
+/** Instagram's reels as the worker stores them (worker/igstats.mjs); none when it never has. */
+export async function loadDashboardReels(): Promise<DashboardReel[]> {
+	try {
+		const rows = await pb.collection('post_stats').getFullList<Record<string, unknown>>({
+			filter: "platform = 'instagram' && product_type = 'REELS'",
+			fields: 'id,post_id,account,published_at,views,likes,comments,reach,permalink,caption,history'
+		});
+		return rows.map(toDashboardReel);
+	} catch {
+		return [];
+	}
+}
+
+/** Each reel as the worker writes it (or deletes it). Returns the unsubscribe. */
+export function subscribeReels(onReel: (reel: DashboardReel, action: string) => void): () => void {
+	const sub = pb.collection('post_stats').subscribe('*', (e) => {
+		if (e.record.platform === 'instagram' && e.record.product_type === 'REELS') onReel(toDashboardReel(e.record), e.action);
+	});
+	sub.catch(() => {});
+	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
 }
 
 export async function getStatsStatus(): Promise<StatsStatus | null> {

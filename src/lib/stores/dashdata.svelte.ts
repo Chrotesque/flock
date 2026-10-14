@@ -1,29 +1,34 @@
 import {
+	getSetting,
 	getStatsStatus,
-	isUsed,
+	loadDashboardReels,
+	loadDashboardVideos,
 	loadDashTargets,
-	loadDashVideos,
-	loadLocalIndex,
-	loadUsedSources,
-	loadWatchIndex,
-	type DashVideo
+	type DashboardReel,
+	type DashboardVideo
 } from '../repo';
 import type { DashTarget } from '../dashboard';
 import type { StatsStatus } from '../types';
 
+/** The Instagram stats pass's heartbeat (worker/igstats.mjs). */
+export interface IgStatsStatus {
+	polledAt?: string;
+	accounts?: Record<string, { polledAt?: string; posts?: number; error?: string }>;
+}
+
 /**
  * What the dashboard reads, kept between openings: it opens on the last
- * numbers at once and reads fresh ones straight away (and every 30 s while
- * open — Dashboard.svelte), so it never opens empty and never stale for
- * long. Nothing is read while it is closed.
+ * numbers at once and reads fresh ones straight away (Dashboard.svelte, which
+ * also keeps them current through realtime while open), so it never opens
+ * empty and never stale for long. Nothing is read while it is closed.
  */
 class DashData {
-	videos = $state<DashVideo[]>([]);
+	videos = $state<DashboardVideo[]>([]);
+	reels = $state<DashboardReel[]>([]);
 	targets = $state<(DashTarget & { brand: string })[]>([]);
 	status = $state<StatsStatus | null>(null);
-	/** Watch-folder files no upload has used; null until counted. */
-	unused = $state<number | null>(null);
-	loadedAt = $state<Date | null>(null);
+	igStatus = $state<IgStatsStatus | null>(null);
+	loaded = $state(false);
 	loading = $state(false);
 	error = $state('');
 
@@ -38,34 +43,44 @@ class DashData {
 	async #read() {
 		this.loading = true;
 		try {
-			const [videos, targets, status] = await Promise.all([
-				loadDashVideos(),
+			const [videos, reels, targets, status, igStatus] = await Promise.all([
+				loadDashboardVideos(),
+				loadDashboardReels(),
 				loadDashTargets(),
-				getStatsStatus().catch(() => null)
+				getStatsStatus().catch(() => null),
+				getSetting<IgStatsStatus | null>('instagram_stats_status', null).catch(() => null)
 			]);
 			this.videos = videos;
+			this.reels = reels;
 			this.targets = targets;
 			this.status = status;
+			this.igStatus = igStatus;
 			this.error = '';
-			this.loadedAt = new Date();
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
 		} finally {
+			this.loaded = true;
 			this.loading = false;
 		}
-		void this.#countUnused();
 	}
 
-	/** The same test the Upload page hides used files by. */
-	async #countUnused() {
-		const [nas, local, used] = await Promise.all([
-			loadWatchIndex().catch(() => null),
-			loadLocalIndex().catch(() => null),
-			loadUsedSources().catch(() => null)
-		]);
-		if (!used) return;
-		this.unused = [...(nas?.files ?? []), ...(local?.files ?? [])].filter((file) => !isUsed(used, file)).length;
+	/** A row realtime sent: replaced in place, added when new, dropped when deleted. */
+	putVideo(video: DashboardVideo, action: string) {
+		this.videos = upsert(this.videos, video, action);
 	}
+
+	putReel(reel: DashboardReel, action: string) {
+		this.reels = upsert(this.reels, reel, action);
+	}
+
+	async refreshTargets() {
+		this.targets = await loadDashTargets().catch(() => this.targets);
+	}
+}
+
+function upsert<T extends { id: string }>(list: T[], row: T, action: string): T[] {
+	if (action === 'delete') return list.filter((x) => x.id !== row.id);
+	return list.some((x) => x.id === row.id) ? list.map((x) => (x.id === row.id ? row : x)) : [...list, row];
 }
 
 export const dashData = new DashData();
