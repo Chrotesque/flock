@@ -309,7 +309,13 @@
 		if (!jestrOn) editing = false;
 	});
 
+	/** Whether a video can be a Jestr submission: it has a YouTube or Instagram post (Facebook is not one). */
+	function markable(r: Release): boolean {
+		return Boolean(r.posts.youtube || r.posts.instagram);
+	}
+
 	function toggleCampaign(r: Release) {
+		if (!markable(r)) return;
 		void jestrCampaigns.set(campaignPosts(r), !campaigns.has(r.key), r.title);
 	}
 
@@ -761,7 +767,8 @@
 					class="row"
 					onclick={() => toggle(r)}
 					aria-expanded={editing ? undefined : openKey === r.key}
-					aria-pressed={editing ? campaign : undefined}
+					aria-pressed={editing && markable(r) ? campaign : undefined}
+					aria-disabled={editing && !markable(r) ? true : undefined}
 				>
 					{#if r.thumb}
 						<img class="thumb" src={r.thumb} alt="" loading="lazy" />
@@ -788,8 +795,12 @@
 								{#if r.group}<span class="dot">·</span><span class="group" style:color={r.tint}>{r.group}</span>{/if}
 						</span>
 					</span>
-					<span class="jcell" class:on={campaign} title={campaign ? 'A Jestr campaign video' : ''}>
-						{#if campaign || editing}
+					<span
+						class="jcell"
+						class:on={campaign}
+						title={campaign ? 'A Jestr campaign video' : editing && !markable(r) ? 'Facebook only: not a Jestr submission' : ''}
+					>
+						{#if campaign || (editing && markable(r))}
 							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
 								<rect x="1.5" y="1.5" width="13" height="13" rx="3.5" class="box" />
 								{#if campaign}<path d="M4.5 8.2 7 10.6l4.6-5" class="tick" />{/if}
