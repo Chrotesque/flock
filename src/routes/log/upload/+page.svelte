@@ -236,7 +236,10 @@
 	/** Posts with a move the worker has not carried out yet. */
 	let moving = $derived(targets.filter((t) => readMove(t.move)));
 
-	let moveArmed = $state(false);
+	// Three presses, like naming a device: one to ask, two to confirm, each
+	// within two seconds of the last — a move can delete a post.
+	const MOVE_CONFIRMATIONS = 2;
+	let moveStage = $state(0);
 	let moveBusy = $state(false);
 	let moveError = $state('');
 	let moveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -245,14 +248,14 @@
 
 	async function pressMove() {
 		if (moveBusy || !moveBrand) return;
-		if (!moveArmed) {
-			moveArmed = true;
+		if (moveTimer) clearTimeout(moveTimer);
+		if (moveStage < MOVE_CONFIRMATIONS) {
+			moveStage += 1;
 			moveError = '';
-			moveTimer = setTimeout(() => (moveArmed = false), 2000);
+			moveTimer = setTimeout(() => (moveStage = 0), 2000);
 			return;
 		}
-		if (moveTimer) clearTimeout(moveTimer);
-		moveArmed = false;
+		moveStage = 0;
 		moveBusy = true;
 		try {
 			await requestBrandMove(jobId, moveBrand.id);
@@ -358,12 +361,16 @@
 							{/if}
 							<button
 								class="mbtn"
-								class:armed={moveArmed}
+								class:armed={moveStage > 0}
 								disabled={moveBusy || !moveBrand || !canMove(moveSteps)}
 								onclick={pressMove}
-								title="Press twice. The worker carries it out within seconds."
+								title="Press three times, each within two seconds. The worker carries it out within seconds."
 							>
-								{moveBusy ? 'Moving…' : moveArmed ? 'Press again' : `Move to ${moveBrand?.name ?? '…'}`}
+								{moveBusy
+									? 'Moving…'
+									: moveStage > 0
+										? `Confirm? (${moveStage}/${MOVE_CONFIRMATIONS})`
+										: `Move to ${moveBrand?.name ?? '…'}`}
 							</button>
 						</span>
 					{/if}
@@ -992,7 +999,7 @@
 		outline: none;
 	}
 
-	/* One more press moves it. */
+	/* Asked; one or two more presses move it. */
 	.mbtn.armed {
 		background: var(--pink);
 		color: var(--bg);
