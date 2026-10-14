@@ -19,6 +19,7 @@
 		dim = false,
 		compact = false,
 		bare = false,
+		badge = '',
 		brand = ''
 	}: {
 		platform: PlatformId;
@@ -39,6 +40,12 @@
 		 * upload's icons together and shows the whole upload on hover itself.
 		 */
 		bare?: boolean;
+		/**
+		 * A dot in the icon's corner: `busy` (pulsing) while something is under
+		 * way, `warn` when it did not work out. Beside the mark, never on it —
+		 * the brands' rules forbid altering their marks.
+		 */
+		badge?: '' | 'busy' | 'warn';
 	} = $props();
 
 	const HOVER_DELAY = 1000;
@@ -98,6 +105,9 @@
 		ondragstart={onLeave}
 	>
 		<PlatformIcon {platform} size={12} />
+		{#if badge}
+			<span class="badge {badge}"></span>
+		{/if}
 	</div>
 
 	{#if showTip}
@@ -152,6 +162,7 @@
 	   would push a mark this small off centre. */
 
 	.tile {
+		position: relative;
 		width: 18px;
 		height: 18px;
 		display: grid;
@@ -200,6 +211,31 @@
 
 	.tile.bare:hover {
 		box-shadow: none;
+	}
+
+	.badge {
+		position: absolute;
+		top: -2px;
+		right: -3px;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		box-shadow: 0 0 0 1.5px var(--surface-3);
+	}
+
+	.badge.busy {
+		background: var(--pink);
+		animation: badgepulse 1.2s ease-in-out infinite;
+	}
+
+	.badge.warn {
+		background: var(--warn);
+	}
+
+	@keyframes badgepulse {
+		50% {
+			opacity: 0.3;
+		}
 	}
 
 	/* ---- hover detail ---- */
@@ -278,6 +314,9 @@
 		}
 		.tile {
 			transition: none;
+		}
+		.badge.busy {
+			animation: none;
 		}
 	}
 

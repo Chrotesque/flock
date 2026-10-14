@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isShortVideo, isoSeconds, processingState, scopeCanEdit, studioUrl } from './youtube.mjs';
+import { isShortVideo, isoSeconds, processingState, scopeCanEdit, statusPatch, studioUrl } from './youtube.mjs';
 
 const UPLOAD = 'https://www.googleapis.com/auth/youtube.upload';
 const READONLY = 'https://www.googleapis.com/auth/youtube.readonly';
@@ -58,4 +58,32 @@ test('a Short is up to three minutes, and unknown without a length', () => {
 
 test('the Studio link opens the video’s edit page', () => {
 	assert.equal(studioUrl('LTk4d1CwGQE'), 'https://studio.youtube.com/video/LTk4d1CwGQE/edit');
+});
+
+test('statusPatch sends the status back whole, with only the time changed', () => {
+	const read = {
+		uploadStatus: 'processed',
+		privacyStatus: 'private',
+		publishAt: '2026-11-01T17:00:00Z',
+		license: 'youtube',
+		embeddable: true,
+		publicStatsViewable: true,
+		madeForKids: false,
+		selfDeclaredMadeForKids: false,
+		containsSyntheticMedia: false
+	};
+	assert.deepEqual(statusPatch(read, '2026-11-02T18:30:00Z'), {
+		license: 'youtube',
+		embeddable: true,
+		publicStatsViewable: true,
+		selfDeclaredMadeForKids: false,
+		containsSyntheticMedia: false,
+		privacyStatus: 'private',
+		publishAt: '2026-11-02T18:30:00.000Z'
+	});
+	// A field YouTube did not send is not made up.
+	assert.deepEqual(statusPatch({ privacyStatus: 'private', publishAt: 'x' }, '2026-11-02T18:30:00Z'), {
+		privacyStatus: 'private',
+		publishAt: '2026-11-02T18:30:00.000Z'
+	});
 });

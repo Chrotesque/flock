@@ -20,10 +20,12 @@ import {
 	LEAD_SECONDS as FACEBOOK_LEAD_SECONDS,
 	deleteFacebookReel,
 	facebookAccount,
+	facebookRelease,
 	probeFacebook,
 	publishReadyReel,
 	publishToFacebook,
-	refreshFacebookPages
+	refreshFacebookPages,
+	rescheduleFacebookReel
 } from './facebook.mjs';
 import {
 	FAILED_WINDOW_MS,
@@ -44,7 +46,9 @@ import {
 	publishToYouTube,
 	probeYouTube,
 	refreshYouTubeChannels,
-	youtubeChannels
+	rescheduleYouTube,
+	youtubeChannels,
+	youtubeRelease
 } from './youtube.mjs';
 import { publishToTikTok, probeTikTok, refreshTikTokCreators, creatorInfo, privacyLabel } from './tiktok.mjs';
 import {
@@ -84,6 +88,7 @@ import { exeLogPath } from './filelog.mjs';
 import { WORKER_VERSION } from './version.mjs';
 import { decide, mayBeAlive } from './orphans.mjs';
 import { moveStep, requeuePatch } from './moves.mjs';
+import { SYNC_PLATFORMS, movedHandle, refusedHandle, rescheduleStep } from './reschedule.mjs';
 import { inJob } from './jobscope.mjs';
 
 /**
@@ -108,6 +113,8 @@ const ADAPTERS = {
 		publish: publishToYouTube,
 		probe: probeYouTube,
 		remove: deleteYouTubeVideo,
+		reschedule: rescheduleYouTube,
+		release: youtubeRelease,
 		timing: 'now',
 		lead: () => 0,
 		ready: hasYouTube,
@@ -134,6 +141,8 @@ const ADAPTERS = {
 		publish: publishToFacebook,
 		probe: probeFacebook,
 		remove: deleteFacebookReel,
+		reschedule: rescheduleFacebookReel,
+		release: facebookRelease,
 		publishReady: publishReadyReel,
 		timing: 'slot',
 		holds: false,
@@ -341,10 +350,15 @@ async function recordResult(pb, platform, target, result, label) {
 		: '';
 	// And what an adapter says went out differently (Facebook's refused cover).
 	const notes = [result.locked ? 'Stored as private: the API project is not audited yet.' : '', todo, ...(result.notes ?? [])];
+	// A platform holding the post keeps the time it was handed, so a move in
+	// the Calendar can be told apart from it (reschedule.mjs). Merged into the
+	// handle as it stands, which the upload has been writing to.
+	const release = result.scheduled ? await releaseHandle(pb, target) : null;
 	await pb.updateTarget(target.id, {
 		status: result.scheduled ? 'scheduled' : 'published',
 		remote_url: result.url,
 		error: notes.filter(Boolean).join(' '),
+		...(release ? { handle: release } : {}),
 		...(result.scheduled ? {} : { published_at: new Date().toISOString() })
 	});
 
@@ -353,6 +367,15 @@ async function recordResult(pb, platform, target, result, label) {
 	if (todo) log(`  ${todo}`);
 	const said = [todo, ...(result.notes ?? [])].filter(Boolean).join(' ');
 	pb.log(`Published to ${platform}`, `${target.title || '(no title)'} -> ${result.url} (${how})${said ? ` ${said}` : ''}`);
+}
+
+/** The row's handle with the time the platform was handed; null when there is none to keep. */
+async function releaseHandle(pb, target) {
+	const at = Date.parse(String(target.scheduled_at ?? '').replace(' ', 'T'));
+	if (!Number.isFinite(at)) return null;
+	const row = await pb.getTarget(target.id).catch(() => null);
+	const handle = row?.handle ?? target.handle;
+	return { ...(handle && typeof handle === 'object' ? handle : {}), release: new Date(at).toISOString() };
 }
 
 /**
@@ -1292,6 +1315,88 @@ async function moveOne(pb, config, row) {
 	if (row.platform === 'facebook') await pb.forgetPostStats('facebook', step.remoteId).catch(() => {});
 }
 
+/* ---- new times for posts a platform holds (reschedule.mjs) ---- */
+
+let reschedulesBusy = false;
+/** When each row's held time was last asked for, so an unreachable platform is asked every ten minutes, not every tick. */
+const learnAsked = new Map();
+const LEARN_EVERY_MS = 10 * 60_000;
+
+const shortWhen = (iso) =>
+	new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+/**
+ * Tells YouTube and Facebook of posts moved in the Calendar. The worker that
+ * publishes does it, on the slot tick, so a move reaches the platform within
+ * seconds of the drop.
+ */
+async function reschedulePass(pb, config) {
+	if (reschedulesBusy || dry || !hb.canPublish()) return;
+	reschedulesBusy = true;
+	try {
+		const rows = await pb.scheduledTargets(SYNC_PLATFORMS, new Date(Date.now() - 86_400_000));
+		for (const row of rows) {
+			if (!hb.canPublish()) break;
+			const adapter = ADAPTERS[row.platform];
+			if (!adapter?.reschedule || !adapter.ready(config)) continue;
+			const step = rescheduleStep(row, { held: inHand.has(row.id) });
+			if (step.action === 'none') continue;
+			await inJob(row.job, () =>
+				rescheduleOne(pb, config, adapter, row, step).catch((err) =>
+					log(`could not reschedule ${row.platform} ${row.id}: ${err.message.split('\n')[0]}`)
+				)
+			);
+		}
+	} finally {
+		reschedulesBusy = false;
+	}
+}
+
+async function rescheduleOne(pb, config, adapter, row, step) {
+	const name = NAMES[row.platform] ?? row.platform;
+	const title = row.title || row.description?.slice(0, 60) || row.id;
+	const label = `${row.platform} "${title}"`;
+
+	if (step.action === 'learn') {
+		if (Date.now() - (learnAsked.get(row.id) ?? 0) < LEARN_EVERY_MS) return;
+		learnAsked.set(row.id, Date.now());
+		const held = await adapter.release(config, row);
+		const handle = row.handle && typeof row.handle === 'object' ? row.handle : {};
+		await pb.updateTarget(row.id, { handle: held.out ? { ...handle, released: true } : { ...handle, release: held.at } });
+		learnAsked.delete(row.id);
+		return;
+	}
+
+	const from = row.handle.release;
+	if (step.action === 'refuse') {
+		await pb.updateTarget(row.id, { scheduled_at: from, handle: refusedHandle(row.handle, step.reason) });
+		log(`not moving ${label} on ${name}: ${step.reason} — it stays at ${shortWhen(from)}`);
+		pb.log(`Not moved on ${name}`, `${title}: ${step.reason}. It stays at ${shortWhen(from)}.`);
+		return;
+	}
+
+	inHand.add(row.id);
+	try {
+		const done = await hb.track(`Moving on ${name}: "${title}"`, () => adapter.reschedule(config, row, step.to), {
+			publishing: true
+		});
+		const release = done?.release ? new Date(done.release).toISOString() : step.to;
+		await pb.updateTarget(row.id, { handle: movedHandle(row.handle, release) });
+		log(`${label} moved on ${name}: ${shortWhen(from)} -> ${shortWhen(release)}`);
+		pb.log(`Moved on ${name}`, `${title}: ${shortWhen(from)} → ${shortWhen(release)}.`);
+	} catch (err) {
+		const why = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+		await pb.updateTarget(row.id, {
+			scheduled_at: from,
+			handle: refusedHandle(row.handle, `${name} did not take the new time: ${why}`.slice(0, 500))
+		});
+		log(`could not move ${label} on ${name}: ${why} — it stays at ${shortWhen(from)}`);
+		pb.log(`Not moved on ${name}`, `${title}: ${why}. It stays at ${shortWhen(from)}.`);
+	} finally {
+		inHand.delete(row.id);
+	}
+}
+
 /**
  * The tray icon (tray.mjs), when this worker has one, and the warnings its
  * card was last told of.
@@ -1599,6 +1704,7 @@ async function main() {
 		if (!dry && config.statsSeconds > 0 && hb.canPublish()) await statsPass({ pb, config, log });
 		if (!dry) await accountPass(pb, config);
 		await movePass(pb, config);
+		await reschedulePass(pb, config);
 		await pass(pb, config);
 		await slotPass(pb, config, { wait: true });
 		await archivePass(pb);
@@ -1742,6 +1848,7 @@ async function main() {
 		void slotPass(pb, config);
 		void orphanPass(pb, config).catch((err) => log(`orphan check failed: ${err.message}`));
 		void movePass(pb, config).catch((err) => log(`move pass failed: ${err.message.split('\n')[0]}`));
+		void reschedulePass(pb, config).catch((err) => log(`reschedule pass failed: ${err.message.split('\n')[0]}`));
 		void archivePass(pb).catch((err) => log(`project rename failed: ${err.message.split('\n')[0]}`));
 		void nudgeMain(pb, config).catch(() => {});
 	};

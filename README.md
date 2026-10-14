@@ -589,9 +589,12 @@ and today's YouTube quota, sit at the top right.
 before today: 14 days, or 7 to 14 from *Show N days*. Each upload is one small
 box of its platforms' icons in its hour, past ones without a fill, and the
 current hour is marked in pink; hover a box to read every post of that upload.
-It opens read-only: press *Edit* twice within two seconds, then drag an
-upcoming release to another day or hour. Past releases stay locked. With
-several brands, buttons on top show one brand or all.
+It opens read-only: press *Edit* twice within two seconds, then drag a post to
+another day or hour, at least 15 minutes ahead. A YouTube video or Facebook
+reel already uploaded moves there too: the worker gives the platform the new
+time within seconds. A post that can no longer move, because it is out or
+about to go out, shakes and says why. With several brands, buttons on top show
+one brand or all.
 
 **Log** lists every change with its time and the machine that made it. Filter
 by category, search, or click a machine to see only its entries. It cannot be

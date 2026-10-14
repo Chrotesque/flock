@@ -9,6 +9,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { accessToken, forgetToken, grantedScope } from './google.mjs';
 import { pickAccount } from './accounts.mjs';
+import { youtubeVideoId } from './moves.mjs';
 import { fetchOrExplain } from './net.mjs';
 
 const API = 'https://www.googleapis.com/youtube/v3';
@@ -568,34 +569,112 @@ function resultOf(video, scheduled) {
 }
 
 /**
- * Deletes a video from the channel a post went out on, for a post moved to
- * another brand (moves.mjs) — 50 units. Only through the channel's own
- * grant, checked like an upload, and only a broad grant can: an upload-only
- * one is refused here rather than by YouTube. A video YouTube no longer has
- * counts as deleted.
+ * A token for changing a video on the channel a post went out on — for a
+ * delete (moves.mjs) or a new release time (reschedule.mjs). Only through
+ * the channel's own grant, checked like an upload, and only a broad grant
+ * can: an upload-only one is refused here rather than by YouTube.
  */
-export async function deleteYouTubeVideo(config, channelId, videoId) {
+async function editingToken(config, channelId, doing) {
 	const account = await youtubeAccount(config, channelId);
 	const own = await ownChannel(config, account);
 	if (own.id !== account.channelId) {
 		throw new Error(
 			`The grant listed for the YouTube channel ${account.channelId} belongs to "${own.title}" (${own.id}). ` +
-				`Not deleting anything. Re-connect the channel with:  ${SETUP}`
+				`Not ${doing} anything. Re-connect the channel with:  ${SETUP}`
 		);
 	}
 	if ((await grantCanEdit(config, account)) === false) {
 		throw new Error(
-			`${own.title}'s grant is upload-only and cannot delete videos. Sign it in again with:  ${SETUP} --with-playlists`
+			`${own.title}'s grant is upload-only and cannot change videos. Sign it in again with:  ${SETUP} --with-playlists`
 		);
 	}
-	const token = await youtubeToken(config, account);
+	return { token: await youtubeToken(config, account), channel: own.title };
+}
+
+/**
+ * Deletes a video from the channel a post went out on, for a post moved to
+ * another brand (moves.mjs) — 50 units. A video YouTube no longer has
+ * counts as deleted.
+ */
+export async function deleteYouTubeVideo(config, channelId, videoId) {
+	const { token, channel } = await editingToken(config, channelId, 'deleting');
 	try {
 		await api(token, `/videos?id=${encodeURIComponent(videoId)}`, { method: 'DELETE' });
-		return { channel: own.title, alreadyGone: false };
+		return { channel, alreadyGone: false };
 	} catch (err) {
-		if (/ -> 404\b/.test(err.message)) return { channel: own.title, alreadyGone: true };
+		if (/ -> 404\b/.test(err.message)) return { channel, alreadyGone: true };
 		throw err;
 	}
+}
+
+/** The channel and video a scheduled YouTube post names. */
+function postVideo(row) {
+	const videoId = youtubeVideoId(row.remote_url);
+	if (!videoId) throw new Error('its YouTube link names no video');
+	return { channelId: row.account || row.handle?.account || '', videoId };
+}
+
+/** A video's `status`, or an error when YouTube no longer has it — 1 unit. */
+async function videoStatus(token, videoId) {
+	const body = await api(token, `/videos?part=status&id=${encodeURIComponent(videoId)}`);
+	const status = body?.items?.[0]?.status;
+	if (!status) throw new Error('YouTube no longer has the video');
+	return status;
+}
+
+/** Held by YouTube for its time: private, with a `publishAt` it will act on. */
+function heldStatus(status) {
+	return status.privacyStatus === 'private' && Boolean(status.publishAt);
+}
+
+/**
+ * What goes back as `status` to move a video's release: videos.update wants
+ * every mutable field of a part it is sent, or resets the ones left out, so
+ * it is what was read with only the time changed. Read-only fields (upload
+ * state, `madeForKids`) stay out.
+ */
+export function statusPatch(status, at) {
+	const keep = ['license', 'embeddable', 'publicStatsViewable', 'selfDeclaredMadeForKids', 'containsSyntheticMedia'];
+	const out = {};
+	for (const key of keep) if (status?.[key] !== undefined) out[key] = status[key];
+	return { ...out, privacyStatus: 'private', publishAt: new Date(at).toISOString() };
+}
+
+/**
+ * Gives a video YouTube holds for its time another one, for a post moved in
+ * the Calendar (reschedule.mjs) — 51 units: the status read, then the
+ * update. Refused when YouTube has put it out already. Returns the time
+ * YouTube now holds, as it answers.
+ */
+export async function rescheduleYouTube(config, row, at) {
+	const { channelId, videoId } = postVideo(row);
+	const { token } = await editingToken(config, channelId, 'moving');
+	const status = await videoStatus(token, videoId);
+	if (!heldStatus(status)) throw new Error('YouTube has put it out already');
+	const body = await api(token, '/videos?part=status', {
+		method: 'PUT',
+		body: JSON.stringify({ id: videoId, status: statusPatch(status, at) })
+	});
+	const release = body?.status?.publishAt;
+	if (!release || Math.floor(Date.parse(release) / 1000) !== Math.floor(Date.parse(at) / 1000)) {
+		throw new Error(`YouTube answered with ${release || 'no time'} for ${at}`);
+	}
+	return { release };
+}
+
+/**
+ * The time YouTube holds a post's video for, or that it is out — for an
+ * upload from before flock kept that (reschedule.mjs `learn`). 1 unit; any
+ * grant that reads the channel will do.
+ */
+export async function youtubeRelease(config, row) {
+	const { channelId, videoId } = postVideo(row);
+	const token = await youtubeToken(config, await youtubeAccount(config, channelId));
+	const status = await videoStatus(token, videoId).catch((err) => {
+		if (/no longer has/.test(err.message)) return null;
+		throw err;
+	});
+	return status && heldStatus(status) ? { at: status.publishAt } : { out: true };
 }
 
 export async function publishToYouTube({ target, job, pb, config, log, saveHandle }) {

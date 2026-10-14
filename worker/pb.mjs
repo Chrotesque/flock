@@ -69,6 +69,17 @@ export function makeClient(baseUrl) {
 			return res.items ?? [];
 		},
 
+		/**
+		 * Posts a platform holds for their time (reschedule.mjs), on the given
+		 * platforms, whose time is no earlier than `since`.
+		 */
+		async scheduledTargets(platforms, since) {
+			const which = platforms.map((p) => `platform="${p}"`).join(' || ');
+			const filter = encodeURIComponent(`status="scheduled" && (${which}) && scheduled_at >= "${pbDate(since)}"`);
+			const res = await request(`/api/collections/upload_targets/records?perPage=200&sort=scheduled_at&filter=${filter}`);
+			return res.items ?? [];
+		},
+
 		/** The stats row of a YouTube video deleted from its channel. */
 		async forgetVideoStats(videoId) {
 			const filter = encodeURIComponent(`video_id="${videoId}"`);

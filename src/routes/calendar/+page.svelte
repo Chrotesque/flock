@@ -3,7 +3,8 @@
 	import PostCard from '$lib/components/PostCard.svelte';
 	import DaysSelect from '$lib/components/DaysSelect.svelte';
 	import UploadTip from '$lib/components/UploadTip.svelte';
-	import { listTargets, rescheduleTarget, toInstant } from '$lib/repo';
+	import { listTargets, rescheduleTarget, subscribeTargets, toInstant } from '$lib/repo';
+	import { MoveRefused, isMoving, landReason, lockReason, moveRefusal } from '$lib/reschedule';
 	import { isPlatformId, PLATFORM_IDS } from '$lib/platforms';
 	import { addDays, dayStart, isoDate, makeTime, minuteOf } from '$lib/format';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
@@ -44,7 +45,8 @@
 
 	// Everything ever scheduled, from PocketBase — not just the upload in
 	// progress. Opens read-only: these rows are already committed, so moving one
-	// is gated behind the two-press Edit button below.
+	// is gated behind the two-press Edit button below. What may move, and
+	// where to, is reschedule.ts's call — the same rules the write checks.
 	interface Entry {
 		id: string;
 		/** The upload it belongs to: its posts in one hour share a box. */
@@ -55,11 +57,13 @@
 		title: string;
 		description: string;
 		status: UploadTarget['status'];
-		/** The platform holds it, or its slot has passed: it stays put while editing. */
-		locked: boolean;
+		/** As stored, for the move rules; `date` and `time` are its local reading. */
+		scheduled_at: string;
+		/** The worker's record, with the time a platform was handed (reschedule.ts). */
+		handle: unknown;
 		/**
 		 * Its slot is behind us (or it was called off): its upload's box recedes
-		 * as history. An upcoming post YouTube already holds is locked but not past.
+		 * as history. An upcoming post YouTube already holds is not past.
 		 */
 		past: boolean;
 		/**
@@ -120,30 +124,42 @@
 		}, 2000);
 	}
 
-	/** Released, held and past-due rows stay put even while editing. */
+	/** What may still move goes; the rest shakes when pressed and says why. */
 	function canMove(entry: Entry): boolean {
-		return editing && !entry.locked;
+		return editing && !lockReason(entry);
 	}
 
-	async function onDropItem(id: string, date: string, hour: number) {
+	function landWhy(entry: Entry, date: string, time: string): string {
+		return landReason(entry, new Date(toInstant(date, time)));
+	}
+
+	/** A refusal comes back as the reason, for the grid to shake the post with. */
+	async function onDropItem(id: string, date: string, hour: number): Promise<string | void> {
 		const entry = entries.find((e) => e.id === id);
-		if (!entry || entry.locked) return;
+		if (!entry) return;
 
 		const time = makeTime(hour, minuteOf(entry.time));
-		const previous = { date: entry.date, time: entry.time };
+		if (date === entry.date && time === entry.time) return;
+		const at = toInstant(date, time);
+		const refused = lockReason(entry) || landReason(entry, new Date(at));
+		if (refused) return refused;
+		const previous = { date: entry.date, time: entry.time, scheduled_at: entry.scheduled_at };
 
 		// Optimistic: the card follows the cursor immediately, and rolls back if
-		// PocketBase rejects the write.
+		// PocketBase rejects the write. A post a platform holds then shows as
+		// moving until the worker has told the platform.
 		entry.date = date;
 		entry.time = time;
+		entry.scheduled_at = at;
 		moveError = null;
 
 		try {
-			await rescheduleTarget(id, toInstant(date, time));
+			await rescheduleTarget(id, at);
 		} catch (err) {
-			entry.date = previous.date;
-			entry.time = previous.time;
+			Object.assign(entry, previous);
+			if (err instanceof MoveRefused) return err.message;
 			moveError = err instanceof Error ? err.message : String(err);
+			return 'Not saved.';
 		}
 	}
 
@@ -152,17 +168,7 @@
 		const at = new Date(target.scheduled_at);
 		if (Number.isNaN(at.getTime())) return null;
 
-		// Locked once the platform holds it: `published` is live, `scheduled` is
-		// uploaded with its release time already handed over, so dragging the card
-		// would only lie about what happens. A slot that has simply passed still
-		// reads as history too — that half goes away once every platform has a
-		// worker and past-due pending becomes a real fault instead.
 		const passed = at.getTime() < now;
-		const locked =
-			target.status === 'published' ||
-			target.status === 'scheduled' ||
-			target.status === 'cancelled' ||
-			(target.status === 'pending' && passed);
 
 		return {
 			id: target.id,
@@ -173,7 +179,8 @@
 			title: target.title,
 			description: target.description,
 			status: target.status,
-			locked,
+			scheduled_at: target.scheduled_at,
+			handle: target.handle,
 			past: passed || target.status === 'cancelled',
 			brand: target.brand ?? '',
 			brandName: target.brand_name ?? ''
@@ -202,6 +209,20 @@
 		void load();
 	});
 
+	// Live: the worker settling a move (or turning one down), a post going
+	// out, a confirm elsewhere. A burst of changes reads once.
+	$effect(() => {
+		let timer: ReturnType<typeof setTimeout> | null = null;
+		const stop = subscribeTargets(() => {
+			if (timer) clearTimeout(timer);
+			timer = setTimeout(() => void load(), 500);
+		});
+		return () => {
+			if (timer) clearTimeout(timer);
+			stop();
+		};
+	});
+
 	let ofBrand = $derived(shownBrand ? entries.filter((entry) => entry.brand === shownBrand) : entries);
 
 	let upcoming = $derived(ofBrand.filter((entry) => !entry.past).length);
@@ -213,6 +234,14 @@
 	/** A living brand by its current name, a deleted one by the job's snapshot. */
 	function brandOf(entry: Entry): string {
 		return brands.byId(entry.brand)?.name ?? entry.brandName;
+	}
+
+	/** What is under way with a post, or went wrong, for its icon's dot and the hover card. */
+	function moveNote(entry: Entry): { note: string; noteKind: '' | 'busy' | 'warn' } {
+		if (isMoving(entry)) return { note: 'Moving: the worker is telling the platform the new time.', noteKind: 'busy' };
+		const refused = moveRefusal(entry);
+		if (refused) return { note: `Not moved — ${refused}`, noteKind: 'warn' };
+		return { note: '', noteKind: '' };
 	}
 
 	function statusLabel(entry: Entry): string {
@@ -237,8 +266,9 @@
 		{:else}
 			{#if editing}
 				<p class="banner editing">
-					<strong>EDITING SCHEDULE</strong> — Drag an upcoming release to another day or hour.
-					Released and past-due posts are locked.
+					<strong>EDITING SCHEDULE</strong> — Drag a post to another day or hour, at least 15
+					minutes ahead; YouTube and Facebook are told by the worker within seconds. A post that
+					can no longer move shakes and says why.
 				</p>
 			{/if}
 
@@ -262,6 +292,8 @@
 				center={actions}
 				toolbar={legend}
 				candrag={canMove}
+				lockedWhy={(entry) => lockReason(entry)}
+				{landWhy}
 				ondropitem={editing ? onDropItem : undefined}
 			/>
 
@@ -282,6 +314,7 @@
 		description={entry.description}
 		status={statusLabel(entry)}
 		brand={labelBrands ? brandOf(entry) : ''}
+		badge={moveNote(entry).noteKind}
 		compact
 		bare
 	/>
@@ -292,7 +325,9 @@
 	{@const first = items[0]}
 	<UploadTip
 		date={first.date}
-		posts={entries.filter((entry) => entry.job === first.job).map((entry) => ({ ...entry, status: statusLabel(entry) }))}
+		posts={entries
+			.filter((entry) => entry.job === first.job)
+			.map((entry) => ({ ...entry, status: statusLabel(entry), ...moveNote(entry) }))}
 		brand={labelBrands ? brandOf(first) : ''}
 	/>
 {/snippet}

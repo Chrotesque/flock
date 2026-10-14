@@ -1,5 +1,6 @@
 import { pb, PB_URL } from './pb';
 import { PLATFORMS, PLATFORM_IDS, isPlatformId } from './platforms';
+import { MoveRefused, landReason, lockReason } from './reschedule';
 import { DEFAULT_SCHEDULING } from './types';
 import { logAction, assertDeviceNamed, deviceName } from './log';
 import { MOVING, canMove, planMove, readMove, type MoveRequest, type MoveStep } from './brandmove';
@@ -1471,12 +1472,17 @@ export async function deleteJob(id: string): Promise<void> {
  */
 export async function rescheduleTarget(id: string, scheduledAt: string): Promise<void> {
 	assertDeviceNamed();
-	const before = await pb.collection('upload_targets').getOne(id);
+	// Read afresh and checked again (reschedule.ts): the page may be minutes
+	// old, and a post the worker took up since must not change under it.
+	const before = await pb.collection('upload_targets').getOne<UploadTarget>(id);
+	const refused = lockReason(before) || landReason(before, new Date(scheduledAt));
+	if (refused) throw new MoveRefused(refused);
 	await pb.collection('upload_targets').update(id, { scheduled_at: scheduledAt });
+	const told = before.status === 'scheduled' ? ` (the worker tells ${PLATFORMS[before.platform]?.label ?? before.platform})` : '';
 	logAction(
 		'calendar',
 		`Rescheduled ${before.platform}`,
-		`${new Date(before.scheduled_at).toLocaleString()} → ${new Date(scheduledAt).toLocaleString()}`,
+		`${new Date(before.scheduled_at).toLocaleString()} → ${new Date(scheduledAt).toLocaleString()}${told}`,
 		{ job: before.job }
 	);
 }

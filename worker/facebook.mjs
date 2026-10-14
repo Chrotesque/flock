@@ -14,6 +14,11 @@
 // 13 s reels on a Page in ~27 s, hidden from everyone without a role on the
 // Meta app while it was in Development mode, public once it was Live.
 //
+// A reel Facebook holds can be given another time (POST /{video_id} with
+// `scheduled_publish_time`) and deleted (DELETE /{video_id}): both proven on
+// 14 Oct 2026 with a test reel scheduled 20 days ahead on a Page — the time
+// read back changed, and after the delete the reel no longer existed.
+//
 // The cover (v0.16.2) goes to POST /{video_id}/thumbnails as the preferred
 // thumbnail, between the upload and the finish call. Proven on 14 Oct 2026
 // with a test reel on a Page, on the grant the Instagram setup gives (no
@@ -23,6 +28,7 @@
 import { msUntil, sleep, streamRequest, videoMime, MiB } from './upload.mjs';
 import { facebookReady, pickAccount } from './accounts.mjs';
 import { GraphError, graph, transientGraphError } from './instagram.mjs';
+import { facebookVideoId } from './moves.mjs';
 
 /**
  * Listing the Pages, reading them and taking their tokens, and publishing to
@@ -237,9 +243,10 @@ async function permalinkOf(page, videoId) {
 /**
  * Deletes a reel from the Page a post went out on, for a post moved to
  * another brand (moves.mjs). Meta documents deleting videos, not reels held
- * for their time in particular, so the reel is read back afterwards and only
- * a Page that no longer has it counts: otherwise the old Page would put it
- * out at its slot while flock believed it gone.
+ * for their time in particular (it worked on one in the test above), so the
+ * reel is read back afterwards and only a Page that no longer has it counts:
+ * otherwise the old Page would put it out at its slot while flock believed
+ * it gone.
  */
 export async function deleteFacebookReel(config, pageId, videoId) {
 	const page = facebookAccount(config, pageId);
@@ -263,6 +270,66 @@ export async function deleteFacebookReel(config, pageId, videoId) {
 		await sleep(2000);
 	}
 	throw new Error(`Facebook still has reel ${videoId} on ${name} after it was deleted. Delete it in Meta Business Suite.`);
+}
+
+/** Facebook's "2026-11-04T19:57:44+0000" as ISO. */
+function isoOf(time) {
+	const at = Date.parse(String(time ?? '').replace(/([+-]\d\d)(\d\d)$/, '$1:$2'));
+	return Number.isFinite(at) ? new Date(at).toISOString() : '';
+}
+
+/** Whether Facebook holds a reel for its time, and for when. */
+async function heldRelease(page, videoId) {
+	const video = await graph(page, `/${videoId}`, { params: { fields: 'status,scheduled_publish_time' } });
+	return {
+		held: video.status?.publishing_phase?.publish_status === 'scheduled',
+		at: isoOf(video.scheduled_publish_time)
+	};
+}
+
+/** The Page and reel a scheduled Facebook post names. */
+function postReel(config, row) {
+	const videoId = facebookVideoId(row);
+	if (!videoId) throw new Error('it names no Facebook video');
+	return { page: facebookAccount(config, row.account || row.handle?.account || ''), videoId };
+}
+
+/**
+ * Gives a reel Facebook holds for its time another one, for a post moved in
+ * the Calendar (reschedule.mjs), and reads it back: only a reel that now
+ * shows the new time counts as moved.
+ */
+export async function rescheduleFacebookReel(config, row, at) {
+	const { page, videoId } = postReel(config, row);
+	const plan = releasePlan(at);
+	if (plan.state === 'TOO_EARLY') throw new Error('Facebook holds a reel at most 29 days ahead');
+	if (plan.state !== 'SCHEDULED') throw new Error('the new time is less than 11 minutes away');
+	try {
+		if (!(await heldRelease(page, videoId)).held) throw new Error('Facebook has put it out already');
+		await graph(page, `/${videoId}`, { method: 'POST', params: { scheduled_publish_time: String(plan.publishTime) } });
+		const after = await heldRelease(page, videoId);
+		if (!after.held || Math.floor(Date.parse(after.at) / 1000) !== plan.publishTime) {
+			throw new Error(`Facebook still shows ${after.at || 'no time'} after the change`);
+		}
+		return { release: after.at };
+	} catch (err) {
+		throw explainFacebook(err);
+	}
+}
+
+/**
+ * The time Facebook holds a post's reel for, or that it is out (or gone) —
+ * for an upload from before flock kept that (reschedule.mjs `learn`).
+ */
+export async function facebookRelease(config, row) {
+	const { page, videoId } = postReel(config, row);
+	try {
+		const now = await heldRelease(page, videoId);
+		return now.held && now.at ? { at: now.at } : { out: true };
+	} catch (err) {
+		if (err instanceof GraphError && err.code === 100) return { out: true };
+		throw explainFacebook(err);
+	}
 }
 
 export async function publishToFacebook({ target, job, pb, config, log, saveHandle }) {

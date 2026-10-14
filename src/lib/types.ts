@@ -204,6 +204,12 @@ export interface UploadTarget {
 	 * (brandmove.ts, worker/moves.mjs); null when none is waiting.
 	 */
 	move?: unknown;
+	/**
+	 * The worker's own record of the upload: the claiming run, the platform's
+	 * handle on it and, once a platform holds the post, the time it was handed
+	 * (`release`, reschedule.ts). Written only by the worker.
+	 */
+	handle?: unknown;
 	/** The job's brand, filled in by `listTargets` — not a column of its own. */
 	brand?: string;
 	brand_name?: string;

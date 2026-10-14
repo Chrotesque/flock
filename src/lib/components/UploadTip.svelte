@@ -17,6 +17,9 @@
 		title: string;
 		description: string;
 		status: string;
+		/** A line about the post itself: a move under way (`busy`) or turned down (`warn`). */
+		note?: string;
+		noteKind?: '' | 'busy' | 'warn';
 	}
 
 	let { posts, date, brand = '' }: { posts: Post[]; date: string; brand?: string } = $props();
@@ -47,6 +50,9 @@
 			{/if}
 			<span class="time">{post.date === date ? '' : `${day(post.date)} · `}{post.time}</span>
 		</div>
+		{#if post.note}
+			<p class="note {post.noteKind ?? ''}">{post.note}</p>
+		{/if}
 		{#if hasTitle}
 			<p class="title">{post.title || '(no title)'}</p>
 		{/if}
@@ -117,6 +123,21 @@
 		font-size: 10.5px;
 		color: var(--text-faint);
 		white-space: nowrap;
+	}
+
+	.note {
+		margin: 0 0 4px;
+		font-size: 11px;
+		line-height: 1.4;
+		color: var(--text-dim);
+	}
+
+	.note.busy {
+		color: var(--pink-soft);
+	}
+
+	.note.warn {
+		color: var(--warn);
 	}
 
 	/* Line breaks fold into spaces, so a caption's blank lines do not use up

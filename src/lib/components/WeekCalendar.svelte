@@ -48,6 +48,8 @@
 		past,
 		groupTip,
 		candrag,
+		lockedWhy,
+		landWhy,
 		ondropitem
 	}: {
 		items: T[];
@@ -111,10 +113,23 @@
 		 */
 		candrag?: (item: T) => boolean;
 		/**
-		 * Fires with the dragged item's id and the cell it was dropped on, and
-		 * again with a `minute` once one is picked from the quarters.
+		 * While dropping is on, why an item that cannot be dragged stays put: a
+		 * press on it shakes it and says so. '' (or none) for no reason given.
 		 */
-		ondropitem?: (id: string, date: string, hour: number, minute?: number) => void;
+		lockedWhy?: (item: T) => string;
+		/** Why an item may not land at a day and time; '' when it may. Shown while it is held, and a drop there is refused. */
+		landWhy?: (item: T, date: string, time: string) => string;
+		/**
+		 * Fires with the dragged item's id and the cell it was dropped on, and
+		 * again with a `minute` once one is picked from the quarters. A reason
+		 * returned (or resolved) means it was refused: the item shakes and says it.
+		 */
+		ondropitem?: (
+			id: string,
+			date: string,
+			hour: number,
+			minute?: number
+		) => void | string | Promise<void | string>;
 	} = $props();
 
 	const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -244,10 +259,66 @@
 		const { id, target } = finish(event);
 		if (id && target) {
 			const [iso, hour] = target.split('#');
-			ondropitem?.(id, iso, Number(hour));
+			const item = items.find((entry) => entry.id === id);
+			const why = item && landWhy ? landWhy(item, iso, makeTime(Number(hour), minuteOf(item.time))) : '';
+			if (why) {
+				void refuse(id, why);
+				return;
+			}
+			void settle(id, ondropitem?.(id, iso, Number(hour)));
 			if (quarters) void openPicker(id, iso, Number(hour));
 		}
 	}
+
+	/** A drop the caller turned down after all (a reason back) shakes like a refused one. */
+	async function settle(id: string, outcome: void | string | Promise<void | string>) {
+		const why = await outcome;
+		if (typeof why === 'string' && why) void refuse(id, why);
+	}
+
+	/* ---- refusing ----
+	 *
+	 * An item that will not move — picked up while locked, or dropped where
+	 * it may not go — shakes where it sits, and a note beside it says why
+	 * for a moment.
+	 */
+	const NOTICE_MS = 2600;
+	let wiggling = $state<string | null>(null);
+	let notice = $state<{ text: string; x: number; y: number; below: boolean } | null>(null);
+	let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+
+	async function refuse(id: string, text: string) {
+		closeTip();
+		picker = null;
+		wiggling = null;
+		await tick();
+		wiggling = id;
+		const rect = nodes.get(id)?.getBoundingClientRect();
+		notice = rect
+			? {
+					text,
+					x: Math.min(window.innerWidth - 140, Math.max(140, rect.left + rect.width / 2)),
+					y: rect.top < 90 ? rect.bottom + 8 : rect.top - 8,
+					below: rect.top < 90
+				}
+			: null;
+		if (noticeTimer) clearTimeout(noticeTimer);
+		noticeTimer = setTimeout(() => {
+			notice = null;
+			wiggling = null;
+			noticeTimer = null;
+		}, NOTICE_MS);
+	}
+
+	function pressLocked(event: PointerEvent, item: T) {
+		if (!ondropitem || event.button !== 0) return;
+		const why = lockedWhy?.(item);
+		if (why) void refuse(item.id, why);
+	}
+
+	$effect(() => () => {
+		if (noticeTimer) clearTimeout(noticeTimer);
+	});
 
 	function cancelDrag(event: PointerEvent) {
 		if (!pending || event.pointerId !== pending.pointerId) return;
@@ -285,6 +356,7 @@
 		if (Number.isNaN(at.getTime())) return null;
 		const other = zone ? zoneTime(at, zone.zone) : null;
 		return {
+			refusal: lifted && landWhy ? landWhy(lifted, iso, time) : '',
 			time,
 			day: `${dayLabel(at.getDay())} ${at.getDate()} ${MONTH_NAMES[at.getMonth()].slice(0, 3)}`,
 			when: relativeTo(iso, time),
@@ -391,7 +463,7 @@
 	function pickMinute(minute: number) {
 		const open = picker;
 		picker = null;
-		if (open) ondropitem?.(open.id, open.date, open.hour, minute);
+		if (open) void settle(open.id, ondropitem?.(open.id, open.date, open.hour, minute));
 	}
 
 	function onWindowKey(event: KeyboardEvent) {
@@ -742,7 +814,7 @@
 			<div
 				class="landing"
 				class:left={landAt.left}
-				class:past={landing.past}
+				class:past={landing.past || Boolean(landing.refusal)}
 				style="left: {landAt.x}px; top: {pointer.y}px"
 				bind:this={landEl}
 				use:portal
@@ -759,8 +831,23 @@
 					{/if}
 				</div>
 				<div class="landday">{landing.day} · {landing.past ? 'in the past' : landing.when}</div>
+				{#if landing.refusal}
+					<div class="landwhy">{landing.refusal}</div>
+				{/if}
 			</div>
 		{/if}
+	{/if}
+
+	{#if notice}
+		<div
+			class="notice"
+			class:below={notice.below}
+			style="left: {notice.x}px; top: {notice.y}px"
+			role="status"
+			use:portal
+		>
+			{notice.text}
+		</div>
 	{/if}
 
 	{#if tip && groupTip}
@@ -845,11 +932,13 @@
 									onmouseleave={groupTip ? closeTip : undefined}
 								>
 									{#each bundle.items as item (item.id)}
+										{@const why = ondropitem && lockedWhy ? lockedWhy(item) : ''}
 										{#if candrag?.(item)}
 											<!-- svelte-ignore a11y_no_static_element_interactions -->
 											<div
 												class="slot grab"
 												class:lifted={dragging === item.id}
+												class:wiggle={wiggling === item.id}
 												use:register={item.id}
 												onpointerdown={(e) => beginDrag(e, item.id)}
 												onpointermove={moveDrag}
@@ -859,7 +948,16 @@
 												{@render card(item)}
 											</div>
 										{:else}
-											<div class="slot" use:register={item.id}>{@render card(item)}</div>
+											<!-- svelte-ignore a11y_no_static_element_interactions -->
+											<div
+												class="slot"
+												class:locked={Boolean(why)}
+												class:wiggle={wiggling === item.id}
+												use:register={item.id}
+												onpointerdown={why ? (e) => pressLocked(e, item) : undefined}
+											>
+												{@render card(item)}
+											</div>
 										{/if}
 									{/each}
 								</div>
@@ -1268,6 +1366,55 @@
 		opacity: 0.35;
 	}
 
+	.slot.locked {
+		cursor: not-allowed;
+	}
+
+	/* No: a shake where it sits. */
+	.slot.wiggle {
+		animation: refuse 0.46s ease;
+	}
+
+	@keyframes refuse {
+		15% {
+			transform: translateX(-3px) rotate(-6deg);
+		}
+		30% {
+			transform: translateX(3px) rotate(6deg);
+		}
+		45% {
+			transform: translateX(-2px) rotate(-4deg);
+		}
+		60% {
+			transform: translateX(2px) rotate(4deg);
+		}
+		80% {
+			transform: translateX(-1px);
+		}
+	}
+
+	/* Why it stays: beside the shaken item, for a moment. */
+	.notice {
+		position: fixed;
+		z-index: 1001;
+		max-width: 260px;
+		transform: translate(-50%, -100%);
+		padding: 6px 10px;
+		border-radius: 8px;
+		background: var(--surface-3);
+		border: 1px solid rgba(251, 191, 36, 0.5);
+		box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+		font-size: 11.5px;
+		line-height: 1.4;
+		color: var(--warn);
+		pointer-events: none;
+		animation: quartersin 0.12s ease;
+	}
+
+	.notice.below {
+		transform: translate(-50%, 0);
+	}
+
 	.ghost {
 		position: fixed;
 		z-index: 1000;
@@ -1334,6 +1481,12 @@
 		color: var(--warn);
 	}
 
+	.landwhy {
+		margin-top: 2px;
+		font-size: 11px;
+		color: var(--warn);
+	}
+
 	/* Above the card's hover tooltip (40), which can open over it. */
 	.quarters {
 		position: fixed;
@@ -1384,7 +1537,9 @@
 
 	@media (prefers-reduced-motion: reduce) {
 		.quarters,
-		.grouptip {
+		.grouptip,
+		.notice,
+		.slot.wiggle {
 			animation: none;
 		}
 	}
