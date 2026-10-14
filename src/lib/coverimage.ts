@@ -1,19 +1,20 @@
 import type { PlatformId } from './types';
 
 /**
- * The cover image: Instagram's reel cover, the one platform whose API takes a
- * picture. YouTube's thumbnail was dropped in v0.11.7 (the user's call):
- * `thumbnails.set` only ever changed a Short's 16:9 thumbnail, never the
- * cover the Shorts feed shows (studio.ts). TikTok takes a cover *time*
- * (`coverFrame`), never an image — its Direct Post API has nothing but
- * `video_cover_timestamp_ms` (checked 11 Oct 2026). Still a list, so a
- * platform can join the day its API takes an image; the image is checked
- * against every platform it would go to, and one it does not fit uses its
- * frame instead — said beside the picker, never decided silently at confirm.
+ * The cover image: the reel covers of Instagram and Facebook, the platforms
+ * whose APIs take a picture. Facebook joined in v0.16.2, once a test reel
+ * showed its cover on the Page's Reels tab (14 Oct 2026). YouTube's
+ * thumbnail was dropped in v0.11.7 (the user's call): `thumbnails.set` only
+ * ever changed a Short's 16:9 thumbnail, never the cover the Shorts feed
+ * shows (studio.ts). TikTok takes a cover *time* (`coverFrame`), never an
+ * image — its Direct Post API has nothing but `video_cover_timestamp_ms`
+ * (checked 11 Oct 2026). The image is checked against every platform it
+ * would go to, and one it does not fit uses its frame instead — said beside
+ * the picker, never decided silently at confirm.
  */
-export type ImagePlatform = 'instagram';
+export type ImagePlatform = 'instagram' | 'facebook';
 
-export const IMAGE_PLATFORMS: readonly ImagePlatform[] = ['instagram'];
+export const IMAGE_PLATFORMS: readonly ImagePlatform[] = ['instagram', 'facebook'];
 
 interface Limit {
 	bytes: number;
@@ -29,6 +30,14 @@ export const IMAGE_LIMITS: Record<ImagePlatform, Limit> = {
 		types: ['image/jpeg', 'image/png'],
 		formats: 'JPEG or PNG',
 		fallback: 'uses the frame at the cover time'
+	},
+	// POST /{video_id}/thumbnails: 10 MB, formats unstated — JPEG proven,
+	// PNG the other format every Meta image upload takes.
+	facebook: {
+		bytes: 10 * 1024 * 1024,
+		types: ['image/jpeg', 'image/png'],
+		formats: 'JPEG or PNG',
+		fallback: 'shows a frame it picks'
 	}
 };
 

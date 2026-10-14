@@ -13,6 +13,12 @@
 // Proven on 12 and 13 Oct 2026 with a scratch script before this was written:
 // 13 s reels on a Page in ~27 s, hidden from everyone without a role on the
 // Meta app while it was in Development mode, public once it was Live.
+//
+// The cover (v0.16.2) goes to POST /{video_id}/thumbnails as the preferred
+// thumbnail, between the upload and the finish call. Proven on 14 Oct 2026
+// with a test reel on a Page, on the grant the Instagram setup gives (no
+// pages_manage_engagement, which Meta's reference lists): the Page's Reels
+// tab showed the cover, and the reel itself still opens on its first frame.
 
 import { msUntil, sleep, streamRequest, videoMime, MiB } from './upload.mjs';
 import { facebookReady, pickAccount } from './accounts.mjs';
@@ -191,6 +197,27 @@ async function finishReel(page, videoId, description, plan) {
 	});
 }
 
+/**
+ * Makes the image the reel's preferred thumbnail — its cover. Set before the
+ * finish call, so a reel Facebook holds for its slot is held with it.
+ */
+async function setReelCover(page, videoId, image, name) {
+	await graph(page, `/${videoId}/thumbnails`, {
+		method: 'POST',
+		params: { is_preferred: 'true' },
+		files: { source: { ...image, name } }
+	});
+}
+
+/** Why a cover was not set, in a line: a refused permission names the one Meta lists. */
+export function coverNote(err) {
+	const why =
+		err instanceof GraphError && (err.code === 10 || err.code === 200)
+			? 'the grant lacks a permission it needs (Meta’s reference names pages_manage_engagement, which flock does not ask for)'
+			: String(err?.message ?? err).split('\n')[0];
+	return `Cover not set: ${why}. Facebook shows a frame it picks.`;
+}
+
 async function permalinkOf(page, videoId) {
 	try {
 		return reelUrl((await graph(page, `/${videoId}`, { params: { fields: 'permalink_url' } })).permalink_url, videoId);
@@ -265,6 +292,18 @@ export async function publishToFacebook({ target, job, pb, config, log, saveHand
 		throw new Error(`Facebook refused the upload (${res.status}): ${answer.error?.message || res.text.slice(0, 300)}`);
 	}
 
+	// The cover never holds the reel back: refused, it goes out with Facebook's frame and a note.
+	const notes = [];
+	if (job.facebook_cover) {
+		try {
+			await setReelCover(page, videoId, await pb.openFacebookCover(job), job.facebook_cover);
+			log(`cover: ${job.facebook_cover} set as the reel's cover`);
+		} catch (err) {
+			notes.push(coverNote(err));
+			log(notes[0]);
+		}
+	}
+
 	// Read again after the upload, which can take minutes: a slot can have come within the 10 minutes.
 	const plan = releasePlan(target.scheduled_at);
 	if (plan.state === 'PUBLISHED' && plan.lateMs > 60_000) log(`${Math.round(plan.lateMs / 60000)} min past the slot — publishing now`);
@@ -286,7 +325,8 @@ export async function publishToFacebook({ target, job, pb, config, log, saveHand
 		url: await permalinkOf(page, videoId),
 		videoId,
 		scheduled: done.scheduled,
-		privacyStatus: 'a public reel on the Page'
+		privacyStatus: 'a public reel on the Page',
+		notes
 	};
 }
 

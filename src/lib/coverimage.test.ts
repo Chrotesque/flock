@@ -22,16 +22,24 @@ describe('imageFits', () => {
 	it('is false without an image', () => {
 		expect(imageFits(null, 'instagram')).toBe(false);
 	});
+
+	it('holds each platform to its own cap', () => {
+		const nine = { type: 'image/jpeg', size: 9 * MB };
+		expect(imageFits(nine, 'instagram')).toBe(false);
+		expect(imageFits(nine, 'facebook')).toBe(true);
+		expect(imageProblem({ type: 'image/png', size: 11 * MB }, 'facebook')).toBe('over its 10 MB limit');
+	});
 });
 
 describe('what the picker accepts', () => {
 	it('is what the platforms served take', () => {
 		expect(acceptedTypes(['instagram'])).toEqual(['image/jpeg', 'image/png']);
 		expect(largestAccepted(['instagram'])).toBe(8 * MB);
+		expect(largestAccepted(['instagram', 'facebook'])).toBe(10 * MB);
 	});
 
 	it('falls back to every image platform when none is active', () => {
 		expect(acceptedTypes([])).toEqual(['image/jpeg', 'image/png']);
-		expect(largestAccepted([])).toBe(8 * MB);
+		expect(largestAccepted([])).toBe(10 * MB);
 	});
 });

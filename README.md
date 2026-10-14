@@ -257,6 +257,10 @@ Page's own token. Running it again adds or refreshes Pages and drops none.
 
 Then choose each brand's Page in Settings → *Brands*.
 
+- **Covers:** a cover image becomes the reel's cover on the Page. If Facebook
+  refuses it, the reel goes out with a frame Facebook picks, and the post's
+  entry in the Log says why.
+
 ### vidIQ (optional)
 
 Make a key at `app.vidiq.com/account/settings/mcp`, put it in the config as
@@ -444,8 +448,9 @@ are writing for.
 
 The boxes on the right follow the platform you are writing for:
 
-- **Instagram:** an optional *Cover* image for the reel (JPEG or PNG, up to
-  8 MB).
+- **Instagram and Facebook:** an optional *Cover* image for the reel (JPEG or
+  PNG, up to 8 MB for Instagram and 10 MB for Facebook). One image serves both;
+  the switch in the box's corner gives each its own.
 - **YouTube:** a playlist, from the channel's own playlists.
 - **TikTok:** the *Post to TikTok* box, with the choices TikTok wants made on
   every post:
@@ -505,8 +510,8 @@ it in. A note in the corner says what was filled.
 - **Tags** go into YouTube's *Other* box.
 - **`schedule`** is local time, or `"now"`. It fills the Schedule step, where
   you can still change it.
-- **`thumbnail`** is the Instagram reel's cover, read by the worker from its own
-  disk (JPEG or PNG, up to 8 MB).
+- **`thumbnail`** is the reel cover for Instagram and Facebook, read by the
+  worker from its own disk (JPEG or PNG, up to 8 MB).
 - **Never filled:** TikTok's audience, interaction and disclosure choices.
   Those are picked by hand on every post.
 

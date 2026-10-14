@@ -205,8 +205,18 @@
 	});
 
 	let playerOpen = $state(false);
+	// The reel covers as sent: Instagram's, and Facebook's since 0.16.2.
+	let covers = $derived.by(() => {
+		const list = [
+			{ who: 'Instagram', file: job?.cover ?? '', sent: record?.cover ?? null },
+			{ who: 'Facebook', file: job?.facebook_cover ?? '', sent: record?.facebookCover ?? null }
+		];
+		return list
+			.map((c) => ({ ...c, url: job && c.file ? jobFileUrl(job, c.file) : '' }))
+			.filter((c) => c.url || c.sent);
+	});
 	let coverOpen = $state(false);
-	let coverUrl = $derived(job?.cover ? jobFileUrl(job, job.cover) : '');
+	let coverShown = $state<{ who: string; url: string } | null>(null);
 </script>
 
 <div class="page">
@@ -318,21 +328,28 @@
 					{/if}
 				</dd>
 
-				{#if record.cover || coverUrl}
+				{#each covers as cover (cover.who)}
 					<dt>Cover</dt>
 					<dd class="coverline">
-						{#if coverUrl}
-							<button class="coverthumb" onclick={() => (coverOpen = true)} title="Show it">
-								<img src={coverUrl} alt="Instagram cover" />
+						{#if cover.url}
+							<button
+								class="coverthumb"
+								onclick={() => {
+									coverShown = { who: cover.who, url: cover.url };
+									coverOpen = true;
+								}}
+								title="Show it"
+							>
+								<img src={cover.url} alt="{cover.who} cover" />
 							</button>
 						{/if}
 						<span>
-							Instagram's cover{record.cover?.name ? `: ${record.cover.name}` : ''}{record.cover?.size
-								? ` (${formatBytes(record.cover.size)})`
+							{cover.who}'s cover{cover.sent?.name ? `: ${cover.sent.name}` : ''}{cover.sent?.size
+								? ` (${formatBytes(cover.sent.size)})`
 								: ''}
 						</span>
 					</dd>
-				{/if}
+				{/each}
 
 				{#if record.others.length > 0}
 					<dt>Same upload</dt>
@@ -495,8 +512,8 @@
 	url={playable?.url ?? ''}
 />
 
-<Modal bind:open={coverOpen} title="Instagram cover" width="min(92vw, 720px)">
-	{#if coverUrl}<img class="coverbig" src={coverUrl} alt="Instagram cover" />{/if}
+<Modal bind:open={coverOpen} title="{coverShown?.who ?? ''} cover" width="min(92vw, 720px)">
+	{#if coverShown}<img class="coverbig" src={coverShown.url} alt="{coverShown.who} cover" />{/if}
 </Modal>
 
 <style>

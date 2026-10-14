@@ -220,8 +220,8 @@
 	});
 
 	// Which pane the stage shows: the video, or an image at the same size, so
-	// the preview is actually judgeable — Instagram's cover (coverimage.ts),
-	// one tab per image once they were unlinked. TikTok takes a cover *time*
+	// the preview is actually judgeable — the reel cover of Instagram and
+	// Facebook (coverimage.ts), one tab per image once they were unlinked. TikTok takes a cover *time*
 	// (its `coverFrame` option), so it is not on a tab. Falls back to the
 	// video if no image platform is in the plan.
 	interface ImageTab {

@@ -21,7 +21,7 @@
 	import { devtestActive } from '$lib/devtest';
 	import { VERSION } from '$lib/version';
 	import { formatBytes } from '$lib/format';
-	import { imageFits } from '$lib/coverimage';
+	import { imageFits, type ImagePlatform } from '$lib/coverimage';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { PLATFORMS } from '$lib/platforms';
 	import { paste } from '$lib/stores/paste.svelte';
@@ -142,7 +142,12 @@
 	 * (uploadrecord.ts): the file, each post's text as typed and as sent,
 	 * its options, slot and account, and what the Review step warned about.
 	 */
-	function recordFor(group: Group, everyGroup: Group[], cover: File | null): UploadRecord {
+	function recordFor(
+		group: Group,
+		everyGroup: Group[],
+		cover: File | null,
+		facebookCover: File | null
+	): UploadRecord {
 		const { file, nasFile, duration } = group.video;
 		const destination = general.defaultDestination;
 		const targets = group.rows.map((row) => {
@@ -198,6 +203,7 @@
 				})),
 			destination: destination ? { label: destination.label, path: destination.path } : null,
 			cover: cover ? { name: cover.name, size: cover.size } : null,
+			facebookCover: facebookCover ? { name: facebookCover.name, size: facebookCover.size } : null,
 			devtest: devtestActive(),
 			targets,
 			timing: timingOfTargets(targets)
@@ -261,13 +267,15 @@
 					transfer: Boolean(file),
 					local: Boolean(nasFile?.local)
 				};
-				// Instagram's cover, sent only if it fits — the picker has already
-				// said when it does not. YouTube gets no thumbnail any more
-				// (coverimage.ts).
-				const cover =
-					group.platforms.includes('instagram') && imageFits(draft.imageFor('instagram'), 'instagram')
-						? draft.imageFor('instagram')
+				// The reel covers, each sent only to a platform on this video
+				// that it fits — the picker has already said when it does not.
+				// YouTube gets no thumbnail any more (coverimage.ts).
+				const coverFor = (platform: ImagePlatform) =>
+					group.platforms.includes(platform) && imageFits(draft.imageFor(platform), platform)
+						? draft.imageFor(platform)
 						: null;
+				const cover = coverFor('instagram');
+				const facebookCover = coverFor('facebook');
 				const job = await createJob(
 					{
 						title: label.title,
@@ -276,6 +284,7 @@
 						source: nasFile,
 						thumbnail: null,
 						cover,
+						facebookCover,
 						duration,
 						destination: general.defaultDestination,
 						brand: brands.current ?? null,
@@ -289,7 +298,7 @@
 							date: row.date,
 							time: row.time
 						})),
-						record: $state.snapshot(recordFor(group, everyGroup, cover)) as UploadRecord
+						record: $state.snapshot(recordFor(group, everyGroup, cover, facebookCover)) as UploadRecord
 					},
 					(fraction) => (progress = total > 0 ? (sent + fraction * size) / total : fraction)
 				);

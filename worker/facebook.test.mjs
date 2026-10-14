@@ -5,10 +5,12 @@ import {
 	LEAD_SECONDS,
 	SCHEDULE_MAX_MS,
 	checkFacebookGrant,
+	coverNote,
 	facebookAccount,
 	reelState,
 	releasePlan
 } from './facebook.mjs';
+import { GraphError, graph } from './instagram.mjs';
 
 const NOW = Date.parse('2026-10-14T12:00:00Z');
 const MIN = 60_000;
@@ -102,5 +104,46 @@ describe('facebookAccount', () => {
 	it('never guesses between several Pages, nor posts through one without a token', () => {
 		assert.throws(() => facebookAccount(config, ''), /names no Facebook account/);
 		assert.throws(() => facebookAccount(config, 'p3'), /no credentials/);
+	});
+});
+
+describe('the reel cover', () => {
+	it('goes up as a multipart POST with the file beside the parameters and the token', async () => {
+		const realFetch = globalThis.fetch;
+		let sent;
+		globalThis.fetch = async (url, init) => {
+			sent = { url: String(url), init };
+			return new Response('{"success":true}', { status: 200 });
+		};
+		try {
+			const page = { pageAccessToken: 'tok', apiVersion: 'v23.0', label: 'Facebook' };
+			const image = { bytes: Buffer.from('jpeg bytes'), mimeType: 'image/jpeg', name: 'cover.jpg' };
+			const answer = await graph(page, '/v1/thumbnails', {
+				method: 'POST',
+				params: { is_preferred: 'true' },
+				files: { source: image }
+			});
+			assert.deepEqual(answer, { success: true });
+			assert.match(sent.url, /\/v23\.0\/v1\/thumbnails$/);
+			const body = sent.init.body;
+			assert.ok(body instanceof FormData);
+			assert.equal(body.get('is_preferred'), 'true');
+			assert.equal(body.get('access_token'), 'tok');
+			const file = body.get('source');
+			assert.equal(file.name, 'cover.jpg');
+			assert.equal(file.type, 'image/jpeg');
+			assert.equal(Buffer.from(await file.arrayBuffer()).toString(), 'jpeg bytes');
+		} finally {
+			globalThis.fetch = realFetch;
+		}
+	});
+
+	it('says why it was not set, naming the permission Meta lists when one was refused', () => {
+		const refused = new GraphError({ code: 200, message: 'Permissions error' }, 403, 'Facebook');
+		assert.match(coverNote(refused), /^Cover not set: .*pages_manage_engagement.*Facebook shows a frame it picks\.$/);
+		assert.equal(
+			coverNote(new Error('Cannot read the stored Facebook cover (404)\nmore')),
+			'Cover not set: Cannot read the stored Facebook cover (404). Facebook shows a frame it picks.'
+		);
 	});
 });

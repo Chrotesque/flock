@@ -125,6 +125,16 @@ const collections = [
 				maxSize: 8388608,
 				mimeTypes: ['image/jpeg', 'image/png']
 			},
+			// A custom cover for the Facebook reel (POST /{video_id}/thumbnails),
+			// the same picture as `cover` unless the two were unlinked. The 10 MB
+			// cap is Facebook's own for thumbnails.
+			{
+				type: 'file',
+				name: 'facebook_cover',
+				maxSelect: 1,
+				maxSize: 10485760,
+				mimeTypes: ['image/jpeg', 'image/png']
+			},
 			// Set instead of `video` for a file picked out of the watch folder:
 			// the bytes are left on the NAS and only referenced, which is what
 			// makes a video larger than the file field's 5 GiB cap possible.

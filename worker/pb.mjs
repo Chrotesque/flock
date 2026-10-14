@@ -303,6 +303,17 @@ export function makeClient(baseUrl) {
 			};
 		},
 
+		/** Facebook's reel cover as bytes, capped at Facebook's 10 MB by the schema. */
+		async openFacebookCover(job) {
+			const url = `${baseUrl}/api/files/upload_jobs/${job.id}/${encodeURIComponent(job.facebook_cover)}`;
+			const res = await fetchOrExplain(url);
+			if (!res.ok) throw new Error(`Cannot read the stored Facebook cover (${res.status})`);
+			return {
+				bytes: Buffer.from(await res.arrayBuffer()),
+				mimeType: res.headers.get('content-type') || 'image/jpeg'
+			};
+		},
+
 		/**
 		 * Opens a job's video for reading, whichever route it arrived by.
 		 *

@@ -301,7 +301,8 @@ async function recordResult(pb, platform, target, result, label) {
 	const todo = result.todo?.length
 		? `Set by hand in Studio: ${result.todo.join(', ')}${result.todoUrl ? ` — ${result.todoUrl}` : '.'}`
 		: '';
-	const notes = [result.locked ? 'Stored as private: the API project is not audited yet.' : '', todo];
+	// And what an adapter says went out differently (Facebook's refused cover).
+	const notes = [result.locked ? 'Stored as private: the API project is not audited yet.' : '', todo, ...(result.notes ?? [])];
 	await pb.updateTarget(target.id, {
 		status: result.scheduled ? 'scheduled' : 'published',
 		remote_url: result.url,
@@ -312,7 +313,8 @@ async function recordResult(pb, platform, target, result, label) {
 	const how = result.scheduled ? `scheduled for ${target.scheduled_at}` : `live as ${result.privacyStatus}`;
 	log(`done ${label} — ${how}  ${result.url}`);
 	if (todo) log(`  ${todo}`);
-	pb.log(`Published to ${platform}`, `${target.title || '(no title)'} -> ${result.url} (${how})${todo ? ` ${todo}` : ''}`);
+	const said = [todo, ...(result.notes ?? [])].filter(Boolean).join(' ');
+	pb.log(`Published to ${platform}`, `${target.title || '(no title)'} -> ${result.url} (${how})${said ? ` ${said}` : ''}`);
 }
 
 /**

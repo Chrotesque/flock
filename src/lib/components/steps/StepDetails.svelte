@@ -69,7 +69,7 @@
 	let def = $derived(composing ? PLATFORMS[composing] : null);
 	let text = $derived(composing ? draft.textFor(composing) : { title: '', description: '' });
 
-	/* ---- YouTube's playlist, Instagram's cover ----
+	/* ---- YouTube's playlist, the reel cover ----
 	 *
 	 * The playlist is YouTube-only, so it only renders while YouTube is going
 	 * to get this upload. The playlist list comes from the worker by way of PocketBase,
@@ -81,18 +81,21 @@
 
 	let youtubeActive = $derived(draft.activePlatforms.includes('youtube'));
 	let tiktokActive = $derived(draft.activePlatforms.includes('tiktok'));
-	// The image box is Instagram's cover (coverimage.ts): YouTube's thumbnail
-	// was dropped in v0.11.7, and TikTok takes a cover *time* (its
-	// `coverFrame` option), not an image.
+	// The image box is the reel cover of Instagram and Facebook
+	// (coverimage.ts): YouTube's thumbnail was dropped in v0.11.7, and TikTok
+	// takes a cover *time* (its `coverFrame` option), not an image.
 	let imagePlatforms = $derived(draft.activePlatforms.filter(isImagePlatform));
 	let imageComposing = $derived(composing && isImagePlatform(composing) ? composing : null);
 	let showImageBox = $derived(imagePlatforms.length > 0 && imageComposing !== null);
 	// Linked, one box serves every image platform; unlinked, the box is the
-	// platform in view's own. With Instagram alone there is nothing to link,
-	// so the switch shows only for an older draft that was unlinked.
+	// platform in view's own. With one of them ticked there is nothing to
+	// link, so the switch shows only for a draft that was unlinked.
 	let imageBoxPlatforms = $derived(
 		draft.imagesLinked || !imageComposing ? imagePlatforms : [imageComposing]
 	);
+	// Unlinked, Instagram's own picture is `cover` and Facebook's `thumbnail`
+	// (draft.imageFor).
+	let boxHoldsCover = $derived(!draft.imagesLinked && imageComposing === 'instagram');
 	let imageBoxLabel = $derived('Cover');
 	let imageBoxFile = $derived(imageComposing ? draft.imageFor(imageComposing) : null);
 	let imageBoxDone = $derived(
@@ -1185,10 +1188,10 @@
 					summary={imageBoxFile?.name ?? ''}
 					action={showLinkSwitch ? linkSwitch : undefined}
 				>
-					{#if draft.imagesLinked}
-						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.thumbnail} />
-					{:else}
+					{#if boxHoldsCover}
 						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.cover} />
+					{:else}
+						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.thumbnail} />
 					{/if}
 				</FoldBox>
 			{/key}

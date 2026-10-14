@@ -160,7 +160,7 @@ async function parse(res, label = 'Instagram') {
  * API takes a list of collaborators. `ig` is any Page-token holder with an
  * `apiVersion` — facebook.mjs passes its Pages, with `label` and `reauth`.
  */
-export async function graph(ig, path, { method = 'GET', params = {} } = {}) {
+export async function graph(ig, path, { method = 'GET', params = {}, files = {} } = {}) {
 	const url = new URL(`${base(ig)}${path}`);
 	const form = new URLSearchParams();
 	for (const [key, value] of Object.entries(params)) {
@@ -168,6 +168,17 @@ export async function graph(ig, path, { method = 'GET', params = {} } = {}) {
 		form.set(key, typeof value === 'string' ? value : JSON.stringify(value));
 	}
 	form.set('access_token', token(ig));
+
+	// A POST carrying files ({ bytes, mimeType, name }) goes as multipart.
+	const attached = Object.entries(files);
+	if (method === 'POST' && attached.length > 0) {
+		const body = new FormData();
+		for (const [key, value] of form) body.set(key, value);
+		for (const [key, file] of attached) {
+			body.set(key, new Blob([file.bytes], { type: file.mimeType }), file.name || key);
+		}
+		return parse(await fetchOrExplain(url, { method, body }), ig.label);
+	}
 
 	if (method === 'POST') {
 		return parse(

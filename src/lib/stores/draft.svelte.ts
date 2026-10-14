@@ -3,6 +3,7 @@ import { isoDate, nextDayMatching } from '../format';
 import { tiktokProblems } from '../tiktok';
 import { PASTE_TAG_BOX, type FlockPaste, type PastedPlatform } from '../flockpaste';
 import { SAVED_VERSION, withoutHandPicked, type SavedDraft } from '../projects';
+import type { ImagePlatform } from '../coverimage';
 import { settings } from './settings.svelte';
 import { accounts } from './accounts.svelte';
 import { DEFAULT_SCHEDULING } from '../types';
@@ -123,22 +124,21 @@ class DraftStore {
 	split = $state<PlatformId[]>(loadSplit());
 
 	/**
-	 * The custom image: Instagram's reel cover (see coverimage.ts), still
-	 * named `thumbnail` because the paste format and saved drafts call it so.
-	 * Optional; without one Instagram uses the frame at its cover time.
+	 * The custom image: the reel cover for Instagram and Facebook (see
+	 * coverimage.ts), still named `thumbnail` because the paste format and
+	 * saved drafts call it so. Optional; without one each uses a frame.
 	 * TikTok takes a cover *time*, not an image, and YouTube's thumbnail was
 	 * dropped in v0.11.7.
 	 *
-	 * The link between images and `cover` stay for the day a second platform
-	 * takes one: with Instagram alone the switch never shows and every upload
-	 * stays linked, so `imageFor('instagram')` is `thumbnail`.
+	 * Linked (the default), both get `thumbnail`. Unlinked, Instagram gets
+	 * `cover` and Facebook keeps `thumbnail`.
 	 */
 	thumbnail = $state<File | null>(null);
 	cover = $state<File | null>(null);
 	imagesLinked = $state(true);
 
 	/** The image a platform gets, linked or not. */
-	imageFor(platform: 'instagram'): File | null {
+	imageFor(platform: ImagePlatform): File | null {
 		return platform === 'instagram' && !this.imagesLinked ? this.cover : this.thumbnail;
 	}
 

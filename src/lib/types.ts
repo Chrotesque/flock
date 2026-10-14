@@ -158,6 +158,8 @@ export interface UploadJob {
 	thumbnail?: string;
 	/** Optional custom cover for the Instagram reel, capped at Instagram's own 8 MB. */
 	cover?: string;
+	/** Optional custom cover for the Facebook reel, capped at Facebook's own 10 MB. */
+	facebook_cover?: string;
 	/**
 	 * Set instead of `video` when the file was picked out of the watch folder
 	 * rather than uploaded. The bytes stay where they are — PocketBase holds

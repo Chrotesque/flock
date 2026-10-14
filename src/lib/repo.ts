@@ -448,8 +448,10 @@ export interface CreateJobInput {
 	source: { path: string; name: string; size: number; local?: boolean } | null;
 	/** Optional custom thumbnail. Only YouTube does anything with it. */
 	thumbnail: File | null;
-	/** Optional custom cover for the reel. Only Instagram does anything with it. */
+	/** Optional custom cover for Instagram's reel. */
 	cover: File | null;
+	/** Optional custom cover for Facebook's reel; the same picture as `cover` while linked. */
+	facebookCover?: File | null;
 	duration: number;
 	/** Where on the NAS this video should end up, snapshotted at confirm time. */
 	destination: { label: string; path: string } | null;
@@ -486,6 +488,7 @@ export async function createJob(
 	}
 	if (input.thumbnail) form.set('thumbnail', input.thumbnail);
 	if (input.cover) form.set('cover', input.cover);
+	if (input.facebookCover) form.set('facebook_cover', input.facebookCover);
 
 	if (input.file) {
 		form.set('video', input.file);
