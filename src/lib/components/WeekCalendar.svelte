@@ -21,10 +21,10 @@
 	} from '$lib/format';
 
 	// The time-grid, shared by the upload wizard's schedule step and the
-	// standalone Calendar so the two cannot drift apart visually. The Calendar
-	// shows Monday-to-Sunday weeks; the schedule step a rolling run of
-	// `dayCount` days from today (`rolling`), so the days that matter for a
-	// new upload are never split across two weeks.
+	// standalone Calendar so the two cannot drift apart visually. Both show a
+	// rolling run of `dayCount` days (`rolling`) — the schedule step from
+	// today, the Calendar from two days before (`lead`) — so the days that
+	// matter are never split across two weeks.
 	//
 	// Placement, drag plumbing and off-screen tracking live here; what a card
 	// *looks* like is the caller's `card` snippet (in practice always PostCard).
@@ -34,12 +34,17 @@
 		weekStart = $bindable(startOfWeek(new Date())),
 		card,
 		toolbar,
+		center,
 		marker,
 		offscreen,
 		dense = false,
+		allHours = false,
 		quarters = false,
 		dayCount = 7,
 		rolling = false,
+		lead = 0,
+		groupOf,
+		past,
 		candrag,
 		ondropitem
 	}: {
@@ -56,8 +61,23 @@
 		dayCount?: number;
 		/** Starts on any day, "Today" resets it, and the label names days rather than the month. */
 		rolling?: boolean;
+		/** With `rolling`, how many days before today "Today" puts first. */
+		lead?: number;
+		/**
+		 * Items of one group in one hour are boxed together — the Calendar's
+		 * posts of one upload. Each stays its own card, dragged on its own.
+		 */
+		groupOf?: (item: T) => string;
+		/**
+		 * With `groupOf`, a box whose items are all past is drawn receded —
+		 * on the box, since the platforms' marks may not be greyed.
+		 */
+		past?: (item: T) => boolean;
 		card: Snippet<[T]>;
+		/** The bar's right end. */
 		toolbar?: Snippet;
+		/** The bar's middle, centred between the week's arrows and the toolbar. */
+		center?: Snippet;
 		/** Rendered in a day's column header, once per item scheduled that day. */
 		marker?: Snippet<[T]>;
 		/**
@@ -71,6 +91,8 @@
 		 * would treble the row height for no gain.
 		 */
 		dense?: boolean;
+		/** Every hour at once: the grid is as tall as its 24 rows, with no scrolling inside it. */
+		allHours?: boolean;
 		/**
 		 * After a drop, offers that hour's quarters (:00, :15, :30, :45) beside
 		 * the card; a choice comes back through `ondropitem` with its minute.
@@ -93,6 +115,8 @@
 	let rowPx = $derived(dense ? 20 : 56);
 
 	const today = isoDate(new Date());
+	/** Where "Today" puts the first day. */
+	const firstDay = () => (rolling ? addDays(dayStart(new Date()), -lead) : startOfWeek(new Date()));
 
 	let scroller = $state<HTMLDivElement | null>(null);
 
@@ -104,14 +128,29 @@
 	);
 
 	let inThisWeek = $derived(new Set(days.map((d) => d.iso)));
-	// "Today" is spent once today is the first day; "This week" once it is in the week.
-	let isCurrentWeek = $derived(rolling ? days[0]?.iso === today : inThisWeek.has(today));
+	// "Today" is spent once the run starts where it would put it; "This week"
+	// once today is in the week.
+	let isCurrentWeek = $derived(rolling ? days[0]?.iso === isoDate(firstDay()) : inThisWeek.has(today));
 	let rangeText = $derived(
 		rolling ? rangeLabel(weekStart, addDays(weekStart, dayCount - 1)) : weekLabel(weekStart, addDays(weekStart, 6))
 	);
 
 	function cardsAt(iso: string, hour: number): T[] {
 		return items.filter((item) => item.date === iso && hourOf(item.time) === hour);
+	}
+
+	/** A cell's cards, boxed per group in the order the groups first appear. */
+	function bundlesAt(iso: string, hour: number): { key: string; items: T[]; done: boolean }[] {
+		const cards = cardsAt(iso, hour);
+		if (!groupOf) return cards.map((item) => ({ key: item.id, items: [item], done: false }));
+		const groups = new Map<string, T[]>();
+		for (const item of cards) {
+			const group = groupOf(item);
+			const list = groups.get(group);
+			if (list) list.push(item);
+			else groups.set(group, [item]);
+		}
+		return [...groups].map(([key, items]) => ({ key, items, done: Boolean(past) && items.every((item) => past!(item)) }));
 	}
 
 	function markedOn(iso: string): T[] {
@@ -542,52 +581,52 @@
 
 <svelte:window onresize={onScroll} onkeydown={onWindowKey} onpointerdown={onWindowPointer} />
 
-<header class="bar">
-	<div class="nav">
-		<button
-			class="nav-btn"
-			onclick={() => (weekStart = addDays(weekStart, -7))}
-			aria-label={rolling ? 'A week earlier' : 'Previous week'}
-		>
-			<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
-				><path
-					d="M15 6l-6 6 6 6"
-					stroke="currentColor"
-					stroke-width="1.9"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				/></svg
+<header class="bar" class:centred={Boolean(center)}>
+	<div class="side">
+		<div class="nav">
+			<button
+				class="nav-btn"
+				onclick={() => (weekStart = addDays(weekStart, -7))}
+				aria-label={rolling ? 'A week earlier' : 'Previous week'}
 			>
-		</button>
-		<span class="range">{rangeText}</span>
-		<button
-			class="nav-btn"
-			onclick={() => (weekStart = addDays(weekStart, 7))}
-			aria-label={rolling ? 'A week later' : 'Next week'}
-		>
-			<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
-				><path
-					d="M9 6l6 6-6 6"
-					stroke="currentColor"
-					stroke-width="1.9"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				/></svg
+				<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
+					><path
+						d="M15 6l-6 6 6 6"
+						stroke="currentColor"
+						stroke-width="1.9"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/></svg
+				>
+			</button>
+			<span class="range">{rangeText}</span>
+			<button
+				class="nav-btn"
+				onclick={() => (weekStart = addDays(weekStart, 7))}
+				aria-label={rolling ? 'A week later' : 'Next week'}
 			>
+				<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
+					><path
+						d="M9 6l6 6-6 6"
+						stroke="currentColor"
+						stroke-width="1.9"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/></svg
+				>
+			</button>
+		</div>
+
+		<button class="btn sm" onclick={() => (weekStart = firstDay())} disabled={isCurrentWeek}>
+			{rolling ? 'Today' : 'This week'}
 		</button>
 	</div>
 
-	<button
-		class="btn sm"
-		onclick={() => (weekStart = rolling ? dayStart(new Date()) : startOfWeek(new Date()))}
-		disabled={isCurrentWeek}
-	>
-		{rolling ? 'Today' : 'This week'}
-	</button>
+	{#if center}
+		<div class="middle">{@render center()}</div>
+	{/if}
 
-	<span class="spacer"></span>
-
-	{@render toolbar?.()}
+	<div class="side end">{@render toolbar?.()}</div>
 </header>
 
 <div
@@ -596,6 +635,7 @@
 	class:dragging={Boolean(dragging)}
 	class:many={dayCount > 10}
 	class:slim={dense}
+	class:allhours={allHours}
 	style="--days: {dayCount}"
 >
 	<div class="head" style="padding-right: {gutter}px">
@@ -713,23 +753,27 @@
 							class:over={over === key(day.iso, hour)}
 							data-cell={key(day.iso, hour)}
 						>
-							{#each cardsAt(day.iso, hour) as item (item.id)}
-								{#if candrag?.(item)}
-									<!-- svelte-ignore a11y_no_static_element_interactions -->
-									<div
-										class="slot grab"
-										class:lifted={dragging === item.id}
-										use:register={item.id}
-										onpointerdown={(e) => beginDrag(e, item.id)}
-										onpointermove={moveDrag}
-										onpointerup={endDrag}
-										onpointercancel={cancelDrag}
-									>
-										{@render card(item)}
-									</div>
-								{:else}
-									<div class="slot" use:register={item.id}>{@render card(item)}</div>
-								{/if}
+							{#each bundlesAt(day.iso, hour) as bundle (bundle.key)}
+								<div class="bundle" class:boxed={Boolean(groupOf)} class:done={bundle.done}>
+									{#each bundle.items as item (item.id)}
+										{#if candrag?.(item)}
+											<!-- svelte-ignore a11y_no_static_element_interactions -->
+											<div
+												class="slot grab"
+												class:lifted={dragging === item.id}
+												use:register={item.id}
+												onpointerdown={(e) => beginDrag(e, item.id)}
+												onpointermove={moveDrag}
+												onpointerup={endDrag}
+												onpointercancel={cancelDrag}
+											>
+												{@render card(item)}
+											</div>
+										{:else}
+											<div class="slot" use:register={item.id}>{@render card(item)}</div>
+										{/if}
+									{/each}
+								</div>
 							{/each}
 						</div>
 					{/each}
@@ -771,6 +815,34 @@
 		margin-bottom: 14px;
 	}
 
+	.side {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.side.end {
+		margin-left: auto;
+	}
+
+	/* With something in the middle, it sits in the middle of the whole bar
+	   whatever the two ends hold. */
+	.bar.centred {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+		gap: 16px;
+	}
+
+	.bar.centred .side.end {
+		justify-content: flex-end;
+	}
+
+	.middle {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
 	.nav {
 		display: flex;
 		align-items: center;
@@ -808,10 +880,6 @@
 	.sm {
 		padding: 6px 12px;
 		font-size: 12px;
-	}
-
-	.spacer {
-		flex: 1;
 	}
 
 	/* The time gutter's width lives here so the grid, the header corner and
@@ -946,6 +1014,10 @@
 		overflow-y: auto;
 	}
 
+	.calendar.allhours .scroller {
+		max-height: none;
+	}
+
 	.grid {
 		grid-auto-rows: minmax(var(--row), auto);
 	}
@@ -1009,6 +1081,30 @@
 		align-content: center;
 		padding: 0 3px;
 		gap: 1px 3px;
+	}
+
+	/* Without groups the box is not there for layout: the cards sit in the
+	   cell as they always did. */
+	.bundle {
+		display: contents;
+	}
+
+	/* One upload's posts in this hour: its platforms side by side in one
+	   box, as tall as the slim row. */
+	.bundle.boxed {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		height: 18px;
+		padding: 0 3px;
+		border-radius: 6px;
+		border: 1px solid var(--border-strong);
+		background: var(--surface-3);
+	}
+
+	.bundle.boxed.done {
+		border-color: var(--border);
+		background: transparent;
 	}
 
 	/* Rows only as tall as the hour label: the label sits in the middle of
@@ -1197,6 +1293,13 @@
 	.rail.down {
 		bottom: 0;
 		background: linear-gradient(transparent, var(--surface) 85%);
+	}
+
+	@media (max-width: 1100px) {
+		.bar.centred {
+			display: flex;
+			flex-wrap: wrap;
+		}
 	}
 
 	@media (max-width: 900px) {

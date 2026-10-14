@@ -1,12 +1,13 @@
 <script lang="ts">
 	import WeekCalendar from '$lib/components/WeekCalendar.svelte';
 	import PostCard from '$lib/components/PostCard.svelte';
-	import Checkbox from '$lib/components/Checkbox.svelte';
+	import DaysSelect from '$lib/components/DaysSelect.svelte';
 	import { listTargets, rescheduleTarget, toInstant } from '$lib/repo';
-	import { isPlatformId } from '$lib/platforms';
-	import { startOfWeek, isoDate, makeTime, minuteOf } from '$lib/format';
+	import { isPlatformId, PLATFORM_IDS } from '$lib/platforms';
+	import { addDays, dayStart, isoDate, makeTime, minuteOf } from '$lib/format';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
+	import { DaysShown } from '$lib/stores/daysshown.svelte';
 	import type { PlatformId, UploadTarget } from '$lib/types';
 
 	brands.load();
@@ -45,14 +46,21 @@
 	// is gated behind the two-press Edit button below.
 	interface Entry {
 		id: string;
+		/** The upload it belongs to: its posts in one hour share a box. */
+		job: string;
 		date: string;
 		time: string;
 		platform: PlatformId;
 		title: string;
 		description: string;
 		status: UploadTarget['status'];
-		/** Released, or past its slot — either way it is history. */
-		done: boolean;
+		/** The platform holds it, or its slot has passed: it stays put while editing. */
+		locked: boolean;
+		/**
+		 * Its slot is behind us (or it was called off): its upload's box recedes
+		 * as history. An upcoming post YouTube already holds is locked but not past.
+		 */
+		past: boolean;
 		/**
 		 * The job's brand; empty once that brand was deleted. The name is the one
 		 * snapshotted with the job, shown only after a deletion — a living
@@ -62,11 +70,17 @@
 		brandName: string;
 	}
 
-	let weekStart = $state(startOfWeek(new Date()));
+	/**
+	 * A rolling run of days that opens two days back, so the last two days'
+	 * releases stay in sight beside what is coming; 7 to 14 days, like the
+	 * schedule step (daysshown.svelte.ts).
+	 */
+	const LEAD = 2;
+	const days = new DaysShown('flock.calendar.days');
+	let weekStart = $state(addDays(dayStart(new Date()), -LEAD));
 	let entries = $state<Entry[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
-	let showDone = $state(true);
 
 	/* ---- edit mode ----
 	 *
@@ -105,14 +119,14 @@
 		}, 2000);
 	}
 
-	/** Released and past-due rows are history — they stay put even while editing. */
+	/** Released, held and past-due rows stay put even while editing. */
 	function canMove(entry: Entry): boolean {
-		return editing && !entry.done;
+		return editing && !entry.locked;
 	}
 
 	async function onDropItem(id: string, date: string, hour: number) {
 		const entry = entries.find((e) => e.id === id);
-		if (!entry || entry.done) return;
+		if (!entry || entry.locked) return;
 
 		const time = makeTime(hour, minuteOf(entry.time));
 		const previous = { date: entry.date, time: entry.time };
@@ -142,21 +156,24 @@
 		// would only lie about what happens. A slot that has simply passed still
 		// reads as history too — that half goes away once every platform has a
 		// worker and past-due pending becomes a real fault instead.
-		const done =
+		const passed = at.getTime() < now;
+		const locked =
 			target.status === 'published' ||
 			target.status === 'scheduled' ||
 			target.status === 'cancelled' ||
-			(target.status === 'pending' && at.getTime() < now);
+			(target.status === 'pending' && passed);
 
 		return {
 			id: target.id,
+			job: target.job,
 			date: isoDate(at),
 			time: makeTime(at.getHours(), at.getMinutes()),
 			platform: target.platform,
 			title: target.title,
 			description: target.description,
 			status: target.status,
-			done,
+			locked,
+			past: passed || target.status === 'cancelled',
 			brand: target.brand ?? '',
 			brandName: target.brand_name ?? ''
 		};
@@ -168,9 +185,11 @@
 		try {
 			const now = Date.now();
 			const targets = await listTargets();
+			// In the registry's order, so an upload's icons always line up the same way.
 			entries = targets
 				.map((target) => toEntry(target, now))
-				.filter((entry): entry is Entry => entry !== null);
+				.filter((entry): entry is Entry => entry !== null)
+				.sort((a, b) => PLATFORM_IDS.indexOf(a.platform) - PLATFORM_IDS.indexOf(b.platform));
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		} finally {
@@ -184,10 +203,8 @@
 
 	let ofBrand = $derived(shownBrand ? entries.filter((entry) => entry.brand === shownBrand) : entries);
 
-	let visible = $derived(showDone ? ofBrand : ofBrand.filter((entry) => !entry.done));
-
-	let upcoming = $derived(ofBrand.filter((entry) => !entry.done).length);
-	let released = $derived(ofBrand.filter((entry) => entry.done).length);
+	let upcoming = $derived(ofBrand.filter((entry) => !entry.past).length);
+	let released = $derived(ofBrand.filter((entry) => entry.past).length);
 
 	/** Named on the card only while cards of several brands share the grid. */
 	let labelBrands = $derived(brands.multiple && !shownBrand);
@@ -198,59 +215,17 @@
 		if (entry.status === 'publishing') return 'uploading';
 		if (entry.status === 'failed') return 'failed';
 		if (entry.status === 'cancelled') return 'cancelled';
-		return entry.done ? 'past due' : '';
+		return entry.past ? 'past due' : '';
 	}
 </script>
 
 <div class="page">
 <DeviceGate what="The calendar">
-		<header class="head">
-			<div class="actions">
-				{#if brands.multiple}
-					<div class="brands" role="radiogroup" aria-label="Brand shown">
-						<button
-							class="brandchip"
-							class:on={!shownBrand}
-							role="radio"
-							aria-checked={!shownBrand}
-							onclick={() => setFilter('')}
-						>
-							All
-						</button>
-						{#each brands.ordered as brand (brand.id)}
-							<button
-								class="brandchip"
-								class:on={shownBrand === brand.id}
-								role="radio"
-								aria-checked={shownBrand === brand.id}
-								onclick={() => setFilter(brand.id)}
-							>
-								{brand.name}
-							</button>
-						{/each}
-					</div>
-				{/if}
-				<button class="btn sm" onclick={load} disabled={loading}>Refresh</button>
-				<button
-					class="btn sm edit"
-					class:armed
-					class:on={editing}
-					onclick={onEditClick}
-					onblur={disarm}
-				>
-					{#if editing}
-						STOP
-					{:else if armed}
-						Edit?
-					{:else}
-						Edit
-					{/if}
-				</button>
-			</div>
-		</header>
-
 		{#if error}
-			<p class="banner error">Could not reach PocketBase — {error}</p>
+			<p class="banner error">
+				Could not reach PocketBase — {error}
+				<button class="btn sm" onclick={load} disabled={loading}>Try again</button>
+			</p>
 		{:else if loading && entries.length === 0}
 			<p class="banner">Loading…</p>
 		{:else}
@@ -266,9 +241,17 @@
 			{/if}
 
 			<WeekCalendar
-				items={visible}
+				items={ofBrand}
 				bind:weekStart
+				dayCount={days.shown}
+				rolling
+				lead={LEAD}
+				dense
+				allHours
+				groupOf={(entry) => entry.job}
+				past={(entry) => entry.past}
 				card={cardFor}
+				center={actions}
 				toolbar={legend}
 				candrag={canMove}
 				ondropitem={editing ? onDropItem : undefined}
@@ -289,10 +272,50 @@
 		time={entry.time}
 		title={entry.title}
 		description={entry.description}
-		muted={entry.done}
 		status={statusLabel(entry)}
 		brand={labelBrands ? (brands.byId(entry.brand)?.name ?? entry.brandName) : ''}
+		compact
+		bare
+		hoverDelay={300}
 	/>
+{/snippet}
+
+<!-- In the middle of the week's bar: which brand, and the buttons. -->
+{#snippet actions()}
+	{#if brands.multiple}
+		<div class="brands" role="radiogroup" aria-label="Brand shown">
+			<button
+				class="brandchip"
+				class:on={!shownBrand}
+				role="radio"
+				aria-checked={!shownBrand}
+				onclick={() => setFilter('')}
+			>
+				All
+			</button>
+			{#each brands.ordered as brand (brand.id)}
+				<button
+					class="brandchip"
+					class:on={shownBrand === brand.id}
+					role="radio"
+					aria-checked={shownBrand === brand.id}
+					onclick={() => setFilter(brand.id)}
+				>
+					{brand.name}
+				</button>
+			{/each}
+		</div>
+	{/if}
+	<button class="btn sm" onclick={load} disabled={loading}>Refresh</button>
+	<button class="btn sm edit" class:armed class:on={editing} onclick={onEditClick} onblur={disarm}>
+		{#if editing}
+			STOP
+		{:else if armed}
+			Edit?
+		{:else}
+			Edit
+		{/if}
+	</button>
 {/snippet}
 
 {#snippet legend()}
@@ -301,36 +324,23 @@
 		{#if released > 0}
 			<span class="sep">·</span>
 			<span class="count muted">{released} past</span>
-			<Checkbox checked={showDone} label="Show past" onchange={(next) => (showDone = next)} />
 		{/if}
 	</div>
+	<DaysSelect {days} />
 {/snippet}
 
 <style>
+	/* Full width, like the upload page: the days share whatever the window
+	   gives, and the layout's own 40px keeps them off the edges. */
 	.page {
-		max-width: 1180px;
-		margin: 0 auto;
-	}
-
-	/* No title: the brands and the buttons, where they always stood. */
-	.head {
-		display: flex;
-		align-items: center;
-		justify-content: flex-end;
-		gap: 20px;
-		margin-bottom: 22px;
+		max-width: none;
+		margin: 0;
 	}
 
 	.sm {
 		flex: none;
 		padding: 6px 12px;
 		font-size: 12px;
-	}
-
-	.actions {
-		display: flex;
-		align-items: center;
-		gap: 8px;
 	}
 
 	.brands {
@@ -403,6 +413,11 @@
 	}
 
 	.banner.error {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		margin-bottom: 12px;
 		border-color: rgba(248, 113, 113, 0.4);
 		color: var(--danger);
 	}

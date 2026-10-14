@@ -18,6 +18,8 @@
 		status = '',
 		dim = false,
 		compact = false,
+		bare = false,
+		hoverDelay = 1000,
 		brand = ''
 	}: {
 		platform: PlatformId;
@@ -33,9 +35,16 @@
 		dim?: boolean;
 		/** Icon only, with the detail behind a hover. */
 		compact?: boolean;
+		/** Compact without its own box, for a grid that boxes an upload's icons together. */
+		bare?: boolean;
+		/** How long a compact card is hovered before its detail opens, in ms. */
+		hoverDelay?: number;
 	} = $props();
 
-	const HOVER_DELAY = 1000;
+	// A caption-only platform has no title to be missing: its caption is the
+	// text, shown in the title's place.
+	const hasTitle = $derived(PLATFORMS[platform].hasTitle);
+	const heading = $derived(hasTitle ? title || '(no title)' : '');
 
 	let tile = $state<HTMLDivElement | null>(null);
 	let showTip = $state(false);
@@ -59,7 +68,7 @@
 	function onEnter() {
 		if (!compact) return;
 		if (timer) clearTimeout(timer);
-		timer = setTimeout(open, HOVER_DELAY);
+		timer = setTimeout(open, hoverDelay);
 	}
 
 	function onLeave() {
@@ -79,8 +88,9 @@
 		class="tile {platform}"
 		class:muted
 		class:dim
+		class:bare
 		bind:this={tile}
-		aria-label="{PLATFORMS[platform].label} at {time} — {title}"
+		aria-label="{PLATFORMS[platform].label} at {time} — {heading || description}"
 		onmouseenter={onEnter}
 		onmouseleave={onLeave}
 		ondragstart={onLeave}
@@ -101,9 +111,14 @@
 				<span class="tipwho">{PLATFORMS[platform].label}{brand ? ` · ${brand}` : ''}</span>
 				<span class="tiptime">{time}</span>
 			</div>
-			<p class="tiptitle">{title || '(no title)'}</p>
+			{#if heading}
+				<p class="tiptitle">{heading}</p>
+			{/if}
 			{#if description}
-				<p class="tipbody">{description}</p>
+				<p class="tipbody" class:caption={!heading}>{description}</p>
+			{/if}
+			{#if status}
+				<span class="status">{status}</span>
 			{/if}
 		</div>
 	{/if}
@@ -116,9 +131,11 @@
 			{/if}
 			<span class="time">{time}</span>
 		</div>
-		<p class="posttitle">{title || '(no title)'}</p>
+		{#if heading}
+			<p class="posttitle">{heading}</p>
+		{/if}
 		{#if description}
-			<p class="postbody">{description}</p>
+			<p class="postbody" class:caption={!heading}>{description}</p>
 		{/if}
 		{#if status}
 			<span class="status">{status}</span>
@@ -168,6 +185,19 @@
 
 	.tile.dim {
 		opacity: 0.4;
+	}
+
+	/* The grid's box round the upload is the frame. */
+	.tile.bare {
+		width: 14px;
+		height: 16px;
+		border: none;
+		border-radius: 3px;
+		background: none;
+	}
+
+	.tile.bare:hover {
+		box-shadow: none;
 	}
 
 	/* ---- hover detail ---- */
@@ -225,6 +255,13 @@
 		white-space: pre-wrap;
 		max-height: 128px;
 		overflow: hidden;
+	}
+
+	/* The caption, where there is no title: the text itself, not a note under it. */
+	.tipbody.caption {
+		margin-top: 0;
+		font-size: 12px;
+		color: var(--text);
 	}
 
 	@keyframes tipin {
@@ -331,6 +368,14 @@
 		line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
+	}
+
+	.postbody.caption {
+		margin-top: 0;
+		font-size: 11.5px;
+		color: var(--text);
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
 	}
 
 	.status {

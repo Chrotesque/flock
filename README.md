@@ -585,10 +585,12 @@ press Esc or go to another page to close it. For the brand in view it shows:
 TikTok and Facebook views are not read yet. When each platform was last read,
 and today's YouTube quota, sit at the top right.
 
-**Calendar** shows every release on a week grid; past ones are greyed out, and
-a toggle hides them. It opens read-only: press *Edit* twice within two seconds,
-then drag an upcoming release to another day or hour. Past releases stay
-locked. With several brands, buttons on top show one brand or all.
+**Calendar** shows every release on a grid of all 24 hours, starting two days
+before today: 14 days, or 7 to 14 from *Show N days*. Each upload is one small
+box of its platforms' icons in its hour, past ones without a fill; hover an
+icon to read the post. It opens read-only: press *Edit* twice within two
+seconds, then drag an upcoming release to another day or hour. Past releases
+stay locked. With several brands, buttons on top show one brand or all.
 
 **Log** lists every change with its time and the machine that made it. Filter
 by category, search, or click a machine to see only its entries. It cannot be

@@ -3,48 +3,21 @@
 	import PostCard from '../PostCard.svelte';
 	import Checkbox from '../Checkbox.svelte';
 	import WeekCalendar from '../WeekCalendar.svelte';
+	import DaysSelect from '../DaysSelect.svelte';
 	import { PLATFORMS } from '$lib/platforms';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { draft } from '$lib/stores/draft.svelte';
-	import { calendarZone } from '$lib/stores/calendarzone.svelte';
+	import { DaysShown } from '$lib/stores/daysshown.svelte';
 	import { buildPlan, type PlanRow } from '$lib/plan';
 	import { addDays, dayStart, isoDate, minuteOf, makeTime } from '$lib/format';
 	import { isPlatformId } from '$lib/platforms';
 	import type { PlatformId } from '$lib/types';
 
-	/*
-	 * Not a week but a run of days from today (the user's layout): 14 to
-	 * begin with, 7 to 14 from the dropdown, remembered per browser. With a
-	 * second time zone shown at most 12, since its clock widens the time
-	 * column; the choice is kept and comes back once the zone is gone.
-	 */
-	const DAYS_KEY = 'flock.schedule.days';
-	const DAY_CHOICES = Array.from({ length: 8 }, (_, i) => i + 7);
-	const MAX_DAYS = 14;
-	const MAX_DAYS_ZONED = 12;
-
-	function loadDays(): number {
-		try {
-			const n = Number(localStorage.getItem(DAYS_KEY));
-			return DAY_CHOICES.includes(n) ? n : 14;
-		} catch {
-			return 14;
-		}
-	}
-
-	let dayCount = $state(loadDays());
-	let maxDays = $derived(calendarZone.zone ? MAX_DAYS_ZONED : MAX_DAYS);
-	let shownDays = $derived(Math.min(dayCount, maxDays));
+	// Not a week but a run of days from today (the user's layout), 7 to 14
+	// of them (daysshown.svelte.ts).
+	const days = new DaysShown('flock.schedule.days');
+	let shownDays = $derived(days.shown);
 	let weekStart = $state(dayStart(new Date()));
-
-	function setDays(n: number) {
-		dayCount = n;
-		try {
-			localStorage.setItem(DAYS_KEY, String(n));
-		} catch {
-			// Private windows and blocked site data throw; it is just not kept.
-		}
-	}
 
 	// The cards are the plan rows themselves, so what is dragged around here is
 	// literally what the confirmation screen will list. The platform id doubles
@@ -226,15 +199,7 @@
 
 {#snippet tip()}
 	<p class="tip">Drag an icon to another day or hour, then pick the minutes. Hover one to read it.</p>
-	<label class="days">
-		Show
-		<select value={shownDays} onchange={(e) => setDays(Number(e.currentTarget.value))} aria-label="Days shown">
-			{#each DAY_CHOICES.filter((n) => n <= maxDays) as n (n)}
-				<option value={n}>{n}</option>
-			{/each}
-		</select>
-		days
-	</label>
+	<DaysSelect {days} />
 {/snippet}
 
 <style>
@@ -247,26 +212,6 @@
 		margin: 0;
 		font-size: 11.5px;
 		color: var(--text-faint);
-	}
-
-	.days {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		margin-left: 14px;
-		font-size: 12px;
-		color: var(--text-dim);
-	}
-
-	.days select {
-		padding: 4px 8px;
-		border-radius: 7px;
-		border: 1px solid var(--border);
-		background: var(--bg-elev);
-		color: var(--text);
-		font: inherit;
-		font-size: 12px;
-		cursor: pointer;
 	}
 
 	/* Sized by the grid's `--marker`, so four fit beside each other on a day. */
