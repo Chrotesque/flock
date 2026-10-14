@@ -26,7 +26,7 @@
 
 <main class="wrap doc">
   <h1>Privacy Policy</h1>
-  <p class="updated">flock — last updated 13-10-2026</p>
+  <p class="updated">flock — last updated 14-10-2026</p>
 
   <h2>What flock is</h2>
   <p>flock is open-source software, published under the MIT license, that you
@@ -55,13 +55,16 @@
   <a href="https://www.facebook.com/privacy/policy/">Meta Privacy Policy</a>.</p>
   <p>flock uses what it receives from Meta for two purposes: posting the reels its
   operator chooses, at the time its operator chooses, and showing its operator how
-  the connected account's own posts are doing. For the second it reads the
-  account's newest posts — each one's link, caption and publish time, its like
-  and comment counts, and the views and reach Instagram reports for it — and keeps
-  them on the operator's own equipment. Of a Facebook Page it reads only the Page's name, username and
-  link, to show which Page a reel goes to. It does not read the account's followers,
-  the text of comments, or messages, and what it reads is shown to its operator
-  only, inside flock.</p>
+  the connected account's and Pages' own posts are doing. For the second it reads the
+  Instagram account's newest posts — each one's link, caption and publish time, its like
+  and comment counts, and the views and reach Instagram reports for it — and the
+  Facebook Page's newest reels — each one's link, caption, length and publish time,
+  its like and comment counts, and the views, plays, average watch time and shares
+  Facebook reports for it — and keeps them on the operator's own equipment. Beyond
+  its reels, of a Facebook Page it reads only the Page's name, username and link, to
+  show which Page a reel goes to. It does not read the account's or the Page's
+  followers, the text of comments, or messages, and what it reads is shown to its
+  operator only, inside flock.</p>
 
   <h2>Use of TikTok's APIs</h2>
   <p>flock uses TikTok's Login Kit and Content Posting API to publish videos to
@@ -88,7 +91,8 @@
     <li><code>instagram_basic</code> — the Instagram account's identifier and username, so flock can show which account a reel will go to</li>
     <li><code>instagram_content_publish</code> — publishing a reel to that account, and reading how many of its daily posts are used</li>
     <li><code>instagram_manage_insights</code> — reading the views and reach of that account's own posts, so flock can show its operator how they are doing</li>
-    <li><code>pages_read_engagement</code> — reading the Page's name, username and link, and the access details that publishing goes through</li>
+    <li><code>read_insights</code> — reading the views, plays, average watch time and shares of the connected Page's own reels, so flock can show its operator how they are doing</li>
+    <li><code>pages_read_engagement</code> — reading the Page's name, username and link, its own reels with their like and comment counts, and the access details that publishing goes through</li>
     <li><code>pages_manage_posts</code> — publishing reels to the Facebook Page the operator chooses, at the time the operator chooses, with the cover image the operator chooses for one; and for a custom Instagram reel cover, placing the image on the Page as an <em>unpublished</em> photo, which never appears on the Page, so Instagram can fetch it, and deleting it as soon as Instagram has it</li>
   </ul>
   <p>From TikTok, flock asks for:</p>
@@ -118,7 +122,7 @@
     <li>the Facebook Page access token for each connected Instagram account and Facebook Page, in the same configuration file</li>
     <li>TikTok's access and refresh tokens, in the same configuration file</li>
     <li>each connected account's identifier, username and display name, each Facebook Page's name, username and link, and Instagram's count of posts used today</li>
-    <li>the connected channel's own videos and the connected Instagram accounts' own posts as those services report them — title or caption, link, release time — with their counters (views, likes, comments, and on Instagram reach) and a history of how those changed</li>
+    <li>the connected channel's own videos, the connected Instagram accounts' own posts and the connected Facebook Pages' own reels as those services report them — title or caption, link, release time — with their counters (views, likes, comments; on Instagram reach; on Facebook plays, average watch time and shares) and a history of how views, likes and comments changed</li>
     <li>the most recent creator information read from TikTok, as described above</li>
   </ul>
   <p>Data leaves the operator's machines only to publish a video, to Google, Meta
