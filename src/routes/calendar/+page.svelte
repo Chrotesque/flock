@@ -3,7 +3,7 @@
 	import PostCard from '$lib/components/PostCard.svelte';
 	import DaysSelect from '$lib/components/DaysSelect.svelte';
 	import UploadTip from '$lib/components/UploadTip.svelte';
-	import { listTargets, rescheduleTarget, subscribeTargets, toInstant } from '$lib/repo';
+	import { listTargets, rescheduleTargets, subscribeTargets, toInstant } from '$lib/repo';
 	import { MoveRefused, isMoving, landReason, lockReason, moveRefusal } from '$lib/reschedule';
 	import { isPlatformId, PLATFORM_IDS } from '$lib/platforms';
 	import { addDays, dayStart, isoDate, makeTime, minuteOf } from '$lib/format';
@@ -133,32 +133,52 @@
 		return landReason(entry, new Date(toInstant(date, time)));
 	}
 
-	/** A refusal comes back as the reason, for the grid to shake the post with. */
-	async function onDropItem(id: string, date: string, hour: number): Promise<string | void> {
-		const entry = entries.find((e) => e.id === id);
-		if (!entry) return;
+	/** One platform's post, dragged by its icon. */
+	function onDropItem(id: string, date: string, hour: number): Promise<string | void> {
+		return move([id], date, hour);
+	}
 
-		const time = makeTime(hour, minuteOf(entry.time));
-		if (date === entry.date && time === entry.time) return;
-		const at = toInstant(date, time);
-		const refused = lockReason(entry) || landReason(entry, new Date(at));
-		if (refused) return refused;
-		const previous = { date: entry.date, time: entry.time, scheduled_at: entry.scheduled_at };
+	/** A whole upload's posts in that hour, dragged by the box's grip. */
+	function onDropGroup(ids: string[], date: string, hour: number): Promise<string | void> {
+		return move(ids, date, hour);
+	}
 
-		// Optimistic: the card follows the cursor immediately, and rolls back if
+	/**
+	 * Moves posts to another day and hour, each keeping its own minutes. A
+	 * refusal comes back as the reason, for the grid to shake them with; none
+	 * moves unless all may.
+	 */
+	async function move(ids: string[], date: string, hour: number): Promise<string | void> {
+		const group = ids.map((id) => entries.find((e) => e.id === id)).filter((e): e is Entry => Boolean(e));
+		const moves = group
+			.map((entry) => ({ entry, time: makeTime(hour, minuteOf(entry.time)) }))
+			.filter(({ entry, time }) => date !== entry.date || time !== entry.time)
+			.map(({ entry, time }) => ({ entry, time, at: toInstant(date, time) }));
+		if (moves.length === 0) return;
+		for (const { entry, at } of moves) {
+			const refused = lockReason(entry) || landReason(entry, new Date(at));
+			if (refused) return refused;
+		}
+		const previous = moves.map(({ entry }) => ({ date: entry.date, time: entry.time, scheduled_at: entry.scheduled_at }));
+
+		// Optimistic: the cards follow the cursor immediately, and roll back if
 		// PocketBase rejects the write. A post a platform holds then shows as
 		// moving until the worker has told the platform.
-		entry.date = date;
-		entry.time = time;
-		entry.scheduled_at = at;
+		for (const { entry, time, at } of moves) {
+			entry.date = date;
+			entry.time = time;
+			entry.scheduled_at = at;
+		}
 		moveError = null;
 
 		try {
-			await rescheduleTarget(id, at);
+			await rescheduleTargets(moves.map(({ entry, at }) => ({ id: entry.id, scheduledAt: at })));
 		} catch (err) {
-			Object.assign(entry, previous);
+			moves.forEach(({ entry }, i) => Object.assign(entry, previous[i]));
 			if (err instanceof MoveRefused) return err.message;
 			moveError = err instanceof Error ? err.message : String(err);
+			// Anything written before the failure is back from PocketBase.
+			void load();
 			return 'Not saved.';
 		}
 	}
@@ -266,9 +286,10 @@
 		{:else}
 			{#if editing}
 				<p class="banner editing">
-					<strong>EDITING SCHEDULE</strong> — Drag a post to another day or hour, at least 15
-					minutes ahead; YouTube and Facebook are told by the worker within seconds. A post that
-					can no longer move shakes and says why.
+					<strong>EDITING SCHEDULE</strong> — Drag an icon to move that platform's post, or a
+					box's grip (left edge) to move the whole upload — at least 15 minutes ahead; YouTube and
+					Facebook are told by the worker within seconds. A post that can no longer move shakes and
+					says why.
 				</p>
 			{/if}
 
@@ -295,6 +316,7 @@
 				lockedWhy={(entry) => lockReason(entry)}
 				{landWhy}
 				ondropitem={editing ? onDropItem : undefined}
+				ondropgroup={editing ? onDropGroup : undefined}
 			/>
 
 			{#if entries.length === 0}

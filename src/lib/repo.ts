@@ -1471,20 +1471,34 @@ export async function deleteJob(id: string): Promise<void> {
  * the upload is confirmed.
  */
 export async function rescheduleTarget(id: string, scheduledAt: string): Promise<void> {
+	await rescheduleTargets([{ id, scheduledAt }]);
+}
+
+/**
+ * Several posts at once — a whole upload dragged by its grip. Every one is
+ * read afresh and checked before any is written, so a refusal leaves them
+ * all where they were.
+ */
+export async function rescheduleTargets(moves: { id: string; scheduledAt: string }[]): Promise<void> {
 	assertDeviceNamed();
 	// Read afresh and checked again (reschedule.ts): the page may be minutes
 	// old, and a post the worker took up since must not change under it.
-	const before = await pb.collection('upload_targets').getOne<UploadTarget>(id);
-	const refused = lockReason(before) || landReason(before, new Date(scheduledAt));
-	if (refused) throw new MoveRefused(refused);
-	await pb.collection('upload_targets').update(id, { scheduled_at: scheduledAt });
-	const told = before.status === 'scheduled' ? ` (the worker tells ${PLATFORMS[before.platform]?.label ?? before.platform})` : '';
-	logAction(
-		'calendar',
-		`Rescheduled ${before.platform}`,
-		`${new Date(before.scheduled_at).toLocaleString()} → ${new Date(scheduledAt).toLocaleString()}${told}`,
-		{ job: before.job }
-	);
+	const rows = await Promise.all(moves.map((move) => pb.collection('upload_targets').getOne<UploadTarget>(move.id)));
+	moves.forEach((move, i) => {
+		const refused = lockReason(rows[i]) || landReason(rows[i], new Date(move.scheduledAt));
+		if (refused) throw new MoveRefused(moves.length > 1 ? `${PLATFORMS[rows[i].platform]?.label ?? rows[i].platform}: ${refused}` : refused);
+	});
+	for (const [i, move] of moves.entries()) {
+		const before = rows[i];
+		await pb.collection('upload_targets').update(move.id, { scheduled_at: move.scheduledAt });
+		const told = before.status === 'scheduled' ? ` (the worker tells ${PLATFORMS[before.platform]?.label ?? before.platform})` : '';
+		logAction(
+			'calendar',
+			`Rescheduled ${before.platform}`,
+			`${new Date(before.scheduled_at).toLocaleString()} → ${new Date(move.scheduledAt).toLocaleString()}${told}`,
+			{ job: before.job }
+		);
+	}
 }
 
 /**

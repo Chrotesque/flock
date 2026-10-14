@@ -50,7 +50,8 @@
 		candrag,
 		lockedWhy,
 		landWhy,
-		ondropitem
+		ondropitem,
+		ondropgroup
 	}: {
 		items: T[];
 		/**
@@ -130,6 +131,12 @@
 			hour: number,
 			minute?: number
 		) => void | string | Promise<void | string>;
+		/**
+		 * With `groupOf`, a box of two or more gets a grip that drags the whole
+		 * group: this fires with every id in it and the cell it was dropped on.
+		 * Each keeps its own minutes. A reason back means it was refused.
+		 */
+		ondropgroup?: (ids: string[], date: string, hour: number) => void | string | Promise<void | string>;
 	} = $props();
 
 	const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -202,22 +209,31 @@
 	 */
 
 	const DRAG_THRESHOLD_PX = 4;
+	/** The item under the pointer; with a group, its first. */
 	let dragging = $state<string | null>(null);
+	/** Everything that moves with it: the item alone, or a whole box. */
+	let draggingIds = $state<string[]>([]);
 	let over = $state<string | null>(null);
 	let pointer = $state({ x: 0, y: 0 });
-	let pending: { id: string; x: number; y: number; pointerId: number; node: HTMLElement } | null =
-		null;
+	let pending: {
+		id: string;
+		ids: string[];
+		x: number;
+		y: number;
+		pointerId: number;
+		node: HTMLElement;
+	} | null = null;
 
 	function key(iso: string, hour: number) {
 		return `${iso}#${hour}`;
 	}
 
-	function beginDrag(event: PointerEvent, id: string) {
+	function beginDrag(event: PointerEvent, id: string, ids: string[] = [id]) {
 		closeTip();
-		if (!ondropitem || event.button !== 0) return;
+		if (!(ids.length > 1 ? ondropgroup : ondropitem) || event.button !== 0) return;
 		picker = null;
 		const node = event.currentTarget as HTMLElement;
-		pending = { id, x: event.clientX, y: event.clientY, pointerId: event.pointerId, node };
+		pending = { id, ids, x: event.clientX, y: event.clientY, pointerId: event.pointerId, node };
 		try {
 			node.setPointerCapture(event.pointerId);
 		} catch {
@@ -234,14 +250,15 @@
 				return;
 			}
 			dragging = pending.id;
+			draggingIds = pending.ids;
 		}
 		pointer = { x: event.clientX, y: event.clientY };
 		updateOver();
 		autoScroll(event.clientY);
 	}
 
-	function finish(event: PointerEvent): { id: string | null; target: string | null } {
-		const result = { id: dragging, target: over };
+	function finish(event: PointerEvent): { id: string | null; ids: string[]; target: string | null } {
+		const result = { id: dragging, ids: draggingIds, target: over };
 		try {
 			pending?.node.releasePointerCapture(event.pointerId);
 		} catch {
@@ -249,6 +266,7 @@
 		}
 		pending = null;
 		dragging = null;
+		draggingIds = [];
 		over = null;
 		stopAutoScroll();
 		return result;
@@ -256,24 +274,37 @@
 
 	function endDrag(event: PointerEvent) {
 		if (!pending || event.pointerId !== pending.pointerId) return;
-		const { id, target } = finish(event);
-		if (id && target) {
-			const [iso, hour] = target.split('#');
-			const item = items.find((entry) => entry.id === id);
-			const why = item && landWhy ? landWhy(item, iso, makeTime(Number(hour), minuteOf(item.time))) : '';
-			if (why) {
-				void refuse(id, why);
-				return;
-			}
-			void settle(id, ondropitem?.(id, iso, Number(hour)));
-			if (quarters) void openPicker(id, iso, Number(hour));
+		const { id, ids, target } = finish(event);
+		if (!id || !target) return;
+		const [iso, hour] = target.split('#');
+		const why = landRefusal(ids, iso, Number(hour));
+		if (why) {
+			void refuse(ids, why);
+			return;
 		}
+		if (ids.length > 1) {
+			void settle(ids, ondropgroup?.(ids, iso, Number(hour)));
+			return;
+		}
+		void settle(ids, ondropitem?.(id, iso, Number(hour)));
+		if (quarters) void openPicker(id, iso, Number(hour));
+	}
+
+	/** Why any of these may not land in that cell, each at its own minutes; '' when all may. */
+	function landRefusal(ids: string[], iso: string, hour: number): string {
+		if (!landWhy) return '';
+		for (const id of ids) {
+			const item = items.find((entry) => entry.id === id);
+			const why = item ? landWhy(item, iso, makeTime(hour, minuteOf(item.time))) : '';
+			if (why) return why;
+		}
+		return '';
 	}
 
 	/** A drop the caller turned down after all (a reason back) shakes like a refused one. */
-	async function settle(id: string, outcome: void | string | Promise<void | string>) {
+	async function settle(ids: string[], outcome: void | string | Promise<void | string>) {
 		const why = await outcome;
-		if (typeof why === 'string' && why) void refuse(id, why);
+		if (typeof why === 'string' && why) void refuse(ids, why);
 	}
 
 	/* ---- refusing ----
@@ -283,17 +314,19 @@
 	 * for a moment.
 	 */
 	const NOTICE_MS = 2600;
-	let wiggling = $state<string | null>(null);
+	let wiggling = $state<string[]>([]);
 	let notice = $state<{ text: string; x: number; y: number; below: boolean } | null>(null);
 	let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
-	async function refuse(id: string, text: string) {
+	async function refuse(ids: string[], text: string) {
 		closeTip();
 		picker = null;
-		wiggling = null;
+		wiggling = [];
 		await tick();
-		wiggling = id;
-		const rect = nodes.get(id)?.getBoundingClientRect();
+		wiggling = ids;
+		// A group's note sits at its box, an item's at the item.
+		const node = nodes.get(ids[0]);
+		const rect = (ids.length > 1 ? node?.closest('.bundle') : node)?.getBoundingClientRect();
 		notice = rect
 			? {
 					text,
@@ -305,7 +338,7 @@
 		if (noticeTimer) clearTimeout(noticeTimer);
 		noticeTimer = setTimeout(() => {
 			notice = null;
-			wiggling = null;
+			wiggling = [];
 			noticeTimer = null;
 		}, NOTICE_MS);
 	}
@@ -313,7 +346,27 @@
 	function pressLocked(event: PointerEvent, item: T) {
 		if (!ondropitem || event.button !== 0) return;
 		const why = lockedWhy?.(item);
-		if (why) void refuse(item.id, why);
+		if (why) void refuse([item.id], why);
+	}
+
+	/** A box's grip: the whole group goes, unless one of it can no longer move. */
+	function pressGrip(event: PointerEvent, group: T[]) {
+		if (!ondropgroup || event.button !== 0) return;
+		const stuck = group.find((item) => !candrag?.(item));
+		if (stuck) {
+			closeTip();
+			const why = lockedWhy?.(stuck) || 'Part of it can no longer move.';
+			void refuse(
+				group.map((item) => item.id),
+				`${why} Drag the others one by one.`
+			);
+			return;
+		}
+		beginDrag(
+			event,
+			group[0].id,
+			group.map((item) => item.id)
+		);
 	}
 
 	$effect(() => () => {
@@ -356,7 +409,7 @@
 		if (Number.isNaN(at.getTime())) return null;
 		const other = zone ? zoneTime(at, zone.zone) : null;
 		return {
-			refusal: lifted && landWhy ? landWhy(lifted, iso, time) : '',
+			refusal: landRefusal(draggingIds, iso, Number(hour)),
 			time,
 			day: `${dayLabel(at.getDay())} ${at.getDate()} ${MONTH_NAMES[at.getMonth()].slice(0, 3)}`,
 			when: relativeTo(iso, time),
@@ -463,7 +516,7 @@
 	function pickMinute(minute: number) {
 		const open = picker;
 		picker = null;
-		if (open) void settle(open.id, ondropitem?.(open.id, open.date, open.hour, minute));
+		if (open) void settle([open.id], ondropitem?.(open.id, open.date, open.hour, minute));
 	}
 
 	function onWindowKey(event: KeyboardEvent) {
@@ -804,10 +857,18 @@
 	</div>
 
 	{#if dragging}
-		{@const lifted = items.find((item) => item.id === dragging)}
-		{#if lifted}
-			<div class="ghost" style="left: {pointer.x}px; top: {pointer.y}px" bind:this={ghostEl} use:portal>
-				{@render card(lifted)}
+		{@const lifted = items.filter((item) => draggingIds.includes(item.id))}
+		{#if lifted.length > 0}
+			<div
+				class="ghost"
+				class:ghostbox={lifted.length > 1}
+				style="left: {pointer.x}px; top: {pointer.y}px"
+				bind:this={ghostEl}
+				use:portal
+			>
+				{#each lifted as item (item.id)}
+					{@render card(item)}
+				{/each}
 			</div>
 		{/if}
 		{#if landing}
@@ -931,14 +992,25 @@
 									onmouseenter={groupTip ? (e) => openTip(e, bundle.items) : undefined}
 									onmouseleave={groupTip ? closeTip : undefined}
 								>
+									{#if groupOf && ondropgroup && bundle.items.length > 1}
+										<!-- svelte-ignore a11y_no_static_element_interactions -->
+										<span
+											class="grip"
+											class:locked={bundle.items.some((item) => !candrag?.(item))}
+											onpointerdown={(e) => pressGrip(e, bundle.items)}
+											onpointermove={moveDrag}
+											onpointerup={endDrag}
+											onpointercancel={cancelDrag}
+										></span>
+									{/if}
 									{#each bundle.items as item (item.id)}
 										{@const why = ondropitem && lockedWhy ? lockedWhy(item) : ''}
 										{#if candrag?.(item)}
 											<!-- svelte-ignore a11y_no_static_element_interactions -->
 											<div
 												class="slot grab"
-												class:lifted={dragging === item.id}
-												class:wiggle={wiggling === item.id}
+												class:lifted={draggingIds.includes(item.id)}
+												class:wiggle={wiggling.includes(item.id)}
 												use:register={item.id}
 												onpointerdown={(e) => beginDrag(e, item.id)}
 												onpointermove={moveDrag}
@@ -952,7 +1024,7 @@
 											<div
 												class="slot"
 												class:locked={Boolean(why)}
-												class:wiggle={wiggling === item.id}
+												class:wiggle={wiggling.includes(item.id)}
 												use:register={item.id}
 												onpointerdown={why ? (e) => pressLocked(e, item) : undefined}
 											>
@@ -1296,6 +1368,43 @@
 
 	.bundle.boxed:hover {
 		border-color: var(--pink-soft);
+	}
+
+	/* Takes the whole upload along; its icons each move on their own. */
+	.grip {
+		flex: none;
+		width: 6px;
+		height: 12px;
+		margin-right: 1px;
+		border-radius: 2px;
+		background-image: radial-gradient(circle, var(--text-dim) 0.8px, transparent 1.1px);
+		background-size: 3px 4px;
+		background-position: center;
+		cursor: grab;
+		touch-action: none;
+		opacity: 0.75;
+	}
+
+	.grip:hover {
+		opacity: 1;
+		background-color: var(--surface-2);
+	}
+
+	.grip.locked {
+		cursor: not-allowed;
+		opacity: 0.35;
+	}
+
+	/* A whole upload held: its icons in a box like the one they left. */
+	.ghost.ghostbox {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		height: 18px;
+		padding: 0 3px;
+		border-radius: 6px;
+		border: 1px solid var(--pink-soft);
+		background: var(--surface-3);
 	}
 
 	/* The upload's detail: the frame here, the content the caller's. */
