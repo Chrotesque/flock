@@ -506,7 +506,7 @@
 
 				{#if !job}
 					<dt>Now</dt>
-					<dd class="warn">The stored upload has been deleted (in Analytics); what is shown is what was confirmed.</dd>
+					<dd class="warn">The stored upload has been deleted (on the Dashboard); what is shown is what was confirmed.</dd>
 				{/if}
 			</dl>
 		</section>

@@ -1,7 +1,7 @@
 import type { VideoStats } from './types';
 
 /**
- * The kinds the Analytics screen sorts a channel into, in display order.
+ * The kinds the Dashboard's filter sorts a channel into, in display order.
  *
  * The rules are deliberately by duration rather than by YouTube's own Shorts
  * test (a request to youtube.com/shorts/<id> answers 200 for a Short and

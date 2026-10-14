@@ -148,7 +148,7 @@ export interface UploadJob {
 	/**
 	 * A label for the job, not the published text. Since every platform is
 	 * composed separately there is no single authored pair any more; this is
-	 * taken from the first active platform so Analytics and the log have
+	 * taken from the first active platform so the Dashboard and the log have
 	 * something readable. What actually gets published lives on upload_targets.
 	 */
 	title: string;

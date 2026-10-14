@@ -1150,7 +1150,7 @@ export interface DashVideo extends StatsVideo {
 	thumb: string;
 }
 
-/** Every watched video, slim (the dashboard filters by channel itself, as Analytics does). */
+/** Every watched video, slim (the caller filters by channel itself). */
 export async function loadDashVideos(): Promise<DashVideo[]> {
 	const rows = await pb.collection('video_stats').getFullList<
 		Omit<DashVideo, 'channelId' | 'thumb'> & {

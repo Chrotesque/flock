@@ -5,7 +5,7 @@ import type { OptionValues, PlatformId, TargetStatus, UploadJob, UploadTarget } 
  * What an upload confirmed, kept on its Log row (`activity_log.data`).
  *
  * Written once, at the confirm, and never changed: the job and its targets
- * can be deleted (Analytics frees the NAS) or moved (the Calendar), but this
+ * can be deleted (the Dashboard frees the NAS) or moved (the Calendar), but this
  * stays what the person saw and sent. Beside what the worker did with it —
  * the targets' state and the lines it logged for the job — it answers
  * whether something that went wrong was chosen that way or went wrong in

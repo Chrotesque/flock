@@ -958,9 +958,9 @@
 	</details>
 
 	<p class="foot">
-		Views, likes and comments are YouTube's and Instagram's own counters.
+		Views, likes and comments are each platform's own counters.
 		{combined || multi ? 'Sums across platforms, ' : ''}"usual", the verdicts and the curves are flock's arithmetic over them,
-		not figures either platform reports. One channel at a time; nothing is added up across channels.
+		not figures any platform reports. One channel at a time; nothing is added up across channels.
 	</p>
 </div>
 
