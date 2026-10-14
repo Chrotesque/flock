@@ -19,7 +19,6 @@
 		dim = false,
 		compact = false,
 		bare = false,
-		hoverDelay = 1000,
 		brand = ''
 	}: {
 		platform: PlatformId;
@@ -35,11 +34,14 @@
 		dim?: boolean;
 		/** Icon only, with the detail behind a hover. */
 		compact?: boolean;
-		/** Compact without its own box, for a grid that boxes an upload's icons together. */
+		/**
+		 * Compact without its own box or hover detail, for a grid that boxes an
+		 * upload's icons together and shows the whole upload on hover itself.
+		 */
 		bare?: boolean;
-		/** How long a compact card is hovered before its detail opens, in ms. */
-		hoverDelay?: number;
 	} = $props();
+
+	const HOVER_DELAY = 1000;
 
 	// A caption-only platform has no title to be missing: its caption is the
 	// text, shown in the title's place.
@@ -66,9 +68,9 @@
 	}
 
 	function onEnter() {
-		if (!compact) return;
+		if (!compact || bare) return;
 		if (timer) clearTimeout(timer);
-		timer = setTimeout(open, hoverDelay);
+		timer = setTimeout(open, HOVER_DELAY);
 	}
 
 	function onLeave() {

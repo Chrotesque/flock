@@ -2,6 +2,7 @@
 	import WeekCalendar from '$lib/components/WeekCalendar.svelte';
 	import PostCard from '$lib/components/PostCard.svelte';
 	import DaysSelect from '$lib/components/DaysSelect.svelte';
+	import UploadTip from '$lib/components/UploadTip.svelte';
 	import { listTargets, rescheduleTarget, toInstant } from '$lib/repo';
 	import { isPlatformId, PLATFORM_IDS } from '$lib/platforms';
 	import { addDays, dayStart, isoDate, makeTime, minuteOf } from '$lib/format';
@@ -209,6 +210,11 @@
 	/** Named on the card only while cards of several brands share the grid. */
 	let labelBrands = $derived(brands.multiple && !shownBrand);
 
+	/** A living brand by its current name, a deleted one by the job's snapshot. */
+	function brandOf(entry: Entry): string {
+		return brands.byId(entry.brand)?.name ?? entry.brandName;
+	}
+
 	function statusLabel(entry: Entry): string {
 		if (entry.status === 'published') return 'released';
 		if (entry.status === 'scheduled') return 'on the platform';
@@ -247,9 +253,11 @@
 				rolling
 				lead={LEAD}
 				dense
+				rowSpace={2}
 				allHours
 				groupOf={(entry) => entry.job}
 				past={(entry) => entry.past}
+				groupTip={uploadTip}
 				card={cardFor}
 				center={actions}
 				toolbar={legend}
@@ -273,10 +281,19 @@
 		title={entry.title}
 		description={entry.description}
 		status={statusLabel(entry)}
-		brand={labelBrands ? (brands.byId(entry.brand)?.name ?? entry.brandName) : ''}
+		brand={labelBrands ? brandOf(entry) : ''}
 		compact
 		bare
-		hoverDelay={300}
+	/>
+{/snippet}
+
+<!-- Hovering an upload's box: every post of that upload, wherever it sits. -->
+{#snippet uploadTip(items: Entry[])}
+	{@const first = items[0]}
+	<UploadTip
+		date={first.date}
+		posts={entries.filter((entry) => entry.job === first.job).map((entry) => ({ ...entry, status: statusLabel(entry) }))}
+		brand={labelBrands ? brandOf(first) : ''}
 	/>
 {/snippet}
 

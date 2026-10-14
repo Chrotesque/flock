@@ -38,6 +38,7 @@
 		marker,
 		offscreen,
 		dense = false,
+		rowSpace = 0,
 		allHours = false,
 		quarters = false,
 		dayCount = 7,
@@ -45,6 +46,7 @@
 		lead = 0,
 		groupOf,
 		past,
+		groupTip,
 		candrag,
 		ondropitem
 	}: {
@@ -73,6 +75,8 @@
 		 * on the box, since the platforms' marks may not be greyed.
 		 */
 		past?: (item: T) => boolean;
+		/** With `groupOf`, what hovering a box opens: given the box's items. */
+		groupTip?: Snippet<[T[]]>;
 		card: Snippet<[T]>;
 		/** The bar's right end. */
 		toolbar?: Snippet;
@@ -91,6 +95,8 @@
 		 * would treble the row height for no gain.
 		 */
 		dense?: boolean;
+		/** With `dense`, room added above and below each hour's cards, in px. */
+		rowSpace?: number;
 		/** Every hour at once: the grid is as tall as its 24 rows, with no scrolling inside it. */
 		allHours?: boolean;
 		/**
@@ -112,9 +118,20 @@
 	} = $props();
 
 	const HOURS = Array.from({ length: 24 }, (_, i) => i);
-	let rowPx = $derived(dense ? 20 : 56);
+	let rowPx = $derived(dense ? 20 + 2 * rowSpace : 56);
 
-	const today = isoDate(new Date());
+	/* ---- now ----
+	 *
+	 * Ticks every half minute, so the current hour moves on (and today with
+	 * it at midnight) while the page stays open.
+	 */
+	let now = $state(new Date());
+	$effect(() => {
+		const timer = setInterval(() => (now = new Date()), 30_000);
+		return () => clearInterval(timer);
+	});
+	let today = $derived(isoDate(now));
+	let nowHour = $derived(now.getHours());
 	/** Where "Today" puts the first day. */
 	const firstDay = () => (rolling ? addDays(dayStart(new Date()), -lead) : startOfWeek(new Date()));
 
@@ -128,6 +145,7 @@
 	);
 
 	let inThisWeek = $derived(new Set(days.map((d) => d.iso)));
+	let todayShown = $derived(inThisWeek.has(today));
 	// "Today" is spent once the run starts where it would put it; "This week"
 	// once today is in the week.
 	let isCurrentWeek = $derived(rolling ? days[0]?.iso === isoDate(firstDay()) : inThisWeek.has(today));
@@ -180,6 +198,7 @@
 	}
 
 	function beginDrag(event: PointerEvent, id: string) {
+		closeTip();
 		if (!ondropitem || event.button !== 0) return;
 		picker = null;
 		const node = event.currentTarget as HTMLElement;
@@ -397,6 +416,47 @@
 		buttons[next].focus();
 	}
 
+	/* ---- an upload's detail on hover ----
+	 *
+	 * With `groupTip`, hovering a box (not one icon in it) opens the caller's
+	 * summary of the whole group. Portalled and fixed like the cards' own
+	 * tooltip — a hovered card's transform would otherwise pin it — and on
+	 * whichever side of the box has more room.
+	 */
+	const TIP_DELAY = 300;
+	const TIP_WIDTH = 340;
+	let tip = $state<{ items: T[]; x: number; y: number; below: boolean; room: number } | null>(null);
+	let tipTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function openTip(event: MouseEvent, items: T[]) {
+		if (dragging) return;
+		const node = event.currentTarget as HTMLElement;
+		closeTip();
+		tipTimer = setTimeout(() => {
+			tipTimer = null;
+			const rect = node.getBoundingClientRect();
+			const below = rect.top < window.innerHeight / 2;
+			const half = TIP_WIDTH / 2 + 8;
+			tip = {
+				items,
+				x: Math.min(window.innerWidth - half, Math.max(half, rect.left + rect.width / 2)),
+				y: below ? rect.bottom + 8 : rect.top - 8,
+				below,
+				room: below ? window.innerHeight - rect.bottom - 16 : rect.top - 16
+			};
+		}, TIP_DELAY);
+	}
+
+	function closeTip() {
+		if (tipTimer) clearTimeout(tipTimer);
+		tipTimer = null;
+		tip = null;
+	}
+
+	$effect(() => () => {
+		if (tipTimer) clearTimeout(tipTimer);
+	});
+
 	/* ---- a second clock in the time column ---- */
 
 	general.load();
@@ -505,6 +565,7 @@
 		// Cheap, and wanted at once rather than on the next frame: the cell
 		// under a held card changes as the grid moves beneath it.
 		updateOver();
+		closeTip();
 		if (ticking) return;
 		ticking = true;
 		requestAnimationFrame(() => {
@@ -702,6 +763,18 @@
 		{/if}
 	{/if}
 
+	{#if tip && groupTip}
+		<div
+			class="grouptip"
+			class:below={tip.below}
+			style="left: {tip.x}px; top: {tip.y}px; width: {TIP_WIDTH}px; max-height: {tip.room}px"
+			role="tooltip"
+			use:portal
+		>
+			{@render groupTip(tip.items)}
+		</div>
+	{/if}
+
 	{#if picker && pickedMinute !== null}
 		{@const open = picker}
 		<div
@@ -732,8 +805,14 @@
 		<div class="scroller scroll" bind:this={scroller} onscroll={onScroll}>
 			<div class="grid" style="--row: {rowPx}px">
 				{#each HOURS as hour (hour)}
-					<div class="timelabel" class:offhours={offHours(hour)} class:zoned={Boolean(zone)}>
-						<span>{String(hour).padStart(2, '0')}:00</span>
+					{@const thisHour = todayShown && hour === nowHour}
+					<div
+						class="timelabel"
+						class:offhours={offHours(hour)}
+						class:zoned={Boolean(zone)}
+						class:now={thisHour}
+					>
+						<span class="hourtext">{String(hour).padStart(2, '0')}:00</span>
 						{#if zoneTimes}
 							{@const t = zoneTimes[hour]}
 							<span class="zonetime" title={zone?.zone}>
@@ -750,11 +829,21 @@
 							class:dense
 							class:today={day.iso === today}
 							class:offhours={offHours(hour)}
+							class:nowrow={thisHour}
+							class:now={thisHour && day.iso === today}
 							class:over={over === key(day.iso, hour)}
 							data-cell={key(day.iso, hour)}
+							style:padding-block={dense && rowSpace ? `${rowSpace}px` : undefined}
 						>
 							{#each bundlesAt(day.iso, hour) as bundle (bundle.key)}
-								<div class="bundle" class:boxed={Boolean(groupOf)} class:done={bundle.done}>
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<div
+									class="bundle"
+									class:boxed={Boolean(groupOf)}
+									class:done={bundle.done}
+									onmouseenter={groupTip ? (e) => openTip(e, bundle.items) : undefined}
+									onmouseleave={groupTip ? closeTip : undefined}
+								>
 									{#each bundle.items as item (item.id)}
 										{#if candrag?.(item)}
 											<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1107,6 +1196,29 @@
 		background: transparent;
 	}
 
+	.bundle.boxed:hover {
+		border-color: var(--pink-soft);
+	}
+
+	/* The upload's detail: the frame here, the content the caller's. */
+	.grouptip {
+		position: fixed;
+		z-index: 40;
+		transform: translate(-50%, -100%);
+		padding: 10px 12px 11px;
+		border-radius: var(--radius);
+		background: var(--surface-3);
+		border: 1px solid var(--border-strong);
+		box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
+		overflow: hidden;
+		pointer-events: none;
+		animation: quartersin 0.12s ease;
+	}
+
+	.grouptip.below {
+		transform: translate(-50%, 0);
+	}
+
 	/* Rows only as tall as the hour label: the label sits in the middle of
 	   its row rather than at the top. */
 	.calendar.slim .timelabel {
@@ -1120,6 +1232,26 @@
 
 	.cell.today {
 		background: rgba(255, 77, 158, 0.035);
+	}
+
+	/* The hour we are in, strong enough to find at a glance: its label
+	   filled, its row tinted, today's cell outlined — above it is done,
+	   below it is still to come. */
+	.timelabel.now .hourtext {
+		padding: 2px 6px;
+		border-radius: 5px;
+		background: var(--pink);
+		color: #fff;
+		font-weight: 700;
+	}
+
+	.cell.nowrow {
+		background: rgba(255, 77, 158, 0.07);
+	}
+
+	.cell.now {
+		background: rgba(255, 77, 158, 0.16);
+		box-shadow: inset 0 0 0 2px var(--pink);
 	}
 
 	.cell.over {
@@ -1251,7 +1383,8 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.quarters {
+		.quarters,
+		.grouptip {
 			animation: none;
 		}
 	}
