@@ -97,6 +97,12 @@ const STATUS_TIMEOUT_MS = 30 * 60_000;
 const MAX_STATUS_MISSES = 12;
 const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
 
+// How many containers one reel may take when rupload turns the bytes down
+// in a way a new container gets past (`freshContainerHelps`), and the pause
+// before each new one.
+const UPLOAD_ATTEMPTS = 3;
+const UPLOAD_RETRY_MS = 30_000;
+
 // How often the account's details are re-read for the compose screen.
 const ACCOUNT_TTL_MS = 30 * 60_000;
 
@@ -376,10 +382,22 @@ async function uploadBytes(ig, container, video, log) {
 	}
 	if (res.status < 200 || res.status >= 300 || body.success === false || body.error) {
 		const err = body.error ?? {};
-		throw new Error(
-			`Instagram refused the upload (${res.status}): ${err.message || res.text.slice(0, 300)}`
+		throw Object.assign(
+			new Error(`Instagram refused the upload (${res.status}): ${err.message || res.text.slice(0, 300)}`),
+			{ freshContainer: freshContainerHelps(body) }
 		);
 	}
+}
+
+/**
+ * Whether rupload's refusal is one a new container gets past. Meta answers
+ * `ProcessingFailedError`, `retriable: false`, about 35 s after taking every
+ * byte. It did on 13 and 15 Oct 2026, and both times the same file went
+ * through on a fresh container minutes later. `retriable` is about the
+ * container, which is spent, not about the file.
+ */
+export function freshContainerHelps(answer) {
+	return answer?.debug_info?.type === 'ProcessingFailedError';
 }
 
 /**
@@ -517,7 +535,7 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 		);
 	}
 
-	const video = await pb.openVideo(job);
+	let video = await pb.openVideo(job);
 	const mime = videoMime(video, name);
 	if (!ACCEPTED_MIME.has(mime)) {
 		video.stream.destroy();
@@ -559,41 +577,43 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 		}
 	};
 
+	// A refusal a new container gets past (`freshContainerHelps`) is tried
+	// again on one, the file opened afresh. The spent container is left
+	// unpublished, and Instagram drops those within a day.
 	let container;
 	try {
-		container = await graph(ig, `/${ig.igUserId}/media`, { method: 'POST', params });
-	} catch (err) {
-		await dropCover();
-		video.stream.destroy();
-		throw explain(err);
-	}
-	if (!container.id) {
-		await dropCover();
-		video.stream.destroy();
-		throw new Error('Instagram returned no container id.');
-	}
+		for (let attempt = 1; ; attempt += 1) {
+			try {
+				container = await graph(ig, `/${ig.igUserId}/media`, { method: 'POST', params });
+				if (!container.id) throw new Error('Instagram returned no container id.');
 
-	// Recorded before a byte goes up, or nothing does — see orphans.mjs.
-	try {
-		await saveHandle({
-			kind: 'instagram-container',
-			containerId: container.id,
-			// So a worker taking over asks with this account's token.
-			account: ig.igUserId,
-			...(hosted ? { coverPhotoId: hosted.id } : {})
-		});
-	} catch (err) {
-		await dropCover();
-		video.stream.destroy();
-		throw err;
-	}
+				// Recorded before a byte goes up, or nothing does — see orphans.mjs.
+				await saveHandle({
+					kind: 'instagram-container',
+					containerId: container.id,
+					// So a worker taking over asks with this account's token.
+					account: ig.igUserId,
+					...(hosted ? { coverPhotoId: hosted.id } : {})
+				});
+			} catch (err) {
+				video.stream.destroy();
+				throw err;
+			}
 
-	log(
-		`uploading ${name} (${(video.size / MiB).toFixed(1)} MB) into container ${container.id} ` +
-			`for @${ig.username || ig.igUserId}`
-	);
-	try {
-		await uploadBytes(ig, container, video, log);
+			log(
+				`uploading ${name} (${(video.size / MiB).toFixed(1)} MB) into container ${container.id} ` +
+					`for @${ig.username || ig.igUserId}`
+			);
+			try {
+				await uploadBytes(ig, container, video, log);
+				break;
+			} catch (err) {
+				if (!err.freshContainer || attempt >= UPLOAD_ATTEMPTS) throw err;
+				log(`${err.message} — trying a new container in ${UPLOAD_RETRY_MS / 1000}s`);
+			}
+			await sleep(UPLOAD_RETRY_MS);
+			video = await pb.openVideo(job);
+		}
 		await waitForContainer(ig, container.id, log);
 	} catch (err) {
 		throw explain(err);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildContainer, checkGrant, INSTAGRAM_SCOPES } from './instagram.mjs';
+import { buildContainer, checkGrant, freshContainerHelps, INSTAGRAM_SCOPES } from './instagram.mjs';
 
 const granted = (names) => names.map((permission) => ({ permission, status: 'granted' }));
 const names = (list) => list.map((p) => p.name);
@@ -60,4 +60,17 @@ test('the cover time is milliseconds and stays inside the video', () => {
 test('collaborators lose their @ and stop at three', () => {
 	const params = buildContainer({}, { collaborators: ['@a', ' b ', '', 'c', 'd'] }, 0);
 	assert.deepEqual(params.collaborators, ['a', 'b', 'c']);
+});
+
+test("rupload's processing failure gets a new container despite saying it is not retriable", () => {
+	// Word for word what Meta answered on 13 and 15 Oct 2026.
+	const answer = { debug_info: { retriable: false, type: 'ProcessingFailedError', message: 'Request processing failed' } };
+	assert.equal(freshContainerHelps(answer), true);
+});
+
+test('any other refusal of the upload fails the reel as before', () => {
+	assert.equal(freshContainerHelps({ error: { message: 'Invalid OAuth access token', code: 190 } }), false);
+	assert.equal(freshContainerHelps({ debug_info: { type: 'SomethingElse' } }), false);
+	assert.equal(freshContainerHelps({}), false);
+	assert.equal(freshContainerHelps(undefined), false);
 });
