@@ -21,7 +21,8 @@ import { saveRows } from './igstats.mjs';
  */
 export const REEL_METRICS = ['fb_reels_total_plays', 'blue_reels_play_count', 'post_video_avg_time_watched', 'post_video_social_actions'];
 
-const FIELDS = 'id,created_time,description,permalink_url,length,likes.summary(true).limit(0),comments.summary(true).limit(0)';
+const FIELDS =
+	'id,created_time,status,description,permalink_url,length,likes.summary(true).limit(0),comments.summary(true).limit(0)';
 const INSIGHTS = `video_insights.metric(${REEL_METRICS.join(',')})`;
 
 /** After the insights were refused, they are asked for again only this much later. */
@@ -41,9 +42,20 @@ export function readInsights(edge) {
 
 const count = (v) => (v == null || v === '' ? null : Number(v));
 
+/**
+ * When a reel went out: Facebook's `publish_time`, else when it was made.
+ * Not `created_time` alone — a reel Facebook held for its slot was made when
+ * flock uploaded it, up to 28 days before (one on 14 Oct 2026 read 17.6 h
+ * early, so its views curve started 17.6 h late on the Dashboard).
+ */
+export function publishedAt(item) {
+	const at = Date.parse(item?.status?.publishing_phase?.publish_time ?? item?.created_time ?? '');
+	return Number.isFinite(at) ? new Date(at).toISOString() : '';
+}
+
 /** One listed reel as a `post_stats` row; `data` is the item without its counters, insights flattened. */
 export function toFacebookRow(item, page) {
-	const { video_insights, likes, comments, ...rest } = item;
+	const { video_insights, likes, comments, status: _status, ...rest } = item;
 	const insights = readInsights(video_insights);
 	return {
 		platform: 'facebook',
@@ -52,7 +64,7 @@ export function toFacebookRow(item, page) {
 		handle: page.pageName ?? '',
 		permalink: reelUrl(item.permalink_url ?? '', item.id),
 		caption: String(item.description ?? '').slice(0, 2200),
-		published_at: item.created_time ? new Date(item.created_time).toISOString() : '',
+		published_at: publishedAt(item),
 		product_type: 'REELS',
 		views: count(insights.fb_reels_total_plays),
 		reach: null,

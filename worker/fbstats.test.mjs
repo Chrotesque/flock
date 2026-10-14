@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { insightsRefused, keepViews, readInsights, toFacebookRow, viewsWhy } from './fbstats.mjs';
+import { insightsRefused, keepViews, publishedAt, readInsights, toFacebookRow, viewsWhy } from './fbstats.mjs';
 import { differs, saveRows } from './igstats.mjs';
 import { GraphError } from './instagram.mjs';
 
@@ -46,6 +46,21 @@ test('a reel becomes a row with views, likes and comments in columns', () => {
 	assert.equal(row.data.video_insights, undefined);
 	assert.equal(row.data.insights.blue_reels_play_count, 280);
 	assert.equal(row.data.length, 27.4);
+});
+
+test('a reel is dated by when it went out, not when it was uploaded', () => {
+	// Held by Facebook for its slot: uploaded at 01:24, out at 19:00.
+	const held = {
+		...item,
+		created_time: '2026-10-14T01:24:50+0000',
+		status: { video_status: 'ready', publishing_phase: { status: 'complete', publish_status: 'published', publish_time: '2026-10-14T19:00:00+0000' } }
+	};
+	const row = toFacebookRow(held, page);
+	assert.equal(row.published_at, '2026-10-14T19:00:00.000Z');
+	assert.equal(row.data.status, undefined);
+	// No status in the answer: when it was made.
+	assert.equal(publishedAt(item), '2026-10-14T13:27:11.000Z');
+	assert.equal(publishedAt({}), '');
 });
 
 test('a reel read without insights has no views, not zero', () => {
