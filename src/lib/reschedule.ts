@@ -34,7 +34,7 @@ const FACEBOOK_MAX_MS = 28 * 24 * 3_600_000;
 /** A refusal shown at the post, not an error. */
 export class MoveRefused extends Error {}
 
-export type MovablePost = Pick<UploadTarget, 'platform' | 'status' | 'scheduled_at'> & { handle?: unknown };
+export type MovablePost = Pick<UploadTarget, 'platform' | 'status' | 'scheduled_at'> & { handle?: unknown; request?: unknown };
 
 interface Held {
 	release?: string;
@@ -57,6 +57,8 @@ function instant(value: string | undefined): number {
 export function lockReason(post: MovablePost, now = Date.now()): string {
 	const name = PLATFORMS[post.platform]?.label ?? post.platform;
 	const slot = instant(post.scheduled_at);
+	// A release or delete asked for (postactions.ts) is under way.
+	if (post.request && typeof post.request === 'object') return 'The worker is on it already.';
 	switch (post.status) {
 		case 'cancelled':
 			return 'It was cancelled.';

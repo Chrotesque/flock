@@ -51,7 +51,8 @@
 		lockedWhy,
 		landWhy,
 		ondropitem,
-		ondropgroup
+		ondropgroup,
+		oncontext
 	}: {
 		items: T[];
 		/**
@@ -137,6 +138,11 @@
 		 * Each keeps its own minutes. A reason back means it was refused.
 		 */
 		ondropgroup?: (ids: string[], date: string, hour: number) => void | string | Promise<void | string>;
+		/**
+		 * A right-click on an item (just it) or on a box's frame or grip (all
+		 * of it), with where it happened; the browser's own menu is held back.
+		 */
+		oncontext?: (items: T[], x: number, y: number) => void;
 	} = $props();
 
 	const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -347,6 +353,14 @@
 		if (!ondropitem || event.button !== 0) return;
 		const why = lockedWhy?.(item);
 		if (why) void refuse([item.id], why);
+	}
+
+	function context(event: MouseEvent, group: T[]) {
+		if (!oncontext) return;
+		event.preventDefault();
+		event.stopPropagation();
+		closeTip();
+		oncontext(group, event.clientX, event.clientY);
 	}
 
 	/** A box's grip: the whole group goes, unless one of it can no longer move. */
@@ -991,6 +1005,7 @@
 									class:done={bundle.done}
 									onmouseenter={groupTip ? (e) => openTip(e, bundle.items) : undefined}
 									onmouseleave={groupTip ? closeTip : undefined}
+									oncontextmenu={oncontext && groupOf ? (e) => context(e, bundle.items) : undefined}
 								>
 									{#if groupOf && ondropgroup && bundle.items.length > 1}
 										<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1012,6 +1027,7 @@
 												class:lifted={draggingIds.includes(item.id)}
 												class:wiggle={wiggling.includes(item.id)}
 												use:register={item.id}
+												oncontextmenu={oncontext ? (e) => context(e, [item]) : undefined}
 												onpointerdown={(e) => beginDrag(e, item.id)}
 												onpointermove={moveDrag}
 												onpointerup={endDrag}
@@ -1026,6 +1042,7 @@
 												class:locked={Boolean(why)}
 												class:wiggle={wiggling.includes(item.id)}
 												use:register={item.id}
+												oncontextmenu={oncontext ? (e) => context(e, [item]) : undefined}
 												onpointerdown={why ? (e) => pressLocked(e, item) : undefined}
 											>
 												{@render card(item)}

@@ -663,6 +663,39 @@ export async function rescheduleYouTube(config, row, at) {
 }
 
 /**
+ * What goes back as `status` to put a held video out now: as `statusPatch`,
+ * but public and with no `publishAt` — the part is written whole, so leaving
+ * the time out is what clears it.
+ */
+export function publicPatch(status) {
+	const { publishAt: _at, ...rest } = statusPatch(status, 0);
+	return { ...rest, privacyStatus: 'public' };
+}
+
+/**
+ * Makes a video YouTube holds for its time public now, for "Release
+ * immediately" in the Calendar (requests.mjs) — 51 units. One YouTube put
+ * out already counts as done.
+ */
+export async function releaseYouTubeNow(config, row) {
+	const { channelId, videoId } = postVideo(row);
+	const { token } = await editingToken(config, channelId, 'releasing');
+	const status = await videoStatus(token, videoId);
+	if (!heldStatus(status)) {
+		if (status.privacyStatus === 'public') return { alreadyOut: true };
+		throw new Error(`YouTube no longer holds it for a time (it is ${status.privacyStatus}); nothing changed`);
+	}
+	const body = await api(token, '/videos?part=status', {
+		method: 'PUT',
+		body: JSON.stringify({ id: videoId, status: publicPatch(status) })
+	});
+	if (body?.status?.privacyStatus !== 'public' || body?.status?.publishAt) {
+		throw new Error(`YouTube answered ${body?.status?.privacyStatus ?? 'nothing'}${body?.status?.publishAt ? ` at ${body.status.publishAt}` : ''}`);
+	}
+	return { alreadyOut: false };
+}
+
+/**
  * The time YouTube holds a post's video for, or that it is out — for an
  * upload from before flock kept that (reschedule.mjs `learn`). 1 unit; any
  * grant that reads the channel will do.

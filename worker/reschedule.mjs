@@ -38,7 +38,7 @@ export function seconds(value) {
 const NAMES = { youtube: 'YouTube', facebook: 'Facebook' };
 
 export function rescheduleStep(row, { now = Date.now(), held = false } = {}) {
-	if (!SYNC_PLATFORMS.includes(row?.platform) || row.status !== 'scheduled' || held || row.move) {
+	if (!SYNC_PLATFORMS.includes(row?.platform) || row.status !== 'scheduled' || held || row.move || row.request) {
 		return { action: 'none' };
 	}
 	const wanted = seconds(row.scheduled_at);

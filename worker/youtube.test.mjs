@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isShortVideo, isoSeconds, processingState, scopeCanEdit, statusPatch, studioUrl } from './youtube.mjs';
+import { isShortVideo, isoSeconds, processingState, publicPatch, scopeCanEdit, statusPatch, studioUrl } from './youtube.mjs';
 
 const UPLOAD = 'https://www.googleapis.com/auth/youtube.upload';
 const READONLY = 'https://www.googleapis.com/auth/youtube.readonly';
@@ -86,4 +86,9 @@ test('statusPatch sends the status back whole, with only the time changed', () =
 		privacyStatus: 'private',
 		publishAt: '2026-11-02T18:30:00.000Z'
 	});
+});
+
+test('publicPatch puts a held video out now: public, its time left out', () => {
+	const read = { privacyStatus: 'private', publishAt: '2026-11-01T17:00:00Z', license: 'youtube', embeddable: true, madeForKids: false };
+	assert.deepEqual(publicPatch(read), { license: 'youtube', embeddable: true, privacyStatus: 'public' });
 });

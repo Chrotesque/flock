@@ -210,6 +210,8 @@ export interface UploadTarget {
 	 * (`release`, reschedule.ts). Written only by the worker.
 	 */
 	handle?: unknown;
+	/** A release now or a delete from the Calendar, waiting for the worker (postactions.ts). */
+	request?: unknown;
 	/** The job's brand, filled in by `listTargets` — not a column of its own. */
 	brand?: string;
 	brand_name?: string;

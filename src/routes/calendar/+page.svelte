@@ -3,9 +3,11 @@
 	import PostCard from '$lib/components/PostCard.svelte';
 	import DaysSelect from '$lib/components/DaysSelect.svelte';
 	import UploadTip from '$lib/components/UploadTip.svelte';
-	import { listTargets, rescheduleTargets, subscribeTargets, toInstant } from '$lib/repo';
+	import PostActionsMenu from '$lib/components/PostActionsMenu.svelte';
+	import { actOnPosts, listTargets, rescheduleTargets, subscribeTargets, toInstant } from '$lib/repo';
+	import { readRequest, type PostAction } from '$lib/postactions';
 	import { MoveRefused, isMoving, landReason, lockReason, moveRefusal } from '$lib/reschedule';
-	import { isPlatformId, PLATFORM_IDS } from '$lib/platforms';
+	import { isPlatformId, PLATFORMS, PLATFORM_IDS } from '$lib/platforms';
 	import { addDays, dayStart, isoDate, makeTime, minuteOf } from '$lib/format';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
@@ -61,6 +63,9 @@
 		scheduled_at: string;
 		/** The worker's record, with the time a platform was handed (reschedule.ts). */
 		handle: unknown;
+		/** A release now or a delete the worker has yet to carry out (postactions.ts). */
+		request: unknown;
+		remote_url: string;
 		/**
 		 * Its slot is behind us (or it was called off): its upload's box recedes
 		 * as history. An upcoming post YouTube already holds is not past.
@@ -108,6 +113,7 @@
 	function onEditClick() {
 		if (editing) {
 			editing = false;
+			menu = null;
 			disarm();
 			return;
 		}
@@ -122,6 +128,22 @@
 			armed = false;
 			armTimer = null;
 		}, 2000);
+	}
+
+	/* ---- the right-click menu: release at once, or delete ---- */
+
+	let menu = $state<{ ids: string[]; x: number; y: number } | null>(null);
+	const menuPosts = $derived(menu ? entries.filter((entry) => menu!.ids.includes(entry.id)) : []);
+
+	function openMenu(items: Entry[], x: number, y: number) {
+		menu = { ids: items.map((item) => item.id), x, y };
+	}
+
+	/** Throws for the menu to show; it closes itself once this succeeds. */
+	async function act(action: PostAction) {
+		if (!menu) return;
+		await actOnPosts(action, menu.ids);
+		void load();
 	}
 
 	/** What may still move goes; the rest shakes when pressed and says why. */
@@ -201,6 +223,8 @@
 			status: target.status,
 			scheduled_at: target.scheduled_at,
 			handle: target.handle,
+			request: target.request ?? null,
+			remote_url: target.remote_url ?? '',
 			past: passed || target.status === 'cancelled',
 			brand: target.brand ?? '',
 			brandName: target.brand_name ?? ''
@@ -258,9 +282,13 @@
 
 	/** What is under way with a post, or went wrong, for its icon's dot and the hover card. */
 	function moveNote(entry: Entry): { note: string; noteKind: '' | 'busy' | 'warn' } {
+		const label = PLATFORMS[entry.platform].label;
+		const request = readRequest(entry.request);
+		if (request?.kind === 'release') return { note: `Releasing: the worker is putting it out on ${label} now.`, noteKind: 'busy' };
+		if (request?.kind === 'delete') return { note: `Deleting: the worker is deleting it from ${label}.`, noteKind: 'busy' };
 		if (isMoving(entry)) return { note: 'Moving: the worker is telling the platform the new time.', noteKind: 'busy' };
 		const refused = moveRefusal(entry);
-		if (refused) return { note: `Not moved — ${refused}`, noteKind: 'warn' };
+		if (refused) return { note: refused, noteKind: 'warn' };
 		return { note: '', noteKind: '' };
 	}
 
@@ -288,8 +316,8 @@
 				<p class="banner editing">
 					<strong>EDITING SCHEDULE</strong> — Drag an icon to move that platform's post, or a
 					box's grip (left edge) to move the whole upload — at least 15 minutes ahead; YouTube and
-					Facebook are told by the worker within seconds. A post that can no longer move shakes and
-					says why.
+					Facebook are told by the worker within seconds. Right-click a post or a box to release it at
+					once or delete it. A post that can no longer move shakes and says why.
 				</p>
 			{/if}
 
@@ -317,6 +345,7 @@
 				{landWhy}
 				ondropitem={editing ? onDropItem : undefined}
 				ondropgroup={editing ? onDropGroup : undefined}
+				oncontext={editing ? openMenu : undefined}
 			/>
 
 			{#if entries.length === 0}
@@ -327,6 +356,17 @@
 		{/if}
 </DeviceGate>
 </div>
+
+{#if menu && menuPosts.length > 0}
+	<PostActionsMenu
+		posts={menuPosts}
+		x={menu.x}
+		y={menu.y}
+		onrelease={() => act('release')}
+		ondelete={() => act('delete')}
+		close={() => (menu = null)}
+	/>
+{/if}
 
 {#snippet cardFor(entry: Entry)}
 	<PostCard

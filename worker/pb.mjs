@@ -57,9 +57,21 @@ export function makeClient(baseUrl) {
 				`/api/collections/upload_targets/records?perPage=50&sort=scheduled_at&filter=${filter}`
 			);
 			// A row with a move waiting is the move pass's until it has its new
-			// account (moves.mjs). Left out here rather than in the filter, so a
-			// PocketBase without the field still publishes.
-			return (res.items ?? []).filter((row) => !row.move);
+			// account (moves.mjs), one with a request the request pass's
+			// (requests.mjs). Left out here rather than in the filter, so a
+			// PocketBase without the fields still publishes.
+			return (res.items ?? []).filter((row) => !row.move && !row.request);
+		},
+
+		/** Posts with a release or delete from the Calendar waiting (requests.mjs). */
+		async requestedTargets() {
+			const filter = encodeURIComponent('request != null');
+			const res = await request(`/api/collections/upload_targets/records?perPage=50&sort=updated&filter=${filter}`);
+			return res.items ?? [];
+		},
+
+		async deleteTarget(id) {
+			return request(`/api/collections/upload_targets/records/${id}`, { method: 'DELETE' });
 		},
 
 		/** Posts with a move to another brand's account waiting (moves.mjs). */
@@ -156,9 +168,9 @@ export function makeClient(baseUrl) {
 		async hasPending(platform) {
 			const filter = encodeURIComponent(`platform="${platform}" && status="pending"`);
 			const res = await request(
-				`/api/collections/upload_targets/records?perPage=20&skipTotal=1&fields=id,move&filter=${filter}`
+				`/api/collections/upload_targets/records?perPage=20&skipTotal=1&fields=id,move,request&filter=${filter}`
 			);
-			return (res.items ?? []).some((row) => !row.move);
+			return (res.items ?? []).some((row) => !row.move && !row.request);
 		},
 
 		/** Projects sent whose file has not been renamed yet (see archivePass). */

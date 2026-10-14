@@ -43,6 +43,7 @@ import { makeClient } from './pb.mjs';
 import {
 	deleteYouTubeVideo,
 	grantCanEdit,
+	releaseYouTubeNow,
 	publishToYouTube,
 	probeYouTube,
 	refreshYouTubeChannels,
@@ -89,6 +90,7 @@ import { WORKER_VERSION } from './version.mjs';
 import { decide, mayBeAlive } from './orphans.mjs';
 import { moveStep, requeuePatch } from './moves.mjs';
 import { SYNC_PLATFORMS, movedHandle, refusedHandle, rescheduleStep } from './reschedule.mjs';
+import { requestStep } from './requests.mjs';
 import { inJob } from './jobscope.mjs';
 
 /**
@@ -113,6 +115,7 @@ const ADAPTERS = {
 		publish: publishToYouTube,
 		probe: probeYouTube,
 		remove: deleteYouTubeVideo,
+		releaseNow: releaseYouTubeNow,
 		reschedule: rescheduleYouTube,
 		release: youtubeRelease,
 		timing: 'now',
@@ -241,7 +244,7 @@ async function handleTarget(pb, config, platform, target) {
 	// move to another brand (moves.mjs) or a drag in the Calendar may have
 	// landed since. A row with a move waiting is the move pass's.
 	const fresh = await pb.getTarget(target.id);
-	if (fresh.status !== 'pending' || fresh.move) return;
+	if (fresh.status !== 'pending' || fresh.move || fresh.request) return;
 	target = fresh;
 
 	// Claim before starting, so a second pass cannot pick up the same row while
@@ -1369,7 +1372,7 @@ async function rescheduleOne(pb, config, adapter, row, step) {
 
 	const from = row.handle.release;
 	if (step.action === 'refuse') {
-		await pb.updateTarget(row.id, { scheduled_at: from, handle: refusedHandle(row.handle, step.reason) });
+		await pb.updateTarget(row.id, { scheduled_at: from, handle: refusedHandle(row.handle, `Not moved: ${step.reason}.`) });
 		log(`not moving ${label} on ${name}: ${step.reason} — it stays at ${shortWhen(from)}`);
 		pb.log(`Not moved on ${name}`, `${title}: ${step.reason}. It stays at ${shortWhen(from)}.`);
 		return;
@@ -1388,10 +1391,133 @@ async function rescheduleOne(pb, config, adapter, row, step) {
 		const why = (err instanceof Error ? err.message : String(err)).split('\n')[0];
 		await pb.updateTarget(row.id, {
 			scheduled_at: from,
-			handle: refusedHandle(row.handle, `${name} did not take the new time: ${why}`.slice(0, 500))
+			handle: refusedHandle(row.handle, `Not moved: ${name} did not take the new time — ${why}`.slice(0, 500))
 		});
 		log(`could not move ${label} on ${name}: ${why} — it stays at ${shortWhen(from)}`);
 		pb.log(`Not moved on ${name}`, `${title}: ${why}. It stays at ${shortWhen(from)}.`);
+	} finally {
+		inHand.delete(row.id);
+	}
+}
+
+/* ---- releases and deletes asked for in the Calendar (requests.mjs) ---- */
+
+let requestsBusy = false;
+let requestsOff = false;
+const requestSaid = new Set();
+
+async function requestPass(pb, config) {
+	if (requestsBusy || requestsOff || dry || !hb.canPublish()) return;
+	requestsBusy = true;
+	try {
+		let rows;
+		try {
+			rows = await pb.requestedTargets();
+		} catch (err) {
+			// A PocketBase without the field (setup-pb not run since): nothing
+			// can have asked, so this stops asking.
+			if (!/ -> 400\b/.test(err.message)) throw err;
+			requestsOff = true;
+			log('releases and deletes from the Calendar are off: upload_targets has no `request` field — run pnpm setup-pb');
+			return;
+		}
+		for (const row of rows) {
+			if (!hb.canPublish()) break;
+			await inJob(row.job, () =>
+				requestOne(pb, config, row).catch((err) => log(`could not carry out the request on ${row.platform} ${row.id}: ${err.message.split('\n')[0]}`))
+			);
+		}
+	} finally {
+		requestsBusy = false;
+	}
+}
+
+async function requestOne(pb, config, row) {
+	const step = requestStep(row, { held: inHand.has(row.id) });
+	if (step.action === 'none') return;
+	const name = NAMES[row.platform] ?? row.platform;
+	const title = row.title || row.description?.slice(0, 60) || row.id;
+	const label = `${row.platform} "${title}"`;
+	const deleting = step.request.kind === 'delete';
+	const when = row.scheduled_at ? shortWhen(String(row.scheduled_at).replace(' ', 'T')) : 'its slot';
+	const nowIso = () => new Date().toISOString();
+
+	if (step.action === 'wait') {
+		if (!requestSaid.has(row.id)) log(`${deleting ? 'deleting' : 'releasing'} ${label} once it is no longer being published`);
+		requestSaid.add(row.id);
+		return;
+	}
+	requestSaid.delete(row.id);
+
+	if (step.action === 'drop') {
+		await pb.updateTarget(row.id, {
+			request: null,
+			handle: refusedHandle(row.handle, `Not ${deleting ? 'deleted' : 'released'}: ${step.reason}.`)
+		});
+		log(`not ${deleting ? 'deleting' : 'releasing'} ${label}: ${step.reason}`);
+		pb.log(`Not ${deleting ? 'deleted' : 'released'}: ${name}`, `${title}: ${step.reason}.`);
+		return;
+	}
+
+	if (step.action === 'forget') {
+		await pb.deleteTarget(row.id);
+		log(`${label} deleted (it was not on ${name} yet)`);
+		pb.log(`Deleted ${name}`, `${title}: it was not on ${name} yet, so only flock's post went.`);
+		return;
+	}
+
+	if (step.action === 'now') {
+		await pb.updateTarget(row.id, { scheduled_at: nowIso(), request: null });
+		log(`${label} goes out now instead of at ${when}`);
+		pb.log(`Released ${name} now`, `${title}: out now instead of at ${when}.`);
+		return;
+	}
+
+	const adapter = ADAPTERS[row.platform];
+	const needs = step.action === 'publish' ? adapter?.releaseNow : adapter?.remove;
+	if (!needs || !adapter.ready(config)) {
+		if (!requestSaid.has(row.id)) log(`${deleting ? 'deleting' : 'releasing'} ${label}: ${name} is not set up here — waiting`);
+		requestSaid.add(row.id);
+		return;
+	}
+
+	inHand.add(row.id);
+	try {
+		if (step.action === 'publish') {
+			const done = await hb.track(`Releasing on ${name}: "${title}"`, () => adapter.releaseNow(config, row), { publishing: true });
+			await pb.updateTarget(row.id, { status: 'published', published_at: nowIso(), request: null });
+			log(`${label} is public on ${name} now${done.alreadyOut ? ' (YouTube had put it out already)' : ''} instead of at ${when}`);
+			pb.log(`Released ${name} now`, `${title}: public now instead of at ${when}. ${row.remote_url}`);
+			return;
+		}
+
+		const removed = await hb.track(`Deleting from ${name}: "${title}"`, () => adapter.remove(config, row.account ?? '', step.remoteId), {
+			publishing: true
+		});
+		const what = removed?.alreadyGone ? 'was already gone from' : 'deleted from';
+		if (row.platform === 'youtube') await pb.forgetVideoStats(step.remoteId).catch(() => {});
+		if (row.platform === 'facebook') await pb.forgetPostStats('facebook', step.remoteId).catch(() => {});
+
+		if (step.action === 'resend') {
+			// Facebook takes no time nearer than ten minutes: off the Page, then
+			// queued again for now — never both up at once.
+			await pb.updateTarget(row.id, { ...requeuePatch(row.account ?? ''), scheduled_at: nowIso(), request: null });
+			log(`${label} ${what} ${name} and queued again to go out now instead of at ${when}`);
+			pb.log(`Released ${name} now`, `${title}: the reel held for ${when} was ${what === 'deleted from' ? 'deleted' : 'already gone'} and goes out again now.`);
+			return;
+		}
+
+		await pb.deleteTarget(row.id);
+		log(`${label} ${what} ${name} (${row.remote_url}) and from flock`);
+		pb.log(`Deleted ${name}`, `${title}: ${what} ${name} (${row.remote_url}); it was due ${when}.`);
+	} catch (err) {
+		const why = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+		await pb.updateTarget(row.id, {
+			request: null,
+			handle: refusedHandle(row.handle, `Not ${deleting ? 'deleted' : 'released'}: ${name} refused — ${why}`.slice(0, 500))
+		});
+		log(`could not ${deleting ? 'delete' : 'release'} ${label}: ${why}`);
+		pb.log(`Not ${deleting ? 'deleted' : 'released'}: ${name}`, `${title}: ${why}. It stays as it was.`);
 	} finally {
 		inHand.delete(row.id);
 	}
@@ -1705,6 +1831,7 @@ async function main() {
 		if (!dry) await accountPass(pb, config);
 		await movePass(pb, config);
 		await reschedulePass(pb, config);
+		await requestPass(pb, config);
 		await pass(pb, config);
 		await slotPass(pb, config, { wait: true });
 		await archivePass(pb);
@@ -1849,6 +1976,7 @@ async function main() {
 		void orphanPass(pb, config).catch((err) => log(`orphan check failed: ${err.message}`));
 		void movePass(pb, config).catch((err) => log(`move pass failed: ${err.message.split('\n')[0]}`));
 		void reschedulePass(pb, config).catch((err) => log(`reschedule pass failed: ${err.message.split('\n')[0]}`));
+		void requestPass(pb, config).catch((err) => log(`request pass failed: ${err.message.split('\n')[0]}`));
 		void archivePass(pb).catch((err) => log(`project rename failed: ${err.message.split('\n')[0]}`));
 		void nudgeMain(pb, config).catch(() => {});
 	};

@@ -1,6 +1,7 @@
 import { pb, PB_URL } from './pb';
 import { PLATFORMS, PLATFORM_IDS, isPlatformId } from './platforms';
 import { MoveRefused, landReason, lockReason } from './reschedule';
+import { actionPlan, groupRefusal, type PostAction } from './postactions';
 import { DEFAULT_SCHEDULING } from './types';
 import { logAction, assertDeviceNamed, deviceName } from './log';
 import { MOVING, canMove, planMove, readMove, type MoveRequest, type MoveStep } from './brandmove';
@@ -1497,6 +1498,43 @@ export async function rescheduleTargets(moves: { id: string; scheduledAt: string
 			`Rescheduled ${before.platform}`,
 			`${new Date(before.scheduled_at).toLocaleString()} → ${new Date(move.scheduledAt).toLocaleString()}${told}`,
 			{ job: before.job }
+		);
+	}
+}
+
+/**
+ * Releases posts at once, or deletes them (postactions.ts) — one post or a
+ * whole upload's box, from the Calendar. Every one is read afresh and checked
+ * before any is touched, so a refusal leaves them all as they were. A post a
+ * platform holds is the worker's to do, asked through `request`; the rest
+ * change here. Logged per post with its text, since a deleted one is gone.
+ */
+export async function actOnPosts(action: PostAction, ids: string[]): Promise<void> {
+	assertDeviceNamed();
+	const rows = await Promise.all(ids.map((id) => pb.collection('upload_targets').getOne<UploadTarget>(id)));
+	const refused = groupRefusal(action, rows);
+	if (refused) throw new MoveRefused(refused);
+	const now = new Date().toISOString();
+	for (const row of rows) {
+		const plan = actionPlan(action, row);
+		const byWorker = 'by' in plan && plan.by === 'worker';
+		const name = PLATFORMS[row.platform]?.label ?? row.platform;
+		if (byWorker) {
+			await pb.collection('upload_targets').update(row.id, { request: { kind: action, requestedAt: now, by: deviceName() } });
+		} else if (action === 'delete') {
+			await pb.collection('upload_targets').delete(row.id);
+		} else if (row.status === 'failed') {
+			await pb.collection('upload_targets').update(row.id, { status: 'pending', scheduled_at: now, error: '', handle: null });
+		} else {
+			await pb.collection('upload_targets').update(row.id, { scheduled_at: now });
+		}
+		const text = (row.title || row.description || '(no text)').replace(/\s+/g, ' ').slice(0, 120);
+		const worker = byWorker ? ` (the worker ${action === 'release' ? 'puts it out' : 'deletes it'} on ${name})` : '';
+		logAction(
+			'calendar',
+			action === 'release' ? `Released ${row.platform} now` : `Deleted ${row.platform}`,
+			`${text} — was due ${new Date(row.scheduled_at).toLocaleString()}${worker}`,
+			{ job: row.job }
 		);
 	}
 }
