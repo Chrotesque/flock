@@ -364,8 +364,7 @@
 		flex-direction: column;
 		gap: 22px;
 		overflow-y: auto;
-		/* As wide a gap on the right as on the left, where it clears the
-		   dashboard's corner button. */
+		/* As wide a gap on the right as on the left. */
 		padding: 30px 76px 60px;
 		background: var(--bg);
 		outline: none;

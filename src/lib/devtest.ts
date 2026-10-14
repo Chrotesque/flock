@@ -5,8 +5,9 @@ import type { Component } from 'svelte';
  * flock. Every `.ts` file in `src/local-devtest/` (gitignored, so none ship
  * with the repository) whose default export is a `DevTestModule` is built in:
  * started with the app, given a section under Settings → DevTest, named in
- * the sidebar while it is changing anything, and given a sidebar link for
- * each page it brings (shown at `/devtest?page=<id>`). With the folder empty
+ * the sidebar while it is changing anything, given a sidebar link for each
+ * page it brings (shown at `/devtest?page=<id>`) and a button on the
+ * dashboard for each scope it brings. With the folder empty
  * or absent there is no DevTest tab, no sidebar line or link and nothing
  * else — this file then does nothing at all.
  */
@@ -27,6 +28,36 @@ export interface DevTestPage {
 	Page: Component;
 }
 
+/** One set of accounts the dashboard shows: a brand's, as a local scope names it. */
+export interface DashboardGroup {
+	/** Shown on each of its videos while several groups are in view. */
+	label: string;
+	/** The YouTube channel id its videos are on; '' for none. */
+	channel: string;
+	/** The Instagram account id its reels are on; '' for none. */
+	instagram: string;
+	/** The brand id its posts belong to. */
+	brand: string;
+}
+
+/**
+ * A button a local module puts beside the dashboard's brand buttons. While
+ * chosen, the dashboard shows its groups instead of the brand in view —
+ * each group's videos and reels paired only among themselves. The tracked
+ * dashboard never shows more than one brand at a time by itself.
+ */
+export interface DashboardScope {
+	label: string;
+	/** Its tooltip. */
+	title?: string;
+	/** Whether it is chosen; read reactively. */
+	active: () => boolean;
+	select: () => void;
+	/** Called when a brand is chosen instead. */
+	release: () => void;
+	groups: () => DashboardGroup[];
+}
+
 export interface DevTestModule {
 	/** Its heading under Settings → DevTest. */
 	title: string;
@@ -38,6 +69,8 @@ export interface DevTestModule {
 	active?: () => string[];
 	/** Pages of its own, each a sidebar link under the main ones. */
 	pages?: DevTestPage[];
+	/** Buttons beside the dashboard's brands (see DashboardScope). */
+	dashboardScopes?: DashboardScope[];
 }
 
 // Whole modules rather than `import: 'default'`, so a helper file with no
@@ -74,3 +107,6 @@ export function startDevtest(): () => void {
 export function devtestActive(): string[] {
 	return devtestModules.flatMap((mod) => mod.active?.() ?? []);
 }
+
+/** Every module's dashboard scopes, in module order. */
+export const devtestDashboardScopes: DashboardScope[] = devtestModules.flatMap((mod) => mod.dashboardScopes ?? []);

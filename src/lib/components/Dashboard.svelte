@@ -8,6 +8,7 @@
 	import { brands } from '$lib/stores/brands.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
 	import { dashData } from '$lib/stores/dashdata.svelte';
+	import { devtestDashboardScopes } from '$lib/devtest';
 	import { accountLabel, postAllowance } from '$lib/accounts';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import {
@@ -194,9 +195,27 @@
 	const myTargets = $derived(
 		brands.multiple ? dashData.targets.filter((t) => t.brand === brands.currentId) : dashData.targets
 	);
-	const noChannel = $derived(accounts.loaded && !channel && !loneYT);
+	// A local module's scope (devtest.ts) replaces the brand in view while chosen.
+	const scope = $derived(devtestDashboardScopes.find((s) => s.active()));
+	const sets = $derived(
+		scope
+			? scope.groups().map((g) => ({
+					label: g.label,
+					videos: g.channel ? videos.filter((v) => v.channelId === g.channel) : [],
+					reels: g.instagram ? reels.filter((r) => r.account === g.instagram) : [],
+					posts: dashData.targets.filter((t) => t.brand === g.brand)
+				}))
+			: [{ label: '', videos: myVideos, reels: myReels, posts: myTargets }]
+	);
+	const postsInView = $derived(sets.flatMap((set) => set.posts));
+	const noChannel = $derived(!scope && accounts.loaded && !channel && !loneYT);
 
-	const releases = $derived(buildReleases(myVideos, myReels, myTargets));
+	// Each set's videos and reels pair only among themselves.
+	const releases = $derived(
+		sets.flatMap((set) =>
+			buildReleases(set.videos, set.reels, set.posts).map((r) => (sets.length > 1 ? { ...r, group: set.label } : r))
+		)
+	);
 	const groups = $derived(peerGroups(releases));
 	const counts = $derived(filterCounts(releases, filter));
 	const inViewList = $derived(releases.filter((r) => inView(r, filter)));
@@ -274,7 +293,7 @@
 			const full = fullRow(post);
 			return full ? youtubeFacts(full, ago) : null;
 		}
-		const reel = myReels.find((x) => x.id === post.record);
+		const reel = reels.find((x) => x.id === post.record);
 		return reel ? reelFacts(reel, ago) : null;
 	}
 
@@ -299,9 +318,13 @@
 
 	/* ---- side notes: when each platform was read, and what is left of the day ---- */
 
+	// A scope is no one brand: the pass's own read, and no account named.
+	const noteChannel = $derived(scope ? null : channel);
+	const noteInstagram = $derived(scope ? null : igAccount);
+
 	const ytBeat = $derived.by(() => {
 		if (!status) return null;
-		const own = channel ? status.channels?.[channel.account_id] : undefined;
+		const own = noteChannel ? status.channels?.[noteChannel.account_id] : undefined;
 		return {
 			polledAt: own?.polledAt ?? status.polledAt,
 			error: own?.error || status.error,
@@ -309,12 +332,12 @@
 			budget: status.budget
 		};
 	});
-	const igBeat = $derived(igAccount ? igStatus?.accounts?.[igAccount.account_id] : undefined);
-	const allowance = $derived(postAllowance(igAccount));
+	const igBeat = $derived(noteInstagram ? igStatus?.accounts?.[noteInstagram.account_id] : undefined);
+	const allowance = $derived(postAllowance(noteInstagram));
 
 	/** The account a platform's numbers are read from, for the legend: YouTube by channel name, Instagram by handle. */
 	function accountOf(p: StatPlatform): string {
-		const account = p === 'youtube' ? channel : igAccount;
+		const account = p === 'youtube' ? noteChannel : noteInstagram;
 		if (!account) return '';
 		return p === 'youtube' ? account.name || accountLabel(account) : accountLabel(account);
 	}
@@ -477,13 +500,29 @@
 		<DashFilter bind:filter {counts} />
 		{#if brands.multiple}
 			<div class="brands" role="radiogroup" aria-label="Brand in view">
+				{#each devtestDashboardScopes as s (s.label)}
+					<button
+						class="brandchip"
+						class:on={s === scope}
+						role="radio"
+						aria-checked={s === scope}
+						title={s.title}
+						onclick={() => {
+							for (const other of devtestDashboardScopes) if (other !== s) other.release();
+							s.select();
+						}}>{s.label}</button
+					>
+				{/each}
 				{#each brands.ordered as brand (brand.id)}
 					<button
 						class="brandchip"
-						class:on={brand.id === brands.currentId}
+						class:on={!scope && brand.id === brands.currentId}
 						role="radio"
-						aria-checked={brand.id === brands.currentId}
-						onclick={() => brands.select(brand.id)}>{brand.name}</button
+						aria-checked={!scope && brand.id === brands.currentId}
+						onclick={() => {
+							for (const s of devtestDashboardScopes) s.release();
+							brands.select(brand.id);
+						}}>{brand.name}</button
 					>
 				{/each}
 			</div>
@@ -507,7 +546,7 @@
 						{/if}
 					</li>
 				{/if}
-				{#if igAccount}
+				{#if noteInstagram}
 					<li class:bad={Boolean(igBeat?.error)} title={igBeat?.error || 'Instagram: posts published in the last 24 h of the 100 allowed'}>
 						<PlatformIcon platform="instagram" size={12} />
 						{#if igBeat?.error}
@@ -566,7 +605,7 @@
 			{/each}
 		</section>
 
-		<ComingUp targets={myTargets} now={nowDate} />
+		<ComingUp targets={postsInView} now={nowDate} />
 	</div>
 
 	{#if noChannel}
@@ -624,6 +663,7 @@
 								{/each}
 							</span>
 							{#if r.job}<span class="via" title="Uploaded through flock">flock</span>{/if}
+								{#if r.group}<span class="dot">·</span><span class="group">{r.group}</span>{/if}
 						</span>
 					</span>
 					{@render stacked(row, 'views', true)}
@@ -1158,6 +1198,11 @@
 		margin-left: 6px;
 		font-weight: 650;
 		color: var(--pink-soft);
+	}
+
+	.group {
+		font-weight: 600;
+		color: var(--text-dim);
 	}
 
 	.priv {

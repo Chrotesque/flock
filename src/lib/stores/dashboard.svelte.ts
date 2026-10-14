@@ -1,10 +1,10 @@
 /**
  * Whether the dashboard covers the content area, and where it spreads from:
- * px from the content area's top on its left edge — the corner for the
- * corner button, the sidebar link's height for the link. Held here rather
- * than in the overlay itself because the layout needs it too: the link
- * opens it, and the page underneath is made inert while it is open, so Tab
- * cannot wander behind it.
+ * px from the content area's top on its left edge — the sidebar link's
+ * height, or the top when the address opened it. Held here rather than in
+ * the overlay itself because the layout needs it too: the link opens it,
+ * and the page underneath is made inert while it is open, so Tab cannot
+ * wander behind it.
  */
 class DashboardStore {
 	open = $state(false);

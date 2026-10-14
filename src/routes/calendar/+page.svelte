@@ -205,10 +205,6 @@
 <div class="page">
 <DeviceGate what="The calendar">
 		<header class="head">
-			<div>
-				<h1>Calendar</h1>
-				<p>Everything scheduled, across every upload.</p>
-			</div>
 			<div class="actions">
 				{#if brands.multiple}
 					<div class="brands" role="radiogroup" aria-label="Brand shown">
@@ -316,22 +312,13 @@
 		margin: 0 auto;
 	}
 
+	/* No title: the brands and the buttons, where they always stood. */
 	.head {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
+		justify-content: flex-end;
 		gap: 20px;
 		margin-bottom: 22px;
-	}
-
-	h1 {
-		font-size: 23px;
-	}
-
-	.head p {
-		margin: 5px 0 0;
-		font-size: 13px;
-		color: var(--text-dim);
 	}
 
 	.sm {

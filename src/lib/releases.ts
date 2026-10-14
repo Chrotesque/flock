@@ -200,6 +200,8 @@ export interface Release {
 	job: string;
 	/** How its posts were matched: the same flock upload, or posted close together; '' for one post. */
 	matched: 'job' | 'time' | '';
+	/** The group it was built in, while several are shown together (devtest.ts' dashboard scopes). */
+	group?: string;
 }
 
 /** The 11-character video id in a YouTube link; '' when there is none. */

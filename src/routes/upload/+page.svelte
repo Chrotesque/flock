@@ -91,13 +91,6 @@
 		disarm();
 	});
 
-	const HEADINGS = [
-		{ title: 'New upload', sub: 'Pick the video — one for every platform, or one each.' },
-		{ title: 'Details', sub: 'Compose each platform in turn.' },
-		{ title: 'Schedule', sub: 'Pick a release day and time for each platform.' },
-		{ title: 'Review', sub: 'Review exactly what will be published, and when.' }
-	];
-
 	/** Platforms ticked since the upload step whose video slot is still empty. */
 	let missingVideo = $derived(
 		draft.slots.filter((entry) => !draft.slotHasVideo(entry.slot)).flatMap((entry) => entry.platforms)
@@ -488,9 +481,8 @@
 			</section>
 		{:else}
 			<header class="head">
+				<!-- No step title: the stepper names the step. -->
 				<div class="titling">
-					<h1>{HEADINGS[draft.step].title}</h1>
-					<p>{HEADINGS[draft.step].sub}</p>
 					{#if project}
 						<p class="projectline">
 							Project <strong>{project.name}</strong>
@@ -696,7 +688,7 @@
 		margin: 0;
 	}
 
-	/* The heading (and brand) on the left, the stepper on the right, and on
+	/* The project and brand on the left, the stepper on the right, and on
 	   the Details step the platform buttons centred in the space between,
 	   bottom-aligned so they sit level with the brand row. Columns are
 	   placed by hand because the middle one is absent on the other steps. */
@@ -704,25 +696,21 @@
 		display: grid;
 		grid-template-columns: fit-content(45%) minmax(max-content, 1fr) auto;
 		align-items: end;
+		min-height: 44px;
 		gap: 30px;
 		margin-bottom: 22px;
 		padding-bottom: 18px;
 		border-bottom: 1px solid var(--border);
 	}
 
-	h1 {
-		font-size: 23px;
-	}
-
-	.titling p {
-		margin: 5px 0 0;
-		font-size: 13px;
+	.titling .projectline {
+		margin: 0;
+		font-size: 12.5px;
 		color: var(--text-dim);
 	}
 
-	.titling .projectline {
-		margin-top: 8px;
-		font-size: 12.5px;
+	.titling > * + * {
+		margin-top: 10px;
 	}
 
 	.projectline strong {
@@ -739,7 +727,6 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 6px;
-		margin-top: 12px;
 	}
 
 	.brandlabel {
@@ -777,9 +764,14 @@
 		grid-column: 1;
 	}
 
+	/* With no step title above, the header is as tall as the buttons; the
+	   tick and gear that rise over a platform button on hover need that
+	   much room above them inside the page's top padding. The same height
+	   on every step, so nothing shifts between them. */
 	.switch {
 		grid-column: 2;
 		justify-self: center;
+		padding-top: 6px;
 	}
 
 	/* The arrows sit either side of the stepper with a deliberate gap, so they

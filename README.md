@@ -544,9 +544,8 @@ Settings, local or on the network, like watch folders.
 ### Other screens
 
 **Dashboard**, at the top of the sidebar, opens over whatever page you are on,
-and flock opens on it. Click it again, press Esc or go to another page to close
-it; the round button in the page's top-left corner opens and closes it too. For
-the brand in view it shows:
+and flock opens on it; its arrow points back while it is open. Click it again,
+press Esc or go to another page to close it. For the brand in view it shows:
 
 - **One filter for all of it:** which platforms (all of them is *Combined*),
   which kinds (Shorts, long form, live) and whether unlisted and private videos

@@ -123,7 +123,7 @@
 
 	let { children }: { children: Snippet } = $props();
 
-	/** Four panes of different heights, as on the dashboard's corner button. */
+	/** Four panes of different heights: a dashboard's layout. */
 	const DASHBOARD_ICON =
 		'M5.1 3.5h3.8a1.6 1.6 0 0 1 1.6 1.6v6.3a1.6 1.6 0 0 1-1.6 1.6H5.1a1.6 1.6 0 0 1-1.6-1.6V5.1a1.6 1.6 0 0 1 1.6-1.6ZM15.1 3.5h3.8a1.6 1.6 0 0 1 1.6 1.6v2.3a1.6 1.6 0 0 1-1.6 1.6h-3.8a1.6 1.6 0 0 1-1.6-1.6V5.1a1.6 1.6 0 0 1 1.6-1.6ZM5.1 16h3.8a1.6 1.6 0 0 1 1.6 1.6v1.3a1.6 1.6 0 0 1-1.6 1.6H5.1a1.6 1.6 0 0 1-1.6-1.6v-1.3A1.6 1.6 0 0 1 5.1 16ZM15.1 12h3.8a1.6 1.6 0 0 1 1.6 1.6v5.3a1.6 1.6 0 0 1-1.6 1.6h-3.8a1.6 1.6 0 0 1-1.6-1.6v-5.3a1.6 1.6 0 0 1 1.6-1.6Z';
 
@@ -196,6 +196,16 @@
 					Dashboard
 					<em>Analytics & Dashboard</em>
 				</span>
+				<!-- Out towards the page while closed, back towards the link while open. -->
+				<svg class="chev" viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
+					<path
+						d={dashboard.open ? 'M10 3.5 5.5 8l4.5 4.5' : 'M6 3.5 10.5 8 6 12.5'}
+						stroke="currentColor"
+						stroke-width="1.8"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
+				</svg>
 			</button>
 			{#each links as link (link.href)}
 				<!-- While the dashboard covers the page, it is the one lit. -->
@@ -404,9 +414,8 @@
 		</div>
 	</aside>
 
-	<!-- The content area, clipped: the dashboard's button sits on its corner
-	     and the dashboard covers it (DashboardOverlay), as does the To finish
-	     panel the sidebar tile opens (TodoPanel). -->
+	<!-- The content area, clipped: the dashboard covers it (DashboardOverlay),
+	     as does the To finish panel the sidebar tile opens (TodoPanel). -->
 	<div class="content" bind:this={content}>
 		<main class="scroll" inert={dashboard.open || todoPanel.open}>
 			{@render children()}
@@ -1040,6 +1049,17 @@
 		background: none;
 		font: inherit;
 		text-align: left;
+	}
+
+	.navlink .chev {
+		flex: none;
+		margin-left: auto;
+		color: var(--text-faint);
+	}
+
+	.navlink.active .chev,
+	.navlink:hover .chev {
+		color: var(--pink-soft);
 	}
 
 	.navlink:hover {
