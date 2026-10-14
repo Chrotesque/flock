@@ -208,8 +208,8 @@
 				</svg>
 			</button>
 			{#each links as link (link.href)}
-				<!-- While the dashboard covers the page, it is the one lit. -->
-				<a href="{base}{link.href}" class="navlink" class:active={isActive(link.href) && !dashboard.open}>
+				<!-- The page stays lit under the dashboard: both are, while it is open. -->
+				<a href="{base}{link.href}" class="navlink" class:active={isActive(link.href)}>
 					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
 						<path
 							d={link.icon}
