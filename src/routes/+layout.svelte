@@ -22,6 +22,9 @@
 	import { onMount } from 'svelte';
 	import { DEVTEST_ICON, devtestActive, devtestPages, startDevtest } from '$lib/devtest';
 
+	/** flock's public website (source in site/), where the brand at the foot of the rail leads. */
+	const SITE_URL = 'https://flock-scheduler.netlify.app/';
+
 	onMount(() => {
 		void general.load();
 		workers.start();
@@ -404,7 +407,8 @@
 		</nav>
 
 		<div class="foot">
-			<a class="brand" href="{base}/">
+			<!-- flock's website, in a new tab: inside Nexus's frame the app must stay where it is. -->
+			<a class="brand" href={SITE_URL} target="_blank" rel="noopener" title="flock's website — opens in a new tab">
 				<span class="mark">
 					<strong>flock</strong>
 					<img src="{base}/flock.png" alt="" width="68" height="68" />
@@ -475,6 +479,18 @@
 	.brand img {
 		border-radius: 16px;
 		flex: none;
+		transition: transform 0.15s ease;
+	}
+
+	/* It leads out to the website: a small lift says it is a link. */
+	.brand:hover img,
+	.brand:focus-visible img {
+		transform: translateY(-2px);
+	}
+
+	.brand:hover em,
+	.brand:focus-visible em {
+		color: var(--text);
 	}
 
 	/* Mark and name share one line, sitting on the same bottom edge rather than
