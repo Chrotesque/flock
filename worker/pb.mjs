@@ -56,7 +56,35 @@ export function makeClient(baseUrl) {
 			const res = await request(
 				`/api/collections/upload_targets/records?perPage=50&sort=scheduled_at&filter=${filter}`
 			);
+			// A row with a move waiting is the move pass's until it has its new
+			// account (moves.mjs). Left out here rather than in the filter, so a
+			// PocketBase without the field still publishes.
+			return (res.items ?? []).filter((row) => !row.move);
+		},
+
+		/** Posts with a move to another brand's account waiting (moves.mjs). */
+		async movingTargets() {
+			const filter = encodeURIComponent('move != null');
+			const res = await request(`/api/collections/upload_targets/records?perPage=50&sort=updated&filter=${filter}`);
 			return res.items ?? [];
+		},
+
+		/** The stats row of a YouTube video deleted from its channel. */
+		async forgetVideoStats(videoId) {
+			const filter = encodeURIComponent(`video_id="${videoId}"`);
+			const res = await request(`/api/collections/video_stats/records?perPage=5&fields=id&filter=${filter}`);
+			for (const item of res.items ?? []) {
+				await request(`/api/collections/video_stats/records/${item.id}`, { method: 'DELETE' });
+			}
+		},
+
+		/** The stats row of an Instagram or Facebook post deleted from its account. */
+		async forgetPostStats(platform, postId) {
+			const filter = encodeURIComponent(`platform="${platform}" && post_id="${postId}"`);
+			const res = await request(`/api/collections/post_stats/records?perPage=5&fields=id&filter=${filter}`);
+			for (const item of res.items ?? []) {
+				await request(`/api/collections/post_stats/records/${item.id}`, { method: 'DELETE' });
+			}
 		},
 
 		/**
@@ -116,8 +144,10 @@ export function makeClient(baseUrl) {
 		/** Whether any row of a platform is waiting — one id, for nudging the main loop. */
 		async hasPending(platform) {
 			const filter = encodeURIComponent(`platform="${platform}" && status="pending"`);
-			const res = await request(`/api/collections/upload_targets/records?perPage=1&skipTotal=1&fields=id&filter=${filter}`);
-			return (res.items ?? []).length > 0;
+			const res = await request(
+				`/api/collections/upload_targets/records?perPage=20&skipTotal=1&fields=id,move&filter=${filter}`
+			);
+			return (res.items ?? []).some((row) => !row.move);
 		},
 
 		/** Projects sent whose file has not been renamed yet (see archivePass). */

@@ -29,6 +29,9 @@
 		CONSENT_PREFIX
 	} from '$lib/tiktok';
 	import { facebookProblems } from '$lib/facebook';
+	import { brands } from '$lib/stores/brands.svelte';
+	import { projects } from '$lib/stores/projects.svelte';
+	import { mentionWords, otherBrandMentions, postTexts, type BrandMention } from '$lib/brandmention';
 	import { CAMPAIGN_OPTION } from '$lib/jestrcampaign';
 	import type { PlanRow } from '$lib/plan';
 	import type { PlatformId } from '$lib/types';
@@ -126,6 +129,26 @@
 				platforms: entry.platforms.filter((id) => rows.some((row) => row.platform === id))
 			}))
 			.filter((entry) => entry.platforms.length > 0)
+	);
+
+	/**
+	 * Another brand named in a post's text, the video's file or the project
+	 * folder: how an upload meant for one brand but made for another looks
+	 * here (brandmention.ts). Only with several brands; a warning, not a hold.
+	 */
+	function mentionsIn(texts: string[]): BrandMention[] {
+		if (!brands.multiple) return [];
+		return otherBrandMentions(texts, brands.currentId, brands.list, accounts.list);
+	}
+
+	let fileMentions = $derived(
+		mentionsIn([
+			...videos.map((entry) => {
+				const video = draft.videos[entry.slot];
+				return video?.nasFile?.path ?? video?.file?.name ?? '';
+			}),
+			projects.byId(draft.project)?.path ?? ''
+		])
 	);
 
 	// Which video the stage shows, when there is more than one.
@@ -424,10 +447,22 @@
 		</div>
 	</section>
 
+	{#if fileMentions.length > 0}
+		<p class="warnline brandwarn">
+			<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+				<path d="M12 3.5 21 19.5H3L12 3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+				<path d="M12 10v4M12 16.4v.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+			</svg>
+			This upload is for {brands.current?.name}, but its video or project folder names
+			{fileMentions.map(mentionWords).join(' and ')}.
+		</p>
+	{/if}
+
 	<ul class="rows">
 		{#each rows as row (row.platform)}
 			{@const def = PLATFORMS[row.platform]}
 			{@const label = def.hasTitle ? row.title : firstLine(row.description)}
+			{@const named = mentionsIn(postTexts(row))}
 			{@const visibility = visibilityWarning(row)}
 			{@const issues = tiktokIssues(row)}
 			{@const grant = grantIssues(row)}
@@ -456,6 +491,20 @@
 						</button>
 						<p class="date">{whenLine(row)}</p>
 					</div>
+					{#each named as mention (mention.brandId)}
+						<p class="warnline" title="Check the brand: this goes out as {account || brands.current?.name}.">
+							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+								<path
+									d="M12 3.5 21 19.5H3L12 3.5Z"
+									stroke="currentColor"
+									stroke-width="1.8"
+									stroke-linejoin="round"
+								/>
+								<path d="M12 10v4M12 16.4v.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+							</svg>
+							Names {mentionWords(mention)}, but this upload is for {brands.current?.name}
+						</p>
+					{/each}
 					{#if visibility}
 						<p class="warnline" title={visibilityHint(row)}>
 							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
@@ -825,6 +874,16 @@
 		font-size: 12px;
 		font-weight: 650;
 		color: var(--warn);
+	}
+
+	/* The video or project folder naming another brand, above the rows. */
+	.warnline.brandwarn {
+		margin: 0 0 8px;
+		padding: 9px 14px;
+		border: 1px solid rgba(251, 191, 36, 0.35);
+		border-radius: var(--radius);
+		background: rgba(251, 191, 36, 0.06);
+		font-size: 12.5px;
 	}
 
 	.file {

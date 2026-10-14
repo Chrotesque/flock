@@ -13,6 +13,7 @@
 	let clean = $derived(
 		Boolean(notice) &&
 			!notice!.error &&
+			!notice!.brandChoice &&
 			notice!.notes.length === 0 &&
 			(!notice!.thumbnail || notice!.thumbnail.state === 'done')
 	);
@@ -43,6 +44,24 @@
 
 		{#if notice.error}
 			<p class="error">{notice.error}</p>
+		{/if}
+
+		{#if notice.brandChoice}
+			{@const choice = notice.brandChoice}
+			<p class="ask">
+				No brand is called <strong>"{choice.wanted}"</strong>, so nothing is filled until you pick the one it is for.
+			</p>
+			<div class="brands">
+				{#each choice.options as option (option.id)}
+					<button
+						class="pick"
+						class:suggested={option.id === choice.suggested}
+						onclick={() => void paste.chooseBrand(option.id)}
+					>
+						{option.name}{#if option.id === choice.suggested}<span class="meant">{' · meant?'}</span>{/if}
+					</button>
+				{/each}
+			</div>
 		{/if}
 
 		{#if notice.platforms.length > 0}
@@ -182,6 +201,48 @@
 	.error {
 		margin: 0;
 		color: var(--danger);
+	}
+
+	.ask {
+		margin: 0 0 9px;
+		color: var(--warn);
+		line-height: 1.45;
+	}
+
+	.ask strong {
+		color: var(--text);
+	}
+
+	.brands {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.pick {
+		padding: 5px 12px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--surface-3);
+		color: var(--text);
+		font: inherit;
+		font-size: 12.5px;
+		cursor: pointer;
+	}
+
+	.pick:hover,
+	.pick:focus-visible {
+		border-color: var(--pink);
+		outline: none;
+	}
+
+	.pick.suggested {
+		border-color: var(--pink);
+		background: rgba(255, 77, 158, 0.12);
+	}
+
+	.meant {
+		color: var(--text-dim);
 	}
 
 	.notes {

@@ -199,6 +199,11 @@ export interface UploadTarget {
 	remote_url?: string;
 	error?: string;
 	published_at?: string;
+	/**
+	 * A move to another brand's account the worker has yet to carry out
+	 * (brandmove.ts, worker/moves.mjs); null when none is waiting.
+	 */
+	move?: unknown;
 	/** The job's brand, filled in by `listTargets` — not a column of its own. */
 	brand?: string;
 	brand_name?: string;

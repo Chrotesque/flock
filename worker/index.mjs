@@ -18,6 +18,7 @@
 import { loadConfig, requireConfig, hasYouTube, hasTikTok, hasInstagram, hasFacebook, saveSection } from './config.mjs';
 import {
 	LEAD_SECONDS as FACEBOOK_LEAD_SECONDS,
+	deleteFacebookReel,
 	facebookAccount,
 	probeFacebook,
 	publishReadyReel,
@@ -37,7 +38,14 @@ import {
 } from './alerts.mjs';
 import { isSea } from 'node:sea';
 import { makeClient } from './pb.mjs';
-import { grantCanEdit, publishToYouTube, probeYouTube, refreshYouTubeChannels, youtubeChannels } from './youtube.mjs';
+import {
+	deleteYouTubeVideo,
+	grantCanEdit,
+	publishToYouTube,
+	probeYouTube,
+	refreshYouTubeChannels,
+	youtubeChannels
+} from './youtube.mjs';
 import { publishToTikTok, probeTikTok, refreshTikTokCreators, creatorInfo, privacyLabel } from './tiktok.mjs';
 import {
 	publishToInstagram,
@@ -75,6 +83,7 @@ import { sayOnScreen, startTray, wantsTray } from './tray.mjs';
 import { exeLogPath } from './filelog.mjs';
 import { WORKER_VERSION } from './version.mjs';
 import { decide, mayBeAlive } from './orphans.mjs';
+import { moveStep, requeuePatch } from './moves.mjs';
 import { inJob } from './jobscope.mjs';
 
 /**
@@ -89,7 +98,8 @@ import { inJob } from './jobscope.mjs';
  * up to 29 days ahead, so a row is taken up once its slot is within reach, and
  * `holds: false` says the worker does not sit on it until then.
  * `publishReady` finishes a post another run left processed but unpublished
- * (orphans.mjs). A platform whose credentials are missing is skipped with a
+ * (orphans.mjs); `remove` deletes a post from the account it went out on, for
+ * one moved to another brand (moves.mjs). A platform whose credentials are missing is skipped with a
  * notice rather than failed: its rows wait in the queue for the day it is set
  * up.
  */
@@ -97,6 +107,7 @@ const ADAPTERS = {
 	youtube: {
 		publish: publishToYouTube,
 		probe: probeYouTube,
+		remove: deleteYouTubeVideo,
 		timing: 'now',
 		lead: () => 0,
 		ready: hasYouTube,
@@ -122,6 +133,7 @@ const ADAPTERS = {
 	facebook: {
 		publish: publishToFacebook,
 		probe: probeFacebook,
+		remove: deleteFacebookReel,
 		publishReady: publishReadyReel,
 		timing: 'slot',
 		holds: false,
@@ -216,6 +228,13 @@ async function handleTarget(pb, config, platform, target) {
 	// the worker taking over.
 	if (!hb.canPublish()) return;
 
+	// Read again just before the claim: the listing may be seconds old, and a
+	// move to another brand (moves.mjs) or a drag in the Calendar may have
+	// landed since. A row with a move waiting is the move pass's.
+	const fresh = await pb.getTarget(target.id);
+	if (fresh.status !== 'pending' || fresh.move) return;
+	target = fresh;
+
 	// Claim before starting, so a second pass cannot pick up the same row while
 	// its upload is in flight. The claim names this run, which is what lets
 	// the platform handle below be refused if the row has been taken over.
@@ -255,9 +274,18 @@ async function publishOne(pb, config, platform, target, job, label, claim) {
 		}
 		await pb.updateTarget(target.id, { handle: { ...claim, ...handle } });
 	};
+	// Asked by a platform that holds a post until its minute, just before it
+	// goes out: false once the post has been moved to another brand meanwhile.
+	// A PocketBase that cannot be read says yes — its outage must not cost
+	// the slot.
+	const stillWanted = async () => {
+		const row = await pb.getTarget(target.id).catch(() => null);
+		return !row?.move;
+	};
 
 	let result;
 	let failure;
+	let moved = false;
 	try {
 		result = await adapter.publish({
 			target,
@@ -265,10 +293,12 @@ async function publishOne(pb, config, platform, target, job, label, claim) {
 			pb,
 			config,
 			saveHandle,
+			stillWanted,
 			log: (message) => log(`  ${message}`)
 		});
 	} catch (err) {
 		failure = err instanceof Error ? err.message : String(err);
+		moved = Boolean(err?.moved);
 	}
 
 	// Taken over while this ran. If the other worker recorded this very upload
@@ -289,6 +319,13 @@ async function publishOne(pb, config, platform, target, job, label, claim) {
 
 	if (result) {
 		await recordResult(pb, platform, target, result, label);
+		return;
+	}
+	// Stopped before posting for a move: back in the queue, where the move
+	// pass gives it its new account. Nothing was published anywhere.
+	if (moved) {
+		await pb.updateTarget(target.id, { status: 'pending', handle: null, error: '' });
+		log(`${label} was not posted: it was moved to another account while it was held`);
 		return;
 	}
 	await pb.updateTarget(target.id, { status: 'failed', error: failure.slice(0, 1900) });
@@ -1084,7 +1121,7 @@ async function settleOrphan(pb, config, platform, row) {
 	const handle = row.handle ?? null;
 	const probe = handle?.kind ? await adapter.probe(config, handle) : null;
 	const alive = mayBeAlive(handle, config.role);
-	const verdict = decide({
+	let verdict = decide({
 		handle,
 		probe,
 		alive,
@@ -1092,6 +1129,11 @@ async function settleOrphan(pb, config, platform, row) {
 		slotAt: row.scheduled_at,
 		seen: orphanSeen.get(row.id)
 	});
+	// Processed but never posted, and moved to another brand since: the old
+	// account must not post it now. Queued again, the move pass moves it.
+	if (verdict.action === 'publish' && row.move) {
+		verdict = { action: 'requeue', reason: 'it was moved to another account before it was posted' };
+	}
 
 	if (verdict.action === 'leave') {
 		if (verdict.seen) orphanSeen.set(row.id, verdict.seen);
@@ -1133,6 +1175,121 @@ async function settleOrphan(pb, config, platform, row) {
 			log(`cover photo ${handle.coverPhotoId} could not be deleted from the Page (${err.message.split('\n')[0]})`)
 		);
 	}
+}
+
+let movesBusy = false;
+let movesOff = false;
+/** Moves already said to be waiting, so that is said once. */
+const moveSaid = new Set();
+
+/**
+ * Carries out the moves to another brand the page asked for (moves.mjs). The
+ * worker that publishes does it: it holds the tokens a delete needs, and it
+ * is the one claiming rows. On the slot tick, so a move is done in seconds.
+ */
+async function movePass(pb, config) {
+	if (movesBusy || movesOff || dry || !hb.canPublish()) return;
+	movesBusy = true;
+	try {
+		let rows;
+		try {
+			rows = await pb.movingTargets();
+		} catch (err) {
+			// A PocketBase without the field (setup-pb not run since): nothing
+			// can have asked for a move, so this stops asking.
+			if (!/ -> 400\b/.test(err.message)) throw err;
+			movesOff = true;
+			log('moving posts to another brand is off: upload_targets has no `move` field — run pnpm setup-pb');
+			return;
+		}
+		for (const row of rows) {
+			if (!hb.canPublish()) break;
+			await inJob(row.job, () =>
+				moveOne(pb, config, row).catch((err) => log(`could not move ${row.platform} ${row.id}: ${err.message.split('\n')[0]}`))
+			);
+		}
+	} finally {
+		movesBusy = false;
+	}
+}
+
+async function moveOne(pb, config, row) {
+	const step = moveStep(row, { held: inHand.has(row.id) });
+	if (step.action === 'none') return;
+	const { move } = step;
+	const name = NAMES[row.platform] ?? row.platform;
+	const title = row.title || row.description?.slice(0, 60) || row.id;
+	const label = `${row.platform} "${title}"`;
+	const to = move.toName || move.to;
+
+	if (step.action === 'wait') {
+		if (!moveSaid.has(row.id)) log(`moving ${label} to ${move.brandName} once it is no longer being published`);
+		moveSaid.add(row.id);
+		return;
+	}
+
+	if (step.action === 'drop') {
+		moveSaid.delete(row.id);
+		await pb.updateTarget(row.id, { move: null });
+		log(`not moving ${label} to ${move.brandName}: ${step.reason}`);
+		pb.log(`Not moved: ${name}`, `${title}: ${step.reason}.`);
+		return;
+	}
+
+	if (step.action === 'switch') {
+		moveSaid.delete(row.id);
+		await pb.updateTarget(row.id, { account: move.to, move: null });
+		log(`${label} now goes out as ${to} (${move.brandName})`);
+		pb.log(`Moved ${name} to ${move.brandName}`, `${title}: nothing had been sent yet; it goes out as ${to}.`);
+		return;
+	}
+
+	if (step.action === 'repost') {
+		moveSaid.delete(row.id);
+		await pb.updateTarget(row.id, requeuePatch(move.to));
+		log(`${label} queued again as ${to} (${move.brandName}); the old post stays up until it is deleted by hand: ${row.remote_url}`);
+		pb.log(
+			`Moved ${name} to ${move.brandName}`,
+			`${title}: posted again as ${to}. The post on the old account is still up — delete it in ${name}: ${row.remote_url}`
+		);
+		return;
+	}
+
+	// replace: off the old account first, and queued again only once it is
+	// gone — never both up at once.
+	const adapter = ADAPTERS[row.platform];
+	if (!adapter?.remove || !adapter.ready(config)) {
+		if (!moveSaid.has(row.id)) log(`moving ${label}: ${name} is not set up here, so its post cannot be deleted — waiting`);
+		moveSaid.add(row.id);
+		return;
+	}
+	moveSaid.delete(row.id);
+	let removed;
+	inHand.add(row.id);
+	try {
+		removed = await hb.track(`Deleting from ${name}: "${title}"`, () => adapter.remove(config, row.account ?? '', step.remoteId), {
+			publishing: true
+		});
+	} catch (err) {
+		const why = err instanceof Error ? err.message.split('\n')[0] : String(err);
+		await pb.updateTarget(row.id, {
+			move: null,
+			error: `Not moved to ${move.brandName}: it could not be deleted from ${name} — ${why}`.slice(0, 1900)
+		});
+		log(`could not move ${label} to ${move.brandName}: deleting it failed — ${why}`);
+		pb.log(`Move failed: ${name}`, `${title}: it could not be deleted from the old account, so it stays there as it was. ${why}`);
+		return;
+	} finally {
+		inHand.delete(row.id);
+	}
+	await pb.updateTarget(row.id, requeuePatch(move.to));
+	const what = removed?.alreadyGone ? 'was already gone from' : 'deleted from';
+	const where = removed?.channel || removed?.page || 'the old account';
+	log(`${label} ${what} ${where} (${row.remote_url}) — queued again for ${to} (${move.brandName})`);
+	pb.log(`Moved ${name} to ${move.brandName}`, `${title}: ${what} ${where} (${row.remote_url}) and queued again for ${to}.`);
+	// Its numbers belong to a video that is gone; the stats passes no longer see it.
+	if (row.platform === 'youtube') await pb.forgetVideoStats(step.remoteId).catch(() => {});
+	if (row.platform === 'facebook') await pb.forgetPostStats('facebook', step.remoteId).catch(() => {});
 }
 
 /**
@@ -1441,6 +1598,7 @@ async function main() {
 		await scorePass(pb, config);
 		if (!dry && config.statsSeconds > 0 && hb.canPublish()) await statsPass({ pb, config, log });
 		if (!dry) await accountPass(pb, config);
+		await movePass(pb, config);
 		await pass(pb, config);
 		await slotPass(pb, config, { wait: true });
 		await archivePass(pb);
@@ -1583,6 +1741,7 @@ async function main() {
 		void accountPass(pb, config);
 		void slotPass(pb, config);
 		void orphanPass(pb, config).catch((err) => log(`orphan check failed: ${err.message}`));
+		void movePass(pb, config).catch((err) => log(`move pass failed: ${err.message.split('\n')[0]}`));
 		void archivePass(pb).catch((err) => log(`project rename failed: ${err.message.split('\n')[0]}`));
 		void nudgeMain(pb, config).catch(() => {});
 	};

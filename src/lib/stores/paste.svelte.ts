@@ -2,7 +2,7 @@ import { brands } from './brands.svelte';
 import { accounts } from './accounts.svelte';
 import { draft } from './draft.svelte';
 import { loadPlaylists, requestLocalImage } from '../repo';
-import { filledSummary, matchBrand, type FlockPaste, type PasteResult } from '../flockpaste';
+import { closestBrand, filledSummary, matchBrand, type FlockPaste, type PasteResult } from '../flockpaste';
 import { IMAGE_LIMITS, IMAGE_PLATFORMS, acceptedTypes, largestAccepted } from '../coverimage';
 import { formatBytes } from '../format';
 import { resolveIn } from '../folders';
@@ -18,6 +18,18 @@ export interface PasteNotice {
 	platforms: { id: PlatformId; summary: string }[];
 	notes: string[];
 	thumbnail: { path: string; state: 'fetching' | 'waiting' | 'done' | 'failed'; message: string } | null;
+	/**
+	 * The block names a brand there is none of, with several to choose from:
+	 * nothing is filled until one is picked (`chooseBrand`). `suggested` is the
+	 * brand a typo was most likely meant to be, or ''.
+	 */
+	brandChoice: { wanted: string; suggested: string; options: { id: string; name: string }[] } | null;
+}
+
+interface ApplyOptions {
+	folder?: string;
+	title?: string;
+	brandId?: string;
 }
 
 const emptyNotice = (): PasteNotice => ({
@@ -26,7 +38,8 @@ const emptyNotice = (): PasteNotice => ({
 	brand: '',
 	platforms: [],
 	notes: [],
-	thumbnail: null
+	thumbnail: null,
+	brandChoice: null
 });
 
 /**
@@ -44,6 +57,8 @@ class PasteStore {
 	notice = $state<PasteNotice | null>(null);
 	/** Which paste is current: a slower thumbnail for an older one is dropped. */
 	#seq = 0;
+	/** A block held until the person says which brand it is for. */
+	#awaiting: { seq: number; paste: FlockPaste; opts: ApplyOptions } | null = null;
 
 	offer(result: PasteResult) {
 		this.#seq++;
@@ -77,16 +92,27 @@ class PasteStore {
 
 	dismiss() {
 		this.notice = null;
+		this.#awaiting = null;
+	}
+
+	/** Fills the block that was waiting for its brand, for the one picked. */
+	async chooseBrand(id: string) {
+		const waiting = this.#awaiting;
+		if (!waiting || waiting.seq !== this.#seq || !brands.byId(id)) return;
+		this.#awaiting = null;
+		await this.apply(waiting.paste, { ...waiting.opts, brandId: id });
 	}
 
 	/**
 	 * Fills the draft from a block. `folder` is the project folder the block
 	 * came from, which a relative thumbnail path is read against; `title`
-	 * heads the notice. The text is in when this resolves; the thumbnail
+	 * heads the notice; `brandId` is the brand picked for a block whose own
+	 * brand matched none. The text is in when this resolves; the thumbnail
 	 * follows from the worker.
 	 */
-	async apply(paste: FlockPaste, opts: { folder?: string; title?: string } = {}) {
+	async apply(paste: FlockPaste, opts: ApplyOptions = {}) {
 		const seq = ++this.#seq;
+		this.#awaiting = null;
 		const notes = [...paste.notes];
 
 		// The brand first: switching drops the draft's per-platform choices, so
@@ -94,10 +120,27 @@ class PasteStore {
 		// is told here rather than by the upload page's effect, which would run
 		// after this and see a brand it had not been told of yet.
 		await brands.load();
-		if (paste.brand) {
+		if (seq !== this.#seq) return;
+		if (opts.brandId && brands.byId(opts.brandId)) {
+			brands.select(opts.brandId);
+		} else if (paste.brand) {
 			const match = matchBrand(brands.list, paste.brand);
 			if (match) brands.select(match.id);
-			else notes.push(`No brand is called "${paste.brand}"; filled for ${brands.current?.name ?? 'the brand in view'}.`);
+			else if (brands.multiple) {
+				// Filling it for whichever brand is in view is how a video went
+				// out on the wrong brand's accounts (a typo in a project file): ask.
+				this.#awaiting = { seq, paste, opts };
+				this.notice = {
+					...emptyNotice(),
+					title: opts.title ?? 'Which brand is this for?',
+					brandChoice: {
+						wanted: paste.brand,
+						suggested: closestBrand(brands.list, paste.brand)?.id ?? '',
+						options: brands.ordered.map((b) => ({ id: b.id, name: b.name }))
+					}
+				};
+				return;
+			} else notes.push(`No brand is called "${paste.brand}"; filled for ${brands.current?.name ?? 'the brand in view'}.`);
 		}
 		draft.followBrand(brands.currentId);
 		draft.applyPaste(paste.platforms);
@@ -111,8 +154,8 @@ class PasteStore {
 		const thumbnail = opts.folder ? resolveIn(opts.folder, paste.thumbnail) : paste.thumbnail;
 		if (seq !== this.#seq) return;
 		this.notice = {
+			...emptyNotice(),
 			title: opts.title ?? 'Filled from paste',
-			error: '',
 			brand: brands.multiple ? (brands.current?.name ?? '') : '',
 			platforms: (Object.entries(paste.platforms) as [PlatformId, NonNullable<FlockPaste['platforms'][PlatformId]>][]).map(
 				([id, entry]) => ({ id, summary: filledSummary(id, entry) })

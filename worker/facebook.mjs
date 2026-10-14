@@ -234,6 +234,37 @@ async function permalinkOf(page, videoId) {
 	}
 }
 
+/**
+ * Deletes a reel from the Page a post went out on, for a post moved to
+ * another brand (moves.mjs). Meta documents deleting videos, not reels held
+ * for their time in particular, so the reel is read back afterwards and only
+ * a Page that no longer has it counts: otherwise the old Page would put it
+ * out at its slot while flock believed it gone.
+ */
+export async function deleteFacebookReel(config, pageId, videoId) {
+	const page = facebookAccount(config, pageId);
+	const name = page.pageName || page.pageId;
+	let alreadyGone = false;
+	try {
+		await graph(page, `/${videoId}`, { method: 'DELETE' });
+	} catch (err) {
+		// "Does not exist" — or a delete Facebook does not support; the read
+		// below tells which.
+		if (!(err instanceof GraphError && err.code === 100)) throw explainFacebook(err);
+		alreadyGone = true;
+	}
+	for (let look = 0; look < 3; look++) {
+		try {
+			await readStatus(page, videoId);
+		} catch (err) {
+			if (err instanceof GraphError && err.code === 100) return { page: name, alreadyGone };
+			throw explainFacebook(err);
+		}
+		await sleep(2000);
+	}
+	throw new Error(`Facebook still has reel ${videoId} on ${name} after it was deleted. Delete it in Meta Business Suite.`);
+}
+
 export async function publishToFacebook({ target, job, pb, config, log, saveHandle }) {
 	// The Page this post is for, or an error — never another Page.
 	const page = facebookAccount(config, target.account ?? '');

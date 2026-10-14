@@ -505,7 +505,7 @@ export async function dropHostedCover(config, handle) {
 	await graph(ig, `/${handle.coverPhotoId}`, { method: 'DELETE' });
 }
 
-export async function publishToInstagram({ target, job, pb, config, log, saveHandle }) {
+export async function publishToInstagram({ target, job, pb, config, log, saveHandle, stillWanted }) {
 	// The account this post is for, or an error — never another account.
 	const ig = instagramAccount(config, target.account ?? '');
 	const options = target.options ?? {};
@@ -611,6 +611,13 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 		await sleep(wait);
 	} else if (wait < -60_000) {
 		log(`ready ${Math.round(-wait / 60000)} min past the slot — publishing now`);
+	}
+
+	// Moved to another brand while it was held (moves.mjs): this account
+	// must not post it. The container stays unpublished, and Instagram drops
+	// an unpublished container within a day.
+	if (stillWanted && !(await stillWanted())) {
+		throw Object.assign(new Error('Moved to another account while it was held; not posted here.'), { moved: true });
 	}
 
 	let published;

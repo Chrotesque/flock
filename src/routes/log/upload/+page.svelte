@@ -8,7 +8,10 @@
 	import RetryButton from '$lib/components/RetryButton.svelte';
 	import { canRetry } from '$lib/attention';
 	import { getLogEntry, listJobLog, listJobWorkerLines } from '$lib/log';
-	import { findLoggedJob, jobFileUrl, loadUploadState } from '$lib/repo';
+	import { findLoggedJob, jobFileUrl, loadUploadState, requestBrandMove } from '$lib/repo';
+	import { brands } from '$lib/stores/brands.svelte';
+	import { accounts } from '$lib/stores/accounts.svelte';
+	import { accountName, canMove, planMove, readMove, type MoveStep } from '$lib/brandmove';
 	import { PLATFORMS } from '$lib/platforms';
 	import { formatBytes, formatDuration, formatSchedule } from '$lib/format';
 	import { depthOf, toneOf } from '$lib/workerlog';
@@ -217,6 +220,76 @@
 	});
 	let coverOpen = $state(false);
 	let coverShown = $state<{ who: string; url: string } | null>(null);
+
+	/* ---- moving it to another brand (brandmove.ts) ---- */
+
+	void brands.load();
+	void accounts.load();
+
+	let moveTo = $state('');
+	let otherBrands = $derived(job ? brands.ordered.filter((b) => b.id !== job!.brand) : []);
+	// With two brands the other one is the only place it could go.
+	let moveBrand = $derived(brands.byId(moveTo || (otherBrands.length === 1 ? otherBrands[0].id : '')));
+	let moveSteps = $derived(
+		moveBrand ? planMove(targets, moveBrand, accounts.list, brands.list.length, new Date()) : ([] as MoveStep[])
+	);
+	/** Posts with a move the worker has not carried out yet. */
+	let moving = $derived(targets.filter((t) => readMove(t.move)));
+
+	let moveArmed = $state(false);
+	let moveBusy = $state(false);
+	let moveError = $state('');
+	let moveTimer: ReturnType<typeof setTimeout> | null = null;
+	/** Until when the page re-reads itself after a move, to show the worker's progress. */
+	let watchUntil = $state(0);
+
+	async function pressMove() {
+		if (moveBusy || !moveBrand) return;
+		if (!moveArmed) {
+			moveArmed = true;
+			moveError = '';
+			moveTimer = setTimeout(() => (moveArmed = false), 2000);
+			return;
+		}
+		if (moveTimer) clearTimeout(moveTimer);
+		moveArmed = false;
+		moveBusy = true;
+		try {
+			await requestBrandMove(jobId, moveBrand.id);
+			moveTo = '';
+			watchUntil = Date.now() + 3 * 60_000;
+			await load(page.url.searchParams);
+		} catch (err) {
+			moveError = message(err);
+		} finally {
+			moveBusy = false;
+		}
+	}
+
+	// While a move waits, and for a few minutes after one, the worker's
+	// progress shows without pressing Refresh.
+	$effect(() => {
+		if (moving.length === 0 && watchUntil === 0) return;
+		const timer = setInterval(() => {
+			if (watchUntil && Date.now() > watchUntil) watchUntil = 0;
+			void load(page.url.searchParams);
+		}, 5000);
+		return () => clearInterval(timer);
+	});
+
+	$effect(() => () => {
+		if (moveTimer) clearTimeout(moveTimer);
+	});
+
+	/** The account a post goes out as now, when a move has changed it since the confirm. */
+	function movedTo(t: RecordTarget, now: UploadTarget | undefined): string {
+		if (!now || !t.account || t.platform === 'tiktok') return '';
+		const name = accountName(accounts.list, t.platform, now.account ?? '');
+		return name === t.account ? '' : name;
+	}
+
+	/** A step the person should read twice: something public goes, or stays. */
+	const heavy = (step: MoveStep) => (step.kind === 'replace' && step.live) || step.kind === 'repost';
 </script>
 
 <div class="page">
@@ -267,6 +340,63 @@
 				<TimingChip {timing} />
 			{/each}
 		</div>
+
+		{#if job && brands.multiple}
+			<section class="card brandbox">
+				<div class="brandhead">
+					<span class="eyebrow">Brand</span>
+					<span class="brandname">{brands.byId(job.brand ?? '')?.name ?? (job.brand_name || 'none')}</span>
+					{#if moving.length === 0 && otherBrands.length > 0}
+						<span class="movepick">
+							<label for="move-to">Move to</label>
+							<select id="move-to" class="select" bind:value={moveTo}>
+								{#if otherBrands.length !== 1}<option value="">Choose a brand…</option>{/if}
+								{#each otherBrands as other (other.id)}<option value={other.id}>{other.name}</option>{/each}
+							</select>
+							<button
+								class="mbtn"
+								class:armed={moveArmed}
+								disabled={moveBusy || !moveBrand || !canMove(moveSteps)}
+								onclick={pressMove}
+								title="Press twice. The worker carries it out within seconds."
+							>
+								{moveBusy ? 'Moving…' : moveArmed ? 'Press again' : `Move to ${moveBrand?.name ?? '…'}`}
+							</button>
+						</span>
+					{/if}
+				</div>
+
+				{#if moving.length > 0}
+					<ul class="moveplan">
+						{#each moving as t (t.id)}
+							{@const request = readMove(t.move)}
+							<li>
+								<PlatformIcon platform={t.platform} size={15} />
+								<span>
+									Moving to {request?.toName || request?.to} ({request?.brandName}) —
+									{t.status === 'publishing' ? 'once the worker is done with it here' : 'waiting for the worker'}
+								</span>
+							</li>
+						{/each}
+					</ul>
+				{:else if moveBrand && moveSteps.length > 0}
+					<ul class="moveplan">
+						{#each moveSteps as step (step.target)}
+							<li class={step.kind} class:heavy={heavy(step)}>
+								<PlatformIcon platform={step.platform} size={15} />
+								<span>
+									{step.words}
+									{#if step.url && (step.kind === 'replace' || step.kind === 'repost')}
+										<a href={step.url} target="_blank" rel="noopener">The post now</a>
+									{/if}
+								</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+				{#if moveError}<p class="note bad">{moveError}</p>{/if}
+			</section>
+		{/if}
 
 		{#if record.devtest.length > 0}
 			<div class="devtest">
@@ -379,7 +509,8 @@
 					<header class="posthead">
 						<PlatformIcon platform={t.platform} size={20} />
 						<h2>{def.label}</h2>
-						{#if t.account}<span class="as">as {t.account}</span>{/if}
+						{#if t.account}<span class="as" class:was={Boolean(movedTo(t, now))}>as {t.account}</span>{/if}
+						{#if movedTo(t, now)}<span class="as moved">now as {movedTo(t, now)}</span>{/if}
 						{#if now}
 							<span class="status {now.status}">{statusWords(now.status)}</span>
 						{/if}
@@ -795,6 +926,115 @@
 	.as {
 		font-size: 12.5px;
 		color: var(--text-dim);
+	}
+
+	/* Confirmed as one account, moved to another since. */
+	.as.was {
+		text-decoration: line-through;
+		color: var(--text-faint);
+	}
+
+	.as.moved {
+		color: var(--text);
+	}
+
+	/* ---- the brand, and moving the upload to another ---- */
+
+	.brandhead {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 10px 12px;
+	}
+
+	.brandname {
+		font-weight: 650;
+	}
+
+	.movepick {
+		display: inline-flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-left: auto;
+		font-size: 12.5px;
+		color: var(--text-dim);
+	}
+
+	.movepick .select {
+		width: auto;
+		min-width: 150px;
+		padding-top: 5px;
+		padding-bottom: 5px;
+	}
+
+	.mbtn {
+		padding: 6px 16px;
+		border-radius: 999px;
+		border: 1px solid var(--pink);
+		background: rgba(255, 77, 158, 0.1);
+		color: var(--text);
+		font: inherit;
+		font-size: 12.5px;
+		font-weight: 600;
+		white-space: nowrap;
+		cursor: pointer;
+		transition: background 0.15s, box-shadow 0.15s;
+	}
+
+	.mbtn:hover:not(:disabled),
+	.mbtn:focus-visible {
+		background: rgba(255, 77, 158, 0.2);
+		box-shadow: var(--glow);
+		outline: none;
+	}
+
+	/* One more press moves it. */
+	.mbtn.armed {
+		background: var(--pink);
+		color: var(--bg);
+		box-shadow: var(--glow);
+	}
+
+	.mbtn:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	.moveplan {
+		list-style: none;
+		margin: 12px 0 0;
+		padding: 0;
+		display: grid;
+		gap: 7px;
+		font-size: 13px;
+		line-height: 1.45;
+	}
+
+	.moveplan li {
+		display: flex;
+		align-items: flex-start;
+		gap: 9px;
+	}
+
+	.moveplan li :global(svg) {
+		flex: none;
+		margin-top: 2px;
+	}
+
+	.moveplan li.none,
+	.moveplan li.keep,
+	.moveplan li.blocked {
+		color: var(--text-dim);
+	}
+
+	.moveplan li.heavy {
+		color: var(--warn);
+	}
+
+	.moveplan a {
+		margin-left: 4px;
+		color: var(--pink-soft);
 	}
 
 	.status {

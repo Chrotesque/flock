@@ -489,7 +489,8 @@ the exact date and time underneath.
 
 **4. Review.** The video plays beside exactly what each platform gets and when,
 and which account each post goes out as. Warnings show here too, such as a
-playlist the channel's connection cannot add to.
+playlist the channel's connection cannot add to, or another brand's name in a
+post's text, the video's file name or its project folder.
 
 - To confirm, press the tick, then press it again within two seconds while it
   shows **!!!**.
@@ -515,7 +516,9 @@ Text written elsewhere, in a chat with an assistant say, goes in with one
 ```
 
 flock opens Upload, switches to the brand, ticks each platform named and fills
-it in. A note in the corner says what was filled.
+it in. A note in the corner says what was filled. With several brands, a
+`brand` that matches none (a typo) fills nothing: the note asks which brand it
+is for, suggesting the closest one.
 
 - **Tags** go into YouTube's *Other* box.
 - **`schedule`** is local time, or `"now"`. It fills the Schedule step, where
@@ -600,6 +603,20 @@ the Review step showed. Beside that is what happened next: each post's state
 and link, and everything the worker logged about the upload. Uploads from
 before flock 0.12.0 show what their stored upload still holds, with
 *Immediately* or *Scheduled* worked out from the stored times (dashed).
+
+**An upload made for the wrong brand** can be moved from its overview: pick
+the brand under *Brand*, read what will happen to each post, and press *Move
+to …* twice. The worker does it within seconds:
+
+- A post nothing was sent for yet just goes out as the new brand's account.
+- A YouTube video or Facebook reel already on the old account is deleted
+  there, then uploaded again to the new one. Before its slot nobody has seen
+  it; after, its views and comments go with it. The YouTube channel needs the
+  connection made with `--with-playlists`, which can delete.
+- An Instagram reel held for its slot is stopped before it is posted. One
+  already live stays up (flock cannot delete it; do it in Instagram) and is
+  posted again on the new account.
+- TikTok posts are not moved.
 
 **To finish**, in the sidebar, is a box for what needs attention and for
 YouTube videos with something left to do by hand: green with a check when

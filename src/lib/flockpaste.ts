@@ -308,14 +308,55 @@ function readPlatform(id: PlatformId, value: Record<string, unknown>, notes: str
  * aside, so "Owl's Nest" finds a brand called "Owls Nest".
  */
 export function matchBrand(brands: Brand[], name: string): Brand | null {
-	const loose = (value: string) => brandKey(value).replace(/[^\p{L}\p{N}]/gu, '');
-	const wanted = loose(name);
+	const wanted = looseBrand(name);
 	if (!wanted) return null;
 	return (
 		brands.find((b) => brandKey(b.name) === brandKey(name)) ??
-		brands.find((b) => loose(b.name) === wanted) ??
+		brands.find((b) => looseBrand(b.name) === wanted) ??
 		null
 	);
+}
+
+const looseBrand = (value: string) => brandKey(value).replace(/[^\p{L}\p{N}]/gu, '');
+
+/**
+ * The brand a name that matched none was most likely meant to be — a typo
+ * ("Lanturn" for "Lantern") — for the question that asks which brand a block
+ * is for. Only a near miss: at most one edit in four characters, and never a
+ * tie between two brands.
+ */
+export function closestBrand(brands: Brand[], name: string): Brand | null {
+	const wanted = looseBrand(name);
+	if (!wanted) return null;
+	let best: Brand | null = null;
+	let bestDistance = Infinity;
+	let tied = false;
+	for (const brand of brands) {
+		const key = looseBrand(brand.name);
+		const distance = editDistance(wanted, key);
+		if (distance > Math.max(1, Math.floor(Math.max(wanted.length, key.length) / 4))) continue;
+		if (distance < bestDistance) {
+			best = brand;
+			bestDistance = distance;
+			tied = false;
+		} else if (distance === bestDistance) {
+			tied = true;
+		}
+	}
+	return tied ? null : best;
+}
+
+/** Levenshtein distance: inserts, deletes and swaps of one character each. */
+function editDistance(a: string, b: string): number {
+	let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+	for (let i = 1; i <= a.length; i++) {
+		const current = [i];
+		for (let j = 1; j <= b.length; j++) {
+			current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+		}
+		previous = current;
+	}
+	return previous[b.length];
 }
 
 /** "title, description, 14 tags, playlist" — what a platform got, for the notice. */

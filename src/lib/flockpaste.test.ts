@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filledSummary, matchBrand, parseSchedule, readFlockPaste, type FlockPaste } from './flockpaste';
+import { closestBrand, filledSummary, matchBrand, parseSchedule, readFlockPaste, type FlockPaste } from './flockpaste';
 import type { Brand } from './types';
 
 function read(text: string): FlockPaste {
@@ -163,6 +163,38 @@ describe('matchBrand', () => {
 	it('finds nothing for an unknown or empty name', () => {
 		expect(matchBrand(brands, 'Other')).toBeNull();
 		expect(matchBrand(brands, '')).toBeNull();
+	});
+
+	it('does not match a near miss — that is closestBrand’s suggestion', () => {
+		expect(matchBrand(brands, 'Owls Nets')).toBeNull();
+	});
+});
+
+describe('closestBrand', () => {
+	const brands: Brand[] = [
+		{ id: 'a', name: 'Owls Nest', sort_order: 0, accounts: {} },
+		{ id: 'b', name: 'Paper Moon', sort_order: 1, accounts: {} },
+		{ id: 'c', name: 'Lantern', sort_order: 2, accounts: {} }
+	];
+
+	it('suggests the brand a typo was meant to be', () => {
+		expect(closestBrand(brands, 'Lanturn')?.id).toBe('c');
+		expect(closestBrand(brands, 'Paper Mon')?.id).toBe('b');
+		expect(closestBrand(brands, "owl's nset")?.id).toBe('a');
+	});
+
+	it('suggests nothing for a name that is not close', () => {
+		expect(closestBrand(brands, 'Other')).toBeNull();
+		expect(closestBrand(brands, 'Lamp')).toBeNull();
+		expect(closestBrand(brands, '')).toBeNull();
+	});
+
+	it('suggests nothing when two brands are as close', () => {
+		const twins: Brand[] = [
+			{ id: 'x', name: 'Cat A', sort_order: 0, accounts: {} },
+			{ id: 'y', name: 'Cat B', sort_order: 1, accounts: {} }
+		];
+		expect(closestBrand(twins, 'Cat C')).toBeNull();
 	});
 });
 

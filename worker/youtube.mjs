@@ -567,6 +567,37 @@ function resultOf(video, scheduled) {
 	};
 }
 
+/**
+ * Deletes a video from the channel a post went out on, for a post moved to
+ * another brand (moves.mjs) — 50 units. Only through the channel's own
+ * grant, checked like an upload, and only a broad grant can: an upload-only
+ * one is refused here rather than by YouTube. A video YouTube no longer has
+ * counts as deleted.
+ */
+export async function deleteYouTubeVideo(config, channelId, videoId) {
+	const account = await youtubeAccount(config, channelId);
+	const own = await ownChannel(config, account);
+	if (own.id !== account.channelId) {
+		throw new Error(
+			`The grant listed for the YouTube channel ${account.channelId} belongs to "${own.title}" (${own.id}). ` +
+				`Not deleting anything. Re-connect the channel with:  ${SETUP}`
+		);
+	}
+	if ((await grantCanEdit(config, account)) === false) {
+		throw new Error(
+			`${own.title}'s grant is upload-only and cannot delete videos. Sign it in again with:  ${SETUP} --with-playlists`
+		);
+	}
+	const token = await youtubeToken(config, account);
+	try {
+		await api(token, `/videos?id=${encodeURIComponent(videoId)}`, { method: 'DELETE' });
+		return { channel: own.title, alreadyGone: false };
+	} catch (err) {
+		if (/ -> 404\b/.test(err.message)) return { channel: own.title, alreadyGone: true };
+		throw err;
+	}
+}
+
 export async function publishToYouTube({ target, job, pb, config, log, saveHandle }) {
 	const options = target.options ?? {};
 	const release = resolveRelease(options, target.scheduled_at);

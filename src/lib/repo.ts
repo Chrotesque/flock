@@ -1,7 +1,8 @@
 import { pb, PB_URL } from './pb';
 import { PLATFORMS, PLATFORM_IDS, isPlatformId } from './platforms';
 import { DEFAULT_SCHEDULING } from './types';
-import { logAction, assertDeviceNamed } from './log';
+import { logAction, assertDeviceNamed, deviceName } from './log';
+import { MOVING, canMove, planMove, readMove, type MoveRequest, type MoveStep } from './brandmove';
 import { newId } from './id';
 import { firstLine, formatSchedule } from './format';
 import { STATS_FIELDS, UPLOAD_FIELDS, type StatsRow, type UploadRow } from './videotodo';
@@ -1505,4 +1506,53 @@ export async function retryTarget(id: string): Promise<void> {
 			`It had failed with: ${firstLine(before.error || '') || 'no error given'}`,
 		{ job: before.job }
 	);
+}
+
+/**
+ * Moves a confirmed upload to another brand (brandmove.ts): the job takes
+ * the brand at once, and each post that should go out as another account
+ * gets a `move` the worker carries out — deleting what the old account has
+ * first, where there is something. Everything is read afresh, so the plan
+ * is the rows as they are now, and logged against the upload, post by post.
+ * A post already going out as the brand's account has any older request on
+ * it cleared, so moving back cancels a move the worker has not got to.
+ */
+export async function requestBrandMove(jobId: string, brandId: string): Promise<MoveStep[]> {
+	assertDeviceNamed();
+	const [job, targets, brands, accounts] = await Promise.all([
+		pb.collection('upload_jobs').getOne<UploadJob>(jobId),
+		pb.collection('upload_targets').getFullList<UploadTarget>({ filter: pb.filter('job = {:job}', { job: jobId }) }),
+		listBrands(),
+		loadAccounts()
+	]);
+	const brand = brands.find((b) => b.id === brandId);
+	if (!brand) throw new Error('That brand is gone.');
+	const steps = planMove(targets, brand, accounts, brands.length, new Date());
+	// Worth doing when a post moves, a waiting move is cancelled, or every
+	// post is that brand's already and only the job's label is wrong.
+	const relabel = job.brand !== brand.id && steps.every((step) => step.kind === 'none');
+	if (!canMove(steps) && !targets.some((t) => readMove(t.move)) && !relabel) {
+		throw new Error(`Nothing here can be moved to ${brand.name}.`);
+	}
+
+	const asked = { brand: brand.id, brandName: brand.name, requestedAt: new Date().toISOString(), by: deviceName() };
+	for (const step of steps) {
+		const target = targets.find((t) => t.id === step.target);
+		if (MOVING.includes(step.kind)) {
+			const move: MoveRequest = { ...asked, to: step.to, toName: step.toName, from: step.from };
+			await pb.collection('upload_targets').update(step.target, { move });
+		} else if (target?.move) {
+			await pb.collection('upload_targets').update(step.target, { move: null });
+		}
+	}
+	await pb.collection('upload_jobs').update(jobId, { brand: brand.id, brand_name: brand.name });
+
+	logAction(
+		'upload',
+		`Moved to ${brand.name}`,
+		`${job.title || job.video_name || 'Untitled'} (was ${job.brand_name || 'no brand'}): ` +
+			steps.map((step) => `${PLATFORMS[step.platform]?.label ?? step.platform} — ${step.words}`).join(' '),
+		{ job: jobId }
+	);
+	return steps;
 }

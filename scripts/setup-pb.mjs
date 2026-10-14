@@ -209,6 +209,9 @@ const collections = [
 			// the upload once there is one — what a worker taking over asks the
 			// platform about before uploading again (worker/orphans.mjs).
 			{ type: 'json', name: 'handle', maxSize: 20000 },
+			// A move to another brand's account, asked for by the page and carried
+			// out by the worker — the only one that changes `account` (moves.mjs).
+			{ type: 'json', name: 'move', maxSize: 5000 },
 			...stamps
 		],
 		indexes: [
