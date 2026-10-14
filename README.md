@@ -97,8 +97,8 @@ keeps running when no browser is open. It:
   the slot itself; TikTok and Instagram are held until their slot.
 - lists the watch and project folders, copies videos from your PC to the
   network, and files finished videos into their NAS folder.
-- reads YouTube's and Instagram's numbers for the Dashboard, and scores titles
-  with vidIQ if you set that up.
+- reads YouTube's, Instagram's and Facebook's numbers for the Dashboard, and
+  scores titles with vidIQ if you set that up.
 
 A platform you have not set up just leaves its releases waiting in the queue.
 
@@ -218,7 +218,8 @@ The worker keeps each Page's own token, which does not expire.
   `all`. Running it again adds or refreshes accounts and drops none.
 - **Consent screen instead of a token:** leave out `--token`. That needs the
   *Facebook Login for Business* product; a configuration id goes in
-  `instagram.configId`.
+  `instagram.configId`. Once the app is Live, Facebook only sends you back to
+  an address registered on the app, so the token route is the simpler one.
 - `pnpm worker:instagram` shows each account and how much of its daily
   allowance (100 posts) is used.
 - **Covers:** a cover image is placed on your Page as an *unpublished* photo
@@ -226,8 +227,8 @@ The worker keeps each Page's own token, which does not expire.
   the reel uses its *Cover frame*.
 - **Reel views:** with `instagram_manage_insights` granted, the worker also
   reads each account's newest 100 posts and their views every 10 minutes, into
-  PocketBase's `post_stats` (`igStatsPosts`, `igStatsSeconds`; 0 turns it off).
-  No screen shows them yet.
+  PocketBase's `post_stats` (`igStatsPosts`, `igStatsSeconds`; 0 turns it off),
+  and the Dashboard shows them.
 
 ### Facebook
 
@@ -261,6 +262,14 @@ Then choose each brand's Page in Settings → *Brands*.
 - **Covers:** a cover image becomes the reel's cover on the Page. If Facebook
   refuses it, the reel goes out with a frame Facebook picks, and the post's
   entry in the Log says why.
+- **Reel numbers:** the worker reads each Page's newest 100 reels every 10
+  minutes — every reel on the Page, including the ones Instagram shares there —
+  with their likes and comments, for the Dashboard (`fbStatsPosts`,
+  `fbStatsSeconds`; 0 turns it off). Their **views** need one more permission,
+  `read_insights`: add it in the Graph API Explorer and run the setup again
+  (`pnpm worker:auth --instagram --token`, or `--facebook --token` if you
+  listed your Pages that way). Until then the Dashboard says the views are not
+  read.
 
 ### vidIQ (optional)
 

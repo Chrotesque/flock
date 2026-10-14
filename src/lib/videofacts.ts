@@ -170,23 +170,37 @@ export function youtubeFacts(row: VideoStats, ago: (iso: string | undefined) => 
 }
 
 /** A reel as `post_stats` holds it; Instagram's insights may lag up to two days. */
-export function reelFacts(row: ReelRow, ago: (iso: string | undefined) => string): FactGroup[] {
+export function reelFacts(
+	row: ReelRow & { platform?: string; data?: Record<string, unknown> },
+	ago: (iso: string | undefined) => string
+): FactGroup[] {
 	const last = row.history?.[row.history.length - 1];
+	const facebook = row.platform === 'facebook';
+	// Facebook's insights (fbstats.mjs), kept in `data` beside the columns.
+	const insights = (facebook ? (row.data?.insights ?? {}) : {}) as Record<string, unknown>;
+	const num = (v: unknown) => (typeof v === 'number' ? v : null);
+	const social = insights.post_video_social_actions as Record<string, number> | undefined;
+	const avgMs = num(insights.post_video_avg_time_watched);
+	const length = num(row.data?.length);
 	return [
 		{
 			title: 'Reel',
 			rows: pairs([
 				['Posted', when(row.published_at)],
+				['Length', length ? formatDuration(Math.round(length)) : undefined],
 				['Caption', row.caption]
 			])
 		},
 		{
 			title: 'Counters',
 			rows: pairs([
-				['Views', count(row.views)],
+				['Views', count(row.views, facebook ? 'not read yet' : undefined)],
+				['Plays without replays', count(num(insights.blue_reels_play_count))],
+				['Average watched', avgMs != null ? `${(avgMs / 1000).toFixed(1)} s` : undefined],
 				['Accounts reached', count(row.reach)],
 				['Likes', count(row.likes)],
 				['Comments', count(row.comments)],
+				['Shares', count(social?.SHARE ?? null)],
 				['Samples kept', String(row.history?.length ?? 0)],
 				['Last movement', last ? ago(last[0]) : undefined]
 			])

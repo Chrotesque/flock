@@ -355,15 +355,16 @@ const collections = [
 	},
 	{
 		// A post's own counts on a platform other than YouTube, one row per post,
-		// written only by the worker (igstats.mjs — Instagram's reels and their
-		// views). Kept apart from video_stats, which is YouTube's item as it is.
+		// written only by the worker (igstats.mjs — Instagram's posts and their
+		// views; fbstats.mjs — Facebook's reels). Kept apart from video_stats,
+		// which is YouTube's item as it is.
 		name: 'post_stats',
 		type: 'base',
 		...RULES,
 		fields: [
 			{ type: 'text', name: 'platform', required: true, max: 20 },
 			{ type: 'text', name: 'post_id', required: true, max: 60 },
-			// The account it is on: the platform's own id (Instagram user id).
+			// The account it is on: the platform's own id (Instagram user id, Facebook Page id).
 			{ type: 'text', name: 'account', max: 60 },
 			{ type: 'text', name: 'handle', max: 120 },
 			{ type: 'text', name: 'permalink', max: 500 },

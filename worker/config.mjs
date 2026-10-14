@@ -149,6 +149,10 @@ export function loadConfig() {
 		// point reading them often. 0 turns the pass off.
 		igStatsSeconds: Number(process.env.FLOCK_IG_STATS_SECONDS ?? file.igStatsSeconds ?? 600),
 		igStatsPosts: Number(process.env.FLOCK_IG_STATS_POSTS ?? file.igStatsPosts ?? 100),
+		// The Facebook stats pass (fbstats.mjs): every Page's newest reels with
+		// their views, likes and comments, at Instagram's pace. 0 turns it off.
+		fbStatsSeconds: Number(process.env.FLOCK_FB_STATS_SECONDS ?? file.fbStatsSeconds ?? 600),
+		fbStatsPosts: Number(process.env.FLOCK_FB_STATS_POSTS ?? file.fbStatsPosts ?? 100),
 		// The warning card of the worker with a tray icon (alerts.mjs): where and
 		// how it shows, set in its settings window, and the warnings dismissed on
 		// this PC. Per machine, like everything in this file.

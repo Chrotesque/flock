@@ -43,6 +43,7 @@
 		ratioOf,
 		readFilter,
 		sortRows,
+		storedFilter,
 		sumOf,
 		visibilityOf,
 		type Counter,
@@ -61,8 +62,9 @@
 	 * (platforms — all of them is the combined view — kinds and visibility);
 	 * the period numbers and the list of every video follow it. Each video
 	 * carries its curve from release and how it stands against the usual for
-	 * its kind. The brand in view picks the channel and the Instagram account,
-	 * one of each — never added up across channels (YouTube's rule). The
+	 * its kind. The brand in view picks the channel, the Instagram account and
+	 * the Facebook Page, one of each — never added up across channels
+	 * (YouTube's rule). The
 	 * arithmetic is releases.ts; the data `dashData`, kept between openings.
 	 */
 
@@ -101,7 +103,7 @@
 	const SORTS: SortKey[] = ['date', 'views', 'likes', 'comments', 'usual'];
 	let filter = $state<Filter>(readFilter(parsed(readPref(FILTER_KEY))));
 	let sort = $state<SortKey>(SORTS.find((s) => s === readPref(SORT_KEY)) ?? 'date');
-	$effect(() => writePref(FILTER_KEY, JSON.stringify(filter)));
+	$effect(() => writePref(FILTER_KEY, JSON.stringify(storedFilter(filter))));
 	$effect(() => writePref(SORT_KEY, sort));
 
 	/* ---- the data ---- */
@@ -109,8 +111,11 @@
 	let now = $state(Date.now());
 	const videos = $derived(dashData.videos);
 	const reels = $derived(dashData.reels);
+	const igReels = $derived(reels.filter((r) => r.platform === 'instagram'));
+	const fbReels = $derived(reels.filter((r) => r.platform === 'facebook'));
 	const status = $derived(dashData.status);
 	const igStatus = $derived(dashData.igStatus);
+	const fbStatus = $derived(dashData.fbStatus);
 	const loaded = $derived(dashData.loaded);
 	const loading = $derived(dashData.loading);
 	const error = $derived(dashData.error);
@@ -131,7 +136,7 @@
 	function rebase() {
 		baseline = Object.fromEntries([
 			...dashData.videos.map((v) => [`youtube:${v.id}`, countersOf(v)]),
-			...dashData.reels.map((r) => [`instagram:${r.id}`, countersOf(r)])
+			...dashData.reels.map((r) => [`${r.platform}:${r.id}`, countersOf(r)])
 		]);
 		based = true;
 	}
@@ -168,7 +173,7 @@
 		const stopMarks = jestrCampaigns.subscribe();
 		const stopReels = subscribeReels((reel, action) => {
 			dashData.putReel(reel, action);
-			if (action !== 'delete') baseIfNew(`instagram:${reel.id}`, reel);
+			if (action !== 'delete') baseIfNew(`${reel.platform}:${reel.id}`, reel);
 		});
 		// Posts change in bursts (a confirm writes several): read them once it settles.
 		const stopTargets = subscribeTargets(() => {
@@ -187,17 +192,20 @@
 		};
 	});
 
-	/* ---- the brand in view: one channel, one Instagram account ---- */
+	/* ---- the brand in view: one channel, one Instagram account, one Facebook Page ---- */
 
 	const channel = $derived(accounts.for('youtube'));
 	const igAccount = $derived(accounts.for('instagram'));
+	const fbPage = $derived(accounts.for('facebook'));
 	// One brand and at most one account: nothing to choose between, so all of it.
 	const loneYT = $derived(!channel && !brands.multiple && accounts.forPlatform('youtube').length <= 1);
 	const loneIG = $derived(!igAccount && !brands.multiple && accounts.forPlatform('instagram').length <= 1);
+	const loneFB = $derived(!fbPage && !brands.multiple && accounts.forPlatform('facebook').length <= 1);
 	const myVideos = $derived(
 		channel ? videos.filter((v) => v.channelId === channel.account_id) : loneYT ? videos : []
 	);
-	const myReels = $derived(igAccount ? reels.filter((r) => r.account === igAccount.account_id) : loneIG ? reels : []);
+	const myReels = $derived(igAccount ? igReels.filter((r) => r.account === igAccount.account_id) : loneIG ? igReels : []);
+	const myFbReels = $derived(fbPage ? fbReels.filter((r) => r.account === fbPage.account_id) : loneFB ? fbReels : []);
 	const myTargets = $derived(
 		brands.multiple ? dashData.targets.filter((t) => t.brand === brands.currentId) : dashData.targets
 	);
@@ -209,10 +217,11 @@
 					label: g.label,
 					colour: g.colour,
 					videos: g.channel ? videos.filter((v) => v.channelId === g.channel) : [],
-					reels: g.instagram ? reels.filter((r) => r.account === g.instagram) : [],
+					reels: g.instagram ? igReels.filter((r) => r.account === g.instagram) : [],
+					fbReels: g.facebook ? fbReels.filter((r) => r.account === g.facebook) : [],
 					posts: dashData.targets.filter((t) => t.brand === g.brand)
 				}))
-			: [{ label: '', colour: undefined, videos: myVideos, reels: myReels, posts: myTargets }]
+			: [{ label: '', colour: undefined, videos: myVideos, reels: myReels, fbReels: myFbReels, posts: myTargets }]
 	);
 	const postsInView = $derived(sets.flatMap((set) => set.posts));
 	const noChannel = $derived(!scope && accounts.loaded && !channel && !loneYT);
@@ -220,7 +229,7 @@
 	// Each set's videos and reels pair only among themselves.
 	const releases = $derived(
 		sets.flatMap((set) =>
-			buildReleases(set.videos, set.reels, set.posts).map((r) =>
+			buildReleases(set.videos, set.reels, set.posts, set.fbReels).map((r) =>
 				sets.length > 1 ? { ...r, group: set.label, tint: set.colour } : r
 			)
 		)
@@ -328,7 +337,7 @@
 		return typeof row === 'object' ? row : null;
 	}
 
-	/** An opened row's facts: YouTube's once its whole item is read, Instagram's at once. */
+	/** An opened row's facts: YouTube's once its whole item is read, a reel's at once. */
 	function factsFor(post: Post): FactGroup[] | null {
 		if (post.platform === 'youtube') {
 			const full = fullRow(post);
@@ -360,12 +369,18 @@
 
 	const nowDate = $derived(new Date(now));
 	const periods = $derived(periodStats(inViewList, filter, nowDate));
+	// A platform whose views are read for none of the videos (Facebook without
+	// read_insights) says so, rather than +0.
+	const viewsUnread = $derived(
+		new Set(filter.platforms.filter((p) => !inViewList.some((r) => typeof r.posts[p]?.views === 'number')))
+	);
 
 	/* ---- side notes: when each platform was read, and what is left of the day ---- */
 
 	// A scope is no one brand: the pass's own read, and no account named.
 	const noteChannel = $derived(scope ? null : channel);
 	const noteInstagram = $derived(scope ? null : igAccount);
+	const noteFacebook = $derived(scope ? null : fbPage);
 
 	const ytBeat = $derived.by(() => {
 		if (!status) return null;
@@ -378,13 +393,14 @@
 		};
 	});
 	const igBeat = $derived(noteInstagram ? igStatus?.accounts?.[noteInstagram.account_id] : undefined);
+	const fbBeat = $derived(noteFacebook ? fbStatus?.pages?.[noteFacebook.account_id] : undefined);
 	const allowance = $derived(postAllowance(noteInstagram));
 
-	/** The account a platform's numbers are read from, for the legend: YouTube by channel name, Instagram by handle. */
+	/** The account a platform's numbers are read from, for the legend: YouTube by channel name, a Page by its name, Instagram by handle. */
 	function accountOf(p: StatPlatform): string {
-		const account = p === 'youtube' ? noteChannel : noteInstagram;
+		const account = p === 'youtube' ? noteChannel : p === 'facebook' ? noteFacebook : noteInstagram;
 		if (!account) return '';
-		return p === 'youtube' ? account.name || accountLabel(account) : accountLabel(account);
+		return p === 'instagram' ? accountLabel(account) : account.name || accountLabel(account);
 	}
 
 	/* ---- words and numbers ---- */
@@ -434,9 +450,14 @@
 		none: 'M5 8h6'
 	};
 
-	function judgementTitle(j: Judgement, kind: string): string {
+	function judgementTitle(j: Judgement, release: Release): string {
+		const kind = release.kind;
 		const label = PLATFORMS[j.platform].label;
 		const plural = kind === 'short' ? 'Shorts' : (KIND_LABELS[kind as keyof typeof KIND_LABELS] ?? 'videos').toLowerCase();
+		const post = release.posts[j.platform];
+		// Never read at all: Facebook's views before read_insights is granted.
+		if (j.views === null && post && post.views === null && post.samples.length === 0)
+			return `${label}: its views are not read yet.`;
 		if (j.views === null) return `${label}: flock was not reading this video ${ageWords(j.age)}.`;
 		if (j.usual === null)
 			return `${label}: ${num(j.views)} views ${ageWords(j.age)}. Too few other ${plural} were read at that age to say what is usual (${j.peers} of 3).`;
@@ -611,6 +632,20 @@
 						{/if}
 					</li>
 				{/if}
+				{#if noteFacebook}
+					<li
+						class:bad={Boolean(fbBeat?.error)}
+						class:warn={!fbBeat?.error && Boolean(fbBeat?.views)}
+						title={fbBeat?.error || fbBeat?.views || "Facebook: when the Page's reels were last read"}
+					>
+						<PlatformIcon platform="facebook" size={12} />
+						{#if fbBeat?.error}
+							{fbBeat.error}
+						{:else}
+							read {ago(fbBeat?.polledAt)}{fbBeat?.views ? ' · views not read' : ''}
+						{/if}
+					</li>
+				{/if}
 			</ul>
 			{#if jestrOn}
 				<button
@@ -657,11 +692,15 @@
 					{#if multi}
 						<p class="split">
 							{#each filter.platforms as p (p)}
-								<span title="{PLATFORMS[p].label}: {whole.format(period.byPlatform[p].views)} views on the videos out, +{whole.format(
-										period.byPlatform[p].gained
-									)} gained"
-									><i style:background={PLATFORM_COLOURS[p]}></i>+{big(period.byPlatform[p].gained)}</span
-								>
+								{#if viewsUnread.has(p)}
+									<span title="{PLATFORMS[p].label}: views not read yet"><i style:background={PLATFORM_COLOURS[p]}></i>—</span>
+								{:else}
+									<span title="{PLATFORMS[p].label}: {whole.format(period.byPlatform[p].views)} views on the videos out, +{whole.format(
+											period.byPlatform[p].gained
+										)} gained"
+										><i style:background={PLATFORM_COLOURS[p]}></i>+{big(period.byPlatform[p].gained)}</span
+									>
+								{/if}
 							{/each}
 						</p>
 					{/if}
@@ -727,7 +766,9 @@
 					{#if r.thumb}
 						<img class="thumb" src={r.thumb} alt="" loading="lazy" />
 					{:else}
-						<span class="thumb blank"><PlatformIcon platform={r.posts.instagram ? 'instagram' : 'youtube'} size={16} /></span>
+						<span class="thumb blank"
+							><PlatformIcon platform={r.posts.instagram ? 'instagram' : r.posts.facebook ? 'facebook' : 'youtube'} size={16} /></span
+						>
 					{/if}
 					<span class="vid">
 						<span class="vtitle">{r.title}</span>
@@ -761,7 +802,7 @@
 					<span class="spark"><ViewsCurve curves={row.curves} /></span>
 					<span class="verdicts">
 						{#each row.judgements as j (j.platform)}
-							<span class="judged {j.verdict ?? 'none'}" title={judgementTitle(j, r.kind)}>
+							<span class="judged {j.verdict ?? 'none'}" title={judgementTitle(j, r)}>
 								<PlatformIcon platform={j.platform} size={13} />
 								<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
 									<path d={TREND[j.verdict ?? 'none']} />
@@ -1016,6 +1057,10 @@
 
 	.notes li.bad {
 		color: var(--danger);
+	}
+
+	.notes li.warn {
+		color: var(--warn);
 	}
 
 	.sm {

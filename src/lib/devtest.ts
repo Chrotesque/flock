@@ -36,6 +36,8 @@ export interface DashboardGroup {
 	channel: string;
 	/** The Instagram account id its reels are on; '' for none. */
 	instagram: string;
+	/** The Facebook Page id its reels are on; '' or absent for none. */
+	facebook?: string;
 	/** The brand id its posts belong to. */
 	brand: string;
 	/** A CSS colour its rows are tinted with, while several groups are in view. */

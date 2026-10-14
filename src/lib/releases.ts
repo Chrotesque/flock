@@ -3,14 +3,15 @@ import { kindOf, KIND_ORDER, SHORT_MAX_SECONDS, type VideoKind } from './videoki
 import type { PlatformId } from './types';
 
 /**
- * The dashboard's arithmetic: every video on the brand's channel and
- * Instagram account, the numbers by period and what is coming, over every
- * platform flock reads counters for — together (the combined view) or apart.
+ * The dashboard's arithmetic: every video on the brand's channel, Instagram
+ * account and Facebook Page, the numbers by period and what is coming, over
+ * every platform flock reads counters for — together (the combined view) or
+ * apart.
  *
  * A *release* is one video wherever it went out: a YouTube video and the
- * Instagram reel of the same flock upload are one release (matched by the
- * upload's links), and without that, a Short and a reel posted within two
- * hours of each other. Everything else is a release of its own.
+ * reels of the same flock upload are one release (matched by the upload's
+ * links), and without that, a Short and the reels posted within two hours of
+ * it. Everything else is a release of its own.
  *
  * One YouTube channel at a time — the brand in view's — because YouTube's
  * policies forbid adding figures up across channels; the caller filters.
@@ -22,14 +23,17 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
-/** The platforms flock reads counters for. TikTok and Facebook are posted to but report nothing back yet. */
-export type StatPlatform = 'youtube' | 'instagram';
-export const STAT_PLATFORMS: StatPlatform[] = ['youtube', 'instagram'];
+/** The platforms flock reads counters for. TikTok is posted to but reports nothing back yet. */
+export type StatPlatform = 'youtube' | 'instagram' | 'facebook';
+export const STAT_PLATFORMS: StatPlatform[] = ['youtube', 'instagram', 'facebook'];
+/** The platforms whose posts are reels, read from `post_stats`. */
+export type ReelPlatform = 'instagram' | 'facebook';
+export const REEL_PLATFORMS: ReelPlatform[] = ['instagram', 'facebook'];
 /** Every platform, in display order; the ones not in STAT_PLATFORMS show as "not read yet". */
 export const ALL_PLATFORMS: PlatformId[] = ['youtube', 'instagram', 'tiktok', 'facebook'];
 
-/** Each platform's line and swatch, checked as a pair on the dark surface. */
-export const PLATFORM_COLOURS: Record<StatPlatform, string> = { youtube: '#e8484a', instagram: '#9b6cf0' };
+/** Each platform's line and swatch, checked as a set on the dark surface (every pair, colour-blind included). */
+export const PLATFORM_COLOURS: Record<StatPlatform, string> = { youtube: '#e8484a', instagram: '#9b6cf0', facebook: '#22a2c0' };
 
 export function isStatPlatform(p: string): p is StatPlatform {
 	return (STAT_PLATFORMS as string[]).includes(p);
@@ -69,7 +73,7 @@ export interface YouTubeRow {
 	thumb: string;
 }
 
-/** A `post_stats` row for an Instagram reel, slim. */
+/** A `post_stats` row for a reel (Instagram's or Facebook's), slim. */
 export interface ReelRow {
 	id: string;
 	post_id: string;
@@ -98,7 +102,7 @@ export interface Post {
 	platform: StatPlatform;
 	/** The `video_stats` / `post_stats` record id. */
 	record: string;
-	/** YouTube's video id, Instagram's media id. */
+	/** YouTube's video id, Instagram's media id, Facebook's video id. */
 	id: string;
 	url: string;
 	at: number;
@@ -139,9 +143,9 @@ export function youtubePost(row: YouTubeRow): Post {
 	};
 }
 
-export function reelPost(row: ReelRow): Post {
+export function reelPost(row: ReelRow, platform: ReelPlatform = 'instagram'): Post {
 	return {
-		platform: 'instagram',
+		platform,
 		record: row.id,
 		id: row.post_id,
 		url: row.permalink,
@@ -194,7 +198,7 @@ export interface Release {
 	duration: number;
 	thumb: string;
 	posts: Partial<Record<StatPlatform, Post>>;
-	/** Every place flock posted it, counters or not (TikTok and Facebook too). */
+	/** Every place flock posted it, counters or not (TikTok too). */
 	links: Partial<Record<PlatformId, string>>;
 	/** The flock upload, '' when it went out some other way. */
 	job: string;
@@ -234,16 +238,19 @@ export function captionTitle(caption: string): string {
 }
 
 /**
- * Every release of a channel and an Instagram account. A YouTube video and a
- * reel are one release when the same flock upload made both; failing that, a
- * Short and a reel within two hours of each other are paired closest first,
- * one to one. A reel left over is a release of its own, kind Short.
+ * Every release of a channel, an Instagram account and a Facebook Page. A
+ * YouTube video and a reel are one release when the same flock upload made
+ * both; failing that, a reel within two hours of a Short (or of a reel already
+ * taken for one) joins it, closest first, one to one. Instagram's reels are
+ * placed first, then Facebook's — on the Pages read so far mostly Instagram's
+ * own, shared over — so a Facebook reel can join an Instagram one that had no
+ * Short. A reel left over is a release of its own, kind Short.
  */
-export function buildReleases(videos: YouTubeRow[], reels: ReelRow[], targets: TargetLink[]): Release[] {
+export function buildReleases(videos: YouTubeRow[], reels: ReelRow[], targets: TargetLink[], fbReels: ReelRow[] = []): Release[] {
 	// What each flock upload made, by platform, and the way back from a post to its upload.
 	const jobs = new Map<string, { title: string; links: Partial<Record<PlatformId, string>> }>();
 	const jobOfVideo = new Map<string, string>();
-	const jobOfReel = new Map<string, string>();
+	const jobOfReel: Record<ReelPlatform, Map<string, string>> = { instagram: new Map(), facebook: new Map() };
 	for (const t of targets) {
 		if (!t.remote_url) continue;
 		const entry = jobs.get(t.job) ?? { title: t.jobTitle, links: {} };
@@ -252,18 +259,13 @@ export function buildReleases(videos: YouTubeRow[], reels: ReelRow[], targets: T
 		if (t.platform === 'youtube') {
 			const id = youtubeId(t.remote_url);
 			if (id) jobOfVideo.set(id, t.job);
-		} else if (t.platform === 'instagram') jobOfReel.set(sameLink(t.remote_url), t.job);
+		} else if (t.platform === 'instagram' || t.platform === 'facebook') jobOfReel[t.platform].set(sameLink(t.remote_url), t.job);
 	}
-
-	const reelPosts = reels.map((row) => ({ row, post: reelPost(row) }));
-	const reelByLink = new Map(reelPosts.map((r) => [sameLink(r.row.permalink), r]));
-	const usedReels = new Set<string>();
 
 	const out: Release[] = videos.map((row) => {
 		const post = youtubePost(row);
 		const job = jobOfVideo.get(row.video_id) ?? '';
-		const links: Partial<Record<PlatformId, string>> = { ...(jobs.get(job)?.links ?? {}), youtube: post.url };
-		const release: Release = {
+		return {
 			key: `yt:${row.video_id}`,
 			title: row.title || jobs.get(job)?.title || '(untitled)',
 			at: post.at,
@@ -272,64 +274,74 @@ export function buildReleases(videos: YouTubeRow[], reels: ReelRow[], targets: T
 			duration: row.duration,
 			thumb: row.thumb,
 			posts: { youtube: post },
-			links,
+			links: { ...(jobs.get(job)?.links ?? {}), youtube: post.url },
 			job,
 			matched: ''
 		};
-		const reel = job && links.instagram ? reelByLink.get(sameLink(links.instagram)) : undefined;
-		if (reel && !usedReels.has(reel.row.post_id)) {
-			release.posts.instagram = reel.post;
-			release.links.instagram = reel.post.url;
-			release.at = Math.min(release.at, reel.post.at);
-			release.matched = 'job';
-			usedReels.add(reel.row.post_id);
-		}
-		return release;
 	});
 
-	// Closest first, one to one: Shorts without a reel, reels no upload claimed.
-	const candidates: [number, Release, (typeof reelPosts)[number]][] = [];
-	for (const release of out) {
-		if (release.posts.instagram || release.kind !== 'short') continue;
-		// The upload says where its reel is (or that it had none): no guessing past it.
-		if (release.job && jobs.get(release.job)?.links.instagram) continue;
-		const at = release.posts.youtube!.at;
-		for (const reel of reelPosts) {
-			if (usedReels.has(reel.row.post_id)) continue;
-			// Likewise a reel whose upload made a YouTube video too. One made on its
-			// own (a platform given its own file is an upload of its own) may pair.
-			const reelJob = jobOfReel.get(sameLink(reel.row.permalink));
-			if (reelJob && jobs.get(reelJob)?.links.youtube) continue;
-			const gap = Math.abs(reel.post.at - at);
-			if (gap <= PAIR_WINDOW_MS) candidates.push([gap, release, reel]);
-		}
-	}
-	candidates.sort((a, b) => a[0] - b[0]);
-	for (const [, release, reel] of candidates) {
-		if (release.posts.instagram || usedReels.has(reel.row.post_id)) continue;
-		release.posts.instagram = reel.post;
-		release.links.instagram = reel.post.url;
-		release.at = Math.min(release.at, reel.post.at);
-		release.matched = 'time';
-		usedReels.add(reel.row.post_id);
-	}
+	const rowsOf: Record<ReelPlatform, ReelRow[]> = { instagram: reels, facebook: fbReels };
+	for (const platform of REEL_PLATFORMS) {
+		const reelPosts = rowsOf[platform].map((row) => ({ row, post: reelPost(row, platform) }));
+		const reelByLink = new Map(reelPosts.map((r) => [sameLink(r.row.permalink), r]));
+		const used = new Set<string>();
+		const take = (release: Release, reel: (typeof reelPosts)[number], how: 'job' | 'time') => {
+			release.posts[platform] = reel.post;
+			release.links[platform] = reel.post.url;
+			release.at = Math.min(release.at, reel.post.at);
+			// "Paired by time" as soon as any of its posts was.
+			release.matched = how === 'time' || release.matched === 'time' ? 'time' : 'job';
+			used.add(reel.row.post_id);
+		};
 
-	for (const { row, post } of reelPosts) {
-		if (usedReels.has(row.post_id)) continue;
-		const job = jobOfReel.get(sameLink(row.permalink)) ?? '';
-		out.push({
-			key: `ig:${row.post_id}`,
-			title: jobs.get(job)?.title || captionTitle(row.caption) || '(no caption)',
-			at: post.at,
-			kind: 'short',
-			privacy: 'public',
-			duration: 0,
-			thumb: '',
-			posts: { instagram: post },
-			links: { ...(jobs.get(job)?.links ?? {}), instagram: post.url },
-			job,
-			matched: ''
-		});
+		// The same flock upload.
+		for (const release of out) {
+			const link = release.job ? jobs.get(release.job)?.links[platform] : undefined;
+			const reel = link ? reelByLink.get(sameLink(link)) : undefined;
+			if (reel && !used.has(reel.row.post_id)) take(release, reel, 'job');
+		}
+
+		// Closest first, one to one: Shorts without such a reel, reels no upload claimed.
+		const candidates: [number, Release, (typeof reelPosts)[number]][] = [];
+		for (const release of out) {
+			if (release.posts[platform] || release.kind !== 'short') continue;
+			// The upload says where its reel is (or that it had none): no guessing past it.
+			if (release.job && jobs.get(release.job)?.links[platform]) continue;
+			const times = STAT_PLATFORMS.map((p) => release.posts[p]?.at).filter((t): t is number => t !== undefined);
+			for (const reel of reelPosts) {
+				if (used.has(reel.row.post_id)) continue;
+				// Likewise a reel whose upload went out elsewhere too: it belongs to that
+				// upload's release. One made on its own (a platform given its own file is
+				// an upload of its own) may pair.
+				const reelJob = jobOfReel[platform].get(sameLink(reel.row.permalink));
+				if (reelJob && STAT_PLATFORMS.some((p) => p !== platform && jobs.get(reelJob)?.links[p])) continue;
+				const gap = Math.min(...times.map((t) => Math.abs(reel.post.at - t)));
+				if (gap <= PAIR_WINDOW_MS) candidates.push([gap, release, reel]);
+			}
+		}
+		candidates.sort((a, b) => a[0] - b[0]);
+		for (const [, release, reel] of candidates) {
+			if (release.posts[platform] || used.has(reel.row.post_id)) continue;
+			take(release, reel, 'time');
+		}
+
+		for (const { row, post } of reelPosts) {
+			if (used.has(row.post_id)) continue;
+			const job = jobOfReel[platform].get(sameLink(row.permalink)) ?? '';
+			out.push({
+				key: `${platform === 'instagram' ? 'ig' : 'fb'}:${row.post_id}`,
+				title: jobs.get(job)?.title || captionTitle(row.caption) || '(no caption)',
+				at: post.at,
+				kind: 'short',
+				privacy: 'public',
+				duration: 0,
+				thumb: '',
+				posts: { [platform]: post },
+				links: { ...(jobs.get(job)?.links ?? {}), [platform]: post.url },
+				job,
+				matched: ''
+			});
+		}
 	}
 	return out.filter((r) => Number.isFinite(r.at));
 }
@@ -353,10 +365,25 @@ export const DEFAULT_FILTER: DashFilter = {
 	private: false
 };
 
-/** A stored filter, rebuilt field by field; what is unknown or empty falls back. */
+/** The platforms a filter saved before it said which it knew was saved knowing: those before Facebook's numbers. */
+const KNOWN_BEFORE: StatPlatform[] = ['youtube', 'instagram'];
+
+/** A filter as it is stored: with the platforms there were, so one flock starts reading later can be told apart. */
+export function storedFilter(filter: DashFilter): DashFilter & { known: StatPlatform[] } {
+	return { ...filter, known: [...STAT_PLATFORMS] };
+}
+
+/**
+ * A stored filter, rebuilt field by field; what is unknown or empty falls
+ * back. A platform flock started reading since it was saved joins a combined
+ * view, and stays out of a filter that had picked some platforms only.
+ */
 export function readFilter(raw: unknown): DashFilter {
 	const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-	const platforms = Array.isArray(r.platforms) ? STAT_PLATFORMS.filter((p) => (r.platforms as unknown[]).includes(p)) : [];
+	const stored = Array.isArray(r.platforms) ? (r.platforms as unknown[]) : [];
+	const known = Array.isArray(r.known) ? (r.known as unknown[]) : KNOWN_BEFORE;
+	const wasCombined = known.every((p) => stored.includes(p));
+	const platforms = STAT_PLATFORMS.filter((p) => stored.includes(p) || (wasCombined && !known.includes(p)));
 	const kinds = Array.isArray(r.kinds) ? KIND_ORDER.filter((k) => (r.kinds as unknown[]).includes(k)) : null;
 	return {
 		platforms: platforms.length > 0 ? platforms : [...DEFAULT_FILTER.platforms],
@@ -401,7 +428,7 @@ export function filterCounts(releases: Release[], filter: DashFilter): FilterCou
 		kinds: { short: 0, long: 0, live: 0, other: 0 },
 		unlisted: 0,
 		private: 0,
-		platforms: { youtube: 0, instagram: 0 }
+		platforms: { youtube: 0, instagram: 0, facebook: 0 }
 	};
 	for (const r of releases) {
 		if (onPlatforms(r, filter.platforms) && visible(r, filter)) out.kinds[r.kind] += 1;
@@ -579,7 +606,11 @@ export function periodStats(releases: Release[], filter: DashFilter, now: Date):
 			views: 0,
 			gained: 0,
 			partly: false,
-			byPlatform: { youtube: { views: 0, gained: 0 }, instagram: { views: 0, gained: 0 } }
+			byPlatform: {
+				youtube: { views: 0, gained: 0 },
+				instagram: { views: 0, gained: 0 },
+				facebook: { views: 0, gained: 0 }
+			}
 		};
 		for (const r of releases) {
 			const posts = filter.platforms.map((p) => r.posts[p]).filter((p): p is Post => Boolean(p));

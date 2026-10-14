@@ -16,6 +16,12 @@ export interface IgStatsStatus {
 	accounts?: Record<string, { polledAt?: string; posts?: number; error?: string }>;
 }
 
+/** The Facebook stats pass's heartbeat (worker/fbstats.mjs); `views` says why a Page's views are not read. */
+export interface FbStatsStatus {
+	polledAt?: string;
+	pages?: Record<string, { name?: string; polledAt?: string; posts?: number; error?: string; views?: string }>;
+}
+
 /**
  * What the dashboard reads, kept between openings: it opens on the last
  * numbers at once and reads fresh ones straight away (Dashboard.svelte, which
@@ -28,6 +34,7 @@ class DashData {
 	targets = $state<(DashTarget & { brand: string })[]>([]);
 	status = $state<StatsStatus | null>(null);
 	igStatus = $state<IgStatsStatus | null>(null);
+	fbStatus = $state<FbStatsStatus | null>(null);
 	loaded = $state(false);
 	loading = $state(false);
 	error = $state('');
@@ -43,18 +50,20 @@ class DashData {
 	async #read() {
 		this.loading = true;
 		try {
-			const [videos, reels, targets, status, igStatus] = await Promise.all([
+			const [videos, reels, targets, status, igStatus, fbStatus] = await Promise.all([
 				loadDashboardVideos(),
 				loadDashboardReels(),
 				loadDashTargets(),
 				getStatsStatus().catch(() => null),
-				getSetting<IgStatsStatus | null>('instagram_stats_status', null).catch(() => null)
+				getSetting<IgStatsStatus | null>('instagram_stats_status', null).catch(() => null),
+				getSetting<FbStatsStatus | null>('facebook_stats_status', null).catch(() => null)
 			]);
 			this.videos = videos;
 			this.reels = reels;
 			this.targets = targets;
 			this.status = status;
 			this.igStatus = igStatus;
+			this.fbStatus = fbStatus;
 			this.error = '';
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);

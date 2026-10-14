@@ -17,7 +17,7 @@ import {
 import type { WorkerBeat, WorkerBeats, WorkerRole } from './workerstatus';
 import type { UploadRecord } from './uploadrecord';
 import type { DashTarget, StatsVideo } from './dashboard';
-import type { ReelRow, Sample, YouTubeRow } from './releases';
+import type { ReelPlatform, ReelRow, Sample, YouTubeRow } from './releases';
 import type {
 	Account,
 	Brand,
@@ -1227,8 +1227,8 @@ export async function loadDashTargets(since?: Date): Promise<(DashTarget & { bra
 
 /** A YouTube video for the dashboard, with the channel it is on. */
 export type DashboardVideo = YouTubeRow & { channelId: string };
-/** An Instagram reel for the dashboard, with the account it is on. */
-export type DashboardReel = ReelRow & { account: string };
+/** A reel for the dashboard: Instagram's or Facebook's, with the account (Page) it is on. */
+export type DashboardReel = ReelRow & { platform: ReelPlatform; account: string; data?: Record<string, unknown> };
 
 type VideoRecord = Partial<Omit<VideoStats, 'data'>> & {
 	data?: {
@@ -1261,18 +1261,27 @@ export function toDashboardVideo(row: VideoRecord): DashboardVideo {
 /** A `post_stats` record as the dashboard reads it. */
 export function toDashboardReel(row: Record<string, unknown>): DashboardReel {
 	const n = (v: unknown) => (typeof v === 'number' ? v : null);
+	const facebook = row.platform === 'facebook';
+	const data = row.data && typeof row.data === 'object' ? (row.data as Record<string, unknown>) : undefined;
+	// PocketBase reads an empty number back as 0, so a Facebook reel whose
+	// views were never read (no read_insights) would say 0: its insights say.
+	const insights = (data?.insights ?? {}) as Record<string, unknown>;
+	const unread = facebook && typeof insights.fb_reels_total_plays !== 'number';
 	return {
 		id: String(row.id ?? ''),
+		platform: facebook ? 'facebook' : 'instagram',
 		post_id: String(row.post_id ?? ''),
 		account: String(row.account ?? ''),
 		published_at: String(row.published_at ?? ''),
-		views: n(row.views),
+		views: unread ? null : n(row.views),
 		likes: n(row.likes),
 		comments: n(row.comments),
-		reach: n(row.reach),
+		// Facebook reports no reach for a reel; the column is only Instagram's.
+		reach: facebook ? null : n(row.reach),
 		permalink: String(row.permalink ?? ''),
 		caption: String(row.caption ?? ''),
-		history: (Array.isArray(row.history) ? row.history : []) as Sample[]
+		history: (Array.isArray(row.history) ? row.history : []) as Sample[],
+		data
 	};
 }
 
@@ -1293,12 +1302,19 @@ export async function loadVideoStat(id: string): Promise<VideoStats> {
 	return (await pb.collection('video_stats').getOne(id)) as unknown as VideoStats;
 }
 
-/** Instagram's reels as the worker stores them (worker/igstats.mjs); none when it never has. */
+// Instagram's reels among its posts, and every Facebook post read (all reels).
+const REELS = "(platform = 'instagram' && product_type = 'REELS') || platform = 'facebook'";
+
+function isReel(record: Record<string, unknown>): boolean {
+	return (record.platform === 'instagram' && record.product_type === 'REELS') || record.platform === 'facebook';
+}
+
+/** The reels as the worker stores them (worker/igstats.mjs, fbstats.mjs); none when it never has. */
 export async function loadDashboardReels(): Promise<DashboardReel[]> {
 	try {
 		const rows = await pb.collection('post_stats').getFullList<Record<string, unknown>>({
-			filter: "platform = 'instagram' && product_type = 'REELS'",
-			fields: 'id,post_id,account,published_at,views,likes,comments,reach,permalink,caption,history'
+			filter: REELS,
+			fields: 'id,platform,post_id,account,published_at,views,likes,comments,reach,permalink,caption,history,data.length,data.insights'
 		});
 		return rows.map(toDashboardReel);
 	} catch {
@@ -1309,7 +1325,7 @@ export async function loadDashboardReels(): Promise<DashboardReel[]> {
 /** Each reel as the worker writes it (or deletes it). Returns the unsubscribe. */
 export function subscribeReels(onReel: (reel: DashboardReel, action: string) => void): () => void {
 	const sub = pb.collection('post_stats').subscribe('*', (e) => {
-		if (e.record.platform === 'instagram' && e.record.product_type === 'REELS') onReel(toDashboardReel(e.record), e.action);
+		if (isReel(e.record)) onReel(toDashboardReel(e.record), e.action);
 	});
 	sub.catch(() => {});
 	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});

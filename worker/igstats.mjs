@@ -63,6 +63,33 @@ export function counterMoved(prev, row) {
 	return COUNTERS.some((k) => !sameNumber(prev[k], row[k]));
 }
 
+/**
+ * Writes a pass's rows: a new post is created with its first sample, a known
+ * one patched only when something differs, with a sample only when a counter
+ * moved. `byPost` is the stored rows by post id. Returns how many were new.
+ * Shared with the Facebook pass (fbstats.mjs).
+ */
+export async function saveRows(pb, byPost, rows, now) {
+	let added = 0;
+	for (const row of rows) {
+		const prev = byPost.get(row.post_id);
+		const sample = [now, row.views, row.likes, row.comments];
+		if (!prev) {
+			await pb.createPostStats({ ...row, fetched_at: now, history: [sample] });
+			added++;
+			continue;
+		}
+		if (!differs(prev, row)) continue;
+		const history = Array.isArray(prev.history) ? prev.history : [];
+		await pb.updatePostStats(prev.id, {
+			...row,
+			fetched_at: now,
+			history: counterMoved(prev, row) ? [...history, sample].slice(-HISTORY_CAP) : history
+		});
+	}
+	return added;
+}
+
 let off = false;
 const said = new Map();
 const reports = {};
@@ -94,24 +121,7 @@ export async function instagramStatsPass({ pb, config, log }) {
 		try {
 			const items = await listMedia(ig, config.igStatsPosts);
 			const now = new Date().toISOString();
-			let added = 0;
-			for (const item of items) {
-				const row = toPostRow(item, ig);
-				const prev = byPost.get(row.post_id);
-				const sample = [now, row.views, row.likes, row.comments];
-				if (!prev) {
-					await pb.createPostStats({ ...row, fetched_at: now, history: [sample] });
-					added++;
-					continue;
-				}
-				if (!differs(prev, row)) continue;
-				const history = Array.isArray(prev.history) ? prev.history : [];
-				await pb.updatePostStats(prev.id, {
-					...row,
-					fetched_at: now,
-					history: counterMoved(prev, row) ? [...history, sample].slice(-HISTORY_CAP) : history
-				});
-			}
+			const added = await saveRows(pb, byPost, items.map((item) => toPostRow(item, ig)), now);
 			if (added) log(`instagram stats @${ig.username}: ${added} new post${added === 1 ? '' : 's'}`);
 			if (before) log(`instagram stats @${ig.username}: recovered`);
 			said.delete(ig.igUserId);

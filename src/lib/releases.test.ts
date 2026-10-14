@@ -14,6 +14,7 @@ import {
 	readFilter,
 	sameLink,
 	sortRows,
+	storedFilter,
 	sumOf,
 	thin,
 	uploadsOfDay,
@@ -66,6 +67,10 @@ function reel(id: string, at: number, extra: Partial<ReelRow> = {}): ReelRow {
 		history: [],
 		...extra
 	};
+}
+
+function fbReel(id: string, at: number, extra: Partial<ReelRow> = {}): ReelRow {
+	return reel(id, at, { id: `rec-fb-${id}`, permalink: `https://www.facebook.com/reel/${id}/`, reach: null, ...extra });
 }
 
 function post(at: number, samples: [number, number][], views: number | null = null): Post {
@@ -193,6 +198,85 @@ describe('buildReleases', () => {
 	});
 });
 
+describe('buildReleases with Facebook reels', () => {
+	it('joins a Short and its Instagram reel by time, closest first', () => {
+		const out = buildReleases(
+			[video('aaaaaaaaaaa', T0), video('bbbbbbbbbbb', T0 + 3 * H)],
+			[reel('R1', T0 + 5 * 60_000)],
+			[],
+			[fbReel('F1', T0 + 3 * H + 20 * 60_000), fbReel('F2', T0 + 6 * 60_000)]
+		);
+		expect(out).toHaveLength(2);
+		const a = out.find((r) => r.key === 'yt:aaaaaaaaaaa')!;
+		const b = out.find((r) => r.key === 'yt:bbbbbbbbbbb')!;
+		expect(a.posts.instagram?.id).toBe('R1');
+		expect(a.posts.facebook?.id).toBe('F2');
+		expect(a.posts.facebook?.platform).toBe('facebook');
+		expect(a.links.facebook).toBe('https://www.facebook.com/reel/F2/');
+		expect(b.posts.facebook?.id).toBe('F1');
+		expect(b.matched).toBe('time');
+	});
+
+	it('joins an Instagram reel that had no Short — a reel shared over to Facebook', () => {
+		const out = buildReleases([], [reel('R1', T0)], [], [fbReel('F1', T0 + 30_000)]);
+		expect(out).toHaveLength(1);
+		expect(out[0].key).toBe('ig:R1');
+		expect(out[0].posts.facebook?.id).toBe('F1');
+		expect(out[0].matched).toBe('time');
+	});
+
+	it('takes the reel of the same flock upload, whatever the gap, and keeps the rest apart', () => {
+		const targets: TargetLink[] = [
+			{ job: 'j1', platform: 'youtube', remote_url: 'https://youtu.be/aaaaaaaaaaa', jobTitle: 'Job one' },
+			{ job: 'j1', platform: 'facebook', remote_url: 'https://www.facebook.com/reel/F1', jobTitle: 'Job one' }
+		];
+		const out = buildReleases(
+			[video('aaaaaaaaaaa', T0)],
+			[],
+			targets,
+			[fbReel('F1', T0 + 5 * H), fbReel('F2', T0 + 60_000, { caption: 'Werbung\nA lone one' })]
+		);
+		const a = out.find((r) => r.key === 'yt:aaaaaaaaaaa')!;
+		expect(a.posts.facebook?.id).toBe('F1');
+		expect(a.matched).toBe('job');
+		// F2 is close to a, but a's upload named its own Facebook reel.
+		const lone = out.find((r) => r.key === 'fb:F2')!;
+		expect(lone.kind).toBe('short');
+		expect(lone.title).toBe('A lone one');
+		expect(out).toHaveLength(2);
+	});
+
+	it('gives an Instagram-only upload its Facebook reel by the upload, and never pairs one another upload made', () => {
+		const targets: TargetLink[] = [
+			{ job: 'j1', platform: 'instagram', remote_url: 'https://www.instagram.com/reel/R1/', jobTitle: 'Reels only' },
+			{ job: 'j1', platform: 'facebook', remote_url: 'https://www.facebook.com/reel/F1/', jobTitle: 'Reels only' },
+			{ job: 'j2', platform: 'youtube', remote_url: 'https://youtu.be/zzzzzzzzzzz', jobTitle: '' },
+			{ job: 'j2', platform: 'facebook', remote_url: 'https://www.facebook.com/reel/F2/', jobTitle: '' }
+		];
+		const out = buildReleases(
+			[video('aaaaaaaaaaa', T0)],
+			[reel('R1', T0 + 3 * H)],
+			targets,
+			[fbReel('F1', T0 + 9 * H), fbReel('F2', T0 + 60_000)]
+		);
+		const r1 = out.find((r) => r.key === 'ig:R1')!;
+		expect(r1.title).toBe('Reels only');
+		expect(r1.posts.facebook?.id).toBe('F1');
+		expect(r1.matched).toBe('job');
+		// F2's upload went to a YouTube video not on this channel: not a's.
+		expect(out.find((r) => r.key === 'yt:aaaaaaaaaaa')!.posts.facebook).toBeUndefined();
+		expect(out.find((r) => r.key === 'fb:F2')).toBeDefined();
+	});
+
+	it('adds Facebook up with the others', () => {
+		const [a] = buildReleases([video('aaaaaaaaaaa', T0)], [reel('R1', T0)], [], [fbReel('F1', T0, { views: 7, likes: 1 })]);
+		expect(sumOf(a, ['youtube', 'instagram', 'facebook'], 'views')).toBe(157);
+		expect(sumOf(a, ['facebook'], 'likes')).toBe(1);
+		const [today] = periodStats([a], DEFAULT_FILTER, new Date(T0 + H));
+		expect(today.byPlatform.facebook.views).toBe(7);
+	});
+});
+
 describe('the filter', () => {
 	const releases = buildReleases(
 		[
@@ -211,6 +295,16 @@ describe('the filter', () => {
 			kinds: ['short']
 		});
 		expect(readFilter({ platforms: ['instagram', 'tiktok'] }).platforms).toEqual(['instagram']);
+	});
+
+	it('lets a platform read since the filter was saved join a combined view only', () => {
+		// Saved before Facebook was read: combined then, combined now.
+		expect(readFilter({ platforms: ['youtube', 'instagram'] }).platforms).toEqual(['youtube', 'instagram', 'facebook']);
+		expect(readFilter({ platforms: ['youtube'] }).platforms).toEqual(['youtube']);
+		// Saved knowing Facebook and leaving it out: it stays out.
+		const saved = JSON.parse(JSON.stringify(storedFilter({ ...DEFAULT_FILTER, platforms: ['youtube', 'instagram'] })));
+		expect(readFilter(saved).platforms).toEqual(['youtube', 'instagram']);
+		expect(readFilter(JSON.parse(JSON.stringify(storedFilter(DEFAULT_FILTER))))).toEqual(DEFAULT_FILTER);
 	});
 
 	it('reads visibility from YouTube only while YouTube is chosen', () => {
@@ -232,7 +326,7 @@ describe('the filter', () => {
 		expect(counts.kinds).toEqual({ short: 2, long: 0, live: 0, other: 0 });
 		expect(counts.unlisted).toBe(1);
 		expect(counts.private).toBe(1);
-		expect(counts.platforms).toEqual({ youtube: 1, instagram: 2 });
+		expect(counts.platforms).toEqual({ youtube: 1, instagram: 2, facebook: 0 });
 	});
 
 	it('adds a counter up over the chosen platforms only', () => {

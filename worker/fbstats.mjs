@@ -1,0 +1,189 @@
+// Facebook's own counts for the reels on the connected Pages — views, likes
+// and comments — into `post_stats` beside Instagram's (igstats.mjs), keyed by
+// (platform 'facebook', the reel's video id), written the same way: only what
+// changed, a history sample only when a counter moved.
+//
+// Every reel on the Page is read, not only flock's: the Pages also carry the
+// reels Instagram shares to Facebook. Likes and comments come with the
+// listing on the grant every Page already has. Views are the reel's
+// video_insights, which need read_insights — optional, so a Page whose grant
+// lacks it is still read without views, and the status says why.
+
+import { GraphError, graph } from './instagram.mjs';
+import { explainFacebook, facebookAccount, reelUrl } from './facebook.mjs';
+import { facebookReady } from './accounts.mjs';
+import { saveRows } from './igstats.mjs';
+
+/**
+ * The insights read with each reel. Views are its plays with replays
+ * (fb_reels_total_plays), which is how Instagram and YouTube count a reel's
+ * or a Short's views; the rest ride along in `data`.
+ */
+export const REEL_METRICS = ['fb_reels_total_plays', 'blue_reels_play_count', 'post_video_avg_time_watched', 'post_video_social_actions'];
+
+const FIELDS = 'id,created_time,description,permalink_url,length,likes.summary(true).limit(0),comments.summary(true).limit(0)';
+const INSIGHTS = `video_insights.metric(${REEL_METRICS.join(',')})`;
+
+/** After the insights were refused, they are asked for again only this much later. */
+const RETRY_INSIGHTS_MS = 60 * 60_000;
+
+const SETUP = 'pnpm worker:auth:instagram';
+
+/** A reel's insights as { metric: value }; Facebook gives each one value for its lifetime. */
+export function readInsights(edge) {
+	const out = {};
+	for (const row of edge?.data ?? []) {
+		const value = row?.values?.[0]?.value ?? row?.total_value?.value;
+		if (row?.name && value != null) out[row.name] = value;
+	}
+	return out;
+}
+
+const count = (v) => (v == null || v === '' ? null : Number(v));
+
+/** One listed reel as a `post_stats` row; `data` is the item without its counters, insights flattened. */
+export function toFacebookRow(item, page) {
+	const { video_insights, likes, comments, ...rest } = item;
+	const insights = readInsights(video_insights);
+	return {
+		platform: 'facebook',
+		post_id: String(item.id),
+		account: String(page.pageId),
+		handle: page.pageName ?? '',
+		permalink: reelUrl(item.permalink_url ?? '', item.id),
+		caption: String(item.description ?? '').slice(0, 2200),
+		published_at: item.created_time ? new Date(item.created_time).toISOString() : '',
+		product_type: 'REELS',
+		views: count(insights.fb_reels_total_plays),
+		reach: null,
+		likes: count(likes?.summary?.total_count),
+		comments: count(comments?.summary?.total_count),
+		data: { ...rest, insights }
+	};
+}
+
+/**
+ * A row read without insights keeps the views it had: their absence that
+ * time is the grant's, not the reel's, and writing null over them would put a
+ * junk sample in its history.
+ */
+export function keepViews(prev, row) {
+	if (!prev) return row;
+	return {
+		...row,
+		views: prev.views ?? null,
+		data: { ...row.data, insights: prev.data?.insights ?? {} }
+	};
+}
+
+/** Whether a refusal of the insights is about them (permission, unknown metric), not the call as a whole. */
+export function insightsRefused(err) {
+	return err instanceof GraphError && (err.code === 10 || err.code === 200 || err.code === 100);
+}
+
+/** Why views are not read, in words for the dashboard. */
+export function viewsWhy(err) {
+	if (err instanceof GraphError && (err.code === 10 || err.code === 200)) {
+		return `Views need the read_insights permission: sign the Pages in again with  ${SETUP}`;
+	}
+	return `Facebook refused the views query (${err.message.split('\n')[0]})`;
+}
+
+/** The Page's newest reels, `limit` at most, newest first; pages of 50. */
+async function listReels(page, limit, fields) {
+	const out = [];
+	let after = '';
+	while (out.length < limit) {
+		const res = await graph(page, `/${page.pageId}/video_reels`, {
+			params: { fields, limit: String(Math.min(50, limit - out.length)), after }
+		});
+		out.push(...(res.data ?? []));
+		after = res.paging?.next ? (res.paging.cursors?.after ?? '') : '';
+		if (!after) break;
+	}
+	return out;
+}
+
+let off = false;
+const said = new Map();
+/** Page id -> { until, why }: when the insights were last refused, and why. */
+const noInsights = new Map();
+const reports = {};
+
+/** A Page's reels with their insights when the grant allows, without them when it does not. */
+async function readPage(page, limit) {
+	const refused = noInsights.get(page.pageId);
+	if (!refused || Date.now() >= refused.until) {
+		try {
+			const items = await listReels(page, limit, `${FIELDS},${INSIGHTS}`);
+			noInsights.delete(page.pageId);
+			return { items, views: '' };
+		} catch (err) {
+			if (!insightsRefused(err)) throw err;
+			noInsights.set(page.pageId, { until: Date.now() + RETRY_INSIGHTS_MS, why: viewsWhy(err) });
+		}
+	}
+	return { items: await listReels(page, limit, FIELDS), views: noInsights.get(page.pageId).why };
+}
+
+/**
+ * One read of every connected Page. A missing `post_stats` collection turns
+ * the pass off for the run with one line; a Page's failure, and its views
+ * going unread, are each said once per distinct message.
+ */
+export async function facebookStatsPass({ pb, config, log }) {
+	if (off) return;
+	const pages = config.facebook.accounts.filter(facebookReady);
+	if (pages.length === 0) return;
+
+	let existing;
+	try {
+		existing = await pb.listPostStats('facebook');
+	} catch (err) {
+		if (!/ -> 404\b/.test(err.message)) throw err;
+		off = true;
+		log('post_stats is missing — run pnpm setup-pb, then restart; Facebook reel numbers are not read until then');
+		return;
+	}
+	const byPost = new Map(existing.map((row) => [row.post_id, row]));
+
+	for (const entry of pages) {
+		const page = facebookAccount(config, entry.pageId);
+		const name = page.pageName || page.pageId;
+		const before = said.get(page.pageId) ?? '';
+		try {
+			const { items, views } = await readPage(page, config.fbStatsPosts);
+			const now = new Date().toISOString();
+			const rows = items.map((item) => {
+				const row = toFacebookRow(item, page);
+				return views ? keepViews(byPost.get(row.post_id), row) : row;
+			});
+			const added = await saveRows(pb, byPost, rows, now);
+			if (added) log(`facebook stats ${name}: ${added} new reel${added === 1 ? '' : 's'}`);
+			const note = views ? `views: ${views}` : '';
+			if (note !== before) {
+				if (note) log(`facebook stats ${name}: no ${note}`);
+				else if (before) log(`facebook stats ${name}: ${before.startsWith('views:') ? 'reading views' : 'recovered'}`);
+			}
+			if (note) said.set(page.pageId, note);
+			else said.delete(page.pageId);
+			reports[page.pageId] = { name, polledAt: now, posts: items.length, error: '', views };
+		} catch (err) {
+			const message = explainFacebook(err).message;
+			if (message !== before) {
+				log(`facebook stats ${name} failed: ${message.split('\n')[0]}`);
+				said.set(page.pageId, message);
+			}
+			reports[page.pageId] = { name, polledAt: new Date().toISOString(), posts: 0, error: message.slice(0, 500), views: '' };
+		}
+	}
+
+	// What the dashboard shows of the pass: when each Page was read, or why not.
+	await pb
+		.setSetting('facebook_stats_status', {
+			polledAt: new Date().toISOString(),
+			intervalSeconds: config.fbStatsSeconds,
+			pages: reports
+		})
+		.catch(() => {});
+}

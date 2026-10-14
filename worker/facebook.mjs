@@ -39,6 +39,12 @@ export const FACEBOOK_PERMISSIONS = [
 		use: 'finding a Page that sits in a business portfolio',
 		required: false,
 		without: 'a Page held in a business portfolio may not be found'
+	},
+	{
+		name: 'read_insights',
+		use: 'reading how many views each reel on the Page has',
+		required: false,
+		without: 'no reel views; their likes and comments are still read'
 	}
 ];
 
@@ -139,7 +145,8 @@ export function reelState(status, { finished = true } = {}) {
 	return { state: 'processing' };
 }
 
-function reelUrl(permalink, videoId) {
+/** A reel's address: Facebook's permalink (often a bare path), else the reel's own. */
+export function reelUrl(permalink, videoId) {
 	if (permalink) return permalink.startsWith('http') ? permalink : `https://www.facebook.com${permalink}`;
 	return `https://www.facebook.com/reel/${videoId}/`;
 }

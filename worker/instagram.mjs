@@ -56,6 +56,12 @@ export const INSTAGRAM_PERMISSIONS = [
 		use: 'reading how many views each reel has',
 		required: false,
 		without: "no reel views; flock can still post, but not say how the account's reels are doing"
+	},
+	{
+		name: 'read_insights',
+		use: "reading how many views each reel on the Facebook Page has",
+		required: false,
+		without: 'no Facebook reel views; their likes and comments are still read'
 	}
 ];
 

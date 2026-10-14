@@ -5,7 +5,7 @@
 //   pnpm worker:once        one pass, then exit
 //   pnpm worker:dry         one pass, reporting what it would do, uploading nothing
 //   pnpm worker:vidiq       check the vidIQ key, spending no credits
-//   pnpm worker:stats       one stats pass over the channel, then exit
+//   pnpm worker:stats       one stats pass over the channel (and the Instagram and Facebook posts), then exit
 //   pnpm worker:tiktok      show who the TikTok token posts as, then exit
 //   pnpm worker:instagram   show who the Instagram token posts as, then exit
 //   … --stop                stop the polling worker of this role on this machine
@@ -62,6 +62,7 @@ import { readLocalImage } from './localfile.mjs';
 import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
 import { statsPass, unitsToday } from './stats.mjs';
 import { instagramStatsPass } from './igstats.mjs';
+import { facebookStatsPass } from './fbstats.mjs';
 import { msUntil } from './upload.mjs';
 import { startPreviewServer } from './preview.mjs';
 import { makeRemoteLog } from './remotelog.mjs';
@@ -1427,6 +1428,7 @@ async function main() {
 	if (statsOnly) {
 		await statsPass({ pb, config, log, every: true });
 		if (hasInstagram(config)) await instagramStatsPass({ pb, config, log });
+		if (hasFacebook(config)) await facebookStatsPass({ pb, config, log });
 		log(`stats pass complete — ${unitsToday()} unit(s) spent`);
 		return;
 	}
@@ -1543,6 +1545,25 @@ async function main() {
 		};
 		void igTick();
 		setInterval(() => void igTick(), Math.max(60, config.igStatsSeconds) * 1000);
+	}
+
+	// Facebook's reels, likewise: every Page's views, likes and comments.
+	if (config.fbStatsSeconds > 0 && hasFacebook(config) && (ownsPublishing(config.role) || covers)) {
+		log(`facebook stats: newest ${config.fbStatsPosts} reels of each Page every ${config.fbStatsSeconds}s`);
+		let fbBusy = false;
+		const fbTick = async () => {
+			if (fbBusy || !hb.canPublish()) return;
+			fbBusy = true;
+			try {
+				await facebookStatsPass({ pb, config, log });
+			} catch (err) {
+				log(`facebook stats pass failed: ${err.message.split('\n')[0]}`);
+			} finally {
+				fbBusy = false;
+			}
+		};
+		void fbTick();
+		setInterval(() => void fbTick(), Math.max(60, config.fbStatsSeconds) * 1000);
 	}
 
 	// Its own interval rather than a counter inside the main loop: an upload can
