@@ -1221,7 +1221,8 @@
 
 	.row {
 		display: grid;
-		grid-template-columns: 64px minmax(0, 1fr) 112px 88px 88px 140px 84px;
+		/* "vs usual" holds four platforms' marks with their verdicts. */
+		grid-template-columns: 64px minmax(0, 1fr) 130px 106px 106px 156px 164px;
 		align-items: center;
 		gap: 12px;
 		width: 100%;
@@ -1244,7 +1245,7 @@
 	}
 
 	.withjestr .row {
-		grid-template-columns: 64px minmax(0, 1fr) 48px 112px 88px 88px 140px 84px;
+		grid-template-columns: 64px minmax(0, 1fr) 48px 130px 106px 106px 156px 164px;
 	}
 
 	.jcell {
@@ -1792,10 +1793,10 @@
 			grid-template-columns: minmax(0, 1fr);
 		}
 		.row {
-			grid-template-columns: 56px minmax(0, 1fr) 104px 132px 84px;
+			grid-template-columns: 56px minmax(0, 1fr) 104px 132px 164px;
 		}
 		.withjestr .row {
-			grid-template-columns: 56px minmax(0, 1fr) 44px 104px 132px 84px;
+			grid-template-columns: 56px minmax(0, 1fr) 44px 104px 132px 164px;
 		}
 		.row > :nth-child(5),
 		.row > :nth-child(6) {
