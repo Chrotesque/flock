@@ -29,6 +29,7 @@ import { msUntil, sleep, streamRequest, videoMime, MiB } from './upload.mjs';
 import { facebookReady, pickAccount } from './accounts.mjs';
 import { GraphError, graph, transientGraphError } from './instagram.mjs';
 import { facebookVideoId } from './moves.mjs';
+import { captionWithTitle } from './retitle.mjs';
 
 /**
  * Listing the Pages, reading them and taking their tokens, and publishing to
@@ -312,6 +313,36 @@ export async function rescheduleFacebookReel(config, row, at) {
 			throw new Error(`Facebook still shows ${after.at || 'no time'} after the change`);
 		}
 		return { release: after.at };
+	} catch (err) {
+		throw explainFacebook(err);
+	}
+}
+
+/** A reel's caption as Facebook has it now. */
+async function readCaption(page, videoId) {
+	const video = await graph(page, `/${videoId}`, { params: { fields: 'description' } });
+	return String(video.description ?? '');
+}
+
+/**
+ * Gives a reel on the Page another name, for a rename on the Dashboard
+ * (retitle.mjs): the caption's title line is replaced, the rest kept, and
+ * the caption read back until it shows the change. Meta documents updating
+ * a video's `description`; on a reel it is the same call that moves one
+ * (rescheduleFacebookReel), not yet run live for this.
+ */
+export async function retitleFacebookReel(config, pageId, videoId, title) {
+	const page = facebookAccount(config, pageId);
+	try {
+		const before = await readCaption(page, videoId);
+		const caption = captionWithTitle(before, title);
+		if (caption.trim() === before.trim()) return { before, caption, unchanged: true };
+		await graph(page, `/${videoId}`, { method: 'POST', params: { description: caption } });
+		for (let look = 0; look < 3; look++) {
+			if ((await readCaption(page, videoId)).trim() === caption.trim()) return { before, caption, unchanged: false };
+			await sleep(2000);
+		}
+		throw new Error('Facebook still shows the old caption after the change');
 	} catch (err) {
 		throw explainFacebook(err);
 	}

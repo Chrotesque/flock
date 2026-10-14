@@ -5,13 +5,16 @@
 	import DashFilter from './DashFilter.svelte';
 	import ViewsCurve from './ViewsCurve.svelte';
 	import ComingUp from './ComingUp.svelte';
+	import RenameDialog from './RenameDialog.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
 	import { dashData } from '$lib/stores/dashdata.svelte';
 	import { devtestDashboardScopes } from '$lib/devtest';
 	import { general } from '$lib/stores/general.svelte';
 	import { jestrCampaigns } from '$lib/stores/jestrcampaigns.svelte';
+	import { titleRequests } from '$lib/stores/titlerequests.svelte';
 	import { flaggedPosts, isCampaign, type CampaignPosts } from '$lib/jestrcampaign';
+	import { newestByPost, renameChoices, renameNotes, type RenameChoice } from '$lib/retitle';
 	import { accountLabel, postAllowance } from '$lib/accounts';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import {
@@ -171,6 +174,8 @@
 		});
 		void jestrCampaigns.load().catch(() => {});
 		const stopMarks = jestrCampaigns.subscribe();
+		void titleRequests.load();
+		const stopRenames = titleRequests.subscribe();
 		const stopReels = subscribeReels((reel, action) => {
 			dashData.putReel(reel, action);
 			if (action !== 'delete') baseIfNew(`${reel.platform}:${reel.id}`, reel);
@@ -187,6 +192,7 @@
 			window.removeEventListener('focus', onFocus);
 			stopStats();
 			stopMarks();
+			stopRenames();
 			stopReels();
 			stopTargets();
 		};
@@ -284,7 +290,7 @@
 		return sortRows(list, sort);
 	});
 
-	/* ---- Jestr campaigns (jestrcampaign.ts): a column and an Edit mode, with the integration on ---- */
+	/* ---- Jestr campaigns (jestrcampaign.ts): a column, and marks made in Edit mode, with the integration on ---- */
 
 	const jestrOn = $derived(general.value.jestrIntegration);
 	const flagged = $derived(flaggedPosts(dashData.targets));
@@ -304,10 +310,51 @@
 	);
 	const campaignCount = $derived(rows.filter((row) => campaigns.has(row.release.key)).length);
 
+	/* ---- Edit mode ----
+	 *
+	 * The list opens read-only. Editing renames videos on the platforms
+	 * (retitle.ts) — and with the integration marks Jestr campaigns — so, as
+	 * in the Calendar, the button arms on the first press and only unlocks on
+	 * a second within 2s.
+	 */
 	let editing = $state(false);
-	$effect(() => {
-		if (!jestrOn) editing = false;
-	});
+	let editArmed = $state(false);
+	let editTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function disarmEdit() {
+		editArmed = false;
+		clearTimeout(editTimer);
+	}
+
+	function onEditClick() {
+		if (editing) {
+			editing = false;
+			renaming = null;
+			disarmEdit();
+			return;
+		}
+		if (editArmed) {
+			disarmEdit();
+			editing = true;
+			return;
+		}
+		editArmed = true;
+		clearTimeout(editTimer);
+		editTimer = setTimeout(() => (editArmed = false), 2000);
+	}
+
+	/** The video being renamed, and what each of its platforms offers — taken when its pencil was pressed. */
+	let renaming = $state<{ release: Release; choices: RenameChoice[] } | null>(null);
+	const newestRenames = $derived(newestByPost(titleRequests.rows));
+
+	function openRename(r: Release) {
+		renaming = { release: r, choices: renameChoices(r, videos, reels) };
+	}
+
+	function renameNote(r: Release) {
+		const posts = Object.values(r.posts).filter((p): p is Post => Boolean(p));
+		return renameNotes(posts, newestRenames, now);
+	}
 
 	/** Whether a video can be a Jestr submission: it has a YouTube or Instagram post (Facebook is not one). */
 	function markable(r: Release): boolean {
@@ -354,7 +401,7 @@
 	}
 
 	async function toggle(release: Release) {
-		if (editing) {
+		if (editing && jestrOn) {
 			toggleCampaign(release);
 			return;
 		}
@@ -653,15 +700,25 @@
 					</li>
 				{/if}
 			</ul>
-			{#if jestrOn}
-				<button
-					class="btn sm"
-					class:editing
-					aria-pressed={editing}
-					onclick={() => (editing = !editing)}
-					title={editing ? 'Stop marking Jestr campaigns' : 'Mark videos as Jestr campaigns'}>{editing ? 'Done' : 'Edit'}</button
-				>
-			{/if}
+			<button
+				class="btn sm edit"
+				class:armed={editArmed}
+				class:on={editing}
+				aria-pressed={editing}
+				onclick={onEditClick}
+				onblur={disarmEdit}
+				title={editing
+					? 'Stop editing'
+					: `Rename videos${jestrOn ? ' and mark Jestr campaigns' : ''} (press twice)`}
+			>
+				{#if editing}
+					STOP
+				{:else if editArmed}
+					Edit?
+				{:else}
+					Edit
+				{/if}
+			</button>
 			<button class="btn sm" onclick={() => load(true)} disabled={loading} title="Read everything again, and reset the change markers"
 				>Refresh</button
 			>
@@ -725,8 +782,11 @@
 	{/if}
 
 	{#if editing}
-		<p class="banner editbar">
-			Click a video to mark it as a Jestr campaign, or to take the mark off. <strong>Done</strong> when finished.
+		<p class="banner editing">
+			<strong>EDITING VIDEOS</strong> — Press the pencil beside a title to rename that video on every platform it
+			is on, or on some only; the worker renames it within seconds.
+			{#if jestrOn}Click a video to mark it as a Jestr campaign, or to take the mark off.{/if}
+			<strong>STOP</strong> when finished.
 			{#if jestrCampaigns.error}<span class="bad">Not saved: {jestrCampaigns.error}</span>{/if}
 		</p>
 	{/if}
@@ -762,66 +822,90 @@
 			{@const r = row.release}
 			{@const visibility = visibilityOf(r, filter.platforms)}
 			{@const campaign = campaigns.has(r.key)}
+			{@const marking = editing && jestrOn}
+			{@const note = renameNote(r)}
 			<div class="item" class:open={openKey === r.key} class:tinted={Boolean(r.tint)} style:--tint={r.tint}>
-				<button
-					class="row"
-					onclick={() => toggle(r)}
-					aria-expanded={editing ? undefined : openKey === r.key}
-					aria-pressed={editing && markable(r) ? campaign : undefined}
-					aria-disabled={editing && !markable(r) ? true : undefined}
-				>
-					{#if r.thumb}
-						<img class="thumb" src={r.thumb} alt="" loading="lazy" />
-					{:else}
-						<span class="thumb blank"
-							><PlatformIcon platform={r.posts.instagram ? 'instagram' : r.posts.facebook ? 'facebook' : 'youtube'} size={16} /></span
-						>
-					{/if}
-					<span class="vid">
-						<span class="vtitle">{r.title}</span>
-						<span class="vmeta">
-							<span title={new Date(r.at).toLocaleString()}>{released(r.at)} · {span(now - r.at)} ago</span>
-							<span class="dot">·</span>{KIND_ONE[r.kind]}{#if r.duration > 0}&nbsp;{formatDuration(r.duration)}{/if}
-							{#if visibility !== 'public'}
-								<span class="dot">·</span><span class="priv {visibility}">{visibility}</span>
-							{/if}
-							<span class="dot">·</span>
-							<span class="marks" title={matchWords(r)}>
-								{#each ALL_PLATFORMS.filter((p) => r.links[p]) as p (p)}
-									<span class="mark" class:unread={!isStatPlatform(p)}><PlatformIcon platform={p} size={11} /></span>
-								{/each}
-							</span>
-							{#if r.job}<span class="via" title="Uploaded through flock">flock</span>{/if}
-								{#if r.group}<span class="dot">·</span><span class="group" style:color={r.tint}>{r.group}</span>{/if}
-						</span>
-					</span>
-					<span
-						class="jcell"
-						class:on={campaign}
-						title={campaign ? 'A Jestr campaign video' : editing && !markable(r) ? 'Facebook only: not a Jestr submission' : ''}
+				<!-- The pencil sits over the row, not in it: a button cannot hold another. -->
+				<div class="line">
+					<button
+						class="row"
+						onclick={() => toggle(r)}
+						aria-expanded={marking ? undefined : openKey === r.key}
+						aria-pressed={marking && markable(r) ? campaign : undefined}
+						aria-disabled={marking && !markable(r) ? true : undefined}
 					>
-						{#if campaign || (editing && markable(r))}
-							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-								<rect x="1.5" y="1.5" width="13" height="13" rx="3.5" class="box" />
-								{#if campaign}<path d="M4.5 8.2 7 10.6l4.6-5" class="tick" />{/if}
-							</svg>
+						{#if r.thumb}
+							<img class="thumb" src={r.thumb} alt="" loading="lazy" />
+						{:else}
+							<span class="thumb blank"
+								><PlatformIcon platform={r.posts.instagram ? 'instagram' : r.posts.facebook ? 'facebook' : 'youtube'} size={16} /></span
+							>
 						{/if}
-					</span>
-					{@render stacked(row, 'views', true)}
-					{@render stacked(row, 'likes')}
-					{@render stacked(row, 'comments')}
-					<span class="spark"><ViewsCurve curves={row.curves} /></span>
-					<span class="verdicts">
-						{#each row.judgements as j (j.platform)}
-							<span class="judged {j.verdict ?? 'none'}" title={judgementTitle(j, r)}>
-								<PlatformIcon platform={j.platform} size={13} />
-								<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-									<path d={TREND[j.verdict ?? 'none']} />
-								</svg>
+						<span class="vid">
+							<span class="vtitle">{r.title}</span>
+							<span class="vmeta">
+								{#if note.waiting.length > 0}
+									<span
+										class="rnote wait"
+										title="Asked: {note.waiting.map((n) => `${PLATFORMS[n.platform]?.label ?? n.platform} “${n.title}”`).join(', ')} — waiting for the worker"
+										>renaming…</span
+									><span class="dot">·</span>
+								{/if}
+								{#if note.refused.length > 0}
+									<span class="rnote bad" title={note.refused.map((n) => `${PLATFORMS[n.platform]?.label ?? n.platform}: ${n.error}`).join('\n')}
+										>not renamed</span
+									><span class="dot">·</span>
+								{/if}
+								<span title={new Date(r.at).toLocaleString()}>{released(r.at)} · {span(now - r.at)} ago</span>
+								<span class="dot">·</span>{KIND_ONE[r.kind]}{#if r.duration > 0}&nbsp;{formatDuration(r.duration)}{/if}
+								{#if visibility !== 'public'}
+									<span class="dot">·</span><span class="priv {visibility}">{visibility}</span>
+								{/if}
+								<span class="dot">·</span>
+								<span class="marks" title={matchWords(r)}>
+									{#each ALL_PLATFORMS.filter((p) => r.links[p]) as p (p)}
+										<span class="mark" class:unread={!isStatPlatform(p)}><PlatformIcon platform={p} size={11} /></span>
+									{/each}
+								</span>
+								{#if r.job}<span class="via" title="Uploaded through flock">flock</span>{/if}
+									{#if r.group}<span class="dot">·</span><span class="group" style:color={r.tint}>{r.group}</span>{/if}
 							</span>
-						{/each}
-					</span>
-				</button>
+						</span>
+						<span
+							class="jcell"
+							class:on={campaign}
+							title={campaign ? 'A Jestr campaign video' : marking && !markable(r) ? 'Facebook only: not a Jestr submission' : ''}
+						>
+							{#if campaign || (marking && markable(r))}
+								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+									<rect x="1.5" y="1.5" width="13" height="13" rx="3.5" class="box" />
+									{#if campaign}<path d="M4.5 8.2 7 10.6l4.6-5" class="tick" />{/if}
+								</svg>
+							{/if}
+						</span>
+						{@render stacked(row, 'views', true)}
+						{@render stacked(row, 'likes')}
+						{@render stacked(row, 'comments')}
+						<span class="spark"><ViewsCurve curves={row.curves} /></span>
+						<span class="verdicts">
+							{#each row.judgements as j (j.platform)}
+								<span class="judged {j.verdict ?? 'none'}" title={judgementTitle(j, r)}>
+									<PlatformIcon platform={j.platform} size={13} />
+									<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+										<path d={TREND[j.verdict ?? 'none']} />
+									</svg>
+								</span>
+							{/each}
+						</span>
+					</button>
+					{#if editing}
+						<button class="rename" onclick={() => openRename(r)} title="Rename this video" aria-label="Rename “{r.title}”">
+							<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+								<path d="M10.6 2.6 13.4 5.4 5.6 13.2H2.8V10.4zM9.1 4.1 11.9 6.9" />
+							</svg>
+						</button>
+					{/if}
+				</div>
 
 				{#if openKey === r.key}
 					<div class="details">
@@ -963,6 +1047,15 @@
 		not figures any platform reports. One channel at a time; nothing is added up across channels.
 	</p>
 </div>
+
+{#if renaming}
+	<RenameDialog
+		name={renaming.release.title}
+		choices={renaming.choices}
+		job={renaming.release.job}
+		onclose={() => (renaming = null)}
+	/>
+{/if}
 
 <style>
 	.page {
@@ -1215,6 +1308,8 @@
 	/* ---- the list ---- */
 
 	.list {
+		/* The thumbnail's column, which the pencil in Edit mode sits beside. */
+		--thumbcol: 64px;
 		overflow: hidden;
 		padding: 0;
 	}
@@ -1222,7 +1317,7 @@
 	.row {
 		display: grid;
 		/* "vs usual" holds four platforms' marks with their verdicts. */
-		grid-template-columns: 64px minmax(0, 1fr) 130px 106px 106px 156px 164px;
+		grid-template-columns: var(--thumbcol) minmax(0, 1fr) 130px 106px 106px 156px 164px;
 		align-items: center;
 		gap: 12px;
 		width: 100%;
@@ -1240,12 +1335,12 @@
 	}
 
 	button.row:hover,
-	.item.open > .row {
+	.item.open > .line > .row {
 		background: var(--surface-2);
 	}
 
 	.withjestr .row {
-		grid-template-columns: 64px minmax(0, 1fr) 48px 130px 106px 106px 156px 164px;
+		grid-template-columns: var(--thumbcol) minmax(0, 1fr) 48px 130px 106px 106px 156px 164px;
 	}
 
 	.jcell {
@@ -1281,28 +1376,100 @@
 		stroke: var(--pink);
 	}
 
-	.btn.editing {
+	/* Edit mode looks as the Calendar's does: the button pink while armed, the
+	   accent once on, and the banner in pink above the list. */
+	.edit.armed {
+		background: var(--pink-hot);
+		border-color: transparent;
+		color: #fff;
+		box-shadow: 0 0 0 3px rgba(255, 46, 138, 0.25);
+	}
+
+	.edit.on {
+		background: var(--accent-grad);
+		border-color: transparent;
+		color: #fff;
+	}
+
+	.banner.editing {
+		background: var(--pink);
 		border-color: var(--pink);
-		background: var(--accent-grad-soft);
-		color: var(--text);
+		color: var(--bg);
+		font-weight: 500;
 	}
 
-	.editbar {
-		border-color: rgba(255, 77, 158, 0.4);
+	.banner.editing strong {
+		font-weight: 800;
+		letter-spacing: 0.04em;
 	}
 
-	.editbar .bad {
+	.banner.editing .bad {
 		margin-left: 8px;
+		padding: 1px 7px;
+		border-radius: 6px;
+		background: var(--bg);
 		color: var(--danger);
 	}
 
+	/* The pencil beside a title, over the row rather than in it. */
+	.line {
+		position: relative;
+	}
+
+	.editing .line .vid {
+		padding-left: 32px;
+	}
+
+	.rename {
+		position: absolute;
+		top: 50%;
+		left: calc(16px + var(--thumbcol) + 12px);
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		transform: translateY(-50%);
+		border: 1px solid var(--pink);
+		border-radius: 7px;
+		background: var(--accent-grad-soft);
+		color: var(--pink-soft);
+		transition:
+			background 0.14s,
+			color 0.14s;
+	}
+
+	.rename:hover {
+		background: var(--accent-grad);
+		color: #fff;
+	}
+
+	.rename svg path {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.rnote {
+		font-weight: 650;
+	}
+
+	.rnote.wait {
+		color: var(--pink-soft);
+	}
+
+	.rnote.bad {
+		color: var(--warn);
+	}
+
 	/* A group's colour (a local scope's, see devtest.ts) washes its rows. */
-	.item.tinted > .row {
+	.item.tinted > .line > .row {
 		background: color-mix(in srgb, var(--tint) 13%, transparent);
 	}
 
-	.item.tinted > button.row:hover,
-	.item.tinted.open > .row {
+	.item.tinted > .line > button.row:hover,
+	.item.tinted.open > .line > .row {
 		background: color-mix(in srgb, var(--tint) 22%, var(--surface-2));
 	}
 
@@ -1792,11 +1959,14 @@
 		.top {
 			grid-template-columns: minmax(0, 1fr);
 		}
+		.list {
+			--thumbcol: 56px;
+		}
 		.row {
-			grid-template-columns: 56px minmax(0, 1fr) 104px 132px 164px;
+			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 104px 132px 164px;
 		}
 		.withjestr .row {
-			grid-template-columns: 56px minmax(0, 1fr) 44px 104px 132px 164px;
+			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 44px 104px 132px 164px;
 		}
 		.row > :nth-child(5),
 		.row > :nth-child(6) {
@@ -1824,13 +1994,16 @@
 			padding-top: 12px;
 		}
 		.row {
-			grid-template-columns: 48px minmax(0, 1fr) 96px 76px;
+			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 96px 76px;
 		}
 		.withjestr .row {
-			grid-template-columns: 48px minmax(0, 1fr) 40px 96px 76px;
+			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 40px 96px 76px;
 		}
 		.row > :nth-child(7) {
 			display: none;
+		}
+		.list {
+			--thumbcol: 48px;
 		}
 		.thumb {
 			width: 48px;

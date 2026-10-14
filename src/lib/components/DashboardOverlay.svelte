@@ -37,7 +37,8 @@
 	});
 
 	function onKey(event: KeyboardEvent) {
-		if (event.key === 'Escape' && dashboard.open) {
+		// A dialog over it (the rename) takes Escape for itself.
+		if (event.key === 'Escape' && dashboard.open && !document.querySelector('[aria-modal="true"]')) {
 			dashboard.close();
 			document.querySelector<HTMLElement>('[aria-controls="dashboard"]')?.focus();
 		}

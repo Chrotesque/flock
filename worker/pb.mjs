@@ -110,6 +110,34 @@ export function makeClient(baseUrl) {
 			}
 		},
 
+		/** The stats row of one YouTube video, or null (a rename keeps it current). */
+		async videoStatsOf(videoId) {
+			const filter = encodeURIComponent(`video_id="${videoId}"`);
+			const res = await request(`/api/collections/video_stats/records?perPage=1&filter=${filter}`);
+			return res.items?.[0] ?? null;
+		},
+
+		/** The stats row of one Instagram or Facebook post, or null. */
+		async postStatsOf(platform, postId) {
+			const filter = encodeURIComponent(`platform="${platform}" && post_id="${postId}"`);
+			const res = await request(`/api/collections/post_stats/records?perPage=1&filter=${filter}`);
+			return res.items?.[0] ?? null;
+		},
+
+		/** Renames asked for on the Dashboard and not done yet, oldest first (retitle.mjs). */
+		async pendingTitleRequests() {
+			const filter = encodeURIComponent('status="pending"');
+			const res = await request(`/api/collections/title_requests/records?perPage=20&sort=created&filter=${filter}`);
+			return res.items ?? [];
+		},
+
+		async updateTitleRequest(id, data) {
+			return request(`/api/collections/title_requests/records/${id}`, {
+				method: 'PATCH',
+				body: JSON.stringify(data)
+			});
+		},
+
 		/**
 		 * What the warning card looks at (alerts.mjs undelivered): posts that
 		 * failed since `since`, and every one still waiting, each with its job's

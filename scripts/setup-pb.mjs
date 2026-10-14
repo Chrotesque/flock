@@ -284,6 +284,39 @@ const collections = [
 		indexes: ['CREATE INDEX `idx_file_requests_status` ON `file_requests` (`status`)']
 	},
 	{
+		// Renames of videos that are out already, asked for in the Dashboard's
+		// Edit mode: one row per platform, carried out by the worker that
+		// publishes (worker/retitle.mjs), since only it holds the tokens. Rows
+		// rather than a slot, so what was renamed from what survives, and so
+		// the page can show each one waiting, done or refused.
+		name: 'title_requests',
+		type: 'base',
+		...RULES,
+		fields: [
+			{ type: 'text', name: 'platform', required: true, max: 40 },
+			// The platform's own id: YouTube's video id, the Facebook reel's.
+			{ type: 'text', name: 'video_id', required: true, max: 120 },
+			// The channel or Page it is on ('' for the platform's only one).
+			{ type: 'text', name: 'account', max: 120 },
+			{ type: 'text', name: 'title', required: true, max: 255 },
+			// What the Dashboard showed as its name when it was asked.
+			{ type: 'text', name: 'before', max: 2200 },
+			{
+				type: 'select',
+				name: 'status',
+				maxSelect: 1,
+				values: ['pending', 'done', 'failed']
+			},
+			{ type: 'text', name: 'error', max: 2000 },
+			// The browser that asked (log.ts deviceName), and the flock upload
+			// the video came from, when it did — plain text, like activity_log.
+			{ type: 'text', name: 'device', max: 120 },
+			{ type: 'text', name: 'job', max: 20 },
+			...stamps
+		],
+		indexes: ['CREATE INDEX `idx_title_requests_status` ON `title_requests` (`status`)']
+	},
+	{
 		// Project folders: a subfolder of a project folder in Settings that
 		// holds a flock JSON file. The worker writes the first half on every
 		// change it finds (worker/projects.mjs); the page writes `status`,

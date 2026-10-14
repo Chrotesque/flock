@@ -10,6 +10,7 @@ import { pipeline } from 'node:stream/promises';
 import { accessToken, forgetToken, grantedScope } from './google.mjs';
 import { pickAccount } from './accounts.mjs';
 import { youtubeVideoId } from './moves.mjs';
+import { sameTitle, snippetPatch } from './retitle.mjs';
 import { fetchOrExplain } from './net.mjs';
 
 const API = 'https://www.googleapis.com/youtube/v3';
@@ -693,6 +694,28 @@ export async function releaseYouTubeNow(config, row) {
 		throw new Error(`YouTube answered ${body?.status?.privacyStatus ?? 'nothing'}${body?.status?.publishAt ? ` at ${body.status.publishAt}` : ''}`);
 	}
 	return { alreadyOut: false };
+}
+
+/**
+ * Gives a video on the channel another title, for a rename on the Dashboard
+ * (retitle.mjs) — 51 units: the snippet read, then the update with it
+ * written back whole. Returns what YouTube had and the snippet it answered
+ * with; a video that has the title already is left alone.
+ */
+export async function retitleYouTube(config, channelId, videoId, title) {
+	const { token } = await editingToken(config, channelId, 'renaming');
+	const read = await api(token, `/videos?part=snippet&id=${encodeURIComponent(videoId)}`);
+	const snippet = read?.items?.[0]?.snippet;
+	if (!snippet) throw new Error('YouTube no longer has the video');
+	const before = snippet.title ?? '';
+	if (sameTitle(before, title)) return { before, title: before, snippet, unchanged: true };
+	const body = await api(token, '/videos?part=snippet', {
+		method: 'PUT',
+		body: JSON.stringify({ id: videoId, snippet: snippetPatch(snippet, title) })
+	});
+	const now = body?.snippet?.title;
+	if (!sameTitle(now, title)) throw new Error(`YouTube answered with ${now ? `"${now}"` : 'no title'}`);
+	return { before, title: now, snippet: body.snippet, unchanged: false };
 }
 
 /**

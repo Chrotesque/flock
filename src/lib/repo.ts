@@ -21,6 +21,7 @@ import type { WorkerBeat, WorkerBeats, WorkerRole } from './workerstatus';
 import type { UploadRecord } from './uploadrecord';
 import type { DashTarget, StatsVideo } from './dashboard';
 import type { ReelPlatform, ReelRow, Sample, YouTubeRow } from './releases';
+import { cleanName, readTitleRequest, type TitleRequest } from './retitle';
 import type {
 	Account,
 	Brand,
@@ -1310,6 +1311,80 @@ const REELS = "(platform = 'instagram' && product_type = 'REELS') || platform = 
 
 function isReel(record: Record<string, unknown>): boolean {
 	return (record.platform === 'instagram' && record.product_type === 'REELS') || record.platform === 'facebook';
+}
+
+/* ---- renames from the Dashboard (retitle.ts) ---- */
+
+/** One platform's rename, as the dialog asks it. */
+export interface RenameAsk {
+	platform: PlatformId;
+	videoId: string;
+	account: string;
+	title: string;
+	/** What the Dashboard showed as its name there. */
+	before: string;
+	/** The flock upload it came from; '' when it went out some other way. */
+	job: string;
+}
+
+/**
+ * Asks the worker to rename a video on each platform given, one row per
+ * platform (worker/retitle.mjs). Logged per platform, against the upload
+ * when there is one.
+ */
+export async function requestRenames(asks: RenameAsk[]): Promise<TitleRequest[]> {
+	assertDeviceNamed();
+	const device = deviceName();
+	const made: TitleRequest[] = [];
+	for (const ask of asks) {
+		const title = cleanName(ask.title);
+		let row: Record<string, unknown>;
+		try {
+			row = await pb.collection('title_requests').create({
+				platform: ask.platform,
+				video_id: ask.videoId,
+				account: ask.account,
+				title: title.slice(0, 255),
+				before: ask.before.slice(0, 2200),
+				status: 'pending',
+				device,
+				job: ask.job
+			});
+		} catch (err) {
+			if ((err as { status?: number }).status === 404) {
+				throw new Error('This PocketBase has no title_requests collection yet — run pnpm setup-pb.');
+			}
+			throw err;
+		}
+		made.push(readTitleRequest(row));
+		logAction(
+			'upload',
+			`Asked to rename on ${PLATFORMS[ask.platform]?.label ?? ask.platform}`,
+			`"${ask.before || '(no name)'}" → "${title}"`,
+			{ job: ask.job }
+		);
+	}
+	return made;
+}
+
+/** Renames asked for since `since`, oldest first; none on a PocketBase without the collection. */
+export async function listTitleRequests(since: Date): Promise<TitleRequest[]> {
+	try {
+		const rows = await pb.collection('title_requests').getFullList<Record<string, unknown>>({
+			filter: pb.filter('created >= {:since}', { since }),
+			sort: 'created'
+		});
+		return rows.map(readTitleRequest);
+	} catch {
+		return [];
+	}
+}
+
+/** Each rename as it is asked and as the worker answers it. Returns the unsubscribe. */
+export function subscribeTitleRequests(onRow: (row: TitleRequest, action: string) => void): () => void {
+	const sub = pb.collection('title_requests').subscribe('*', (e) => onRow(readTitleRequest(e.record), e.action));
+	sub.catch(() => {});
+	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
 }
 
 /** The reels as the worker stores them (worker/igstats.mjs, fbstats.mjs); none when it never has. */

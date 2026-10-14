@@ -25,7 +25,8 @@ import {
 	publishReadyReel,
 	publishToFacebook,
 	refreshFacebookPages,
-	rescheduleFacebookReel
+	rescheduleFacebookReel,
+	retitleFacebookReel
 } from './facebook.mjs';
 import {
 	FAILED_WINDOW_MS,
@@ -48,6 +49,7 @@ import {
 	probeYouTube,
 	refreshYouTubeChannels,
 	rescheduleYouTube,
+	retitleYouTube,
 	youtubeChannels,
 	youtubeRelease
 } from './youtube.mjs';
@@ -91,6 +93,7 @@ import { decide, mayBeAlive } from './orphans.mjs';
 import { moveStep, requeuePatch } from './moves.mjs';
 import { SYNC_PLATFORMS, movedHandle, refusedHandle, rescheduleStep } from './reschedule.mjs';
 import { requestStep } from './requests.mjs';
+import { readTitleRequest } from './retitle.mjs';
 import { inJob } from './jobscope.mjs';
 
 /**
@@ -106,7 +109,8 @@ import { inJob } from './jobscope.mjs';
  * `holds: false` says the worker does not sit on it until then.
  * `publishReady` finishes a post another run left processed but unpublished
  * (orphans.mjs); `remove` deletes a post from the account it went out on, for
- * one moved to another brand (moves.mjs). A platform whose credentials are missing is skipped with a
+ * one moved to another brand (moves.mjs); `retitle` renames one that is out,
+ * for the Dashboard (retitle.mjs). A platform whose credentials are missing is skipped with a
  * notice rather than failed: its rows wait in the queue for the day it is set
  * up.
  */
@@ -117,6 +121,7 @@ const ADAPTERS = {
 		remove: deleteYouTubeVideo,
 		releaseNow: releaseYouTubeNow,
 		reschedule: rescheduleYouTube,
+		retitle: retitleYouTube,
 		release: youtubeRelease,
 		timing: 'now',
 		lead: () => 0,
@@ -145,6 +150,7 @@ const ADAPTERS = {
 		probe: probeFacebook,
 		remove: deleteFacebookReel,
 		reschedule: rescheduleFacebookReel,
+		retitle: retitleFacebookReel,
 		release: facebookRelease,
 		publishReady: publishReadyReel,
 		timing: 'slot',
@@ -1523,6 +1529,102 @@ async function requestOne(pb, config, row) {
 	}
 }
 
+/* ---- renames asked for on the Dashboard (retitle.mjs) ---- */
+
+let titlesBusy = false;
+let titlesOff = false;
+const titleSaid = new Set();
+
+/**
+ * Renames videos that are out already, as the Dashboard's Edit mode asked.
+ * The worker that publishes does it, on the slot tick, so a rename reaches
+ * the platform within seconds of being asked.
+ */
+async function titlePass(pb, config) {
+	if (titlesBusy || titlesOff || dry || !hb.canPublish()) return;
+	titlesBusy = true;
+	try {
+		let rows;
+		try {
+			rows = await pb.pendingTitleRequests();
+		} catch (err) {
+			// A PocketBase without the collection (setup-pb not run since):
+			// nothing can have asked, so this stops asking.
+			if (!/ -> 404\b/.test(err.message)) throw err;
+			titlesOff = true;
+			log('renames from the Dashboard are off: there is no title_requests collection — run pnpm setup-pb');
+			return;
+		}
+		for (const row of rows) {
+			if (!hb.canPublish()) break;
+			await inJob(row.job, () =>
+				titleOne(pb, config, row).catch((err) => log(`could not rename ${row.platform} ${row.video_id}: ${err.message.split('\n')[0]}`))
+			);
+		}
+	} finally {
+		titlesBusy = false;
+	}
+}
+
+async function titleOne(pb, config, row) {
+	const ask = readTitleRequest(row);
+	const name = NAMES[row.platform] ?? row.platform;
+	// What the Dashboard showed: a reel's title line rather than its whole caption.
+	const was = row.before || row.video_id;
+	if (ask.error) {
+		await pb.updateTitleRequest(row.id, { status: 'failed', error: `Not renamed: ${ask.error}.` });
+		log(`not renaming ${row.platform} "${was}": ${ask.error}`);
+		return;
+	}
+	const adapter = ADAPTERS[ask.platform];
+	if (!adapter?.retitle || !adapter.ready(config)) {
+		if (!titleSaid.has(row.id)) log(`renaming ${row.platform} "${was}": ${name} is not set up here — waiting`);
+		titleSaid.add(row.id);
+		return;
+	}
+	titleSaid.delete(row.id);
+
+	try {
+		const done = await hb.track(`Renaming on ${name}: "${ask.title}"`, () => adapter.retitle(config, ask.account, ask.videoId, ask.title), {
+			publishing: true
+		});
+		if (!done.unchanged) {
+			await keepRenamed(pb, ask, done).catch((err) => log(`renamed, but its stats row was not updated: ${err.message.split('\n')[0]}`));
+		}
+		await pb.updateTitleRequest(row.id, { status: 'done', error: '' });
+		if (done.unchanged) {
+			log(`${row.platform} "${ask.title}" had that name on ${name} already`);
+			return;
+		}
+		const before = ask.platform === 'youtube' ? done.before : was;
+		log(`${row.platform} renamed on ${name}: "${before}" -> "${ask.title}"`);
+		pb.log(`Renamed on ${name}`, `"${before}" → "${ask.title}"`);
+	} catch (err) {
+		const why = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+		await pb.updateTitleRequest(row.id, { status: 'failed', error: `Not renamed: ${name} refused — ${why}`.slice(0, 2000) });
+		log(`could not rename ${row.platform} "${was}" on ${name}: ${why}`);
+		pb.log(`Not renamed on ${name}`, `"${was}" stays: ${why}.`);
+	}
+}
+
+/**
+ * The stats row shows the new name at once, rather than from the next read
+ * — which for a video past the stats window never comes.
+ */
+async function keepRenamed(pb, ask, done) {
+	if (ask.platform === 'youtube') {
+		const row = await pb.videoStatsOf(ask.videoId);
+		if (!row) return;
+		const data = row.data && typeof row.data === 'object' ? row.data : {};
+		await pb.updateVideoStats(row.id, { title: done.title, data: { ...data, snippet: { ...(data.snippet ?? {}), ...done.snippet } } });
+		return;
+	}
+	const row = await pb.postStatsOf(ask.platform, ask.videoId);
+	if (!row) return;
+	const data = row.data && typeof row.data === 'object' ? row.data : {};
+	await pb.updatePostStats(row.id, { caption: done.caption.slice(0, 2200), data: { ...data, description: done.caption } });
+}
+
 /**
  * The tray icon (tray.mjs), when this worker has one, and the warnings its
  * card was last told of.
@@ -1832,6 +1934,7 @@ async function main() {
 		await movePass(pb, config);
 		await reschedulePass(pb, config);
 		await requestPass(pb, config);
+		await titlePass(pb, config);
 		await pass(pb, config);
 		await slotPass(pb, config, { wait: true });
 		await archivePass(pb);
@@ -1977,6 +2080,7 @@ async function main() {
 		void movePass(pb, config).catch((err) => log(`move pass failed: ${err.message.split('\n')[0]}`));
 		void reschedulePass(pb, config).catch((err) => log(`reschedule pass failed: ${err.message.split('\n')[0]}`));
 		void requestPass(pb, config).catch((err) => log(`request pass failed: ${err.message.split('\n')[0]}`));
+		void titlePass(pb, config).catch((err) => log(`rename pass failed: ${err.message.split('\n')[0]}`));
 		void archivePass(pb).catch((err) => log(`project rename failed: ${err.message.split('\n')[0]}`));
 		void nudgeMain(pb, config).catch(() => {});
 	};

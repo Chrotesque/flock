@@ -577,10 +577,17 @@ press Esc or go to another page to close it. For the brand in view it shows:
   dashboard turns green, as in `940 (+9)`; *Refresh* resets those.
 - **Stored on the NAS**, folded away at the bottom: the newest uploads, with a
   delete per upload (press it twice).
+- **Renaming a video:** press *Edit* beside *Refresh* twice within two
+  seconds, then the pencil beside a title. Type the new name and tick where it
+  goes — *All platforms*, or some only; the worker renames it within seconds
+  and each platform's line says when it is done. YouTube renames the title
+  (51 units of the day's quota); on Facebook the caption's first line is the
+  name and the rest of the caption stays. Instagram and TikTok are listed but
+  cannot be ticked: neither lets an app change a post once it is out.
 - **Jestr campaigns**, with the Jestr integration on: a *Jestr* column ticks
   the videos that are campaign videos. An upload is marked with the *Jestr
   campaign* box on the Details step (shown for YouTube, Instagram and TikTok);
-  older videos are marked with *Edit* beside *Refresh*, then a click per video.
+  older videos are marked in *Edit* mode with a click per video.
 
 TikTok and Facebook views are not read yet. When each platform was last read,
 and today's YouTube quota, sit at the top right.
