@@ -692,7 +692,8 @@ export function ratioOf(judgements: Judgement[]): number | null {
 
 /**
  * Newest first, or most first — the skip rate fewest first, so the best is
- * on top either way; a missing number sorts last. `ratio` is views over usual.
+ * on top either way — or, `reversed`, the other way round. A missing number
+ * sorts last both ways, and ties newest first. `ratio` is views over usual.
  */
 export function sortRows<
 	T extends {
@@ -703,10 +704,10 @@ export function sortRows<
 		ratio: number | null;
 		skip?: number | null;
 	}
->(rows: T[], key: SortKey): T[] {
+>(rows: T[], key: SortKey, reversed = false): T[] {
 	const value = (row: T): number | null =>
 		key === 'date' ? row.release.at : key === 'usual' ? row.ratio : key === 'skip' ? (row.skip ?? null) : row[key];
-	const direction = key === 'skip' ? -1 : 1;
+	const direction = (key === 'skip' ? -1 : 1) * (reversed ? -1 : 1);
 	return [...rows].sort((a, b) => {
 		const x = value(a);
 		const y = value(b);
@@ -715,6 +716,19 @@ export function sortRows<
 		if (y === null) return -1;
 		return (y - x) * direction;
 	});
+}
+
+/** Which way a column sorts, in words, for its header's tooltip. */
+export function sortWords(key: SortKey, reversed: boolean): string {
+	const [usual, other] = {
+		date: ['newest first', 'oldest first'],
+		views: ['most first', 'fewest first'],
+		likes: ['most first', 'fewest first'],
+		comments: ['most first', 'fewest first'],
+		skip: ['fewest skipped first', 'most skipped first'],
+		usual: ['furthest ahead first', 'furthest behind first']
+	}[key];
+	return reversed ? other : usual;
 }
 
 /* ---- coming up ---- */

@@ -18,6 +18,7 @@ import {
 	sameLink,
 	skipRateOf,
 	sortRows,
+	sortWords,
 	storedFilter,
 	sumOf,
 	thin,
@@ -513,6 +514,27 @@ describe('sortRows', () => {
 			{ ...rows[2], skip: 30 }
 		];
 		expect(sortRows(skips, 'skip').map((x) => x.release.key)).toEqual(['mid', 'old', 'new']);
+	});
+
+	it('turns round when reversed, still missing last', () => {
+		expect(sortRows(rows, 'date', true).map((x) => x.release.key)).toEqual(['old', 'mid', 'new']);
+		expect(sortRows(rows, 'views', true).map((x) => x.release.key)).toEqual(['new', 'old', 'mid']);
+		// No likes on 'old': last either way.
+		expect(sortRows(rows, 'likes', true).map((x) => x.release.key)).toEqual(['mid', 'new', 'old']);
+		expect(sortRows(rows, 'usual', true).map((x) => x.release.key)).toEqual(['mid', 'old', 'new']);
+		const skips = [
+			{ ...rows[0], skip: 45 },
+			{ ...rows[1], skip: null },
+			{ ...rows[2], skip: 30 }
+		];
+		expect(sortRows(skips, 'skip', true).map((x) => x.release.key)).toEqual(['old', 'mid', 'new']);
+	});
+
+	it('says which way a column sorts', () => {
+		expect(sortWords('views', false)).toBe('most first');
+		expect(sortWords('views', true)).toBe('fewest first');
+		expect(sortWords('date', true)).toBe('oldest first');
+		expect(sortWords('skip', false)).toBe('fewest skipped first');
 	});
 });
 

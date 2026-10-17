@@ -58,6 +58,7 @@
 		type SortKey,
 		pooledSkipRate,
 		skipRateOf,
+		sortWords,
 		type StatPlatform
 	} from '$lib/releases';
 
@@ -80,6 +81,7 @@
 
 	const FILTER_KEY = 'flock.dashboard.filter';
 	const SORT_KEY = 'flock.dashboard.sort';
+	const SORT_REVERSED_KEY = 'flock.dashboard.sortReversed';
 
 	function readPref(key: string): string | null {
 		try {
@@ -109,7 +111,10 @@
 	let filter = $state<Filter>(readFilter(parsed(readPref(FILTER_KEY))));
 	let sort = $state<SortKey>(SORTS.find((s) => s === readPref(SORT_KEY)) ?? 'date');
 	$effect(() => writePref(FILTER_KEY, JSON.stringify(storedFilter(filter))));
+	// A second click on the column sorted by turns it round (worst first).
+	let reversed = $state(readPref(SORT_REVERSED_KEY) === '1');
 	$effect(() => writePref(SORT_KEY, sort));
+	$effect(() => writePref(SORT_REVERSED_KEY, reversed ? '1' : '0'));
 
 	/* ---- the data ---- */
 
@@ -292,7 +297,7 @@
 				skip: skipRateOf(release, filter.platforms)
 			};
 		});
-		return sortRows(list, sort);
+		return sortRows(list, sort, reversed);
 	});
 
 	/* ---- Jestr campaigns (jestrcampaign.ts): a column, and marks made in Edit mode, with the integration on ---- */
@@ -550,8 +555,19 @@
 		return '';
 	}
 
+	/** A new column sorts best first; the one already sorted by turns round. */
 	function sortBy(key: SortKey) {
-		sort = key;
+		if (sort === key) reversed = !reversed;
+		else {
+			sort = key;
+			reversed = false;
+		}
+	}
+
+	function sortTitle(key: SortKey, label: string): string {
+		return sort === key
+			? `Sorted ${sortWords(key, reversed)} — click for ${sortWords(key, !reversed)}`
+			: `Sort by ${label.toLowerCase()}, ${sortWords(key, false)}`;
 	}
 
 	/* ---- stored on the NAS ---- */
@@ -629,8 +645,8 @@
 {/snippet}
 
 {#snippet sortHead(key: SortKey, label: string, cls = '')}
-	<button class="colhead {cls}" class:on={sort === key} onclick={() => sortBy(key)} title="Sort by {label.toLowerCase()}">
-		{label}{#if sort === key}<span class="arrow" aria-hidden="true">↓</span>{/if}
+	<button class="colhead {cls}" class:on={sort === key} onclick={() => sortBy(key)} title={sortTitle(key, label)}>
+		{label}{#if sort === key}<span class="arrow" aria-hidden="true">{reversed ? '↑' : '↓'}</span>{/if}
 	</button>
 {/snippet}
 
@@ -827,9 +843,9 @@
 				class="colhead skiphead"
 				class:on={sort === 'skip'}
 				onclick={() => sortBy('skip')}
-				title="Instagram: the share of a reel's views skipped within the first 3 seconds, as Instagram estimates it. Sorts fewest first"
+				title="Instagram: the share of a reel's views skipped within the first 3 seconds, as Instagram estimates it. {sortTitle('skip', 'Skipped')}"
 			>
-				<PlatformIcon platform="instagram" size={11} />Skipped{#if sort === 'skip'}<span class="arrow" aria-hidden="true">↓</span>{/if}
+				<PlatformIcon platform="instagram" size={11} />Skipped{#if sort === 'skip'}<span class="arrow" aria-hidden="true">{reversed ? '↑' : '↓'}</span>{/if}
 			</button>
 			<span class="colhead plain" title="Views from release, up to its first week; dashed: the usual for its kind">From release</span>
 			{@render sortHead('usual', 'vs usual')}

@@ -578,7 +578,7 @@ press Esc or go to another page to close it. For the brand in view it shows:
   or behind (yellow). *Skipped* is Instagram's estimate of the share of a
   reel's views skipped within its first 3 seconds (the total row weighs each
   reel by its views); a fresh reel shows — until Instagram has one. Sort by
-  any column, *Skipped* fewest first; click a video for everything YouTube
+  any column — best first, click it again for the other way round; click a video for everything YouTube
   and Instagram report about it. A number that has moved since you opened the
   dashboard turns green, as in `940 (+9)`; *Refresh* resets those.
 - **Stored on the NAS**, folded away at the bottom: the newest uploads, with a
