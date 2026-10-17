@@ -85,6 +85,8 @@ export interface ReelRow {
 	permalink: string;
 	caption: string;
 	history: Sample[];
+	/** Instagram's share of the reel's views skipped within the first 3 seconds, %; null until given (readSkipRate). */
+	skipRate?: number | null;
 }
 
 /** What a release needs of flock's posts: which upload it was and where each went. */
@@ -111,6 +113,8 @@ export interface Post {
 	comments: number | null;
 	/** [ms, views], oldest first, nulls left out. */
 	samples: [number, number][];
+	/** Instagram only: the share of its views skipped within the first 3 seconds, %; null until Instagram gives one. */
+	skipRate?: number | null;
 }
 
 export function toSamples(history: Sample[] | null | undefined): [number, number][] {
@@ -153,8 +157,40 @@ export function reelPost(row: ReelRow, platform: ReelPlatform = 'instagram'): Po
 		views: row.views,
 		likes: row.likes,
 		comments: row.comments,
-		samples: toSamples(row.history)
+		samples: toSamples(row.history),
+		skipRate: row.skipRate ?? null
 	};
+}
+
+/**
+ * Instagram's skip rate as stored (worker/igstats.mjs): a percentage, or null.
+ * Instagram answers 0 for a reel it has not worked one out for yet — a fresh
+ * one (seen 17 Oct 2026) — so 0 reads as not given, as does anything that is
+ * not a percentage.
+ */
+export function readSkipRate(value: unknown): number | null {
+	return typeof value === 'number' && value > 0 && value <= 100 ? value : null;
+}
+
+/** A release's skip rate while Instagram is in view; null without its reel, or a rate. */
+export function skipRateOf(release: Release, platforms: StatPlatform[]): number | null {
+	return platforms.includes('instagram') ? (release.posts.instagram?.skipRate ?? null) : null;
+}
+
+/**
+ * The share of all these reels' views skipped within 3 seconds: each rate
+ * weighted by its reel's views, so a reel seen ten times as often counts ten
+ * times as much. Null with no reel that has both.
+ */
+export function pooledSkipRate(posts: Pick<Post, 'views' | 'skipRate'>[]): number | null {
+	let skipped = 0;
+	let views = 0;
+	for (const post of posts) {
+		if (post.skipRate == null || post.views == null || post.views <= 0) continue;
+		skipped += (post.skipRate / 100) * post.views;
+		views += post.views;
+	}
+	return views > 0 ? (skipped / views) * 100 : null;
 }
 
 /**
@@ -640,7 +676,7 @@ export function periodStats(releases: Release[], filter: DashFilter, now: Date):
 
 /* ---- sorting ---- */
 
-export type SortKey = 'date' | 'views' | 'likes' | 'comments' | 'usual';
+export type SortKey = 'date' | 'views' | 'likes' | 'comments' | 'usual' | 'skip';
 
 /** Views over usual, over the platforms judged on both; null with none. */
 export function ratioOf(judgements: Judgement[]): number | null {
@@ -654,20 +690,30 @@ export function ratioOf(judgements: Judgement[]): number | null {
 	return usual > 0 ? views / usual : null;
 }
 
-/** Newest first, or most first; a missing number sorts last. `ratio` is views over usual. */
-export function sortRows<T extends { release: Release; views: number | null; likes: number | null; comments: number | null; ratio: number | null }>(
-	rows: T[],
-	key: SortKey
-): T[] {
+/**
+ * Newest first, or most first — the skip rate fewest first, so the best is
+ * on top either way; a missing number sorts last. `ratio` is views over usual.
+ */
+export function sortRows<
+	T extends {
+		release: Release;
+		views: number | null;
+		likes: number | null;
+		comments: number | null;
+		ratio: number | null;
+		skip?: number | null;
+	}
+>(rows: T[], key: SortKey): T[] {
 	const value = (row: T): number | null =>
-		key === 'date' ? row.release.at : key === 'usual' ? row.ratio : row[key];
+		key === 'date' ? row.release.at : key === 'usual' ? row.ratio : key === 'skip' ? (row.skip ?? null) : row[key];
+	const direction = key === 'skip' ? -1 : 1;
 	return [...rows].sort((a, b) => {
 		const x = value(a);
 		const y = value(b);
 		if (x === y) return b.release.at - a.release.at;
 		if (x === null) return 1;
 		if (y === null) return -1;
-		return y - x;
+		return (y - x) * direction;
 	});
 }
 

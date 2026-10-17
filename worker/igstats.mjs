@@ -19,10 +19,17 @@ function insight(item, name) {
 	return value == null ? null : Number(value);
 }
 
-/** One Graph media item as a `post_stats` row; `data` is the item without its insights, which have columns. */
+/**
+ * One Graph media item as a `post_stats` row; `data` is the item without its
+ * insights, which have columns — bar a reel's skip rate (the share of its
+ * views skipped within the first 3 seconds, Instagram's estimate), kept as
+ * `data.insights.reels_skip_rate` like Facebook's insights, so "not given"
+ * stays apart from 0 and no schema change was needed.
+ */
 export function toPostRow(item, account) {
 	const count = (v) => (v == null ? null : Number(v));
 	const { insights, ...rest } = item;
+	const skip = insight(item, 'reels_skip_rate');
 	return {
 		platform: 'instagram',
 		post_id: String(item.id),
@@ -36,9 +43,11 @@ export function toPostRow(item, account) {
 		reach: insight(item, 'reach'),
 		likes: count(item.like_count),
 		comments: count(item.comments_count),
-		data: rest
+		data: skip == null ? rest : { ...rest, insights: { reels_skip_rate: skip } }
 	};
 }
+
+const skipRate = (row) => row?.data?.insights?.reels_skip_rate ?? null;
 
 const COUNTERS = ['views', 'likes', 'comments'];
 const NUMBERS = ['views', 'reach', 'likes', 'comments'];
@@ -54,7 +63,8 @@ export function differs(prev, row) {
 	return (
 		NUMBERS.some((k) => !sameNumber(prev[k], row[k])) ||
 		TEXTS.some((k) => (prev[k] ?? '') !== (row[k] ?? '')) ||
-		!sameDate(prev.published_at, row.published_at)
+		!sameDate(prev.published_at, row.published_at) ||
+		skipRate(prev) !== skipRate(row)
 	);
 }
 

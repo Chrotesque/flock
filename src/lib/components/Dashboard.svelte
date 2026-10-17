@@ -56,6 +56,8 @@
 		type Post,
 		type Release,
 		type SortKey,
+		pooledSkipRate,
+		skipRateOf,
 		type StatPlatform
 	} from '$lib/releases';
 
@@ -103,7 +105,7 @@
 		}
 	}
 
-	const SORTS: SortKey[] = ['date', 'views', 'likes', 'comments', 'usual'];
+	const SORTS: SortKey[] = ['date', 'views', 'likes', 'comments', 'skip', 'usual'];
 	let filter = $state<Filter>(readFilter(parsed(readPref(FILTER_KEY))));
 	let sort = $state<SortKey>(SORTS.find((s) => s === readPref(SORT_KEY)) ?? 'date');
 	$effect(() => writePref(FILTER_KEY, JSON.stringify(storedFilter(filter))));
@@ -258,6 +260,8 @@
 		judgements: Judgement[];
 		ratio: number | null;
 		curves: Curve[];
+		/** Instagram's skip rate for its reel, while Instagram is in view. */
+		skip: number | null;
 	}
 
 	function deltaOf(posts: Post[], counter: Counter): number {
@@ -284,7 +288,8 @@
 				delta: { views: deltaOf(posts, 'views'), likes: deltaOf(posts, 'likes'), comments: deltaOf(posts, 'comments') },
 				judgements,
 				ratio: ratioOf(judgements),
-				curves: posts.map((post) => curve(post, peersOf(post), now))
+				curves: posts.map((post) => curve(post, peersOf(post), now)),
+				skip: skipRateOf(release, filter.platforms)
 			};
 		});
 		return sortRows(list, sort);
@@ -378,6 +383,23 @@
 		}
 		return sum;
 	});
+
+	// Of every Instagram view on the reels in the list, the share skipped
+	// within 3 seconds: each reel's rate weighted by its views.
+	const pooledSkip = $derived(
+		filter.platforms.includes('instagram')
+			? pooledSkipRate(rows.map((row) => row.release.posts.instagram).filter((p): p is Post => Boolean(p)))
+			: null
+	);
+	const skipShown = (rate: number) => `${rate.toLocaleString('en-GB', { maximumFractionDigits: 1 })} %`;
+
+	function skipTitle(r: Release): string {
+		const reel = r.posts.instagram;
+		if (!filter.platforms.includes('instagram')) return 'Instagram is not in view';
+		if (!reel) return 'No Instagram reel';
+		if (reel.skipRate == null) return 'Instagram has not given a skip rate for this reel yet';
+		return `${skipShown(reel.skipRate)} of its Instagram views were skipped within the first 3 seconds (Instagram's estimate)`;
+	}
 
 	let openKey = $state<string | null>(null);
 
@@ -801,6 +823,14 @@
 			{@render sortHead('views', 'Views')}
 			{@render sortHead('likes', 'Likes')}
 			{@render sortHead('comments', 'Comments')}
+			<button
+				class="colhead skiphead"
+				class:on={sort === 'skip'}
+				onclick={() => sortBy('skip')}
+				title="Instagram: the share of a reel's views skipped within the first 3 seconds, as Instagram estimates it. Sorts fewest first"
+			>
+				<PlatformIcon platform="instagram" size={11} />Skipped{#if sort === 'skip'}<span class="arrow" aria-hidden="true">↓</span>{/if}
+			</button>
 			<span class="colhead plain" title="Views from release, up to its first week; dashed: the usual for its kind">From release</span>
 			{@render sortHead('usual', 'vs usual')}
 		</div>
@@ -814,6 +844,13 @@
 			{@render counter(totals.views, totals.dViews)}
 			{@render counter(totals.likes, totals.dLikes)}
 			{@render counter(totals.comments, totals.dComments)}
+			<span
+				class="num cell skip"
+				title={pooledSkip === null
+					? 'No skip rate among the reels in view'
+					: `Of all the Instagram views on these reels, ${skipShown(pooledSkip)} were skipped within the first 3 seconds (each reel's rate weighted by its views)`}
+				>{pooledSkip === null ? '—' : skipShown(pooledSkip)}</span
+			>
 			<span></span>
 			<span></span>
 		</div>
@@ -886,6 +923,9 @@
 						{@render stacked(row, 'views', true)}
 						{@render stacked(row, 'likes')}
 						{@render stacked(row, 'comments')}
+						<span class="num cell skip" class:none={row.skip === null} title={skipTitle(r)}
+							>{row.skip === null ? '—' : skipShown(row.skip)}</span
+						>
 						<span class="spark"><ViewsCurve curves={row.curves} /></span>
 						<span class="verdicts">
 							{#each row.judgements as j (j.platform)}
@@ -1317,7 +1357,7 @@
 	.row {
 		display: grid;
 		/* "vs usual" holds four platforms' marks with their verdicts. */
-		grid-template-columns: var(--thumbcol) minmax(0, 1fr) 130px 106px 106px 156px 164px;
+		grid-template-columns: var(--thumbcol) minmax(0, 1fr) 130px 106px 106px 84px 156px 164px;
 		align-items: center;
 		gap: 12px;
 		width: 100%;
@@ -1340,7 +1380,7 @@
 	}
 
 	.withjestr .row {
-		grid-template-columns: var(--thumbcol) minmax(0, 1fr) 48px 130px 106px 106px 156px 164px;
+		grid-template-columns: var(--thumbcol) minmax(0, 1fr) 48px 130px 106px 106px 84px 156px 164px;
 	}
 
 	.jcell {
@@ -1602,6 +1642,18 @@
 	.num {
 		text-align: right;
 		font-variant-numeric: tabular-nums;
+	}
+
+	/* Instagram's skip rate: the header carries the mark, the cells the number. */
+	.skiphead {
+		display: inline-flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 5px;
+	}
+
+	.skip.none {
+		color: var(--text-faint);
 	}
 
 	.cell.up {
@@ -1963,10 +2015,10 @@
 			--thumbcol: 56px;
 		}
 		.row {
-			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 104px 132px 164px;
+			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 104px 76px 132px 164px;
 		}
 		.withjestr .row {
-			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 44px 104px 132px 164px;
+			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 44px 104px 76px 132px 164px;
 		}
 		.row > :nth-child(5),
 		.row > :nth-child(6) {
@@ -1999,7 +2051,8 @@
 		.withjestr .row {
 			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 40px 96px 76px;
 		}
-		.row > :nth-child(7) {
+		.row > :nth-child(7),
+		.row > :nth-child(8) {
 			display: none;
 		}
 		.list {

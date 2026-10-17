@@ -10,9 +10,13 @@ import {
 	judge,
 	peerGroups,
 	periodStats,
+	pooledSkipRate,
 	ratioOf,
 	readFilter,
+	readSkipRate,
+	reelPost,
 	sameLink,
+	skipRateOf,
 	sortRows,
 	storedFilter,
 	sumOf,
@@ -500,6 +504,46 @@ describe('sortRows', () => {
 		expect(sortRows(rows, 'likes').map((x) => x.release.key)).toEqual(['new', 'mid', 'old']);
 		expect(sortRows(rows, 'comments').map((x) => x.release.key)).toEqual(['new', 'mid', 'old']);
 		expect(sortRows(rows, 'usual').map((x) => x.release.key)).toEqual(['old', 'mid', 'new']);
+	});
+
+	it('sorts the skip rate fewest first, missing last', () => {
+		const skips = [
+			{ ...rows[0], skip: 45 },
+			{ ...rows[1], skip: null },
+			{ ...rows[2], skip: 30 }
+		];
+		expect(sortRows(skips, 'skip').map((x) => x.release.key)).toEqual(['mid', 'old', 'new']);
+	});
+});
+
+describe('skip rate', () => {
+	it("reads Instagram's rate, 0 and nonsense as not given", () => {
+		expect(readSkipRate(37.3)).toBe(37.3);
+		expect(readSkipRate(0)).toBeNull();
+		expect(readSkipRate(null)).toBeNull();
+		expect(readSkipRate('40')).toBeNull();
+		expect(readSkipRate(140)).toBeNull();
+	});
+
+	it("carries a reel's rate onto its post, and a release's only while Instagram is in view", () => {
+		const ig = reelPost(reel('R1', T0, { skipRate: 41.2 }));
+		expect(ig.skipRate).toBe(41.2);
+		expect(reelPost(reel('R2', T0)).skipRate).toBeNull();
+		const [release] = buildReleases([], [reel('R1', T0, { skipRate: 41.2 })], []);
+		expect(skipRateOf(release, ['youtube', 'instagram'])).toBe(41.2);
+		expect(skipRateOf(release, ['youtube', 'facebook'])).toBeNull();
+	});
+
+	it('pools rates by views, leaving out reels without both', () => {
+		expect(
+			pooledSkipRate([
+				{ views: 1000, skipRate: 30 },
+				{ views: 100, skipRate: 80 },
+				{ views: 500, skipRate: null },
+				{ views: null, skipRate: 50 }
+			])
+		).toBeCloseTo((300 + 80) / 1100 * 100);
+		expect(pooledSkipRate([{ views: 10, skipRate: null }])).toBeNull();
 	});
 });
 

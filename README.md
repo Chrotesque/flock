@@ -226,9 +226,9 @@ The worker keeps each Page's own token, which does not expire.
   (it never appears there), handed to Instagram, then deleted. If that fails,
   the reel uses its *Cover frame*.
 - **Reel views:** with `instagram_manage_insights` granted, the worker also
-  reads each account's newest 100 posts and their views every 10 minutes, into
-  PocketBase's `post_stats` (`igStatsPosts`, `igStatsSeconds`; 0 turns it off),
-  and the Dashboard shows them.
+  reads each account's newest 100 posts, their views and each reel's skip rate
+  every 10 minutes, into PocketBase's `post_stats` (`igStatsPosts`,
+  `igStatsSeconds`; 0 turns it off), and the Dashboard shows them.
 
 ### Facebook
 
@@ -575,7 +575,10 @@ press Esc or go to another page to close it. For the brand in view it shows:
   Views, likes and comments show the total and each platform's below. A line
   shows its views from release, with what is usual for its kind dashed, and
   an arrow per platform says whether it is ahead (green), about usual (grey)
-  or behind (yellow). Sort by any column; click a video for everything YouTube
+  or behind (yellow). *Skipped* is Instagram's estimate of the share of a
+  reel's views skipped within its first 3 seconds (the total row weighs each
+  reel by its views); a fresh reel shows — until Instagram has one. Sort by
+  any column, *Skipped* fewest first; click a video for everything YouTube
   and Instagram report about it. A number that has moved since you opened the
   dashboard turns green, as in `940 (+9)`; *Refresh* resets those.
 - **Stored on the NAS**, folded away at the bottom: the newest uploads, with a

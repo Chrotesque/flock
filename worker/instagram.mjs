@@ -677,10 +677,13 @@ const accountErrors = new Map();
  * records the error beside them; a row for an account no longer configured
  * goes.
  */
-// What the stats pass reads of each post; views and reach come from insights,
-// which need instagram_manage_insights (igstats.mjs).
+// What the stats pass reads of each post; views, reach and a reel's skip rate
+// come from insights, which need instagram_manage_insights (igstats.mjs).
+// Asked nested like this, a metric a post does not support (a photo has no
+// skip rate) is left off that post; asked of the photo on its own it is an
+// error (tried 17 Oct 2026).
 const MEDIA_FIELDS =
-	'id,timestamp,media_type,media_product_type,permalink,caption,like_count,comments_count,insights.metric(views,reach)';
+	'id,timestamp,media_type,media_product_type,permalink,caption,like_count,comments_count,insights.metric(views,reach,reels_skip_rate)';
 
 /** The account's newest posts, `limit` at most, newest first, with their insights; pages of 50. */
 export async function listMedia(ig, limit = 100) {

@@ -32,6 +32,21 @@ test('a reel becomes a row with its views and reach in columns', () => {
 	assert.equal(row.data.insights, undefined);
 });
 
+test("a reel's skip rate is kept in data, and a change in it alone is a change", () => {
+	const rated = {
+		...item,
+		insights: { data: [...item.insights.data, { name: 'reels_skip_rate', period: 'lifetime', values: [{ value: 37.3 }] }] }
+	};
+	const row = toPostRow(rated, account);
+	assert.deepEqual(row.data.insights, { reels_skip_rate: 37.3 });
+	assert.equal(differs({ ...row, published_at: '2026-10-12 10:00:00.000Z' }, row), false);
+	// Stored before skip rates were read, or with another rate: rewritten, with no history sample.
+	const before = toPostRow(item, account);
+	assert.equal(differs(before, row), true);
+	assert.equal(counterMoved(before, row), false);
+	assert.equal(differs({ ...row, data: { ...row.data, insights: { reels_skip_rate: 40 } } }, row), true);
+});
+
 test('a post with no insights has no views, not zero', () => {
 	const row = toPostRow({ ...item, insights: undefined, like_count: undefined }, account);
 	assert.equal(row.views, null);

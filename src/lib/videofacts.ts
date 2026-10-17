@@ -197,6 +197,15 @@ export function reelFacts(
 				['Views', count(row.views, facebook ? 'not read yet' : undefined)],
 				['Plays without replays', count(num(insights.blue_reels_play_count))],
 				['Average watched', avgMs != null ? `${(avgMs / 1000).toFixed(1)} s` : undefined],
+				// Instagram's estimate (igstats.mjs); Facebook gives none.
+				[
+					'Skipped in the first 3 s',
+					facebook
+						? undefined
+						: row.skipRate != null
+							? `${row.skipRate.toLocaleString('en-GB', { maximumFractionDigits: 1 })} %`
+							: 'not given yet'
+				],
 				['Accounts reached', count(row.reach)],
 				['Likes', count(row.likes)],
 				['Comments', count(row.comments)],

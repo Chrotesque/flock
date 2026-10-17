@@ -21,6 +21,7 @@ import type { WorkerBeat, WorkerBeats, WorkerRole } from './workerstatus';
 import type { UploadRecord } from './uploadrecord';
 import type { DashTarget, StatsVideo } from './dashboard';
 import type { ReelPlatform, ReelRow, Sample, YouTubeRow } from './releases';
+import { readSkipRate } from './releases';
 import { cleanName, readTitleRequest, type TitleRequest } from './retitle';
 import type {
 	Account,
@@ -1285,6 +1286,8 @@ export function toDashboardReel(row: Record<string, unknown>): DashboardReel {
 		permalink: String(row.permalink ?? ''),
 		caption: String(row.caption ?? ''),
 		history: (Array.isArray(row.history) ? row.history : []) as Sample[],
+		// Instagram's own, kept in `data` (worker/igstats.mjs); Facebook gives none.
+		skipRate: facebook ? null : readSkipRate(insights.reels_skip_rate),
 		data
 	};
 }
