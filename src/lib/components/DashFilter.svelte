@@ -4,6 +4,7 @@
 	import { KIND_LABELS, KIND_ORDER, type VideoKind } from '$lib/videokind';
 	import {
 		ALL_PLATFORMS,
+		DASH_SPANS,
 		DEFAULT_FILTER,
 		STAT_PLATFORMS,
 		isCombined,
@@ -15,9 +16,9 @@
 
 	/**
 	 * Every choice of what the page looks at, in one element: a line saying
-	 * what is shown, which opens into the choices — platforms (all of them
-	 * together is the combined view), kinds and visibility. The page's
-	 * numbers and its list both follow it.
+	 * what is shown, which opens into the choices — the timeframe, platforms
+	 * (all of them together is the combined view), kinds and visibility. The
+	 * page's numbers and its list all follow it.
 	 */
 	let { filter = $bindable(), counts }: { filter: DashFilter; counts: FilterCounts } = $props();
 
@@ -93,6 +94,8 @@
 			{/each}
 			<span>{combined ? 'Combined' : PLATFORMS[filter.platforms[0]].label}</span>
 		</span>
+		<span class="sep keep" aria-hidden="true"></span>
+		<span class="part days">Last {filter.days} days</span>
 		<span class="sep" aria-hidden="true"></span>
 		<span class="part">{kindWords}</span>
 		<span class="sep" aria-hidden="true"></span>
@@ -104,6 +107,22 @@
 
 	{#if open}
 		<div class="panel" id="dashboard-filter" role="group" aria-label="What the page shows">
+			<section class="timeframe">
+				<h3>Timeframe</h3>
+				<div class="span" role="radiogroup" aria-label="Days the page counts">
+					{#each DASH_SPANS as d (d)}
+						<button
+							class:on={filter.days === d}
+							role="radio"
+							aria-checked={filter.days === d}
+							title="Videos out in the last {d} days"
+							onclick={() => (filter = { ...filter, days: d })}>{d}</button
+						>
+					{/each}
+					<span class="spanunit">days</span>
+				</div>
+			</section>
+
 			<section>
 				<h3>
 					Platforms
@@ -182,8 +201,9 @@
 
 			<footer>
 				<p>
-					Shorts are under three minutes, long form over and not live. A reel with no YouTube video beside it counts as a
-					Short. Visibility is YouTube's; reels are public.
+					The timeframe counts videos by when they went out, scheduled ones still to come included; every number on the
+					page, "usual" too, is over those. Shorts are under three minutes, long form over and not live. A reel with no
+					YouTube video beside it counts as a Short. Visibility is YouTube's; reels are public.
 				</p>
 				{#if changed}
 					<button class="link" onclick={reset}>Reset</button>
@@ -283,6 +303,60 @@
 		border: 1px solid var(--border-strong);
 		background: var(--surface-2);
 		box-shadow: var(--shadow);
+	}
+
+	/* The timeframe across the top of the panel, one click a choice. */
+	.timeframe {
+		grid-column: 1 / -1;
+		display: flex;
+		align-items: center;
+		gap: 14px;
+	}
+
+	.timeframe h3 {
+		margin: 0;
+	}
+
+	.span {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		padding: 2px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--surface);
+	}
+
+	.span button {
+		min-width: 38px;
+		padding: 4px 9px;
+		border: none;
+		border-radius: 999px;
+		background: none;
+		font: inherit;
+		font-size: 12px;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-dim);
+		transition:
+			background 0.14s,
+			color 0.14s;
+	}
+
+	.span button:hover {
+		color: var(--text);
+	}
+
+	.span button.on {
+		background: rgba(255, 77, 158, 0.12);
+		box-shadow: inset 0 0 0 1px var(--pink);
+		color: var(--text);
+	}
+
+	.spanunit {
+		padding: 0 9px 0 4px;
+		font-size: 11.5px;
+		color: var(--text-faint);
 	}
 
 	h3 {
@@ -437,8 +511,8 @@
 		.panel {
 			grid-template-columns: minmax(0, 1fr);
 		}
-		.bar .part:not(.platforms),
-		.bar .sep {
+		.bar .part:not(.platforms, .days),
+		.bar .sep:not(.keep) {
 			display: none;
 		}
 	}

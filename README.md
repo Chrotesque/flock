@@ -562,9 +562,11 @@ Settings, local or on the network, like watch folders.
 and flock opens on it; its arrow points back while it is open. Click it again,
 press Esc or go to another page to close it. For the brand in view it shows:
 
-- **One filter for all of it:** which platforms (all of them is *Combined*),
-  which kinds (Shorts, long form, live) and whether unlisted and private videos
-  are shown. Click it to change it; the choice is kept per browser.
+- **One filter for all of it:** the timeframe (the last 30 days by default,
+  up to 180), which platforms (all of them is *Combined*), which kinds (Shorts,
+  long form, live) and whether unlisted and private videos are shown. Every
+  number on the page counts only the videos out in the timeframe. Click it to
+  change it; the choice is kept per browser.
 - **Today, this week and this month:** videos out, the views on them and the
   views gained, with each platform's share below.
 - **Coming up:** the next three days, each upload a cluster of platform icons.

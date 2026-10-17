@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
 	COMPARE_AT_MS,
 	DEFAULT_FILTER,
+	DASH_SPANS,
 	buildReleases,
 	captionTitle,
 	curve,
 	filterCounts,
+	inSpan,
 	inView,
 	judge,
 	peerGroups,
@@ -300,6 +302,24 @@ describe('the filter', () => {
 			kinds: ['short']
 		});
 		expect(readFilter({ platforms: ['instagram', 'tiktok'] }).platforms).toEqual(['instagram']);
+	});
+
+	it('keeps a timeframe from the list, 30 days otherwise', () => {
+		expect(DEFAULT_FILTER.days).toBe(30);
+		expect(DASH_SPANS).toEqual([30, 60, 90, 120, 150, 180]);
+		expect(readFilter({ days: 120 }).days).toBe(120);
+		expect(readFilter({ days: '90' }).days).toBe(90);
+		expect(readFilter({ days: 45 }).days).toBe(30);
+		// Stored before there was a timeframe.
+		expect(readFilter({ platforms: ['youtube'], kinds: ['short'] }).days).toBe(30);
+	});
+
+	it('takes in releases of the last days and those still to come', () => {
+		const now = T0 + 100 * D;
+		expect(inSpan({ at: now - 29 * D }, 30, now)).toBe(true);
+		expect(inSpan({ at: now - 31 * D }, 30, now)).toBe(false);
+		expect(inSpan({ at: now - 31 * D }, 60, now)).toBe(true);
+		expect(inSpan({ at: now + 2 * D }, 30, now)).toBe(true);
 	});
 
 	it('lets a platform read since the filter was saved join a combined view only', () => {

@@ -392,13 +392,19 @@ export interface DashFilter {
 	unlisted: boolean;
 	/** Show private ones — a scheduled upload is private until its slot. */
 	private: boolean;
+	/** How far back the page looks, in days (DASH_SPANS): every number on it counts only releases since. */
+	days: number;
 }
+
+/** The Dashboard's timeframes: a month at a time, up to half a year. */
+export const DASH_SPANS = [30, 60, 90, 120, 150, 180];
 
 export const DEFAULT_FILTER: DashFilter = {
 	platforms: [...STAT_PLATFORMS],
 	kinds: [...KIND_ORDER],
 	unlisted: false,
-	private: false
+	private: false,
+	days: 30
 };
 
 /** The platforms a filter saved before it said which it knew was saved knowing: those before Facebook's numbers. */
@@ -425,8 +431,17 @@ export function readFilter(raw: unknown): DashFilter {
 		platforms: platforms.length > 0 ? platforms : [...DEFAULT_FILTER.platforms],
 		kinds: kinds ?? [...DEFAULT_FILTER.kinds],
 		unlisted: typeof r.unlisted === 'boolean' ? r.unlisted : DEFAULT_FILTER.unlisted,
-		private: typeof r.private === 'boolean' ? r.private : DEFAULT_FILTER.private
+		private: typeof r.private === 'boolean' ? r.private : DEFAULT_FILTER.private,
+		days: DASH_SPANS.includes(Number(r.days)) ? Number(r.days) : DEFAULT_FILTER.days
 	};
+}
+
+/**
+ * Whether a release falls in the timeframe: out within the last `days` up to
+ * `now`, or still to come (a scheduled upload, private until its slot).
+ */
+export function inSpan(release: Pick<Release, 'at'>, days: number, now: number): boolean {
+	return release.at >= now - days * DAY;
 }
 
 export function isCombined(filter: DashFilter): boolean {

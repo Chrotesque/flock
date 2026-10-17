@@ -56,6 +56,7 @@
 		type Post,
 		type Release,
 		type SortKey,
+		inSpan,
 		pooledSkipRate,
 		skipRateOf,
 		sortWords,
@@ -247,9 +248,13 @@
 			)
 		)
 	);
-	const groups = $derived(peerGroups(releases));
-	const counts = $derived(filterCounts(releases, filter));
-	const inViewList = $derived(releases.filter((r) => inView(r, filter)));
+	// The timeframe (the filter's days) is cut first, so every number on the
+	// page follows it: the list and its totals, the counts in the filter, the
+	// periods, and the peers "usual" is the middle of.
+	const spanned = $derived(releases.filter((r) => inSpan(r, filter.days, now)));
+	const groups = $derived(peerGroups(spanned));
+	const counts = $derived(filterCounts(spanned, filter));
+	const inViewList = $derived(spanned.filter((r) => inView(r, filter)));
 	const combined = $derived(isCombined(filter));
 	const multi = $derived(filter.platforms.length > 1);
 
@@ -1028,7 +1033,11 @@
 
 		{#if loaded && rows.length === 0}
 			<p class="empty">
-				{releases.length === 0 ? 'No videos read yet. They appear once the worker has read the channel.' : 'Nothing to show with these choices.'}
+				{releases.length === 0
+					? 'No videos read yet. They appear once the worker has read the channel.'
+					: spanned.length === 0
+						? `Nothing went out in the last ${filter.days} days. Choose a longer timeframe in the filter.`
+						: 'Nothing to show with these choices.'}
 			</p>
 		{:else if !loaded}
 			<p class="empty">Reading…</p>
