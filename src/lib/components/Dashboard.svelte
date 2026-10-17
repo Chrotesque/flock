@@ -2015,13 +2015,15 @@
 			--thumbcol: 56px;
 		}
 		.row {
-			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 104px 76px 132px 164px;
+			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 104px 132px 164px;
 		}
 		.withjestr .row {
-			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 44px 104px 76px 132px 164px;
+			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 44px 104px 132px 164px;
 		}
+		/* Likes, comments and the skip rate go; an opened row still lists them. */
 		.row > :nth-child(5),
-		.row > :nth-child(6) {
+		.row > :nth-child(6),
+		.row > :nth-child(7) {
 			display: none;
 		}
 		.details {
@@ -2051,7 +2053,6 @@
 		.withjestr .row {
 			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 40px 96px 76px;
 		}
-		.row > :nth-child(7),
 		.row > :nth-child(8) {
 			display: none;
 		}
