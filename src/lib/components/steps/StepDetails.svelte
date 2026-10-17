@@ -4,6 +4,7 @@
 	import ThumbnailPicker from '../ThumbnailPicker.svelte';
 	import { imageFits, isImagePlatform } from '$lib/coverimage';
 	import FoldBox from '../FoldBox.svelte';
+	import PlaylistPicker from '../PlaylistPicker.svelte';
 	import PlatformIcon from '../PlatformIcon.svelte';
 	import Checkbox from '../Checkbox.svelte';
 	import TagInput from '../TagInput.svelte';
@@ -142,13 +143,6 @@
 	});
 
 	let chosenPlaylists = $derived(playlistsOf(draft.overrides.youtube));
-	let unchosenPlaylists = $derived(
-		(playlists?.items ?? []).filter((p) => !chosenPlaylists.some((t) => t.toLowerCase() === p.title.toLowerCase()))
-	);
-	// The worker matches titles case aside, so the box does too.
-	const onChannel = (title: string) =>
-		Boolean(playlists?.items.some((p) => p.title.toLowerCase() === title.toLowerCase()));
-
 	function setPlaylists(titles: string[]) {
 		draft.overrides.youtube = withPlaylists(draft.overrides.youtube ?? {}, titles);
 	}
@@ -1170,48 +1164,12 @@
 				foldOnDone={false}
 				summary={chosenPlaylists.join(', ')}
 			>
-				{#if chosenPlaylists.length > 0}
-					<ul class="chosenlists">
-						{#each chosenPlaylists as title (title)}
-							<li class:missing={!onChannel(title)}>
-								<span class="pltitle" title={title}>{title}</span>
-								{#if playlists && !onChannel(title)}
-									<span class="plmissing">not on the channel</span>
-								{/if}
-								<button
-									class="plremove"
-									title="Take it off"
-									aria-label="Take {title} off"
-									onclick={() => setPlaylists(chosenPlaylists.filter((t) => t !== title))}
-								>
-									<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
-								</button>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-				<select
-					class="playlist"
-					value=""
-					aria-label={chosenPlaylists.length ? 'Add another playlist' : 'Add to a playlist'}
-					disabled={unchosenPlaylists.length === 0}
-					onchange={(e) => {
-						const title = e.currentTarget.value;
-						e.currentTarget.value = '';
-						if (title) setPlaylists([...chosenPlaylists, title]);
-					}}
-				>
-					<option value="">
-						{unchosenPlaylists.length === 0 && playlists?.items.length
-							? 'Every playlist is chosen'
-							: chosenPlaylists.length
-								? 'Add another playlist…'
-								: 'Add to a playlist…'}
-					</option>
-					{#each unchosenPlaylists as item (item.id)}
-						<option value={item.title}>{item.title} ({item.count})</option>
-					{/each}
-				</select>
+				<PlaylistPicker
+					chosen={chosenPlaylists}
+					items={playlists?.items ?? []}
+					disabled={!playlists?.items.length}
+					onchange={setPlaylists}
+				/>
 				{#if playlistsLoading}
 					<p class="nasnote">Looking…</p>
 				{:else if !playlists}
@@ -2056,75 +2014,6 @@
 
 	.playlist:hover {
 		border-color: var(--border-strong);
-	}
-
-	.playlist:disabled {
-		opacity: 0.6;
-	}
-
-	/* The playlists chosen, one line each, above the picker that adds another. */
-	.chosenlists {
-		display: grid;
-		gap: 4px;
-		margin: 0 0 8px;
-		padding: 0;
-		list-style: none;
-	}
-
-	.chosenlists li {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		min-width: 0;
-		padding: 6px 6px 6px 10px;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--border);
-		background: var(--surface-2);
-		font-size: 13px;
-		color: var(--text);
-	}
-
-	.chosenlists li.missing {
-		border-color: rgba(251, 191, 36, 0.4);
-	}
-
-	.pltitle {
-		flex: 1;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.plmissing {
-		flex: none;
-		font-size: 11px;
-		color: var(--warn);
-	}
-
-	.plremove {
-		flex: none;
-		display: grid;
-		place-items: center;
-		width: 22px;
-		height: 22px;
-		padding: 0;
-		border: none;
-		border-radius: 50%;
-		background: none;
-		color: var(--text-faint);
-	}
-
-	.plremove:hover {
-		background: var(--surface-3);
-		color: var(--text);
-	}
-
-	.plremove path {
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.7;
-		stroke-linecap: round;
 	}
 
 	.videocard {

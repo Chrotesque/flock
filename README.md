@@ -461,8 +461,8 @@ The boxes on the right follow the platform you are writing for:
 - **Instagram and Facebook:** an optional *Cover* image for the reel (JPEG or
   PNG, up to 8 MB for Instagram and 10 MB for Facebook). One image serves both;
   the switch in the box's corner gives each its own.
-- **YouTube:** playlists, as many as you like, from the channel's own: each
-  one picked is listed with an × to take it off again.
+- **YouTube:** playlists, from the channel's own. Click the field, tick as
+  many as you like, then *Done*; each shows as a tag with an × to take it off.
 - **TikTok:** the *Post to TikTok* box, with the choices TikTok wants made on
   every post:
   - who can view the video, from what the account offers, with nothing
