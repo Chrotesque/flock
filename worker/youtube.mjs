@@ -417,30 +417,79 @@ function putVideo(uploadUrl, body, { size, mimeType, onProgress }) {
 }
 
 /**
- * Adds the finished video to a playlist by name; false when there is no such
- * playlist.
+ * The playlists a post names, by title: `playlists` (a list, since v0.16.23)
+ * and the single `playlist` of rows queued before — trimmed, blanks and
+ * repeats (case aside) left out. The page reads them the same way
+ * (src/lib/playlists.ts).
+ */
+export function playlistNames(options) {
+	const given = [options?.playlists, options?.playlist].flatMap((v) => (Array.isArray(v) ? v : [v]));
+	const seen = new Set();
+	const out = [];
+	for (const item of given) {
+		if (typeof item !== 'string') continue;
+		const title = item.trim();
+		if (!title || seen.has(title.toLowerCase())) continue;
+		seen.add(title.toLowerCase());
+		out.push(title);
+	}
+	return out;
+}
+
+/** The channel's playlists, fifty a page (1 unit each), up to 200. */
+async function listPlaylists(token) {
+	const items = [];
+	let pageToken = '';
+	for (let page = 0; page < 4; page++) {
+		const next = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
+		const list = await api(token, `/playlists?part=snippet&mine=true&maxResults=50${next}`);
+		items.push(...(list.items ?? []));
+		pageToken = list.nextPageToken ?? '';
+		if (!pageToken) break;
+	}
+	return items;
+}
+
+/** The default grant is upload-only on purpose, so this refusal is expected rather than a fault. */
+function grantRefused(err) {
+	return /\b(403|401)\b/.test(err.message) || err.message.includes('insufficient');
+}
+
+/**
+ * Adds the finished video to each named playlist; the names it could not
+ * add it to come back.
  *
  * Deliberately non-fatal: the video is already up, and losing the whole publish
  * because a playlist was renamed would be a worse outcome than the video simply
- * not being in it.
+ * not being in it. A refusal of the grant itself is thrown, since it holds
+ * for every playlist alike.
  */
-async function addToPlaylist(token, videoId, name, log) {
-	const wanted = name.trim().toLowerCase();
-	const list = await api(token, '/playlists?part=snippet&mine=true&maxResults=50');
-	const match = (list.items ?? []).find((p) => (p.snippet?.title ?? '').trim().toLowerCase() === wanted);
-
-	if (!match) {
-		log(`playlist "${name}" not found on the channel — video left out of it`);
-		return false;
+async function addToPlaylists(token, videoId, names, log) {
+	const list = await listPlaylists(token);
+	const missed = [];
+	for (const name of names) {
+		const wanted = name.toLowerCase();
+		const match = list.find((p) => (p.snippet?.title ?? '').trim().toLowerCase() === wanted);
+		if (!match) {
+			log(`playlist "${name}" not found on the channel — video left out of it`);
+			missed.push(name);
+			continue;
+		}
+		try {
+			await api(token, '/playlistItems?part=snippet', {
+				method: 'POST',
+				body: JSON.stringify({
+					snippet: { playlistId: match.id, resourceId: { kind: 'youtube#video', videoId } }
+				})
+			});
+			log(`added to playlist "${match.snippet.title}"`);
+		} catch (err) {
+			if (grantRefused(err)) throw err;
+			log(`playlist "${match.snippet.title}" add failed (video is still up): ${err.message}`);
+			missed.push(name);
+		}
 	}
-	await api(token, '/playlistItems?part=snippet', {
-		method: 'POST',
-		body: JSON.stringify({
-			snippet: { playlistId: match.id, resourceId: { kind: 'youtube#video', videoId } }
-		})
-	});
-	log(`added to playlist "${match.snippet.title}"`);
-	return true;
+	return missed;
 }
 
 /**
@@ -830,20 +879,21 @@ export async function publishToYouTube({ target, job, pb, config, log, saveHandl
 	const freshToken = () => youtubeToken(config, account).catch(() => token);
 	token = await freshToken();
 
-	if (options.playlist && String(options.playlist).trim()) {
+	const playlists = playlistNames(options);
+	if (playlists.length > 0) {
+		const which = playlists.length === 1 ? 'playlist' : 'playlists';
 		try {
-			if (!(await addToPlaylist(token, videoId, String(options.playlist), log))) todo.push('playlist');
+			const missed = await addToPlaylists(token, videoId, playlists, log);
+			if (missed.length > 0) todo.push(missed.length === 1 ? 'playlist' : 'playlists');
 		} catch (err) {
-			// The default grant is upload-only on purpose, so this is the expected
-			// outcome rather than a fault — name the cause instead of the status.
-			const denied = /\b(403|401)\b/.test(err.message) || err.message.includes('insufficient');
+			// Name the cause instead of the status when it is the grant.
 			log(
-				denied
-					? 'playlist skipped: the upload-only grant cannot touch playlists. ' +
+				grantRefused(err)
+					? `${which} skipped: the upload-only grant cannot touch playlists. ` +
 							'Re-authorise with `pnpm worker:auth --with-playlists` to allow it.'
 					: `playlist add failed (video is still up): ${err.message}`
 			);
-			todo.push('playlist');
+			todo.push(which);
 		}
 	}
 

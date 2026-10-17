@@ -3,6 +3,7 @@ import { adapt } from './filters';
 import { draft } from './stores/draft.svelte';
 import { settings } from './stores/settings.svelte';
 import { relativeTo, isoDate, makeTime, mergeTagGroups } from './format';
+import { namesPlaylists, playlistsOf, withPlaylists } from './playlists';
 import type { FilterHit, OptionValues, PlatformId } from './types';
 
 /** One platform's fully resolved plan: what will actually be published, and when. */
@@ -37,7 +38,9 @@ function resolveOptions(platform: PlatformId, def: (typeof PLATFORMS)[PlatformId
 	};
 	const keys = def.tagBudget?.keys;
 	if (keys && keys.length > 0) resolved.tags = mergeTagGroups(resolved, keys);
-	return resolved;
+	// A draft saved before several playlists could be named holds one under
+	// `playlist`; the post goes out with the list either way (playlists.ts).
+	return namesPlaylists(resolved) ? withPlaylists(resolved, playlistsOf(resolved)) : resolved;
 }
 
 /**

@@ -82,6 +82,10 @@ describe('postTexts', () => {
 			})
 		).toEqual(['t', 'd', 'a', 'b', 'p']);
 	});
+
+	it('reads every playlist', () => {
+		expect(postTexts({ options: { playlists: ['p', 'q'] } })).toEqual(['', '', 'p', 'q']);
+	});
 });
 
 describe('mentionWords', () => {

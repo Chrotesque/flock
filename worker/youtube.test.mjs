@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isShortVideo, isoSeconds, processingState, publicPatch, scopeCanEdit, statusPatch, studioUrl } from './youtube.mjs';
+import {
+	isShortVideo,
+	isoSeconds,
+	playlistNames,
+	processingState,
+	publicPatch,
+	scopeCanEdit,
+	statusPatch,
+	studioUrl
+} from './youtube.mjs';
 
 const UPLOAD = 'https://www.googleapis.com/auth/youtube.upload';
 const READONLY = 'https://www.googleapis.com/auth/youtube.readonly';
@@ -13,6 +22,15 @@ test('the default grant cannot edit, although every scope contains "youtube"', (
 test('the --with-playlists grant can edit', () => {
 	assert.equal(scopeCanEdit(`${UPLOAD} ${READONLY} ${YOUTUBE}`), true);
 	assert.equal(scopeCanEdit('https://www.googleapis.com/auth/youtube.force-ssl'), true);
+});
+
+test('a post names its playlists as a list, or as the one playlist of rows from before', () => {
+	assert.deepEqual(playlistNames({ playlists: ['Clips', ' Shorts ', 'clips', ''] }), ['Clips', 'Shorts']);
+	assert.deepEqual(playlistNames({ playlist: 'First Peck' }), ['First Peck']);
+	assert.deepEqual(playlistNames({ playlists: ['A'], playlist: 'B' }), ['A', 'B']);
+	assert.deepEqual(playlistNames({ playlist: '  ' }), []);
+	assert.deepEqual(playlistNames({}), []);
+	assert.deepEqual(playlistNames(undefined), []);
 });
 
 test('a grant that says nothing about its scopes is unknown, not upload-only', () => {

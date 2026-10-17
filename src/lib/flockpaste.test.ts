@@ -120,9 +120,22 @@ describe('readFlockPaste: what a block fills', () => {
 
 	it('takes a playlist for YouTube only', () => {
 		const paste = read(block({ youtube: { playlist: 'Shorts' }, instagram: { playlist: 'x' } }));
-		expect(paste.platforms.youtube?.playlist).toBe('Shorts');
+		expect(paste.platforms.youtube?.playlists).toEqual(['Shorts']);
 		expect(paste.platforms.instagram).toEqual({});
 		expect(paste.notes).toHaveLength(1);
+	});
+
+	it('takes several playlists, as a list under either name', () => {
+		expect(read(block({ youtube: { playlists: ['Shorts', ' Clips ', 'shorts', ''] } })).platforms.youtube?.playlists).toEqual([
+			'Shorts',
+			'Clips'
+		]);
+		expect(read(block({ youtube: { playlist: ['A', 'B'] } })).platforms.youtube?.playlists).toEqual(['A', 'B']);
+		expect(read(block({ youtube: { playlists: 'A', playlist: 'B' } })).platforms.youtube?.playlists).toEqual(['A', 'B']);
+		const none = read(block({ youtube: { playlists: [] } }));
+		expect(none.platforms.youtube?.playlists).toEqual([]);
+		expect(none.notes).toEqual([]);
+		expect(read(block({ tiktok: { playlists: ['x'] } })).notes).toHaveLength(1);
 	});
 
 	it('names platforms case-insensitively and skips unknown keys', () => {
@@ -200,9 +213,11 @@ describe('closestBrand', () => {
 
 describe('filledSummary', () => {
 	it('lists what a platform got', () => {
-		expect(filledSummary('youtube', { title: 't', description: 'd', tags: ['a'], playlist: 'p' })).toBe(
+		expect(filledSummary('youtube', { title: 't', description: 'd', tags: ['a'], playlists: ['p'] })).toBe(
 			'title, description, 1 tag, playlist'
 		);
+		expect(filledSummary('youtube', { playlists: ['p', 'q'] })).toBe('2 playlists');
+		expect(filledSummary('youtube', { playlists: [] })).toBe('no playlist');
 		expect(filledSummary('tiktok', { description: 'd' })).toBe('caption');
 		expect(filledSummary('instagram', {})).toBe('ticked, nothing to fill');
 	});

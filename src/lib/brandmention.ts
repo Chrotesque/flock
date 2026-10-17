@@ -1,4 +1,5 @@
 import type { Account, Brand } from './types';
+import { playlistsOf } from './playlists';
 
 /**
  * Whether an upload's text names another brand: "#papermoon" in a caption on
@@ -74,13 +75,13 @@ export function otherBrandMentions(
 	return out;
 }
 
-/** The text of a post that is checked: title, description, its tags and its playlist. */
+/** The text of a post that is checked: title, description, its tags and its playlists. */
 export function postTexts(post: { title?: string; description?: string; options?: Record<string, unknown> }): string[] {
 	const texts = [post.title ?? '', post.description ?? ''];
 	for (const [key, value] of Object.entries(post.options ?? {})) {
 		if (key.startsWith('tags') && Array.isArray(value)) texts.push(...value.map(String));
-		if (key === 'playlist' && typeof value === 'string') texts.push(value);
 	}
+	texts.push(...playlistsOf(post.options));
 	return texts;
 }
 

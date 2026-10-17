@@ -33,6 +33,7 @@
 	import { projects } from '$lib/stores/projects.svelte';
 	import { mentionWords, otherBrandMentions, postTexts, type BrandMention } from '$lib/brandmention';
 	import { CAMPAIGN_OPTION } from '$lib/jestrcampaign';
+	import { playlistsOf } from '$lib/playlists';
 	import type { PlanRow } from '$lib/plan';
 	import type { PlatformId } from '$lib/types';
 	import type { VideoSlot } from '$lib/stores/draft.svelte';
@@ -585,8 +586,9 @@
 						{#if allowance}
 							<span class="dot">·</span><span title={allowanceHint(allowance)}>{allowanceLabel(allowance)}</span>
 						{/if}
-						{#if row.platform === 'youtube' && row.options.playlist}
-							<span class="dot">·</span>playlist: {row.options.playlist}
+						{#if row.platform === 'youtube' && playlistsOf(row.options).length}
+							{@const titles = playlistsOf(row.options)}
+							<span class="dot">·</span>{titles.length > 1 ? 'playlists' : 'playlist'}: {titles.join(', ')}
 						{/if}
 						<!-- TikTok's disclosure has its own label line above, in TikTok's words. -->
 						{#if row.platform === 'youtube' && row.options.paidPromotion}

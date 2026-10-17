@@ -1,4 +1,5 @@
 import type { Account, Brand, PlatformId } from './types';
+import { playlistsOf } from './playlists';
 
 /**
  * Which account a brand posts as on a platform, and whether the platform is
@@ -131,15 +132,14 @@ export function youtubeCanEdit(account: Account | null | undefined): boolean | n
 export const YOUTUBE_EDIT_SETUP = 'pnpm worker:auth --with-playlists';
 
 /**
- * What an upload-only YouTube grant will not do for this post — add it to a
- * playlist; nothing while the worker has not said what the grant holds.
+ * What an upload-only YouTube grant will not do for this post — add it to
+ * its playlists; nothing while the worker has not said what the grant holds.
  */
 export function youtubeGrantWarnings(options: Record<string, unknown>, account: Account | null | undefined): string[] {
 	if (youtubeCanEdit(account) !== false) return [];
-	const out: string[] = [];
-	const playlist = String(options.playlist ?? '').trim();
-	if (playlist) out.push(`Not added to "${playlist}": this channel's grant is upload-only.`);
-	return out;
+	const titles = playlistsOf(options);
+	if (titles.length === 0) return [];
+	return [`Not added to ${titles.map((t) => `"${t}"`).join(', ')}: this channel's grant is upload-only.`];
 }
 
 /** "@handle" when there is one (YouTube's already carries the @), else the name, else the id. */

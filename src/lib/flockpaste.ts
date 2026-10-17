@@ -1,6 +1,7 @@
 import { PLATFORMS, isPlatformId } from './platforms';
 import { brandKey } from './brands';
 import { formatSchedule, isoDate, parseTagList } from './format';
+import { cleanPlaylists } from './playlists';
 import type { Brand, PlatformId } from './types';
 
 /**
@@ -13,13 +14,14 @@ import type { Brand, PlatformId } from './types';
  *     "flock": 1,
  *     "brand": "Paper Moon",
  *     "thumbnail": "C:/Users/me/Pictures/thumb.png",
- *     "youtube":   { "title": "…", "description": "…", "tags": ["…"], "playlist": "…", "schedule": "2026-10-13 18:00" },
+ *     "youtube":   { "title": "…", "description": "…", "tags": ["…"], "playlists": ["…", "…"], "schedule": "2026-10-13 18:00" },
  *     "instagram": { "caption": "…", "schedule": "2026-10-13 19:30" },
  *     "tiktok":    { "caption": "…", "schedule": "now" }
  *   }
  *
  * `schedule` is the release slot, in local time — the clock where flock is
  * used — and only fills the Schedule step, where it can still be changed.
+ * `playlists` may be one title or a list, and may be called `playlist`.
  *
  * Only text and what is written alongside it travel this way. TikTok's
  * audience, comments, Duet, Stitch and disclosure, and paid promotion, are
@@ -36,7 +38,8 @@ export interface PastedPlatform {
 	title?: string;
 	description?: string;
 	tags?: string[];
-	playlist?: string;
+	/** YouTube's playlists, by title; empty for none. */
+	playlists?: string[];
 	/** The release slot in local time, or 'now' to go out the moment the worker sees it. */
 	schedule?: Slot | 'now';
 }
@@ -174,7 +177,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const TOP_KEYS = new Set(['flock', 'brand', 'thumbnail']);
-const PLATFORM_KEYS = new Set(['title', 'description', 'caption', 'tags', 'playlist', 'schedule']);
+const PLATFORM_KEYS = new Set(['title', 'description', 'caption', 'tags', 'playlist', 'playlists', 'schedule']);
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -275,9 +278,14 @@ function readPlatform(id: PlatformId, value: Record<string, unknown>, notes: str
 		}
 	}
 
-	if (value.playlist !== undefined) {
-		if (id === 'youtube') out.playlist = text(value.playlist) ?? '';
-		else notes.push(`${def.label} has no playlists.`);
+	// One title or a list, under either name; both given, both count.
+	if (value.playlist !== undefined || value.playlists !== undefined) {
+		if (id === 'youtube') {
+			const given = [value.playlists, value.playlist].flatMap((v) =>
+				Array.isArray(v) ? v : typeof v === 'string' || typeof v === 'number' ? [String(v)] : []
+			);
+			out.playlists = cleanPlaylists(given.filter((v): v is string => typeof v === 'string'));
+		} else notes.push(`${def.label} has no playlists.`);
 	}
 
 	if (value.schedule !== undefined) {
@@ -365,7 +373,10 @@ export function filledSummary(id: PlatformId, entry: PastedPlatform): string {
 	if (entry.title !== undefined) parts.push('title');
 	if (entry.description !== undefined) parts.push(PLATFORMS[id].hasTitle ? 'description' : 'caption');
 	if (entry.tags !== undefined) parts.push(`${entry.tags.length} tag${entry.tags.length === 1 ? '' : 's'}`);
-	if (entry.playlist !== undefined) parts.push(entry.playlist ? 'playlist' : 'no playlist');
+	if (entry.playlists !== undefined) {
+		const n = entry.playlists.length;
+		parts.push(n === 0 ? 'no playlist' : n === 1 ? 'playlist' : `${n} playlists`);
+	}
 	if (entry.schedule) parts.push(entry.schedule === 'now' ? 'out on pickup' : formatSchedule(entry.schedule.date, entry.schedule.time));
 	return parts.join(', ') || 'ticked, nothing to fill';
 }

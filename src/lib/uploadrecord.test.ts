@@ -137,6 +137,10 @@ describe('optionLines', () => {
 		expect(lines[0]).toEqual({ key: 'visibility', label: 'Visibility', value: 'Unlisted', empty: false });
 		const byKey = Object.fromEntries(lines.map((l) => [l.key, l]));
 		expect(byKey.playlist.label).toBe('Playlist');
+		expect(optionLines('youtube', { playlists: ['Clips', 'Shorts'] }).find((l) => l.key === 'playlists')).toMatchObject({
+			label: 'Playlists',
+			value: 'Clips, Shorts'
+		});
 		expect(byKey.tags).toMatchObject({ label: 'Tags as sent', value: 'a' });
 		expect(byKey.madeForKids.empty).toBe(true);
 		expect(lines[lines.length - 1]).toMatchObject({ key: 'legacy', label: 'legacy', value: 'x' });

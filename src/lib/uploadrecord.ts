@@ -256,6 +256,7 @@ const BOX_LABELS: Record<string, string> = {
 	brandOrganic: 'Your brand',
 	brandContent: 'Branded content',
 	disclosure: 'Disclosure',
+	playlists: 'Playlists',
 	playlist: 'Playlist',
 	paidPromotion: 'Paid promotion',
 	tags: 'Tags as sent'

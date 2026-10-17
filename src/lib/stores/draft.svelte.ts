@@ -2,6 +2,7 @@ import { PLATFORMS, PLATFORM_IDS } from '../platforms';
 import { isoDate, nextDayMatching } from '../format';
 import { tiktokProblems } from '../tiktok';
 import { PASTE_TAG_BOX, type FlockPaste, type PastedPlatform } from '../flockpaste';
+import { withPlaylists } from '../playlists';
 import { SAVED_VERSION, withoutHandPicked, type SavedDraft } from '../projects';
 import type { ImagePlatform } from '../coverimage';
 import { settings } from './settings.svelte';
@@ -444,7 +445,7 @@ class DraftStore {
 	/**
 	 * Fills the draft from a pasted flock block (flockpaste.ts). Each platform
 	 * it names is ticked and takes what it carries — text, its release slot
-	 * (or "now"), and for YouTube the tags into one box and the playlist —
+	 * (or "now"), and for YouTube the tags into one box and the playlists —
 	 * over whatever was there. A slot is set like a hand-picked one, so the
 	 * Schedule step shows it and a profile does not move it. What the
 	 * block leaves out stays as it was, other platforms included: unticking
@@ -462,9 +463,9 @@ class DraftStore {
 			};
 			const options: OptionValues = {};
 			if (entry.tags) options[PASTE_TAG_BOX] = entry.tags;
-			if (entry.playlist !== undefined) options.playlist = entry.playlist;
-			if (Object.keys(options).length > 0) {
-				this.overrides[id] = { ...(this.overrides[id] ?? {}), ...options };
+			if (Object.keys(options).length > 0 || entry.playlists !== undefined) {
+				const merged = { ...(this.overrides[id] ?? {}), ...options };
+				this.overrides[id] = entry.playlists !== undefined ? withPlaylists(merged, entry.playlists) : merged;
 			}
 			if (entry.schedule === 'now') {
 				this.immediate[id] = true;

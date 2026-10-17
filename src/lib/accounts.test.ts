@@ -167,8 +167,14 @@ describe('youtubeGrantWarnings', () => {
 		expect(lines[0]).toContain('"First Peck"');
 	});
 
+	it('names every playlist of the post in one line', () => {
+		const lines = youtubeGrantWarnings({ playlists: ['First Peck', 'Clips'] }, uploadOnly);
+		expect(lines).toEqual([`Not added to "First Peck", "Clips": this channel's grant is upload-only.`]);
+	});
+
 	it('says nothing a post does not ask for', () => {
 		expect(youtubeGrantWarnings({ playlist: '  ' }, uploadOnly)).toEqual([]);
+		expect(youtubeGrantWarnings({ playlists: [] }, uploadOnly)).toEqual([]);
 		expect(youtubeGrantWarnings({}, uploadOnly)).toEqual([]);
 	});
 

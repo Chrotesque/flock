@@ -133,8 +133,8 @@ Good to know:
 - **Publish the consent screen.** While it is in *Testing*, Google ends the
   connection after 7 days and you would re-run `worker:auth` every week.
 - **Playlists need a broader permission.** Connect with
-  `pnpm worker:auth --with-playlists` to have videos added to a playlist.
-  Without it the playlist is skipped, and the Review step says so.
+  `pnpm worker:auth --with-playlists` to have videos added to playlists.
+  Without it they are skipped, and the Review step says so.
 - **Thumbnails and paid promotion are set in YouTube Studio**, not by flock.
   *To finish* in the sidebar links each video's Studio page.
 - **Stats cost API quota.** The Dashboard's YouTube numbers come from the
@@ -461,7 +461,8 @@ The boxes on the right follow the platform you are writing for:
 - **Instagram and Facebook:** an optional *Cover* image for the reel (JPEG or
   PNG, up to 8 MB for Instagram and 10 MB for Facebook). One image serves both;
   the switch in the box's corner gives each its own.
-- **YouTube:** a playlist, from the channel's own playlists.
+- **YouTube:** playlists, as many as you like, from the channel's own: each
+  one picked is listed with an × to take it off again.
 - **TikTok:** the *Post to TikTok* box, with the choices TikTok wants made on
   every post:
   - who can view the video, from what the account offers, with nothing
@@ -509,7 +510,7 @@ Text written elsewhere, in a chat with an assistant say, goes in with one
   "flock": 1,
   "brand": "My brand",
   "thumbnail": "C:/Users/me/Pictures/cover.png",
-  "youtube": { "title": "…", "description": "…", "tags": ["…"], "playlist": "…", "schedule": "2026-10-13 18:00" },
+  "youtube": { "title": "…", "description": "…", "tags": ["…"], "playlists": ["…", "…"], "schedule": "2026-10-13 18:00" },
   "instagram": { "caption": "…", "schedule": "2026-10-13 19:30" },
   "tiktok": { "caption": "…", "schedule": "now" }
 }
@@ -521,6 +522,8 @@ it in. A note in the corner says what was filled. With several brands, a
 is for, suggesting the closest one.
 
 - **Tags** go into YouTube's *Other* box.
+- **`playlists`** takes one title or a list (`"playlist"` works too). A title
+  the channel has no playlist for is named in the note.
 - **`schedule`** is local time, or `"now"`. It fills the Schedule step, where
   you can still change it.
 - **`thumbnail`** is the reel cover for Instagram and Facebook, read by the

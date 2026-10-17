@@ -5,6 +5,7 @@ import { loadPlaylists, requestLocalImage } from '../repo';
 import { closestBrand, filledSummary, matchBrand, type FlockPaste, type PasteResult } from '../flockpaste';
 import { IMAGE_LIMITS, IMAGE_PLATFORMS, acceptedTypes, largestAccepted } from '../coverimage';
 import { formatBytes } from '../format';
+import { matchPlaylists, withPlaylists } from '../playlists';
 import { resolveIn } from '../folders';
 import type { PlatformId } from '../types';
 
@@ -146,8 +147,8 @@ class PasteStore {
 		draft.applyPaste(paste.platforms);
 
 		const youtube = paste.platforms.youtube;
-		if (youtube?.playlist) {
-			const note = await this.#matchPlaylist(youtube.playlist);
+		if (youtube?.playlists?.length) {
+			const note = await this.#matchPlaylists(youtube.playlists);
 			if (note) notes.push(note);
 		}
 
@@ -167,22 +168,23 @@ class PasteStore {
 	}
 
 	/**
-	 * The channel's own spelling of the playlist, when the block's differs
-	 * only in case; otherwise a note, since the worker matches by exact name.
+	 * The channel's own spelling of each playlist, when the block's differs
+	 * only in case; a note for any the channel does not have, since the
+	 * worker leaves the video out of a playlist it cannot find.
 	 */
-	async #matchPlaylist(name: string): Promise<string> {
+	async #matchPlaylists(names: string[]): Promise<string> {
 		try {
 			await accounts.load();
 			const index = await loadPlaylists(accounts.for('youtube')?.account_id ?? '');
 			if (!index) return '';
-			const exact = index.items.find((p) => p.title === name);
-			if (exact) return '';
-			const loose = index.items.find((p) => p.title.toLowerCase() === name.toLowerCase());
-			if (loose) {
-				draft.overrides.youtube = { ...(draft.overrides.youtube ?? {}), playlist: loose.title };
-				return '';
-			}
-			return `The channel has no playlist called "${name}"; pick one in the Playlist box.`;
+			const { titles, missing } = matchPlaylists(
+				names,
+				index.items.map((p) => p.title)
+			);
+			draft.overrides.youtube = withPlaylists(draft.overrides.youtube ?? {}, titles);
+			if (missing.length === 0) return '';
+			const quoted = missing.map((t) => `"${t}"`).join(', ');
+			return `The channel has no playlist called ${quoted}; change it in the Playlists box.`;
 		} catch {
 			return '';
 		}

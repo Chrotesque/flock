@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import PlatformIcon from './PlatformIcon.svelte';
 	import type { PlatformId } from '$lib/types';
 
@@ -11,6 +11,7 @@
 	let {
 		label,
 		done = false,
+		foldOnDone = true,
 		summary = '',
 		platforms = [],
 		action,
@@ -18,6 +19,11 @@
 	}: {
 		label: string;
 		done?: boolean;
+		/**
+		 * False for a box that may take more than one choice (playlists): it
+		 * stays open while they are made, and folds only from its header.
+		 */
+		foldOnDone?: boolean;
 		summary?: string;
 		/** Which platforms this box serves, shown as small icons after the label. */
 		platforms?: PlatformId[];
@@ -26,12 +32,14 @@
 		children: Snippet;
 	} = $props();
 
-	let collapsed = $state(false);
+	// A box that holds more than one choice starts folded when it arrives
+	// with some (a paste, a resumed project), like any other done box.
+	let collapsed = $state(untrack(() => done));
 
 	// Depends on `done` only; writing `collapsed` here is what makes a fresh
 	// selection fold the box without also re-folding it on every render.
 	$effect(() => {
-		collapsed = done;
+		if (foldOnDone || !done) collapsed = done;
 	});
 </script>
 
