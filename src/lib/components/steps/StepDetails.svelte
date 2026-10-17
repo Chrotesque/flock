@@ -1162,7 +1162,6 @@
 				platforms={['youtube']}
 				done={chosenPlaylists.length > 0}
 				foldOnDone={false}
-				summary={chosenPlaylists.join(', ')}
 			>
 				<PlaylistPicker
 					chosen={chosenPlaylists}
