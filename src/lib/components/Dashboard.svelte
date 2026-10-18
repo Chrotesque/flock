@@ -16,6 +16,7 @@
 	import { flaggedPosts, isCampaign, type CampaignPosts } from '$lib/jestrcampaign';
 	import { newestByPost, renameChoices, renameNotes, type RenameChoice } from '$lib/retitle';
 	import { accountLabel, postAllowance } from '$lib/accounts';
+	import { LEVEL_WORDS, lineLevel, worstLevel, type StatusLevel } from '$lib/dashstatus';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import {
 		deleteJob,
@@ -481,6 +482,54 @@
 	const fbBeat = $derived(noteFacebook ? fbStatus?.pages?.[noteFacebook.account_id] : undefined);
 	const allowance = $derived(postAllowance(noteInstagram));
 
+	interface StatusLine {
+		platform: StatPlatform;
+		level: StatusLevel;
+		read: string;
+		error: string;
+		limit: { used: number; total: number; words: string } | null;
+		note: string;
+	}
+
+	/** The status icon's popup: a line per platform read, each with its level. */
+	const statusLines = $derived.by(() => {
+		const lines: StatusLine[] = [];
+		if (ytBeat) {
+			const limit = { used: ytBeat.units, total: ytBeat.budget, words: "units of today's stats budget" };
+			lines.push({
+				platform: 'youtube',
+				level: lineLevel({ error: ytBeat.error, ...limit }),
+				read: ago(ytBeat.polledAt),
+				error: ytBeat.error ?? '',
+				limit,
+				note: ''
+			});
+		}
+		if (noteInstagram) {
+			const limit = allowance ? { used: allowance.used, total: allowance.total, words: 'posts in the last 24 h' } : null;
+			lines.push({
+				platform: 'instagram',
+				level: lineLevel({ error: igBeat?.error, ...limit }),
+				read: ago(igBeat?.polledAt),
+				error: igBeat?.error ?? '',
+				limit,
+				note: ''
+			});
+		}
+		if (noteFacebook) {
+			lines.push({
+				platform: 'facebook',
+				level: lineLevel({ error: fbBeat?.error, partial: Boolean(fbBeat?.views) }),
+				read: ago(fbBeat?.polledAt),
+				error: fbBeat?.error ?? '',
+				limit: null,
+				note: fbBeat?.views ? `Views not read: ${fbBeat.views}` : ''
+			});
+		}
+		return lines;
+	});
+	const statusLevel = $derived(worstLevel(statusLines.map((line) => line.level)));
+
 	/** The account a platform's numbers are read from, for the legend: YouTube by channel name, a Page by its name, Instagram by handle. */
 	function accountOf(p: StatPlatform): string {
 		const account = p === 'youtube' ? noteChannel : p === 'facebook' ? noteFacebook : noteInstagram;
@@ -706,65 +755,88 @@
 			{/each}
 		</span>
 		<div class="aside">
-			<!-- When each platform was read and what is left of the day: a side note, not a box. -->
-			<ul class="notes">
-				{#if ytBeat}
-					<li class:bad={Boolean(ytBeat.error)} title={ytBeat.error || 'YouTube quota: units spent today of the stats budget'}>
-						<PlatformIcon platform="youtube" size={12} />
-						{#if ytBeat.error}
-							{ytBeat.error}
-						{:else}
-							read {ago(ytBeat.polledAt)} · {big(ytBeat.units)}/{big(ytBeat.budget)} units
-						{/if}
-					</li>
-				{/if}
-				{#if noteInstagram}
-					<li class:bad={Boolean(igBeat?.error)} title={igBeat?.error || 'Instagram: posts published in the last 24 h of the 100 allowed'}>
-						<PlatformIcon platform="instagram" size={12} />
-						{#if igBeat?.error}
-							{igBeat.error}
-						{:else}
-							read {ago(igBeat?.polledAt)}{allowance ? ` · ${allowance.used}/${allowance.total} posts in 24 h` : ''}
-						{/if}
-					</li>
-				{/if}
-				{#if noteFacebook}
-					<li
-						class:bad={Boolean(fbBeat?.error)}
-						class:warn={!fbBeat?.error && Boolean(fbBeat?.views)}
-						title={fbBeat?.error || fbBeat?.views || "Facebook: when the Page's reels were last read"}
+			<!-- When each platform was read and what is left of the day, behind one
+			     icon coloured by the worst of it; hover or focus shows the lines. -->
+			{#if statusLines.length > 0}
+				<div class="status">
+					<button
+						class="btn icon info {statusLevel}"
+						aria-label="Status: {LEVEL_WORDS[statusLevel]}"
+						aria-describedby="dash-status"
 					>
-						<PlatformIcon platform="facebook" size={12} />
-						{#if fbBeat?.error}
-							{fbBeat.error}
-						{:else}
-							read {ago(fbBeat?.polledAt)}{fbBeat?.views ? ' · views not read' : ''}
-						{/if}
-					</li>
-				{/if}
-			</ul>
+						<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+							<circle cx="8" cy="8" r="6.5" />
+							<path d="M8 7.2v4.3" />
+							<circle class="dot" cx="8" cy="4.9" r="0.95" />
+						</svg>
+					</button>
+					<div class="pop" id="dash-status" role="tooltip">
+						{#each statusLines as line (line.platform)}
+							{@const account = accountOf(line.platform)}
+							<div class="sline {line.level}">
+								<span class="sicon"><PlatformIcon platform={line.platform} size={13} /></span>
+								<div class="sbody">
+									<p class="shead">
+										<strong>{PLATFORMS[line.platform].label}</strong>{#if account}<em>{account}</em>{/if}
+										<span class="sread">read {line.read}</span>
+									</p>
+									{#if line.error}
+										<p class="serror">{line.error}</p>
+									{/if}
+									{#if line.limit}
+										<p class="slimit">
+											<span class="meter"
+												><i style:width="{Math.min(100, (line.limit.used / line.limit.total) * 100)}%"></i></span
+											>
+											{big(line.limit.used)} of {big(line.limit.total)} {line.limit.words}
+										</p>
+									{/if}
+									{#if line.note}
+										<p class="snote">{line.note}</p>
+									{/if}
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
 			<button
-				class="btn sm edit"
+				class="btn icon edit"
 				class:armed={editArmed}
 				class:on={editing}
 				aria-pressed={editing}
+				aria-label={editing ? 'Stop editing' : editArmed ? 'Press again to edit' : 'Edit'}
 				onclick={onEditClick}
 				onblur={disarmEdit}
 				title={editing
 					? 'Stop editing'
-					: `Rename videos${jestrOn ? ' and mark Jestr campaigns' : ''} (press twice)`}
+					: editArmed
+						? 'Press again to edit'
+						: `Rename videos${jestrOn ? ' and mark Jestr campaigns' : ''} (press twice)`}
 			>
 				{#if editing}
-					STOP
+					<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect class="fill" x="3.5" y="3.5" width="9" height="9" rx="1.5" /></svg>
 				{:else if editArmed}
-					Edit?
+					<span class="ask" aria-hidden="true">?</span>
 				{:else}
-					Edit
+					<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+						<path d="M10.6 2.6 13.4 5.4 5.6 13.2H2.8V10.4zM9.1 4.1 11.9 6.9" />
+					</svg>
 				{/if}
 			</button>
-			<button class="btn sm" onclick={() => load(true)} disabled={loading} title="Read everything again, and reset the change markers"
-				>Refresh</button
+			<button
+				class="btn icon refresh"
+				class:spinning={loading}
+				onclick={() => load(true)}
+				disabled={loading}
+				aria-label="Refresh"
+				title="Read everything again, and reset the change markers"
 			>
+				<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+					<path d="M13.2 6.4A5.4 5.4 0 0 0 3.3 5.1M2.8 9.6a5.4 5.4 0 0 0 9.9 1.3" />
+					<path d="M3.1 2.4v2.9H6M12.9 13.6v-2.9H10" />
+				</svg>
+			</button>
 		</div>
 	</div>
 
@@ -829,7 +901,7 @@
 			<strong>EDITING VIDEOS</strong> — Press the pencil beside a title to rename that video on every platform it
 			is on, or on some only; the worker renames it within seconds.
 			{#if jestrOn}Click a video to mark it as a Jestr campaign, or to take the mark off.{/if}
-			<strong>STOP</strong> when finished.
+			Press <strong>■</strong> when finished.
 			{#if jestrCampaigns.error}<span class="bad">Not saved: {jestrCampaigns.error}</span>{/if}
 		</p>
 	{/if}
@@ -1123,10 +1195,12 @@
 {/if}
 
 <style>
+	/* As wide as the Upload page's content: the overlay's own padding is the
+	   only margin. */
 	.page {
 		width: 100%;
-		max-width: 1500px;
-		margin: 0 auto;
+		max-width: none;
+		margin: 0;
 	}
 
 	/* ---- the one row on top: filter, brands, accounts, read times ---- */
@@ -1198,44 +1272,221 @@
 	.aside {
 		display: flex;
 		align-items: center;
-		gap: 14px;
+		gap: 8px;
 		margin-left: auto;
 	}
 
-	.notes {
-		list-style: none;
-		margin: 0;
+	/* Square icon buttons: the status, Edit and Refresh. */
+	.icon {
+		flex: none;
+		width: 32px;
+		height: 32px;
 		padding: 0;
+		border-radius: var(--radius-sm);
+		color: var(--text-dim);
+	}
+
+	.icon:hover:not(:disabled) {
+		color: var(--text);
+	}
+
+	.icon svg path,
+	.icon svg circle {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.icon svg .dot,
+	.icon svg .fill {
+		fill: currentColor;
+		stroke: none;
+	}
+
+	.ask {
+		font-size: 16px;
+		font-weight: 800;
+		line-height: 1;
+	}
+
+	.refresh.spinning svg {
+		animation: spin 0.9s linear infinite;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.refresh.spinning svg {
+			animation: none;
+		}
+	}
+
+	/* The status colours: green all good, yellow a limit half used, orange
+	   nearly used (or something to look at), red an error or a limit used up. */
+	.info.ok,
+	.sline.ok {
+		--level: var(--ok);
+	}
+
+	.info.half,
+	.sline.half {
+		--level: #facc15;
+	}
+
+	.info.close,
+	.sline.close {
+		--level: #fb923c;
+	}
+
+	.info.bad,
+	.sline.bad {
+		--level: #ef4444;
+	}
+
+	.info,
+	.info:hover:not(:disabled) {
+		color: var(--level);
+	}
+
+	.info {
+		border-color: color-mix(in srgb, var(--level) 40%, var(--border-strong));
+	}
+
+	.info:hover:not(:disabled),
+	.status:focus-within .info {
+		border-color: var(--level);
+	}
+
+	.status {
+		position: relative;
+	}
+
+	.pop {
+		position: absolute;
+		top: calc(100% + 8px);
+		right: 0;
+		z-index: 30;
 		display: grid;
-		gap: 2px;
-		justify-items: end;
+		gap: 12px;
+		width: max-content;
+		min-width: 280px;
+		max-width: min(400px, calc(100vw - 40px));
+		padding: 12px 14px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius);
+		background: var(--surface);
+		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+		font-size: 12px;
+		color: var(--text-dim);
+		font-variant-numeric: tabular-nums;
+		opacity: 0;
+		visibility: hidden;
+		transform: translateY(-4px);
+		transition:
+			opacity 0.14s,
+			transform 0.14s,
+			visibility 0s 0.14s;
+	}
+
+	/* Bridges the gap to the icon, so the pointer can move onto the popup. */
+	.pop::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: -9px;
+		height: 9px;
+	}
+
+	.status:hover .pop,
+	.status:focus-within .pop {
+		opacity: 1;
+		visibility: visible;
+		transform: none;
+		transition:
+			opacity 0.14s,
+			transform 0.14s;
+	}
+
+	.sline {
+		display: grid;
+		grid-template-columns: 13px minmax(0, 1fr);
+		gap: 9px;
+		align-items: start;
+	}
+
+	.sicon {
+		display: flex;
+		padding-top: 2px;
+	}
+
+	.sbody {
+		display: grid;
+		gap: 4px;
+		min-width: 0;
+	}
+
+	.sbody p {
+		margin: 0;
+	}
+
+	.shead {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 2px 6px;
+	}
+
+	.shead strong {
+		color: var(--text);
+		font-weight: 600;
+	}
+
+	.shead em {
+		font-style: normal;
+		color: var(--text-faint);
+	}
+
+	.sread {
+		margin-left: auto;
+		padding-left: 10px;
 		font-size: 11px;
 		color: var(--text-faint);
-		font-variant-numeric: tabular-nums;
 	}
 
-	.notes li {
-		display: inline-flex;
+	.serror,
+	.snote {
+		color: var(--level);
+		line-height: 1.45;
+		white-space: pre-line;
+	}
+
+	.slimit {
+		display: flex;
 		align-items: center;
-		gap: 5px;
-		max-width: 420px;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+		gap: 8px;
 	}
 
-	.notes li.bad {
-		color: var(--danger);
-	}
-
-	.notes li.warn {
-		color: var(--warn);
-	}
-
-	.sm {
+	.meter {
 		flex: none;
-		padding: 6px 12px;
-		font-size: 12px;
+		width: 64px;
+		height: 5px;
+		border-radius: 3px;
+		background: var(--border);
+		overflow: hidden;
+	}
+
+	.meter i {
+		display: block;
+		height: 100%;
+		border-radius: inherit;
+		background: var(--level);
 	}
 
 	.banner {
@@ -2060,8 +2311,9 @@
 		.aside {
 			margin-left: 0;
 		}
-		.notes {
-			justify-items: start;
+		.pop {
+			right: auto;
+			left: 0;
 		}
 		.periods {
 			grid-template-columns: minmax(0, 1fr);

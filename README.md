@@ -582,11 +582,16 @@ press Esc or go to another page to close it. For the brand in view it shows:
   reel by its views); a fresh reel shows — until Instagram has one. Sort by
   any column — best first, click it again for the other way round; click a video for everything YouTube
   and Instagram report about it. A number that has moved since you opened the
-  dashboard turns green, as in `940 (+9)`; *Refresh* resets those.
+  dashboard turns green, as in `940 (+9)`; the refresh button (the two
+  arrows at the top right) resets those.
+- **The status icon** (ⓘ, top right): green when all is well, yellow when a
+  limit is half used, orange when it is nearly used, red on an error or a
+  limit used up. Hover it for when each platform was last read, YouTube's
+  quota for the day and Instagram's posts in the last 24 hours.
 - **Stored on the NAS**, folded away at the bottom: the newest uploads, with a
   delete per upload (press it twice).
-- **Renaming a video:** press *Edit* beside *Refresh* twice within two
-  seconds, then the pencil beside a title. Type the new name and tick where it
+- **Renaming a video:** press the pencil at the top right twice within two
+  seconds (■ stops editing), then the pencil beside a title. Type the new name and tick where it
   goes — *All platforms*, or some only; the worker renames it within seconds
   and each platform's line says when it is done. YouTube renames the title
   (51 units of the day's quota); on Facebook the caption's first line is the
@@ -595,7 +600,8 @@ press Esc or go to another page to close it. For the brand in view it shows:
 - **Jestr campaigns**, with the Jestr integration on: a *Jestr* column ticks
   the videos that are campaign videos. An upload is marked with the *Jestr
   campaign* box on the Details step (shown for YouTube, Instagram and TikTok);
-  older videos are marked in *Edit* mode with a click per video.
+  older videos are marked in edit mode (the pencil at the top right) with a
+  click per video.
 
 TikTok and Facebook views are not read yet. When each platform was last read,
 and today's YouTube quota, sit at the top right.
