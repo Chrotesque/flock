@@ -335,6 +335,36 @@
 	const clock = (seconds: number) => formatDuration(seconds) || '0:00';
 </script>
 
+{#snippet volumeControl()}
+	<!-- The slider opens leftwards, so the speaker stays under the pointer. -->
+	<div class="vol">
+		<input
+			class="level"
+			type="range"
+			min="0"
+			max="1"
+			step="0.05"
+			value={level}
+			oninput={(event) => setLevel(Number(event.currentTarget.value))}
+			aria-label="Volume"
+			title="Volume (↑ ↓)"
+			style:--level="{level * 100}%"
+		/>
+		<button onclick={toggleMute} aria-label={level === 0 ? 'Sound on' : 'Mute'} title="Mute (M)">
+			<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+				<path d="M2 6h2.5L8 3v10L4.5 10H2z" />
+				{#if level === 0}
+					<path class="line" d="M10.5 6l4 4m0-4-4 4" />
+				{:else if level < 0.5}
+					<path class="line" d="M10.5 5.5a3.5 3.5 0 0 1 0 5" />
+				{:else}
+					<path class="line" d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.3 3.6a6 6 0 0 1 0 8.8" />
+				{/if}
+			</svg>
+		</button>
+	</div>
+{/snippet}
+
 <svelte:document onfullscreenchange={onFullscreenChange} />
 
 <div class="pwrap" class:narrow={size.width < 260} style:--pw="{size.width}px" style:--ph="{size.height}px">
@@ -388,11 +418,15 @@
 					<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" /></svg>
 				</button>
 				{#if shown > 0}<span class="chip">{clock(shown)}</span>{/if}
-				<button class="cornerfs" onclick={toggleFullscreen} title="Full screen (F)" aria-label="Play full screen">
-					<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" class="line"
-						><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" /></svg
-					>
-				</button>
+				<!-- Before it plays: the volume, so it can be set first, and full screen. -->
+				<div class="corner">
+					{@render volumeControl()}
+					<button class="cornerfs" onclick={toggleFullscreen} title="Full screen (F)" aria-label="Play full screen">
+						<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" class="line"
+							><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" /></svg
+						>
+					</button>
+				</div>
 			{:else}
 				<div class="bar">
 					<div
@@ -429,33 +463,7 @@
 						</button>
 						<span class="time">{clock(current)}<span class="total"> / {clock(shown)}</span></span>
 						<span class="grow"></span>
-						<!-- The slider opens leftwards, so the speaker stays under the pointer. -->
-						<div class="vol">
-							<input
-								class="level"
-								type="range"
-								min="0"
-								max="1"
-								step="0.05"
-								value={level}
-								oninput={(event) => setLevel(Number(event.currentTarget.value))}
-								aria-label="Volume"
-								title="Volume (↑ ↓)"
-								style:--level="{level * 100}%"
-							/>
-							<button onclick={toggleMute} aria-label={level === 0 ? 'Sound on' : 'Mute'} title="Mute (M)">
-								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-									<path d="M2 6h2.5L8 3v10L4.5 10H2z" />
-									{#if level === 0}
-										<path class="line" d="M10.5 6l4 4m0-4-4 4" />
-									{:else if level < 0.5}
-										<path class="line" d="M10.5 5.5a3.5 3.5 0 0 1 0 5" />
-									{:else}
-										<path class="line" d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.3 3.6a6 6 0 0 1 0 8.8" />
-									{/if}
-								</svg>
-							</button>
-						</div>
+						{@render volumeControl()}
 						<button
 							class="fs"
 							onclick={toggleFullscreen}
@@ -638,31 +646,52 @@
 		pointer-events: none;
 	}
 
-	.cornerfs {
+	/* The volume and full screen, top right while hovered. */
+	.corner {
 		position: absolute;
 		top: 8px;
 		right: 8px;
 		z-index: 4;
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		opacity: 0;
+		transition: opacity 0.15s;
+	}
+
+	.player:hover .corner,
+	.corner:focus-within {
+		opacity: 1;
+	}
+
+	.corner button {
 		display: grid;
 		place-items: center;
 		width: 28px;
 		height: 28px;
 		border: 0;
 		border-radius: 7px;
-		background: rgba(10, 9, 18, 0.62);
+		background: none;
 		color: #fff;
-		opacity: 0;
-		transition:
-			opacity 0.15s,
-			background 0.15s;
+		transition: background 0.15s;
 	}
 
-	.player:hover .cornerfs,
-	.cornerfs:focus-visible {
-		opacity: 1;
+	.corner .vol,
+	.cornerfs {
+		border-radius: 7px;
+		background: rgba(10, 9, 18, 0.62);
 	}
 
-	.cornerfs:hover {
+	.corner .vol:hover,
+	.corner .vol:focus-within {
+		padding-left: 8px;
+	}
+
+	.corner .vol button:hover {
+		background: rgba(255, 255, 255, 0.12);
+	}
+
+	.corner .cornerfs:hover {
 		background: var(--pink-hot);
 	}
 
