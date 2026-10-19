@@ -23,6 +23,7 @@ import type { DashTarget, StatsVideo } from './dashboard';
 import type { ReelPlatform, ReelRow, Sample, YouTubeRow } from './releases';
 import { readSkipRate } from './releases';
 import { cleanName, readTitleRequest, type TitleRequest } from './retitle';
+import type { PlayerJob } from './storedcopy';
 import type {
 	Account,
 	Brand,
@@ -650,6 +651,34 @@ export async function loadPreviewServer(): Promise<PreviewServer | null> {
 	const none: PreviewServer | null = null;
 	const server = await getSetting<PreviewServer | null>('preview_server', none);
 	return server && typeof server.url === 'string' && server.url ? server : null;
+}
+
+/**
+ * Where the publishing worker plays uploads' NAS copies from, if it ever
+ * said (storedcopy.ts). Kept apart from the PC's `preview_server`: the NAS
+ * worker's address has to be one browsers reach, which the PC's need not be.
+ */
+export async function loadStoredPlayer(): Promise<PreviewServer | null> {
+	const none: PreviewServer | null = null;
+	const server = await getSetting<PreviewServer | null>('stored_player', none);
+	return server && typeof server.url === 'string' && server.url ? server : null;
+}
+
+/** What the Dashboard's player reads of an upload; null once it is deleted. */
+export async function loadPlayerJob(id: string): Promise<PlayerJob | null> {
+	try {
+		return await pb.collection('upload_jobs').getOne<PlayerJob>(id, {
+			fields: 'id,collectionId,collectionName,video,video_name,video_size,destination_path,stored_path,status'
+		});
+	} catch (err) {
+		if ((err as { status?: number }).status === 404) return null;
+		throw err;
+	}
+}
+
+/** The address of the file PocketBase holds for an upload. */
+export function playerJobFileUrl(job: PlayerJob): string {
+	return pb.files.getURL(job, job.video);
 }
 
 /**

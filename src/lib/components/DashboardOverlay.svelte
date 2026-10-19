@@ -36,7 +36,15 @@
 		if (dashboard.open) void tick().then(() => panel?.focus());
 	});
 
+	// The Escape that leaves full screen (an opened row's player) is the
+	// browser's; where it reaches the page at all, it must not close this too.
+	let leftFullscreen = 0;
+	function onFullscreen() {
+		if (!document.fullscreenElement) leftFullscreen = Date.now();
+	}
+
 	function onKey(event: KeyboardEvent) {
+		if (document.fullscreenElement || Date.now() - leftFullscreen < 500) return;
 		// A dialog over it (the rename) takes Escape for itself.
 		if (event.key === 'Escape' && dashboard.open && !document.querySelector('[aria-modal="true"]')) {
 			dashboard.close();
@@ -62,6 +70,7 @@
 </script>
 
 <svelte:window onkeydown={onKey} />
+<svelte:document onfullscreenchange={onFullscreen} />
 
 {#if dashboard.open}
 	<section

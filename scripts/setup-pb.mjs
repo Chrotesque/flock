@@ -151,6 +151,11 @@ const collections = [
 			// destinations later cannot relocate videos already queued.
 			{ type: 'text', name: 'destination_label', max: 200 },
 			{ type: 'text', name: 'destination_path', max: 1000 },
+			// Where the worker's copy landed, spelled as destination_path is
+			// (a UNC folder gives a UNC path). Not always destination_path plus
+			// the name: a name already taken there gets " (2)". The Dashboard's
+			// player asks the worker for this file.
+			{ type: 'text', name: 'stored_path', max: 1000 },
 			{ type: 'number', name: 'video_size' },
 			{ type: 'number', name: 'video_duration' },
 			{

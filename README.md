@@ -372,7 +372,11 @@ create a container from `node:24-alpine` with:
   read as `/mnt/user/share/folder`;
 - `--restart unless-stopped`, and on Unraid `--user 99:100` with `UMASK=000`
   so copied videos stay editable over SMB;
-- `FLOCK_RESTART_ON_UPDATE=1`, so it restarts itself on a new version.
+- `FLOCK_RESTART_ON_UPDATE=1`, so it restarts itself on a new version;
+- for the Dashboard's player: port 8790 mapped, `FLOCK_PREVIEW_HOST=0.0.0.0`,
+  an https address in front of that port (Tailscale Serve, for example — the
+  page is https, so the browser will not play from plain http), and
+  `FLOCK_PREVIEW_URL` set to that address.
 
 To update it, set `FLOCK_WORKER_DEST` in `.env` to that folder (as your PC
 reaches it) and run:
@@ -581,7 +585,12 @@ press Esc or go to another page to close it. For the brand in view it shows:
   reel's views skipped within its first 3 seconds (the total row weighs each
   reel by its views); a fresh reel shows — until Instagram has one. Sort by
   any column — best first, click it again for the other way round; click a video for everything YouTube
-  and Instagram report about it. A number that has moved since you opened the
+  and Instagram report about it, and to play it. It plays the copy flock filed
+  in the upload's NAS folder, streamed by the NAS worker; a video sent from the
+  browser plays from flock's own copy when the worker cannot. Click the
+  picture to play or pause; the corner button, a double-click or F goes full
+  screen and Esc comes back. A video that did not go out through flock has no
+  copy to play. A number that has moved since you opened the
   dashboard turns green, as in `940 (+9)`; the refresh button (the two
   arrows at the top right) resets those.
 - **The status icon** (ⓘ, top right): green when all is well, yellow when a

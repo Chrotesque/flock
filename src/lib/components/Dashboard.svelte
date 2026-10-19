@@ -6,6 +6,7 @@
 	import ViewsCurve from './ViewsCurve.svelte';
 	import ComingUp from './ComingUp.svelte';
 	import RenameDialog from './RenameDialog.svelte';
+	import NasPlayer from './NasPlayer.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
 	import { dashData } from '$lib/stores/dashdata.svelte';
@@ -431,6 +432,22 @@
 		}
 		const reel = reels.find((x) => x.id === post.record);
 		return reel ? reelFacts(reel, ago) : null;
+	}
+
+	/**
+	 * The opened row's thumbnail at its largest, for the player to stand on
+	 * until it is started. Only YouTube's 16:9 sizes (maxres, else the list's
+	 * medium): the 4:3 ones carry black bars that an upright crop would show.
+	 */
+	function posterOf(r: Release): string {
+		const yt = r.posts.youtube;
+		return (yt && fullRow(yt)?.data?.snippet?.thumbnails?.maxres?.url) || r.thumb;
+	}
+
+	/** Where a video with no copy on the NAS can still be watched. */
+	function watchOf(r: Release): { label: string; url: string } | null {
+		const p = ALL_PLATFORMS.find((x) => r.links[x]);
+		return p ? { label: `Watch on ${PLATFORMS[p].label}`, url: r.links[p] ?? '' } : null;
 	}
 
 	async function toggle(release: Release) {
@@ -1047,28 +1064,38 @@
 
 				{#if openKey === r.key}
 					<div class="details">
-						<div class="chart">
-							<h4>
-								From release
-								<span class="sub">
-									{#each row.curves as c (c.platform)}
-										<span><i style:background={PLATFORM_COLOURS[c.platform]}></i>{PLATFORMS[c.platform].label}</span>
+						<div class="lead">
+							<NasPlayer
+								job={r.job}
+								title={r.title}
+								poster={posterOf(r)}
+								upright={r.kind === 'short'}
+								duration={r.duration}
+								watch={watchOf(r)}
+							/>
+							<div class="chart">
+								<h4>
+									From release
+									<span class="sub">
+										{#each row.curves as c (c.platform)}
+											<span><i style:background={PLATFORM_COLOURS[c.platform]}></i>{PLATFORMS[c.platform].label}</span>
+										{/each}
+										<span class="dash">usual for its kind, dashed</span>
+									</span>
+								</h4>
+								<ViewsCurve curves={row.curves} big />
+								<p class="links">
+									{#each ALL_PLATFORMS.filter((p) => r.links[p]) as p (p)}
+										<a href={r.links[p]} target="_blank" rel="noopener" title={linkTitle(p)}
+											><PlatformIcon platform={p} size={13} /> {PLATFORMS[p].label}</a
+										>
 									{/each}
-									<span class="dash">usual for its kind, dashed</span>
-								</span>
-							</h4>
-							<ViewsCurve curves={row.curves} big />
-							<p class="links">
-								{#each ALL_PLATFORMS.filter((p) => r.links[p]) as p (p)}
-									<a href={r.links[p]} target="_blank" rel="noopener" title={linkTitle(p)}
-										><PlatformIcon platform={p} size={13} /> {PLATFORMS[p].label}</a
-									>
-								{/each}
-								{#if r.job}
-									<a href="{base}/log/upload?job={encodeURIComponent(r.job)}">Upload overview</a>
-								{/if}
-								{#if r.matched}<span class="match">{matchWords(r)}</span>{/if}
-							</p>
+									{#if r.job}
+										<a href="{base}/log/upload?job={encodeURIComponent(r.job)}">Upload overview</a>
+									{/if}
+									{#if r.matched}<span class="match">{matchWords(r)}</span>{/if}
+								</p>
+							</div>
 						</div>
 						{#each filter.platforms as p (p)}
 							{@const post = r.posts[p]}
@@ -2051,9 +2078,18 @@
 		background: var(--surface-2);
 	}
 
-	.chart {
+	/* The player beside the curve, across the top of an opened row. */
+	.lead {
 		grid-column: 1 / -1;
-		max-width: 980px;
+		display: grid;
+		grid-template-columns: auto minmax(0, 980px);
+		align-items: start;
+		gap: 14px 28px;
+		padding-top: 6px;
+	}
+
+	.chart {
+		min-width: 0;
 	}
 
 	h4 {
@@ -2312,6 +2348,12 @@
 		}
 		.details {
 			padding-left: 16px;
+		}
+	}
+
+	@media (max-width: 960px) {
+		.lead {
+			grid-template-columns: minmax(0, 1fr);
 		}
 	}
 

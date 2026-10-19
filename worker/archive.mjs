@@ -8,9 +8,10 @@
 import { createWriteStream } from 'node:fs';
 import { access, mkdir, rename, stat, unlink } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { join, parse } from 'node:path';
+import { basename, join, parse } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { resolveFolder } from './paths.mjs';
+import { typedJoin } from './watch.mjs';
 
 async function exists(path) {
 	try {
@@ -84,5 +85,8 @@ export async function copyToDestination({ job, pb, log }) {
 	// the worker is running in a container on the NAS.
 	const dir = await resolveFolder(configured);
 	const source = await pb.openVideo(job);
-	return copyInto({ source, dir, wanted: job.video_name || job.video, log });
+	const result = await copyInto({ source, dir, wanted: job.video_name || job.video, log });
+	// Named as the folder was typed, like every path the page shows, so the
+	// job says \\nas\… whichever machine made the copy.
+	return { ...result, stored: typedJoin(configured, basename(result.path)) };
 }

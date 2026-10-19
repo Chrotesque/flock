@@ -8,7 +8,8 @@
 // that exact path is in its own latest listing, so the path here is a name for
 // a file it already knows, never one for it to open.
 
-export type PreviewSource = 'nas' | 'local';
+/** The listed files of either kind, or — `stored`, path = job id — an upload's NAS copy (storedcopy.ts). */
+export type PreviewSource = 'nas' | 'local' | 'stored';
 
 function address(base: string, endpoint: string, source: PreviewSource, path: string): string {
 	return `${base.replace(/\/+$/, '')}/${endpoint}?${new URLSearchParams({ source, path })}`;

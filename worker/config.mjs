@@ -136,6 +136,9 @@ export function loadConfig() {
 		// something like Tailscale Serve fronts the port.
 		previewPort: Number(process.env.FLOCK_PREVIEW_PORT ?? file.previewPort ?? 8790),
 		previewUrl: (process.env.FLOCK_PREVIEW_URL || file.previewUrl || '').replace(/\/+$/, ''),
+		// Loopback unless a container needs its mapped port to reach the
+		// server: 0.0.0.0 there, with previewUrl naming the address outside.
+		previewHost: process.env.FLOCK_PREVIEW_HOST || file.previewHost || '127.0.0.1',
 		vidiqKey: process.env.VIDIQ_API_KEY || file.vidiqKey || '',
 		// The stats pass. One videos.list covers fifty videos for one unit, so the
 		// interval alone sets the daily cost: 30s is 2,880 of the 10,000 units

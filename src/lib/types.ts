@@ -175,6 +175,11 @@ export interface UploadJob {
 	video_duration: number;
 	destination_label: string;
 	destination_path: string;
+	/**
+	 * Where the worker's copy landed, spelled as `destination_path` is; empty
+	 * until it is copied, and on jobs copied before 0.16.32 (see storedcopy.ts).
+	 */
+	stored_path?: string;
 	status: JobStatus;
 	error?: string;
 	/** The brand the upload was made for; empty once that brand is deleted. */

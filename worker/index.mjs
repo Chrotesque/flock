@@ -83,7 +83,8 @@ import { startPreviewServer } from './preview.mjs';
 import { makeRemoteLog } from './remotelog.mjs';
 import { randomBytes } from 'node:crypto';
 import { makeHeartbeat } from './heartbeat.mjs';
-import { coversNas, ownsPublishing } from './roles.mjs';
+import { coversNas, ownsLocal, ownsPublishing } from './roles.mjs';
+import { isRecordId, openStoredCopy } from './storedcopy.mjs';
 import { watchForUpdate } from './selfupdate.mjs';
 import { askToStop, holdInstance } from './instance.mjs';
 import { sayOnScreen, startTray, wantsTray } from './tray.mjs';
@@ -416,7 +417,8 @@ async function copyOne(pb, job) {
 			() => copyToDestination({ job, pb, log: (m) => log(`  ${m}`) }),
 			{ publishing: true }
 		);
-		await pb.updateJob(job.id, { status: 'done', error: '' });
+		// A PocketBase without the field (setup-pb not run yet) ignores it.
+		await pb.updateJob(job.id, { status: 'done', error: '', ...(result.stored ? { stored_path: result.stored } : {}) });
 		log(`copied "${job.title}" -> ${result.path}`);
 		pb.log(
 			'Copied to the NAS',
@@ -441,6 +443,30 @@ async function copyOne(pb, job) {
  * opens here.
  */
 const listed = { nas: new Map(), local: new Map() };
+
+/**
+ * The Dashboard player's source: an upload's NAS copy, by job id (see
+ * storedcopy.mjs). A player asks for range after range while it plays, so an
+ * answer is kept for half a minute rather than reading the job each time.
+ */
+const storedCopies = new Map();
+
+async function storedLookup(pb, id) {
+	if (!isRecordId(id)) return { error: 'no-job' };
+	const hit = storedCopies.get(id);
+	if (hit && Date.now() - hit.at < 30_000) return hit.value;
+	let job = null;
+	try {
+		job = await pb.getJob(id);
+	} catch (err) {
+		if (!/-> 404\b/.test(err.message)) throw err;
+	}
+	const value = await openStoredCopy(job);
+	storedCopies.delete(id);
+	storedCopies.set(id, { at: Date.now(), value });
+	if (storedCopies.size > 100) storedCopies.delete(storedCopies.keys().next().value);
+	return value;
+}
 
 function playable(index, roots) {
 	const map = new Map();
@@ -1967,21 +1993,43 @@ async function main() {
 			)
 	});
 
-	// The Upload step's player — see preview.mjs. Only for a worker that stays
-	// up; the address is published where the page looks for it, and left there
-	// when the worker stops, so the page checks it answers before using it.
-	if (config.previewPort > 0 && hb.canLocal()) {
+	// The players — see preview.mjs. Only for a worker that stays up. The
+	// Upload step's plays the listed files and is the PC's (`preview_server`);
+	// the Dashboard's plays uploads' NAS copies and is the publishing
+	// worker's, which made them (`stored_player`). An `all` worker is both.
+	// Each address is left there when the worker stops, so the page checks it
+	// answers before using it.
+	if (config.previewPort > 0) {
 		startPreviewServer({
 			port: config.previewPort,
-			lookup: (source, path) =>
-				source === 'nas' || source === 'local' ? (listed[source].get(path) ?? null) : null,
+			host: config.previewHost,
+			lookup: (source, path) => {
+				if (source === 'stored') return storedLookup(pb, path);
+				return source === 'nas' || source === 'local' ? (listed[source].get(path) ?? null) : null;
+			},
 			log,
 			onListening: (port) => {
 				const url = config.previewUrl || `http://127.0.0.1:${port}`;
-				log(`preview: listed videos play from ${url}`);
-				pb.setSetting('preview_server', { url, startedAt: new Date().toISOString() }).catch((err) =>
-					log(`preview: could not publish its address: ${err.message}`)
-				);
+				const at = { url, startedAt: new Date().toISOString() };
+				// A NAS worker's loopback is no browser's, so it names its player
+				// only once previewUrl gives the address from outside.
+				const nasOnly = ownsPublishing(config.role) && !ownsLocal(config.role);
+				const keys = [
+					...(ownsLocal(config.role) ? ['preview_server'] : []),
+					...(ownsPublishing(config.role) && (config.previewUrl || !nasOnly) ? ['stored_player'] : [])
+				];
+				log(`preview: videos play from ${url}`);
+				if (nasOnly && !config.previewUrl) {
+					log(
+						"preview: the Dashboard's player is not offered — set previewUrl to the address browsers reach this port at" +
+							' (and previewHost 0.0.0.0 in a container)'
+					);
+				} else if (!config.previewUrl && !['127.0.0.1', 'localhost', '::1'].includes(config.previewHost)) {
+					log(`preview: listening on ${config.previewHost}, but no previewUrl names the address browsers reach it at`);
+				}
+				for (const key of keys) {
+					pb.setSetting(key, at).catch((err) => log(`preview: could not publish its address: ${err.message}`));
+				}
 			}
 		});
 	}

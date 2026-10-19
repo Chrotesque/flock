@@ -99,3 +99,41 @@ test('the server streams listed files by range and refuses everything else', asy
 	const gone = await fetch(`${base}/check?${query('local', path)}`);
 	assert.deepEqual(await gone.json(), { ok: false, error: 'gone' });
 });
+
+test('a lookup may answer later, and say why there is no file', async (t) => {
+	const dir = await mkdtemp(join(tmpdir(), 'flock-preview-'));
+	const path = join(dir, 'copy.mp4');
+	await writeFile(path, Buffer.alloc(64, 7));
+
+	const server = await new Promise((resolve) => {
+		const s = startPreviewServer({
+			port: 0,
+			lookup: async (source, asked) => {
+				if (source !== 'stored') return null;
+				return asked === 'abc123def456ghi' ? { name: 'copy.mp4', path } : { error: 'not-stored' };
+			},
+			log: () => {},
+			onListening: () => resolve(s)
+		});
+	});
+	t.after(async () => {
+		await new Promise((resolve) => server.close(resolve));
+		await rm(dir, { recursive: true, force: true });
+	});
+
+	const base = `http://127.0.0.1:${server.address().port}`;
+	const query = (source, p) => new URLSearchParams({ source, path: p }).toString();
+
+	const check = await fetch(`${base}/check?${query('stored', 'abc123def456ghi')}`);
+	assert.deepEqual(await check.json(), { ok: true, name: 'copy.mp4', size: 64 });
+	const part = await fetch(`${base}/video?${query('stored', 'abc123def456ghi')}`, { headers: { Range: 'bytes=0-9' } });
+	assert.equal(part.status, 206);
+	assert.equal((await part.arrayBuffer()).byteLength, 10);
+
+	const why = await fetch(`${base}/check?${query('stored', 'zzz123def456ghi')}`);
+	assert.equal(why.status, 404);
+	assert.deepEqual(await why.json(), { ok: false, error: 'not-stored' });
+	const none = await fetch(`${base}/video?${query('stored', 'zzz123def456ghi')}`);
+	assert.equal(none.status, 404);
+	await none.arrayBuffer();
+});

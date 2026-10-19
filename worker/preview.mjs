@@ -7,10 +7,12 @@
 // PocketBase just to look at it. So the worker, which already reads both
 // folders for the listings, streams them too.
 //
-// Deliberately narrow. It listens on the loopback address only, it is
-// read-only, and it serves a path only when that exact path is in the
-// worker's own latest listing — the request names a file, it never supplies
-// one to open.
+// Deliberately narrow. It listens on the loopback address unless the config
+// says otherwise, it is read-only, and it serves a path only when that exact
+// path is in the worker's own latest listing — the request names a file, it
+// never supplies one to open. The Dashboard's player is the one other
+// source: it names an upload, and the worker opens that upload's NAS copy
+// (storedcopy.mjs).
 
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
@@ -70,8 +72,8 @@ async function handle(req, res, lookup) {
 	// not. It carries no bytes, which is why any origin may read it.
 	if (url.pathname === '/check') {
 		res.setHeader('Access-Control-Allow-Origin', '*');
-		const file = lookup(source, path);
-		if (!file) return json(res, 404, { ok: false, error: 'not-listed' });
+		const file = await lookup(source, path);
+		if (!file || file.error) return json(res, 404, { ok: false, error: file?.error ?? 'not-listed' });
 		const info = await statOrNull(file.path);
 		if (!info?.isFile()) return json(res, 404, { ok: false, error: 'gone' });
 		return json(res, 200, { ok: true, name: file.name, size: info.size });
@@ -83,9 +85,9 @@ async function handle(req, res, lookup) {
 		return res.end();
 	}
 
-	const file = lookup(source, path);
-	const info = file ? await statOrNull(file.path) : null;
-	if (!file || !info?.isFile()) {
+	const file = await lookup(source, path);
+	const info = file && !file.error ? await statOrNull(file.path) : null;
+	if (!file || file.error || !info?.isFile()) {
 		res.writeHead(404);
 		return res.end();
 	}
@@ -119,13 +121,18 @@ async function handle(req, res, lookup) {
 }
 
 /**
- * Starts the server. `lookup(source, path)` returns the listed file for that
- * list and exact path, or null; `onListening` gets the port actually bound,
+ * Starts the server. `lookup(source, path)` returns — or promises — the
+ * listed file for that list and exact path, `{ error }` saying why there is
+ * none, or null (`not-listed`); `onListening` gets the port actually bound,
  * which is what the address published for the page is built from. A port
  * already taken is logged rather than thrown: the player is a convenience,
  * and the worker's real work carries on without it.
+ *
+ * `host` is the loopback address unless the config says otherwise: a worker
+ * in a container listens on all of the container's addresses so that a
+ * mapped port reaches it (see storedcopy.mjs).
  */
-export function startPreviewServer({ port, lookup, log, onListening }) {
+export function startPreviewServer({ port, host = '127.0.0.1', lookup, log, onListening }) {
 	const server = createServer((req, res) => {
 		handle(req, res, lookup).catch((err) => {
 			if (!res.headersSent) json(res, 500, { ok: false, error: err.message });
@@ -139,6 +146,6 @@ export function startPreviewServer({ port, lookup, log, onListening }) {
 				: `preview: ${err.message}`
 		);
 	});
-	server.listen(port, '127.0.0.1', () => onListening?.(server.address().port));
+	server.listen(port, host, () => onListening?.(server.address().port));
 	return server;
 }
