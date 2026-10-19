@@ -11,6 +11,7 @@ const post = (platform: Post['platform'], record: string, id: string): Post => (
 	views: null,
 	likes: null,
 	comments: null,
+	followers: null,
 	samples: []
 });
 

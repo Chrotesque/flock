@@ -4,6 +4,7 @@ import { logAction } from '../log';
 import { settle, LOG_SETTLE_MS } from '../settle';
 import type { GeneralSettings, NasDestination, WatchFolder } from '../types';
 import type { TimeZoneChoice } from '../timezones';
+import { DEFAULT_COLUMNS, columnWords, readColumns, type DashColumn } from '../dashcolumns';
 import {
 	folderKind,
 	importFolder,
@@ -32,7 +33,8 @@ export const DEFAULT_GENERAL: GeneralSettings = {
 	complianceBranding: true,
 	jestrIntegration: false,
 	showTodo: true,
-	timeZones: []
+	timeZones: [],
+	dashboardColumns: DEFAULT_COLUMNS
 };
 
 /**
@@ -75,7 +77,8 @@ class GeneralStore {
 				complianceBranding: stored.complianceBranding ?? true,
 				jestrIntegration: stored.jestrIntegration === true,
 				showTodo: stored.showTodo !== false,
-				timeZones: Array.isArray(stored.timeZones) ? stored.timeZones : []
+				timeZones: Array.isArray(stored.timeZones) ? stored.timeZones : [],
+				dashboardColumns: readColumns(stored.dashboardColumns)
 			};
 			this.#loaded = true;
 			this.#logged = $state.snapshot(this.value);
@@ -154,6 +157,10 @@ class GeneralStore {
 		if (before.showTodo !== after.showTodo) {
 			logAction('settings', `${after.showTodo ? 'Showed' : 'Hid'} the To finish list`);
 		}
+
+		const columnsWere = columnWords(before.dashboardColumns);
+		const columnsNow = columnWords(after.dashboardColumns);
+		if (columnsWere !== columnsNow) logAction('settings', 'Changed the Dashboard columns', `${columnsWere} → ${columnsNow}`);
 
 		for (const key of ['watchFolders', 'projectFolders'] as const) this.#logFolders(key, before, after);
 
@@ -283,6 +290,13 @@ class GeneralStore {
 
 	setShowTodo(on: boolean) {
 		this.value.showTodo = on;
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	/** The Dashboard list's columns, as Settings → Dashboard arranges them. */
+	setDashboardColumns(next: DashColumn[]) {
+		this.value.dashboardColumns = readColumns(next);
 		this.queueSave();
 		this.#queueLog();
 	}

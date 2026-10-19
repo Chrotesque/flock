@@ -4,11 +4,13 @@ import {
 	loadDashboardReels,
 	loadDashboardVideos,
 	loadDashTargets,
+	loadFollowerStates,
 	type DashboardReel,
 	type DashboardVideo
 } from '../repo';
 import type { DashTarget } from '../dashboard';
 import type { StatsStatus } from '../types';
+import type { FollowerState } from '../followers';
 
 /** The Instagram stats pass's heartbeat (worker/igstats.mjs). */
 export interface IgStatsStatus {
@@ -35,6 +37,8 @@ class DashData {
 	status = $state<StatsStatus | null>(null);
 	igStatus = $state<IgStatsStatus | null>(null);
 	fbStatus = $state<FbStatsStatus | null>(null);
+	/** Every account's follower record (followers.ts). */
+	followers = $state<FollowerState[]>([]);
 	loaded = $state(false);
 	loading = $state(false);
 	error = $state('');
@@ -50,13 +54,14 @@ class DashData {
 	async #read() {
 		this.loading = true;
 		try {
-			const [videos, reels, targets, status, igStatus, fbStatus] = await Promise.all([
+			const [videos, reels, targets, status, igStatus, fbStatus, followers] = await Promise.all([
 				loadDashboardVideos(),
 				loadDashboardReels(),
 				loadDashTargets(),
 				getStatsStatus().catch(() => null),
 				getSetting<IgStatsStatus | null>('instagram_stats_status', null).catch(() => null),
-				getSetting<FbStatsStatus | null>('facebook_stats_status', null).catch(() => null)
+				getSetting<FbStatsStatus | null>('facebook_stats_status', null).catch(() => null),
+				loadFollowerStates()
 			]);
 			this.videos = videos;
 			this.reels = reels;
@@ -64,6 +69,7 @@ class DashData {
 			this.status = status;
 			this.igStatus = igStatus;
 			this.fbStatus = fbStatus;
+			this.followers = followers;
 			this.error = '';
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
@@ -80,6 +86,14 @@ class DashData {
 
 	putReel(reel: DashboardReel, action: string) {
 		this.reels = upsert(this.reels, reel, action);
+	}
+
+	/** An account's follower record as realtime sent it, in place of the one held. */
+	putFollowers(state: FollowerState) {
+		const same = (s: FollowerState) => s.platform === state.platform && s.account === state.account;
+		this.followers = this.followers.some(same)
+			? this.followers.map((s) => (same(s) ? state : s))
+			: [...this.followers, state];
 	}
 
 	async refreshTargets() {

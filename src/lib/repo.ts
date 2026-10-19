@@ -22,6 +22,7 @@ import type { UploadRecord } from './uploadrecord';
 import type { DashTarget, StatsVideo } from './dashboard';
 import type { ReelPlatform, ReelRow, Sample, YouTubeRow } from './releases';
 import { readSkipRate } from './releases';
+import { FOLLOWER_PREFIX, facebookFollows, readFollowerState, type FollowerState } from './followers';
 import { cleanName, readTitleRequest, type TitleRequest } from './retitle';
 import type { PlayerJob } from './storedcopy';
 import type {
@@ -1317,6 +1318,8 @@ export function toDashboardReel(row: Record<string, unknown>): DashboardReel {
 		history: (Array.isArray(row.history) ? row.history : []) as Sample[],
 		// Instagram's own, kept in `data` (worker/igstats.mjs); Facebook gives none.
 		skipRate: facebook ? null : readSkipRate(insights.reels_skip_rate),
+		// Facebook counts a reel's follows itself; Instagram's are credited (followers.ts).
+		followers: facebook ? facebookFollows(insights) : null,
 		data
 	};
 }
@@ -1441,6 +1444,22 @@ export function subscribeReels(onReel: (reel: DashboardReel, action: string) => 
 	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
 }
 
+/**
+ * Every account's follower record (worker/followers.mjs), one `app_settings`
+ * row each under `followers:<platform>:<account id>`; none before the worker
+ * has read a count.
+ */
+export async function loadFollowerStates(): Promise<FollowerState[]> {
+	try {
+		const rows = await pb.collection('app_settings').getFullList<{ key: string; value: unknown }>({
+			filter: pb.filter('key ~ {:prefix}', { prefix: `${FOLLOWER_PREFIX}%` })
+		});
+		return rows.map((row) => readFollowerState(row.value)).filter((s): s is FollowerState => s !== null);
+	} catch {
+		return [];
+	}
+}
+
 export async function getStatsStatus(): Promise<StatsStatus | null> {
 	const res = await pb
 		.collection('app_settings')
@@ -1458,12 +1477,18 @@ export async function getStatsStatus(): Promise<StatsStatus | null> {
 export function subscribeStats(handlers: {
 	onVideo: (row: VideoStats, action: string) => void;
 	onStatus: (status: StatsStatus) => void;
+	/** An account's follower record, as the worker rewrites it on every read. */
+	onFollowers?: (state: FollowerState) => void;
 }): () => void {
 	const videos = pb
 		.collection('video_stats')
 		.subscribe('*', (e) => handlers.onVideo(e.record as unknown as VideoStats, e.action));
 	const settings = pb.collection('app_settings').subscribe('*', (e) => {
 		if (e.record.key === 'stats_status') handlers.onStatus(e.record.value as StatsStatus);
+		else if (String(e.record.key).startsWith(FOLLOWER_PREFIX) && e.action !== 'delete') {
+			const state = readFollowerState(e.record.value);
+			if (state) handlers.onFollowers?.(state);
+		}
 	});
 	// A failed subscription (PocketBase down, collection missing) is not an
 	// error the page can act on; the list load reports that already.

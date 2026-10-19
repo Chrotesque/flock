@@ -16,6 +16,7 @@
 import { forgetToken } from './google.mjs';
 import { youtubeChannels, youtubeToken } from './youtube.mjs';
 import { fetchOrExplain } from './net.mjs';
+import { creditWords, followerStep } from './followers.mjs';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 
@@ -45,6 +46,10 @@ const HISTORY_CAP = 1000;
 // rarely and the listing costs a unit, so this is how often it is re-read.
 const PLAYLIST_TTL_MS = 30 * 60 * 1000;
 
+// How often a channel's subscriber count is read, for the Dashboard's
+// followers per video (followers.mjs): a unit each, 144 a day per channel.
+const SUBSCRIBERS_TTL_MS = 10 * 60 * 1000;
+
 // Shared by every channel: the day's spend, and the worker's polling runs.
 let spent = { day: '', units: 0 };
 let paused = false;
@@ -67,7 +72,9 @@ function stateOf(channelId) {
 			parts: ALL_PARTS,
 			lastError: '',
 			playlistsAt: 0,
-			playlistError: ''
+			playlistError: '',
+			subscribersAt: 0,
+			subscriberError: ''
 		};
 		perChannel.set(channelId, state);
 	}
@@ -147,6 +154,51 @@ async function refreshPlaylists(pb, config, log, account) {
 		if (message !== state.playlistError) {
 			log(`playlists ${account.title} failed: ${message.split('\n')[0]}`);
 			state.playlistError = message;
+		}
+	}
+}
+
+/**
+ * The channel's subscriber count, and the rise since the last read credited
+ * to its videos (followers.mjs). `rows` are the videos as just read, `byVideo`
+ * the stored rows with their view history. Every ten minutes; a failure is
+ * said once and never stops the stats.
+ */
+async function readSubscribers(pb, config, log, account, rows, byVideo) {
+	const state = stateOf(account.channelId);
+	if (Date.now() - state.subscribersAt < SUBSCRIBERS_TTL_MS) return;
+	state.subscribersAt = Date.now();
+	try {
+		const res = await api(config, account, '/channels?part=statistics&mine=true');
+		charge(1);
+		const stats = res?.items?.[0]?.statistics ?? {};
+		// Above 1,000 YouTube rounds the count down to three figures.
+		if (stats.hiddenSubscriberCount || stats.subscriberCount == null) throw new Error('the channel hides its subscriber count');
+		const posts = rows.map((row) => ({
+			id: row.video_id,
+			at: Date.parse(row.published_at),
+			views: row.views,
+			history: byVideo.get(row.video_id)?.history ?? []
+		}));
+		const step = await followerStep({
+			pb,
+			platform: 'youtube',
+			account: account.channelId,
+			name: account.title,
+			count: Number(stats.subscriberCount),
+			posts
+		});
+		if (step.gained) {
+			const titles = new Map(rows.map((row) => [row.video_id, row.title]));
+			log(creditWords(account.title, step, (id) => titles.get(id) ?? ''));
+		}
+		if (state.subscriberError) log(`subscribers ${account.title}: recovered`);
+		state.subscriberError = '';
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		if (message !== state.subscriberError) {
+			log(`subscribers ${account.title} not read: ${message.split('\n')[0]}`);
+			state.subscriberError = message;
 		}
 	}
 }
@@ -346,6 +398,7 @@ async function pollChannel({ pb, config, log, account }) {
 				history: moved ? [...history, sample].slice(-HISTORY_CAP) : history
 			});
 		}
+		await readSubscribers(pb, config, log, account, items.map(toRow), byVideo);
 
 		if (state.lastError) log(`stats ${account.title}: recovered`);
 		state.lastError = '';

@@ -97,7 +97,8 @@ keeps running when no browser is open. It:
   the slot itself; TikTok and Instagram are held until their slot.
 - lists the watch and project folders, copies videos from your PC to the
   network, and files finished videos into their NAS folder.
-- reads YouTube's, Instagram's and Facebook's numbers for the Dashboard, and
+- reads YouTube's, Instagram's and Facebook's numbers for the Dashboard
+  (followers included), and
   scores titles with vidIQ if you set that up.
 
 A platform you have not set up just leaves its releases waiting in the queue.
@@ -138,8 +139,8 @@ Good to know:
 - **Thumbnails and paid promotion are set in YouTube Studio**, not by flock.
   *To finish* in the sidebar links each video's Studio page.
 - **Stats cost API quota.** The Dashboard's YouTube numbers come from the
-  newest 50 videos, read every 30 seconds: about a third of the daily quota
-  that uploads also use. `statsSeconds`, `statsVideos` and `statsBudget` in the
+  newest 50 videos, read every 30 seconds, and each channel's subscriber count,
+  read every 10 minutes: under half the daily quota that uploads also use. `statsSeconds`, `statsVideos` and `statsBudget` in the
   config adjust it; at the budget, polling pauses until the quota resets, so
   uploads are never short.
 
@@ -571,14 +572,20 @@ press Esc or go to another page to close it. For the brand in view it shows:
   long form, live) and whether unlisted and private videos are shown. Every
   number on the page counts only the videos out in the timeframe. Click it to
   change it; the choice is kept per browser.
-- **Today, this week and this month:** videos out, the views on them and the
-  views gained, with each platform's share below.
-- **Coming up:** the next three days, each upload a cluster of platform icons.
-  Hover one for its title and each post's time and state; click it for the
-  upload's overview. The Calendar has the rest.
+- **Today, this week, this month, this quarter and this year:** videos out,
+  the views on them and the followers gained (or lost) on every platform
+  together. Hover the views for the views gained and each platform's share,
+  and the followers for each platform's. These count every video the filter
+  keeps, whatever its timeframe. Followers count from when the worker first
+  read each account.
 - **Every video:** YouTube videos and Instagram reels, with a video posted to
   both as one row (the same upload, or posted within two hours of each other).
-  Views, likes and comments show the total and each platform's below. A line
+  Followers, views, likes and comments show the total and each platform's
+  below. *Followers* are those a video brought: Facebook counts them per reel
+  itself. YouTube and Instagram only say how many an account has, so each rise
+  in that count is credited to the videos gaining views at the time, in
+  proportion (the newest video when none was). Hover a number to see where it
+  came from. Videos out before the worker first read an account show —. A line
   shows its views from release, with what is usual for its kind dashed, and
   an arrow per platform says whether it is ahead (green), about usual (grey)
   or behind (yellow). *Skipped* is Instagram's estimate of the share of a
@@ -702,6 +709,9 @@ how many things are listed. Click it to open the list over the page.
 - *Brands:* add, rename, order and delete brands, and pick each brand's
   accounts. Deleting a brand keeps its uploads, and anything queued still goes
   out.
+- *Dashboard:* the columns of the Dashboard's list of videos. Drag them into
+  order in the preview, or move them one place at a time below it, and untick
+  any you do not want. The thumbnail and the title always lead.
 - *Other:* YouTube's official branding, the Jestr integration, whether
   *To finish* shows, and extra time zones for the calendar.
 

@@ -1,4 +1,5 @@
 import type { TimeZoneChoice } from './timezones';
+import type { DashColumn } from './dashcolumns';
 
 export type PlatformId = 'youtube' | 'instagram' | 'tiktok' | 'facebook';
 
@@ -287,6 +288,8 @@ export interface GeneralSettings {
 	 * out of the dropdown rather than shown as a wrong clock.
 	 */
 	timeZones: TimeZoneChoice[];
+	/** The Dashboard list's columns, in order, each shown or not (dashcolumns.ts; Settings → Dashboard). */
+	dashboardColumns: DashColumn[];
 }
 
 export interface WatchFolder {

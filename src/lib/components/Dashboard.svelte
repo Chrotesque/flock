@@ -4,7 +4,6 @@
 	import PlatformIcon from './PlatformIcon.svelte';
 	import DashFilter from './DashFilter.svelte';
 	import ViewsCurve from './ViewsCurve.svelte';
-	import ComingUp from './ComingUp.svelte';
 	import RenameDialog from './RenameDialog.svelte';
 	import NasPlayer from './NasPlayer.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
@@ -18,6 +17,8 @@
 	import { newestByPost, renameChoices, renameNotes, type RenameChoice } from '$lib/retitle';
 	import { accountLabel, postAllowance } from '$lib/accounts';
 	import { LEVEL_WORDS, limitLevel, lineLevel, shortError, worstLevel, type StatusLevel } from '$lib/dashstatus';
+	import { creditedFollowers, stateOf, type FollowerGain, type FollowerState } from '$lib/followers';
+	import { COLUMNS, gridTemplate, shownColumns, type ColumnId } from '$lib/dashcolumns';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import {
 		deleteJob,
@@ -110,7 +111,7 @@
 		}
 	}
 
-	const SORTS: SortKey[] = ['date', 'views', 'likes', 'comments', 'skip', 'usual'];
+	const SORTS: SortKey[] = ['date', 'views', 'likes', 'comments', 'followers', 'skip', 'usual'];
 	let filter = $state<Filter>(readFilter(parsed(readPref(FILTER_KEY))));
 	let sort = $state<SortKey>(SORTS.find((s) => s === readPref(SORT_KEY)) ?? 'date');
 	$effect(() => writePref(FILTER_KEY, JSON.stringify(storedFilter(filter))));
@@ -122,8 +123,23 @@
 	/* ---- the data ---- */
 
 	let now = $state(Date.now());
-	const videos = $derived(dashData.videos);
-	const reels = $derived(dashData.reels);
+	const followerStates = $derived(dashData.followers);
+	const postTime = (iso: string) => Date.parse(String(iso ?? '').replace(' ', 'T'));
+	// Each post with the followers it brought: credited by the worker for
+	// YouTube and Instagram, Facebook's own count for a reel (followers.ts).
+	const videos = $derived(
+		dashData.videos.map((v) => ({
+			...v,
+			followers: creditedFollowers(stateOf(followerStates, 'youtube', v.channelId), v.video_id, postTime(v.published_at))
+		}))
+	);
+	const reels = $derived(
+		dashData.reels.map((r) =>
+			r.platform === 'instagram'
+				? { ...r, followers: creditedFollowers(stateOf(followerStates, 'instagram', r.account), r.post_id, postTime(r.published_at)) }
+				: r
+		)
+	);
 	const igReels = $derived(reels.filter((r) => r.platform === 'instagram'));
 	const fbReels = $derived(reels.filter((r) => r.platform === 'facebook'));
 	const status = $derived(dashData.status);
@@ -140,22 +156,24 @@
 	let baseline = $state<Record<string, Counters>>({});
 	let based = false;
 	const baseKey = (post: Post) => `${post.platform}:${post.record}`;
-	const countersOf = (row: { views: number | null; likes: number | null; comments: number | null }): Counters => ({
+	type Counted = { views: number | null; likes: number | null; comments: number | null; followers?: number | null };
+	const countersOf = (row: Counted): Counters => ({
 		views: row.views,
 		likes: row.likes,
-		comments: row.comments
+		comments: row.comments,
+		followers: row.followers ?? null
 	});
 
 	function rebase() {
 		baseline = Object.fromEntries([
-			...dashData.videos.map((v) => [`youtube:${v.id}`, countersOf(v)]),
-			...dashData.reels.map((r) => [`${r.platform}:${r.id}`, countersOf(r)])
+			...videos.map((v) => [`youtube:${v.id}`, countersOf(v)]),
+			...reels.map((r) => [`${r.platform}:${r.id}`, countersOf(r)])
 		]);
 		based = true;
 	}
 
 	/** A row first seen now has nothing to be measured against yet. */
-	function baseIfNew(key: string, row: { views: number | null; likes: number | null; comments: number | null }) {
+	function baseIfNew(key: string, row: Counted) {
 		if (based && !baseline[key]) baseline = { ...baseline, [key]: countersOf(row) };
 	}
 
@@ -180,7 +198,8 @@
 				dashData.putVideo(video, action);
 				if (action !== 'delete') baseIfNew(`youtube:${video.id}`, video);
 			},
-			onStatus: (next) => (dashData.status = next)
+			onStatus: (next) => (dashData.status = next),
+			onFollowers: (state) => dashData.putFollowers(state)
 		});
 		void jestrCampaigns.load().catch(() => {});
 		const stopMarks = jestrCampaigns.subscribe();
@@ -222,6 +241,22 @@
 	);
 	const myReels = $derived(igAccount ? igReels.filter((r) => r.account === igAccount.account_id) : loneIG ? igReels : []);
 	const myFbReels = $derived(fbPage ? fbReels.filter((r) => r.account === fbPage.account_id) : loneFB ? fbReels : []);
+	// The follower records of the brand's accounts, chosen as its videos are.
+	const myFollowers = $derived(
+		(
+			[
+				['youtube', channel, loneYT],
+				['instagram', igAccount, loneIG],
+				['facebook', fbPage, loneFB]
+			] as const
+		).flatMap(([p, account, lone]) =>
+			account
+				? [stateOf(followerStates, p, account.account_id)].filter((s): s is FollowerState => Boolean(s))
+				: lone
+					? followerStates.filter((s) => s.platform === p)
+					: []
+		)
+	);
 	const myTargets = $derived(
 		brands.multiple ? dashData.targets.filter((t) => t.brand === brands.currentId) : dashData.targets
 	);
@@ -235,11 +270,26 @@
 					videos: g.channel ? videos.filter((v) => v.channelId === g.channel) : [],
 					reels: g.instagram ? igReels.filter((r) => r.account === g.instagram) : [],
 					fbReels: g.facebook ? fbReels.filter((r) => r.account === g.facebook) : [],
-					posts: dashData.targets.filter((t) => t.brand === g.brand)
+					posts: dashData.targets.filter((t) => t.brand === g.brand),
+					followers: [
+						stateOf(followerStates, 'youtube', g.channel ?? ''),
+						stateOf(followerStates, 'instagram', g.instagram ?? ''),
+						stateOf(followerStates, 'facebook', g.facebook ?? '')
+					].filter((s): s is FollowerState => Boolean(s))
 				}))
-			: [{ label: '', colour: undefined, videos: myVideos, reels: myReels, fbReels: myFbReels, posts: myTargets }]
+			: [
+					{
+						label: '',
+						colour: undefined,
+						videos: myVideos,
+						reels: myReels,
+						fbReels: myFbReels,
+						posts: myTargets,
+						followers: myFollowers
+					}
+				]
 	);
-	const postsInView = $derived(sets.flatMap((set) => set.posts));
+	const followersInView = $derived(sets.flatMap((set) => set.followers));
 	const noChannel = $derived(!scope && accounts.loaded && !channel && !loneYT);
 
 	// Each set's videos and reels pair only among themselves.
@@ -274,6 +324,7 @@
 		curves: Curve[];
 		/** Instagram's skip rate for its reel, while Instagram is in view. */
 		skip: number | null;
+		followers: number | null;
 	}
 
 	function deltaOf(posts: Post[], counter: Counter): number {
@@ -297,7 +348,13 @@
 				views: sumOf(release, filter.platforms, 'views'),
 				likes: sumOf(release, filter.platforms, 'likes'),
 				comments: sumOf(release, filter.platforms, 'comments'),
-				delta: { views: deltaOf(posts, 'views'), likes: deltaOf(posts, 'likes'), comments: deltaOf(posts, 'comments') },
+				followers: sumOf(release, filter.platforms, 'followers'),
+				delta: {
+					views: deltaOf(posts, 'views'),
+					likes: deltaOf(posts, 'likes'),
+					comments: deltaOf(posts, 'comments'),
+					followers: deltaOf(posts, 'followers')
+				},
 				judgements,
 				ratio: ratioOf(judgements),
 				curves: posts.map((post) => curve(post, peersOf(post), now)),
@@ -326,6 +383,72 @@
 		new Set(inViewList.filter((r) => isCampaign(campaignPosts(r), jestrCampaigns.marks, flagged)).map((r) => r.key))
 	);
 	const campaignCount = $derived(rows.filter((row) => campaigns.has(row.release.key)).length);
+
+	/* ---- the list's columns, as Settings → Dashboard arranges them (dashcolumns.ts) ---- */
+
+	const columns = $derived(shownColumns(general.value.dashboardColumns, { jestr: jestrOn }));
+	const grids = $derived({
+		wide: gridTemplate(columns, 'wide'),
+		mid: gridTemplate(columns, 'mid'),
+		narrow: gridTemplate(columns, 'narrow')
+	});
+	/** A cell's classes: its column, and whether the narrower lists leave it out. */
+	function cellOf(col: ColumnId): string {
+		const def = COLUMNS[col];
+		return `c-${col}${def.mid === null ? ' midoff' : ''}${def.narrow === null ? ' narrowoff' : ''}`;
+	}
+
+	/* ---- followers (followers.ts) ---- */
+
+	const FOLLOWER_WORDS: Record<StatPlatform, [string, string]> = {
+		youtube: ['subscriber', 'subscribers'],
+		instagram: ['follower', 'followers'],
+		facebook: ['follower', 'followers']
+	};
+	const followerWord = (p: StatPlatform, n: number) => FOLLOWER_WORDS[p][Math.abs(n) === 1 ? 0 : 1];
+	const signed = (n: number) => (n > 0 ? `+${whole.format(n)}` : n < 0 ? `−${whole.format(-n)}` : '0');
+	const onDay = (iso: string) => new Date(postTime(iso)).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+
+	/** The accounts' counts now, for the column's tooltip. */
+	const followerCounts = $derived(
+		followersInView
+			.filter((s) => filter.platforms.includes(s.platform))
+			.map((s) => `${s.name || PLATFORMS[s.platform].label} (${PLATFORMS[s.platform].label}) ${whole.format(s.count)} ${followerWord(s.platform, s.count)}`)
+	);
+	const followersAbout = $derived(
+		'Followers and subscribers each video brought. Facebook counts the follows from a reel itself. ' +
+			"YouTube and Instagram only say how many an account has, so flock credits each rise in that count to the videos gaining views at the moment — in proportion to those views, or to the newest video when none was — which is flock's estimate, not a platform figure." +
+			(followerCounts.length ? `\n\nNow: ${followerCounts.join(' · ')}` : '')
+	);
+
+	/** One video's followers in words, a line per platform. */
+	function followersTitle(row: Row): string {
+		return row.posts
+			.map((post) => {
+				const label = PLATFORMS[post.platform].label;
+				const state = followersInView.find((s) => s.platform === post.platform);
+				if (post.platform === 'facebook') {
+					return post.followers === null
+						? `${label}: not read yet (needs read_insights)`
+						: `${label}: ${whole.format(post.followers)}, Facebook's own count of follows from this reel`;
+				}
+				if (post.followers === null) {
+					return state
+						? `${label}: not known — it came out before flock began reading ${FOLLOWER_WORDS[post.platform][1]} on ${onDay(state.since)}`
+						: `${label}: not read yet`;
+				}
+				const since = state && post.at < postTime(state.since) ? `, counted since ${onDay(state.since)}` : '';
+				return `${label}: ${whole.format(post.followers)}, credited from when the count rose${since}`;
+			})
+			.join('\n');
+	}
+
+	/** A period's follower move in one platform, in words for its popup. */
+	function gainWords(gain: FollowerGain | null, p: StatPlatform): string {
+		if (!gain) return 'not read yet';
+		const state = followersInView.find((s) => s.platform === p);
+		return `${signed(gain.gained)} ${followerWord(p, gain.gained)}${gain.partly && state ? ` since ${onDay(state.since)}` : ''}`;
+	}
 
 	/* ---- Edit mode ----
 	 *
@@ -384,14 +507,17 @@
 	}
 
 	const totals = $derived.by(() => {
-		const sum = { views: 0, likes: 0, comments: 0, dViews: 0, dLikes: 0, dComments: 0 };
+		// Followers stay unknown (—) until some video's are known.
+		const sum = { views: 0, likes: 0, comments: 0, followers: null as number | null, dViews: 0, dLikes: 0, dComments: 0, dFollowers: 0 };
 		for (const row of rows) {
 			sum.views += row.views ?? 0;
 			sum.likes += row.likes ?? 0;
 			sum.comments += row.comments ?? 0;
+			if (row.followers !== null) sum.followers = (sum.followers ?? 0) + row.followers;
 			sum.dViews += row.delta.views;
 			sum.dLikes += row.delta.likes;
 			sum.dComments += row.delta.comments;
+			sum.dFollowers += row.delta.followers;
 		}
 		return sum;
 	});
@@ -471,7 +597,9 @@
 	/* ---- the period numbers and what is coming ---- */
 
 	const nowDate = $derived(new Date(now));
-	const periods = $derived(periodStats(inViewList, filter, nowDate));
+	// The periods run up to a year, past the list's timeframe, so they count
+	// every video the filter's other choices keep.
+	const periods = $derived(periodStats(releases.filter((r) => inView(r, filter)), filter, nowDate, followersInView));
 	// A platform whose views are read for none of the videos (Facebook without
 	// read_insights) says so, rather than +0.
 	const viewsUnread = $derived(
@@ -697,16 +825,16 @@
 	}
 </script>
 
-{#snippet counter(value: number | null, change: number)}
-	<span class="num cell" class:up={change > 0} class:down={change < 0}>
+{#snippet counter(value: number | null, change: number, cls: string)}
+	<span class="num cell {cls}" class:up={change > 0} class:down={change < 0}>
 		{num(value)}{#if change}<span class="delta">{change > 0 ? '+' : ''}{whole.format(change)}</span>{/if}
 	</span>
 {/snippet}
 
 <!-- A counter over the platforms in view, and each platform's own under it. -->
-{#snippet stacked(row: Row, key: Counter, main = false)}
+{#snippet stacked(row: Row, key: Counter, cls: string, main = false, title = '')}
 	{@const change = row.delta[key]}
-	<span class="num cell stack" class:main class:up={change > 0} class:down={change < 0}>
+	<span class="num cell stack {cls}" class:main class:up={change > 0} class:down={change < 0} title={title || undefined}>
 		<span>{num(row[key])}{#if change}<span class="delta">{change > 0 ? '+' : ''}{whole.format(change)}</span>{/if}</span>
 		{#if multi && row.posts.length > 1}
 			<span class="parts">
@@ -720,10 +848,162 @@
 	</span>
 {/snippet}
 
-{#snippet sortHead(key: SortKey, label: string, cls = '')}
-	<button class="colhead {cls}" class:on={sort === key} onclick={() => sortBy(key)} title={sortTitle(key, label)}>
+{#snippet sortHead(key: SortKey, label: string, cls = '', about = '')}
+	<button
+		class="colhead {cls}"
+		class:on={sort === key}
+		onclick={() => sortBy(key)}
+		title={about ? `${about}\n\n${sortTitle(key, label)}` : sortTitle(key, label)}
+	>
 		{label}{#if sort === key}<span class="arrow" aria-hidden="true">{reversed ? '↑' : '↓'}</span>{/if}
 	</button>
+{/snippet}
+
+<!-- The list's cells, one snippet per row kind, drawn in the order Settings → Dashboard gives (dashcolumns.ts). -->
+{#snippet headCell(col: ColumnId)}
+	{#if col === 'thumb'}
+		<span class={cellOf(col)}></span>
+	{:else if col === 'video'}
+		{@render sortHead('date', 'Video', `left ${cellOf(col)}`)}
+	{:else if col === 'jestr'}
+		<span class="colhead plain jcell {cellOf(col)}" title="Jestr campaign videos">Jestr</span>
+	{:else if col === 'followers'}
+		{@render sortHead('followers', 'Followers', cellOf(col), followersAbout)}
+	{:else if col === 'views'}
+		{@render sortHead('views', 'Views', cellOf(col))}
+	{:else if col === 'likes'}
+		{@render sortHead('likes', 'Likes', cellOf(col))}
+	{:else if col === 'comments'}
+		{@render sortHead('comments', 'Comments', cellOf(col))}
+	{:else if col === 'skip'}
+		<button
+			class="colhead skiphead {cellOf(col)}"
+			class:on={sort === 'skip'}
+			onclick={() => sortBy('skip')}
+			title="Instagram: the share of a reel's views skipped within the first 3 seconds, as Instagram estimates it. {sortTitle('skip', 'Skipped')}"
+		>
+			<PlatformIcon platform="instagram" size={11} />Skipped{#if sort === 'skip'}<span class="arrow" aria-hidden="true">{reversed ? '↑' : '↓'}</span>{/if}
+		</button>
+	{:else if col === 'curve'}
+		<span class="colhead plain {cellOf(col)}" title="Views from release, up to its first week; dashed: the usual for its kind">From release</span>
+	{:else if col === 'usual'}
+		{@render sortHead('usual', 'vs usual', cellOf(col))}
+	{/if}
+{/snippet}
+
+{#snippet totalCell(col: ColumnId)}
+	{#if col === 'video'}
+		<span class="vid {cellOf(col)}">
+			<span class="vtitle">Total</span>
+			<span class="vmeta">{rows.length} {rows.length === 1 ? 'video' : 'videos'}</span>
+		</span>
+	{:else if col === 'jestr'}
+		<span class="jcell num cell {cellOf(col)}" title="Jestr campaign videos among them">{campaignCount}</span>
+	{:else if col === 'followers'}
+		{@render counter(totals.followers, totals.dFollowers, cellOf(col))}
+	{:else if col === 'views'}
+		{@render counter(totals.views, totals.dViews, cellOf(col))}
+	{:else if col === 'likes'}
+		{@render counter(totals.likes, totals.dLikes, cellOf(col))}
+	{:else if col === 'comments'}
+		{@render counter(totals.comments, totals.dComments, cellOf(col))}
+	{:else if col === 'skip'}
+		<span
+			class="num cell skip {cellOf(col)}"
+			title={pooledSkip === null
+				? 'No skip rate among the reels in view'
+				: `Of all the Instagram views on these reels, ${skipShown(pooledSkip)} were skipped within the first 3 seconds (each reel's rate weighted by its views)`}
+			>{pooledSkip === null ? '—' : skipShown(pooledSkip)}</span
+		>
+	{:else}
+		<span class={cellOf(col)}></span>
+	{/if}
+{/snippet}
+
+{#snippet rowCell(col: ColumnId, row: Row)}
+	{@const r = row.release}
+	{#if col === 'thumb'}
+		{#if r.thumb}
+			<img class="thumb {cellOf(col)}" src={r.thumb} alt="" loading="lazy" />
+		{:else}
+			<span class="thumb blank {cellOf(col)}"
+				><PlatformIcon platform={r.posts.instagram ? 'instagram' : r.posts.facebook ? 'facebook' : 'youtube'} size={16} /></span
+			>
+		{/if}
+	{:else if col === 'video'}
+		{@const visibility = visibilityOf(r, filter.platforms)}
+		{@const note = renameNote(r)}
+		<span class="vid {cellOf(col)}">
+			<span class="vtitle">{r.title}</span>
+			<span class="vmeta">
+				{#if note.waiting.length > 0}
+					<span
+						class="rnote wait"
+						title="Asked: {note.waiting.map((n) => `${PLATFORMS[n.platform]?.label ?? n.platform} “${n.title}”`).join(', ')} — waiting for the worker"
+						>renaming…</span
+					><span class="dot">·</span>
+				{/if}
+				{#if note.refused.length > 0}
+					<span class="rnote bad" title={note.refused.map((n) => `${PLATFORMS[n.platform]?.label ?? n.platform}: ${n.error}`).join('\n')}
+						>not renamed</span
+					><span class="dot">·</span>
+				{/if}
+				<span title={new Date(r.at).toLocaleString()}>{released(r.at)} · {span(now - r.at)} ago</span>
+				<span class="dot">·</span>{KIND_ONE[r.kind]}{#if r.duration > 0}&nbsp;{formatDuration(r.duration)}{/if}
+				{#if visibility !== 'public'}
+					<span class="dot">·</span><span class="priv {visibility}">{visibility}</span>
+				{/if}
+				<span class="dot">·</span>
+				<span class="marks" title={matchWords(r)}>
+					{#each ALL_PLATFORMS.filter((p) => r.links[p]) as p (p)}
+						<span class="mark" class:unread={!isStatPlatform(p)}><PlatformIcon platform={p} size={11} /></span>
+					{/each}
+				</span>
+				{#if r.job}<span class="via" title="Uploaded through flock">flock</span>{/if}
+				{#if r.group}<span class="dot">·</span><span class="group" style:color={r.tint}>{r.group}</span>{/if}
+			</span>
+		</span>
+	{:else if col === 'jestr'}
+		{@const campaign = campaigns.has(r.key)}
+		{@const marking = editing && jestrOn}
+		<span
+			class="jcell {cellOf(col)}"
+			class:on={campaign}
+			title={campaign ? 'A Jestr campaign video' : marking && !markable(r) ? 'Facebook only: not a Jestr submission' : ''}
+		>
+			{#if campaign || (marking && markable(r))}
+				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+					<rect x="1.5" y="1.5" width="13" height="13" rx="3.5" class="box" />
+					{#if campaign}<path d="M4.5 8.2 7 10.6l4.6-5" class="tick" />{/if}
+				</svg>
+			{/if}
+		</span>
+	{:else if col === 'followers'}
+		{@render stacked(row, 'followers', cellOf(col), false, followersTitle(row))}
+	{:else if col === 'views'}
+		{@render stacked(row, 'views', cellOf(col), true)}
+	{:else if col === 'likes'}
+		{@render stacked(row, 'likes', cellOf(col))}
+	{:else if col === 'comments'}
+		{@render stacked(row, 'comments', cellOf(col))}
+	{:else if col === 'skip'}
+		<span class="num cell skip {cellOf(col)}" class:none={row.skip === null} title={skipTitle(r)}
+			>{row.skip === null ? '—' : skipShown(row.skip)}</span
+		>
+	{:else if col === 'curve'}
+		<span class="spark {cellOf(col)}"><ViewsCurve curves={row.curves} /></span>
+	{:else if col === 'usual'}
+		<span class="verdicts {cellOf(col)}">
+			{#each row.judgements as j (j.platform)}
+				<span class="judged {j.verdict ?? 'none'}" title={judgementTitle(j, r)}>
+					<PlatformIcon platform={j.platform} size={13} />
+					<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+						<path d={TREND[j.verdict ?? 'none']} />
+					</svg>
+				</span>
+			{/each}
+		</span>
+	{/if}
 {/snippet}
 
 <div class="page">
@@ -866,50 +1146,75 @@
 		<p class="banner bad">Could not reach PocketBase — {error}</p>
 	{/if}
 
-	<div class="top">
-		<section class="card periods" aria-label="Numbers by period">
-			{#each periods as period (period.key)}
-				<div class="period">
-					<h2>{period.label}</h2>
-					<div class="pair">
-						<div>
-							<span class="bignum accent">{big(period.released)}</span>
-							<span class="unit">{period.released === 1 ? 'video out' : 'videos out'}</span>
-						</div>
-						<div>
-							<span class="bignum" title={whole.format(period.views)}>{big(period.views)}</span>
+	<section class="card periods" aria-label="Numbers by period">
+		{#each periods as period (period.key)}
+			<div class="period">
+				<h2>{period.label}</h2>
+				<div class="trio">
+					<div>
+						<span class="bignum accent">{big(period.released)}</span>
+						<span class="unit">{period.released === 1 ? 'video out' : 'videos out'}</span>
+					</div>
+					<!-- The views' gains and each platform's share, on hover or focus. -->
+					<div class="hold">
+						<button class="holdnum" aria-describedby="views-{period.key}">
+							<span class="bignum">{big(period.views)}</span>
 							<span class="unit">views on them</span>
+						</button>
+						<div class="ppop" id="views-{period.key}" role="tooltip">
+							<p class="gained">
+								<strong>+{whole.format(period.gained)}</strong> views gained{period.partly ? ' (at least)' : ''}
+							</p>
+							<p class="pnote">
+								Views every video in view gained since the start of the period{period.partly
+									? '. Some were not read yet at its start, so they count from when flock first read them.'
+									: '.'}
+							</p>
+							{#each filter.platforms as p (p)}
+								<p class="pline">
+									<i style:background={PLATFORM_COLOURS[p]}></i>
+									<span class="pname">{PLATFORMS[p].label}</span>
+									{#if viewsUnread.has(p)}
+										<span class="pval">views not read yet</span>
+									{:else}
+										<span class="pval">{whole.format(period.byPlatform[p].views)} on the videos out</span>
+										<strong>+{whole.format(period.byPlatform[p].gained)}</strong>
+									{/if}
+								</p>
+							{/each}
 						</div>
 					</div>
-					<p
-						class="gained"
-						title="Views every video in view gained since the start of the period{period.partly
-							? '. Some were not read yet at its start, so they count from when flock first read them.'
-							: '.'}"
-					>
-						<strong>+{whole.format(period.gained)}</strong> views gained{period.partly ? ' (at least)' : ''}
-					</p>
-					{#if multi}
-						<p class="split">
-							{#each filter.platforms as p (p)}
-								{#if viewsUnread.has(p)}
-									<span title="{PLATFORMS[p].label}: views not read yet"><i style:background={PLATFORM_COLOURS[p]}></i>—</span>
+					<div class="hold">
+						<button class="holdnum" aria-describedby="followers-{period.key}">
+							<span class="bignum" class:faint={!period.followers}
+								>{period.followers ? signed(period.followers.gained) : '—'}</span
+							>
+							<span class="unit">followers / subs</span>
+						</button>
+						<div class="ppop" id="followers-{period.key}" role="tooltip">
+							<p class="gained">
+								{#if period.followers}
+									<strong class:down={period.followers.gained < 0}>{signed(period.followers.gained)}</strong> followers and
+									subscribers{period.followers.partly ? ' (since flock began reading them)' : ''}
 								{:else}
-									<span title="{PLATFORMS[p].label}: {whole.format(period.byPlatform[p].views)} views on the videos out, +{whole.format(
-											period.byPlatform[p].gained
-										)} gained"
-										><i style:background={PLATFORM_COLOURS[p]}></i>+{big(period.byPlatform[p].gained)}</span
-									>
+									No follower counts read yet
 								{/if}
+							</p>
+							<p class="pnote">How far the accounts' counts moved since the start of the period: followers won less followers lost.</p>
+							{#each filter.platforms as p (p)}
+								{@const gain = period.byPlatform[p].followers}
+								<p class="pline">
+									<i style:background={PLATFORM_COLOURS[p]}></i>
+									<span class="pname">{PLATFORMS[p].label}</span>
+									<span class="pval">{gainWords(gain, p)}</span>
+								</p>
 							{/each}
-						</p>
-					{/if}
+						</div>
+					</div>
 				</div>
-			{/each}
-		</section>
-
-		<ComingUp targets={postsInView} now={nowDate} />
-	</div>
+			</div>
+		{/each}
+	</section>
 
 	{#if noChannel}
 		<p class="banner">
@@ -928,54 +1233,28 @@
 		</p>
 	{/if}
 
-	<!-- The Jestr cell is always the third, hidden without the integration, so
-	     the narrow layouts can hide the others by their place. -->
-	<section class="card list" class:withjestr={jestrOn} class:editing aria-label="Every video">
+	<!-- The cells follow the layout set under Settings → Dashboard (dashcolumns.ts);
+	     each carries its column's class, so the narrower lists can leave some out. -->
+	<section
+		class="card list"
+		class:editing
+		class:nothumb={!columns.includes('thumb')}
+		aria-label="Every video"
+		style:--cols={grids.wide}
+		style:--cols-mid={grids.mid}
+		style:--cols-narrow={grids.narrow}
+	>
 		<div class="row cols">
-			<span></span>
-			{@render sortHead('date', 'Video', 'left')}
-			<span class="colhead plain jcell" title="Jestr campaign videos">Jestr</span>
-			{@render sortHead('views', 'Views')}
-			{@render sortHead('likes', 'Likes')}
-			{@render sortHead('comments', 'Comments')}
-			<button
-				class="colhead skiphead"
-				class:on={sort === 'skip'}
-				onclick={() => sortBy('skip')}
-				title="Instagram: the share of a reel's views skipped within the first 3 seconds, as Instagram estimates it. {sortTitle('skip', 'Skipped')}"
-			>
-				<PlatformIcon platform="instagram" size={11} />Skipped{#if sort === 'skip'}<span class="arrow" aria-hidden="true">{reversed ? '↑' : '↓'}</span>{/if}
-			</button>
-			<span class="colhead plain" title="Views from release, up to its first week; dashed: the usual for its kind">From release</span>
-			{@render sortHead('usual', 'vs usual')}
+			{#each columns as col (col)}{@render headCell(col)}{/each}
 		</div>
 		<div class="row total">
-			<span></span>
-			<span class="vid">
-				<span class="vtitle">Total</span>
-				<span class="vmeta">{rows.length} {rows.length === 1 ? 'video' : 'videos'}</span>
-			</span>
-			<span class="jcell num cell" title="Jestr campaign videos among them">{campaignCount}</span>
-			{@render counter(totals.views, totals.dViews)}
-			{@render counter(totals.likes, totals.dLikes)}
-			{@render counter(totals.comments, totals.dComments)}
-			<span
-				class="num cell skip"
-				title={pooledSkip === null
-					? 'No skip rate among the reels in view'
-					: `Of all the Instagram views on these reels, ${skipShown(pooledSkip)} were skipped within the first 3 seconds (each reel's rate weighted by its views)`}
-				>{pooledSkip === null ? '—' : skipShown(pooledSkip)}</span
-			>
-			<span></span>
-			<span></span>
+			{#each columns as col (col)}{@render totalCell(col)}{/each}
 		</div>
 
 		{#each rows as row (row.release.key)}
 			{@const r = row.release}
-			{@const visibility = visibilityOf(r, filter.platforms)}
 			{@const campaign = campaigns.has(r.key)}
 			{@const marking = editing && jestrOn}
-			{@const note = renameNote(r)}
 			<div class="item" class:open={openKey === r.key} class:tinted={Boolean(r.tint)} style:--tint={r.tint}>
 				<!-- The pencil sits over the row, not in it: a button cannot hold another. -->
 				<div class="line">
@@ -986,72 +1265,7 @@
 						aria-pressed={marking && markable(r) ? campaign : undefined}
 						aria-disabled={marking && !markable(r) ? true : undefined}
 					>
-						{#if r.thumb}
-							<img class="thumb" src={r.thumb} alt="" loading="lazy" />
-						{:else}
-							<span class="thumb blank"
-								><PlatformIcon platform={r.posts.instagram ? 'instagram' : r.posts.facebook ? 'facebook' : 'youtube'} size={16} /></span
-							>
-						{/if}
-						<span class="vid">
-							<span class="vtitle">{r.title}</span>
-							<span class="vmeta">
-								{#if note.waiting.length > 0}
-									<span
-										class="rnote wait"
-										title="Asked: {note.waiting.map((n) => `${PLATFORMS[n.platform]?.label ?? n.platform} “${n.title}”`).join(', ')} — waiting for the worker"
-										>renaming…</span
-									><span class="dot">·</span>
-								{/if}
-								{#if note.refused.length > 0}
-									<span class="rnote bad" title={note.refused.map((n) => `${PLATFORMS[n.platform]?.label ?? n.platform}: ${n.error}`).join('\n')}
-										>not renamed</span
-									><span class="dot">·</span>
-								{/if}
-								<span title={new Date(r.at).toLocaleString()}>{released(r.at)} · {span(now - r.at)} ago</span>
-								<span class="dot">·</span>{KIND_ONE[r.kind]}{#if r.duration > 0}&nbsp;{formatDuration(r.duration)}{/if}
-								{#if visibility !== 'public'}
-									<span class="dot">·</span><span class="priv {visibility}">{visibility}</span>
-								{/if}
-								<span class="dot">·</span>
-								<span class="marks" title={matchWords(r)}>
-									{#each ALL_PLATFORMS.filter((p) => r.links[p]) as p (p)}
-										<span class="mark" class:unread={!isStatPlatform(p)}><PlatformIcon platform={p} size={11} /></span>
-									{/each}
-								</span>
-								{#if r.job}<span class="via" title="Uploaded through flock">flock</span>{/if}
-									{#if r.group}<span class="dot">·</span><span class="group" style:color={r.tint}>{r.group}</span>{/if}
-							</span>
-						</span>
-						<span
-							class="jcell"
-							class:on={campaign}
-							title={campaign ? 'A Jestr campaign video' : marking && !markable(r) ? 'Facebook only: not a Jestr submission' : ''}
-						>
-							{#if campaign || (marking && markable(r))}
-								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-									<rect x="1.5" y="1.5" width="13" height="13" rx="3.5" class="box" />
-									{#if campaign}<path d="M4.5 8.2 7 10.6l4.6-5" class="tick" />{/if}
-								</svg>
-							{/if}
-						</span>
-						{@render stacked(row, 'views', true)}
-						{@render stacked(row, 'likes')}
-						{@render stacked(row, 'comments')}
-						<span class="num cell skip" class:none={row.skip === null} title={skipTitle(r)}
-							>{row.skip === null ? '—' : skipShown(row.skip)}</span
-						>
-						<span class="spark"><ViewsCurve curves={row.curves} /></span>
-						<span class="verdicts">
-							{#each row.judgements as j (j.platform)}
-								<span class="judged {j.verdict ?? 'none'}" title={judgementTitle(j, r)}>
-									<PlatformIcon platform={j.platform} size={13} />
-									<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-										<path d={TREND[j.verdict ?? 'none']} />
-									</svg>
-								</span>
-							{/each}
-						</span>
+						{#each columns as col (col)}{@render rowCell(col, row)}{/each}
 					</button>
 					{#if editing}
 						<button class="rename" onclick={() => openRename(r)} title="Rename this video" aria-label="Rename “{r.title}”">
@@ -1213,7 +1427,9 @@
 	<p class="foot">
 		Views, likes and comments are each platform's own counters.
 		{combined || multi ? 'Sums across platforms, ' : ''}"usual", the verdicts and the curves are flock's arithmetic over them,
-		not figures any platform reports. One channel at a time; nothing is added up across channels.
+		not figures any platform reports. A video's followers are Facebook's own count for a reel, and flock's estimate for
+		YouTube and Instagram, which only report how many an account has: each rise is credited to the videos gaining views at
+		the time. One channel at a time; nothing is added up across channels.
 	</p>
 </div>
 
@@ -1556,14 +1772,7 @@
 		border-radius: 2px;
 	}
 
-	/* ---- the period numbers and coming up ---- */
-
-	.top {
-		display: grid;
-		grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
-		gap: 14px;
-		margin-bottom: 14px;
-	}
+	/* ---- the period numbers ---- */
 
 	h2 {
 		margin: 0 0 8px;
@@ -1585,7 +1794,8 @@
 
 	.periods {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: repeat(5, minmax(0, 1fr));
+		margin-bottom: 14px;
 		padding: 14px 0;
 		container-type: inline-size;
 	}
@@ -1599,20 +1809,152 @@
 		border-left: 1px solid var(--border);
 	}
 
-	.pair {
+	.trio {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 10px;
+	}
+
+	/* A number whose details open on hover or focus. */
+	.hold {
+		position: relative;
+		min-width: 0;
+	}
+
+	.holdnum {
+		display: block;
+		width: 100%;
+		padding: 0;
+		border: 0;
+		border-radius: 6px;
+		background: none;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: default;
+		outline-offset: 3px;
+	}
+
+	.hold:hover .bignum,
+	.holdnum:focus-visible .bignum {
+		text-decoration: underline dotted var(--text-faint);
+		text-underline-offset: 5px;
+		text-decoration-thickness: 1px;
+	}
+
+	.ppop {
+		position: absolute;
+		top: calc(100% + 8px);
+		left: 0;
+		z-index: 30;
+		display: grid;
+		gap: 5px;
+		width: max-content;
+		min-width: 230px;
+		max-width: min(340px, calc(100vw - 40px));
+		padding: 11px 13px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius);
+		background: var(--surface);
+		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+		font-size: 12px;
+		color: var(--text-dim);
+		font-variant-numeric: tabular-nums;
+		opacity: 0;
+		visibility: hidden;
+		transform: translateY(-4px);
+		transition:
+			opacity 0.14s,
+			transform 0.14s,
+			visibility 0s 0.14s;
+	}
+
+	/* Bridges the gap to the number, so the pointer can move onto the popup. */
+	.ppop::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: -9px;
+		height: 9px;
+	}
+
+	/* The last boxes open theirs leftwards, so they stay on screen. */
+	.period:nth-last-child(-n + 2) .ppop {
+		left: auto;
+		right: 0;
+	}
+
+	.hold:hover .ppop,
+	.hold:focus-within .ppop {
+		opacity: 1;
+		visibility: visible;
+		transform: none;
+		transition:
+			opacity 0.14s,
+			transform 0.14s;
+	}
+
+	.ppop p {
+		margin: 0;
+	}
+
+	.ppop .gained {
+		margin: 0;
+		font-size: 12.5px;
+		color: var(--text);
+	}
+
+	.ppop .pnote {
+		margin-bottom: 4px;
+		font-size: 11px;
+		line-height: 1.45;
+		color: var(--text-faint);
+	}
+
+	.pline {
+		display: grid;
+		grid-template-columns: 8px auto minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 7px;
+	}
+
+	.pline i {
+		width: 8px;
+		height: 8px;
+		border-radius: 2px;
+	}
+
+	.pname {
+		color: var(--text);
+	}
+
+	.pval {
+		color: var(--text-faint);
+	}
+
+	.pline strong,
+	.ppop .gained strong {
+		color: var(--ok);
+		font-weight: 650;
+	}
+
+	.ppop strong.down {
+		color: var(--warn);
 	}
 
 	.bignum {
 		display: block;
-		font-size: clamp(22px, 3.6cqi, 32px);
+		font-size: clamp(22px, 2.2cqi, 32px);
 		font-weight: 700;
 		line-height: 1.05;
 		letter-spacing: -0.02em;
 		font-variant-numeric: tabular-nums;
 		color: var(--text);
+	}
+
+	.bignum.faint {
+		color: var(--text-faint);
 	}
 
 	.bignum.accent {
@@ -1629,26 +1971,6 @@
 		color: var(--text-dim);
 	}
 
-	.gained {
-		margin: 10px 0 0;
-		font-size: 12px;
-		color: var(--text-dim);
-	}
-
-	.gained strong {
-		color: var(--ok);
-		font-weight: 650;
-	}
-
-	.split {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 3px 10px;
-		margin: 4px 0 0;
-		font-size: 11px;
-		color: var(--text-faint);
-		font-variant-numeric: tabular-nums;
-	}
 
 	.none {
 		margin: 0;
@@ -1667,8 +1989,8 @@
 
 	.row {
 		display: grid;
-		/* "vs usual" holds four platforms' marks with their verdicts. */
-		grid-template-columns: var(--thumbcol) minmax(0, 1fr) 130px 106px 106px 84px 156px 164px;
+		/* Built from the layout (dashcolumns.ts): "vs usual" holds four platforms' marks. */
+		grid-template-columns: var(--cols);
 		align-items: center;
 		gap: 12px;
 		width: 100%;
@@ -1690,15 +2012,7 @@
 		background: var(--surface-2);
 	}
 
-	.withjestr .row {
-		grid-template-columns: var(--thumbcol) minmax(0, 1fr) 48px 130px 106px 106px 84px 156px 164px;
-	}
-
 	.jcell {
-		display: none;
-	}
-
-	.withjestr .jcell {
 		display: flex;
 		justify-content: center;
 		text-align: center;
@@ -1787,6 +2101,15 @@
 		transition:
 			background 0.14s,
 			color 0.14s;
+	}
+
+	/* With the thumbnail hidden, the title starts at the row's edge. */
+	.nothumb .rename {
+		left: 16px;
+	}
+
+	.nothumb .details {
+		padding-left: 16px;
 	}
 
 	.rename:hover {
@@ -2328,22 +2651,29 @@
 	/* ---- narrower ---- */
 
 	@media (max-width: 1200px) {
-		.top {
-			grid-template-columns: minmax(0, 1fr);
+		.periods {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+			row-gap: 14px;
+		}
+		.period:nth-child(3n + 1) {
+			border-left: 0;
+		}
+		.period:nth-child(3n) .ppop {
+			left: auto;
+			right: 0;
+		}
+		.period:nth-child(n + 4) {
+			padding-top: 12px;
+			border-top: 1px solid var(--border);
 		}
 		.list {
 			--thumbcol: 56px;
 		}
 		.row {
-			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 104px 132px 164px;
-		}
-		.withjestr .row {
-			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 44px 104px 132px 164px;
+			grid-template-columns: var(--cols-mid);
 		}
 		/* Likes, comments and the skip rate go; an opened row still lists them. */
-		.row > :nth-child(5),
-		.row > :nth-child(6),
-		.row > :nth-child(7) {
+		.row > .midoff {
 			display: none;
 		}
 		.details {
@@ -2374,13 +2704,14 @@
 			border-top: 1px solid var(--border);
 			padding-top: 12px;
 		}
+		.period .hold:last-child .ppop {
+			left: auto;
+			right: 0;
+		}
 		.row {
-			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 96px 76px;
+			grid-template-columns: var(--cols-narrow);
 		}
-		.withjestr .row {
-			grid-template-columns: var(--thumbcol) minmax(0, 1fr) 40px 96px 76px;
-		}
-		.row > :nth-child(8) {
+		.row > .narrowoff {
 			display: none;
 		}
 		.list {

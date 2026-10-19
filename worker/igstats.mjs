@@ -5,10 +5,13 @@
 // `igStatsPosts` posts of every account each `igStatsSeconds`. As in the
 // YouTube stats pass, a row is written only when something in it changed and
 // a history sample only when a counter moved, so a quiet account costs no
-// writes. Instagram says its insights can lag by up to 48 hours.
+// writes. Instagram says its insights can lag by up to 48 hours. Each pass
+// also reads the account's follower count for the Dashboard's followers per
+// reel (followers.mjs) — Instagram names no post for a follow.
 
-import { explain, listMedia } from './instagram.mjs';
+import { explain, graph, listMedia } from './instagram.mjs';
 import { instagramReady } from './accounts.mjs';
+import { creditWords, followerStep } from './followers.mjs';
 
 const HISTORY_CAP = 1000;
 
@@ -48,6 +51,8 @@ export function toPostRow(item, account) {
 }
 
 const skipRate = (row) => row?.data?.insights?.reels_skip_rate ?? null;
+// Facebook's count of follows a reel brought (fbstats.mjs); Instagram gives none per post.
+const follows = (row) => row?.data?.insights?.post_video_followers ?? null;
 
 const COUNTERS = ['views', 'likes', 'comments'];
 const NUMBERS = ['views', 'reach', 'likes', 'comments'];
@@ -64,7 +69,8 @@ export function differs(prev, row) {
 		NUMBERS.some((k) => !sameNumber(prev[k], row[k])) ||
 		TEXTS.some((k) => (prev[k] ?? '') !== (row[k] ?? '')) ||
 		!sameDate(prev.published_at, row.published_at) ||
-		skipRate(prev) !== skipRate(row)
+		skipRate(prev) !== skipRate(row) ||
+		follows(prev) !== follows(row)
 	);
 }
 
@@ -103,6 +109,45 @@ export async function saveRows(pb, byPost, rows, now) {
 let off = false;
 const said = new Map();
 const reports = {};
+const followerSaid = new Map();
+
+/**
+ * The account's follower count, and the rise since the last read credited
+ * to its posts by the views they gained meanwhile (followers.mjs). `rows` are
+ * the posts as just read, `byPost` the stored rows with their history. A
+ * failure is said once and never stops the stats.
+ */
+async function readFollowers(pb, ig, rows, byPost, log) {
+	try {
+		const me = await graph(ig, `/${ig.igUserId}`, { params: { fields: 'followers_count' } });
+		if (typeof me.followers_count !== 'number') throw new Error('Instagram gave no follower count');
+		const step = await followerStep({
+			pb,
+			platform: 'instagram',
+			account: String(ig.igUserId),
+			name: ig.username ? `@${ig.username}` : '',
+			count: me.followers_count,
+			posts: rows.map((row) => ({
+				id: row.post_id,
+				at: Date.parse(row.published_at),
+				views: row.views,
+				history: byPost.get(row.post_id)?.history ?? []
+			}))
+		});
+		if (step.gained) {
+			const captions = new Map(rows.map((row) => [row.post_id, row.caption.split('\n')[0]]));
+			log(creditWords(`@${ig.username}`, step, (id) => captions.get(id) ?? ''));
+		}
+		if (followerSaid.get(ig.igUserId)) log(`followers @${ig.username}: recovered`);
+		followerSaid.delete(ig.igUserId);
+	} catch (err) {
+		const message = explain(err).message;
+		if (message !== followerSaid.get(ig.igUserId)) {
+			log(`followers @${ig.username} not read: ${message.split('\n')[0]}`);
+			followerSaid.set(ig.igUserId, message);
+		}
+	}
+}
 
 /**
  * One read of every connected account. A missing `post_stats` collection
@@ -131,7 +176,9 @@ export async function instagramStatsPass({ pb, config, log }) {
 		try {
 			const items = await listMedia(ig, config.igStatsPosts);
 			const now = new Date().toISOString();
-			const added = await saveRows(pb, byPost, items.map((item) => toPostRow(item, ig)), now);
+			const rows = items.map((item) => toPostRow(item, ig));
+			const added = await saveRows(pb, byPost, rows, now);
+			await readFollowers(pb, ig, rows, byPost, log);
 			if (added) log(`instagram stats @${ig.username}: ${added} new post${added === 1 ? '' : 's'}`);
 			if (before) log(`instagram stats @${ig.username}: recovered`);
 			said.delete(ig.igUserId);

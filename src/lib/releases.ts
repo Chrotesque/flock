@@ -1,4 +1,5 @@
 import { dayStart, startOfWeek } from './format';
+import { gainedBetween, sumGains, type FollowerGain, type FollowerState } from './followers';
 import { kindOf, KIND_ORDER, SHORT_MAX_SECONDS, type VideoKind } from './videokind';
 import type { PlatformId } from './types';
 
@@ -71,6 +72,8 @@ export interface YouTubeRow {
 	history: Sample[];
 	live: boolean;
 	thumb: string;
+	/** Followers credited to it (followers.ts); null when not known. */
+	followers?: number | null;
 }
 
 /** A `post_stats` row for a reel (Instagram's or Facebook's), slim. */
@@ -87,6 +90,8 @@ export interface ReelRow {
 	history: Sample[];
 	/** Instagram's share of the reel's views skipped within the first 3 seconds, %; null until given (readSkipRate). */
 	skipRate?: number | null;
+	/** Followers it brought: Facebook's own count, Instagram's credited (followers.ts); null when not known. */
+	followers?: number | null;
 }
 
 /** What a release needs of flock's posts: which upload it was and where each went. */
@@ -111,6 +116,8 @@ export interface Post {
 	views: number | null;
 	likes: number | null;
 	comments: number | null;
+	/** Followers it brought (followers.ts); null when not known. */
+	followers: number | null;
 	/** [ms, views], oldest first, nulls left out. */
 	samples: [number, number][];
 	/** Instagram only: the share of its views skipped within the first 3 seconds, %; null until Instagram gives one. */
@@ -143,6 +150,7 @@ export function youtubePost(row: YouTubeRow): Post {
 		views: row.views,
 		likes: row.likes,
 		comments: row.comments,
+		followers: row.followers ?? null,
 		samples: toSamples(row.history)
 	};
 }
@@ -157,6 +165,7 @@ export function reelPost(row: ReelRow, platform: ReelPlatform = 'instagram'): Po
 		views: row.views,
 		likes: row.likes,
 		comments: row.comments,
+		followers: row.followers ?? null,
 		samples: toSamples(row.history),
 		skipRate: row.skipRate ?? null
 	};
@@ -497,7 +506,7 @@ export function filterCounts(releases: Release[], filter: DashFilter): FilterCou
 	return out;
 }
 
-export type Counter = 'views' | 'likes' | 'comments';
+export type Counter = 'views' | 'likes' | 'comments' | 'followers';
 
 /** A counter added up over the chosen platforms; null when none of them has it. */
 export function sumOf(release: Release, platforms: StatPlatform[], counter: Counter): number | null {
@@ -623,7 +632,7 @@ export function curve(post: Post, peers: Post[], now: number, steps = 24): Curve
 
 /* ---- the period numbers ---- */
 
-export type PeriodKey = 'today' | 'week' | 'month';
+export type PeriodKey = 'today' | 'week' | 'month' | 'quarter' | 'year';
 
 export interface PeriodStats {
 	key: PeriodKey;
@@ -637,17 +646,31 @@ export interface PeriodStats {
 	gained: number;
 	/** Some post was not read yet at the start, so `gained` counts from its first read. */
 	partly: boolean;
-	byPlatform: Record<StatPlatform, { views: number; gained: number }>;
+	/** How far the accounts' follower counts moved in the period, over the chosen platforms; null when none was read. */
+	followers: FollowerGain | null;
+	byPlatform: Record<StatPlatform, { views: number; gained: number; followers: FollowerGain | null }>;
 }
 
-export function periodStats(releases: Release[], filter: DashFilter, now: Date): PeriodStats[] {
-	const periods: [PeriodKey, string, Date][] = [
+/** Where each period starts: today, this week (Monday), month, quarter and year, on the local clock. */
+export function periodStarts(now: Date): [PeriodKey, string, Date][] {
+	return [
 		['today', 'Today', dayStart(now)],
 		['week', 'This week', startOfWeek(now)],
-		['month', 'This month', new Date(now.getFullYear(), now.getMonth(), 1)]
+		['month', 'This month', new Date(now.getFullYear(), now.getMonth(), 1)],
+		['quarter', 'This quarter', new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)],
+		['year', 'This year', new Date(now.getFullYear(), 0, 1)]
 	];
+}
+
+/**
+ * The numbers of each period. `followers` are the follower records of the
+ * accounts in view (followers.ts) — the channel, Instagram account and Page
+ * whose videos are counted — and their counts' move over the period is the
+ * followers gained.
+ */
+export function periodStats(releases: Release[], filter: DashFilter, now: Date, followers: FollowerState[] = []): PeriodStats[] {
 	const end = now.getTime();
-	return periods.map(([key, label, from]) => {
+	return periodStarts(now).map(([key, label, from]) => {
 		const start = from.getTime();
 		const stats: PeriodStats = {
 			key,
@@ -657,10 +680,11 @@ export function periodStats(releases: Release[], filter: DashFilter, now: Date):
 			views: 0,
 			gained: 0,
 			partly: false,
+			followers: null,
 			byPlatform: {
-				youtube: { views: 0, gained: 0 },
-				instagram: { views: 0, gained: 0 },
-				facebook: { views: 0, gained: 0 }
+				youtube: { views: 0, gained: 0, followers: null },
+				instagram: { views: 0, gained: 0, followers: null },
+				facebook: { views: 0, gained: 0, followers: null }
 			}
 		};
 		for (const r of releases) {
@@ -685,13 +709,19 @@ export function periodStats(releases: Release[], filter: DashFilter, now: Date):
 				stats.byPlatform[post.platform].gained += gained;
 			}
 		}
+		for (const p of filter.platforms) {
+			stats.byPlatform[p].followers = sumGains(
+				followers.filter((s) => s.platform === p).map((s) => gainedBetween(s, start, end))
+			);
+		}
+		stats.followers = sumGains(filter.platforms.map((p) => stats.byPlatform[p].followers));
 		return stats;
 	});
 }
 
 /* ---- sorting ---- */
 
-export type SortKey = 'date' | 'views' | 'likes' | 'comments' | 'usual' | 'skip';
+export type SortKey = 'date' | 'views' | 'likes' | 'comments' | 'followers' | 'usual' | 'skip';
 
 /** Views over usual, over the platforms judged on both; null with none. */
 export function ratioOf(judgements: Judgement[]): number | null {
@@ -716,12 +746,21 @@ export function sortRows<
 		views: number | null;
 		likes: number | null;
 		comments: number | null;
+		followers?: number | null;
 		ratio: number | null;
 		skip?: number | null;
 	}
 >(rows: T[], key: SortKey, reversed = false): T[] {
 	const value = (row: T): number | null =>
-		key === 'date' ? row.release.at : key === 'usual' ? row.ratio : key === 'skip' ? (row.skip ?? null) : row[key];
+		key === 'date'
+			? row.release.at
+			: key === 'usual'
+				? row.ratio
+				: key === 'skip'
+					? (row.skip ?? null)
+					: key === 'followers'
+						? (row.followers ?? null)
+						: row[key];
 	const direction = (key === 'skip' ? -1 : 1) * (reversed ? -1 : 1);
 	return [...rows].sort((a, b) => {
 		const x = value(a);
@@ -740,66 +779,9 @@ export function sortWords(key: SortKey, reversed: boolean): string {
 		views: ['most first', 'fewest first'],
 		likes: ['most first', 'fewest first'],
 		comments: ['most first', 'fewest first'],
+		followers: ['most first', 'fewest first'],
 		skip: ['fewest skipped first', 'most skipped first'],
 		usual: ['furthest ahead first', 'furthest behind first']
 	}[key];
 	return reversed ? other : usual;
-}
-
-/* ---- coming up ---- */
-
-/** A post still to go out, as the coming-up strip reads it (DashTarget's fields). */
-export interface ComingPost {
-	id: string;
-	job: string;
-	platform: PlatformId;
-	status: string;
-	scheduled_at: string;
-	title: string;
-	jobTitle: string;
-}
-
-/** One upload's posts on one day: one cluster of icons. */
-export interface ComingUpload<P extends ComingPost = ComingPost> {
-	key: string;
-	job: string;
-	title: string;
-	/** Its first slot that day, ms. */
-	first: number;
-	/** Its posts that day, by slot, then in platform order. */
-	posts: P[];
-}
-
-/**
- * A day's posts as uploads, each upload's posts together however their slots
- * differ (a reel at 10:00 and the Short at 15:00 are one cluster), in the
- * order of each upload's first slot.
- */
-export function uploadsOfDay<P extends ComingPost>(posts: P[]): ComingUpload<P>[] {
-	const byJob = new Map<string, ComingUpload<P>>();
-	for (const post of posts) {
-		const at = time(post.scheduled_at);
-		const entry = byJob.get(post.job);
-		if (entry) {
-			entry.posts.push(post);
-			entry.first = Math.min(entry.first, at);
-			if (!entry.title) entry.title = post.title || post.jobTitle;
-		} else {
-			byJob.set(post.job, {
-				key: post.job,
-				job: post.job,
-				title: post.jobTitle || post.title,
-				first: at,
-				posts: [post]
-			});
-		}
-	}
-	const order = (p: PlatformId) => ALL_PLATFORMS.indexOf(p);
-	return [...byJob.values()]
-		.map((u) => ({
-			...u,
-			title: u.title || 'Untitled',
-			posts: [...u.posts].sort((a, b) => time(a.scheduled_at) - time(b.scheduled_at) || order(a.platform) - order(b.platform))
-		}))
-		.sort((a, b) => a.first - b.first);
 }

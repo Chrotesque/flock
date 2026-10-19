@@ -1,9 +1,8 @@
-import { addDays, dayStart } from './format';
 import type { PlatformId } from './types';
 
 /**
- * Posts as the dashboard and the To finish panel read them, and what is
- * coming up. The dashboard's own arithmetic is releases.ts.
+ * Posts as the dashboard and the To finish panel read them. The
+ * dashboard's own arithmetic is releases.ts.
  */
 
 /** A `video_stats` row as the dashboard reads it. `history` holds `[iso, views, likes, comments]`. */
@@ -16,8 +15,6 @@ export interface StatsVideo {
 	duration: number;
 	history: [string, number | null, number | null, number | null][];
 }
-
-const time = (iso: string) => Date.parse(String(iso ?? '').replace(' ', 'T'));
 
 /* ---- posts ---- */
 
@@ -61,27 +58,4 @@ export function ago(ms: number): string {
 	const hours = Math.round(minutes / 60);
 	if (hours < 48) return `${hours} h`;
 	return `${Math.round(hours / 24)} days`;
-}
-
-/* ---- coming up ---- */
-
-export interface UpcomingDay {
-	date: Date;
-	posts: DashTarget[];
-}
-
-/** The next `days` days from today, each with its posts still to go out, in slot order; empty days kept. */
-export function upcoming(targets: DashTarget[], now: Date, days = 7): UpcomingDay[] {
-	const first = dayStart(now);
-	const out: UpcomingDay[] = Array.from({ length: days }, (_, i) => ({ date: addDays(first, i), posts: [] }));
-	const end = addDays(first, days).getTime();
-	for (const t of targets) {
-		if (!['pending', 'publishing', 'scheduled'].includes(t.status)) continue;
-		const slot = time(t.scheduled_at);
-		if (!(slot >= now.getTime() && slot < end)) continue;
-		const index = Math.floor((dayStart(new Date(slot)).getTime() - first.getTime()) / (24 * 60 * MIN) + 0.5);
-		out[Math.min(Math.max(index, 0), days - 1)].posts.push(t);
-	}
-	for (const day of out) day.posts.sort((a, b) => time(a.scheduled_at) - time(b.scheduled_at));
-	return out;
 }

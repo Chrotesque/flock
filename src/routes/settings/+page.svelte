@@ -11,6 +11,8 @@
 	import ProfileEditor from '$lib/components/ProfileEditor.svelte';
 	import TemplateEditor from '$lib/components/TemplateEditor.svelte';
 	import BrandEditor from '$lib/components/BrandEditor.svelte';
+	import DashColumnsEditor from '$lib/components/DashColumnsEditor.svelte';
+	import { shownColumns } from '$lib/dashcolumns';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
@@ -36,7 +38,11 @@
 	// Fresh, so an account the worker has just listed can be chosen at once.
 	accounts.load(true);
 
-	type Section = 'general' | 'brands' | 'templates' | 'other' | 'devtest' | PlatformId;
+	type Section = 'general' | 'brands' | 'templates' | 'dashboard' | 'other' | 'devtest' | PlatformId;
+
+	// The list's table icon, for the Dashboard section.
+	const COLUMNS_ICON = 'M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13ZM4 9.5h16M9.5 9.5V20M14.5 9.5V20';
+	const shownCount = $derived(shownColumns(general.value.dashboardColumns, { jestr: general.value.jestrIntegration }).length);
 
 	// The DevTest section lists only while a local-devtest module has settings;
 	// one bringing just a page (a sidebar link) has nothing to show here.
@@ -111,6 +117,7 @@
 				section === 'general' ||
 				section === 'other' ||
 				section === 'brands' ||
+				section === 'dashboard' ||
 				(section === 'devtest' && devtestSettings.length > 0)
 			) {
 				active = section;
@@ -201,6 +208,19 @@
 										{brands.list.length}
 										{brands.list.length === 1 ? 'brand' : 'brands'}
 									</span>
+								</span>
+							</button>
+						</li>
+						<li class:active={active === 'dashboard'}>
+							<button class="pick" onclick={() => (active = 'dashboard')}>
+								<span class="ic">
+									<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+										<path d={COLUMNS_ICON} stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+									</svg>
+								</span>
+								<span class="who">
+									<span class="name">Dashboard</span>
+									<span class="sub">{shownCount} columns in the list</span>
 								</span>
 							</button>
 						</li>
@@ -447,6 +467,26 @@
 
 							<TimeZoneList />
 						</div>
+					{:else if active === 'dashboard'}
+						<header class="panelhead">
+							<div class="ident">
+								<span class="ic big">
+									<svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+										<path d={COLUMNS_ICON} stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+									</svg>
+								</span>
+								<div>
+									<h2>Dashboard</h2>
+									<p>The columns of the Dashboard's list of videos: which are shown, and in what order.</p>
+								</div>
+							</div>
+						</header>
+
+						{#if general.loading}
+							<p class="banner">Loading…</p>
+						{:else}
+							<DashColumnsEditor />
+						{/if}
 					{:else if active === 'devtest'}
 						<header class="panelhead">
 							<div class="ident">

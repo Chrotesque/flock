@@ -13,13 +13,23 @@ import { GraphError, graph } from './instagram.mjs';
 import { explainFacebook, facebookAccount, reelUrl } from './facebook.mjs';
 import { facebookReady } from './accounts.mjs';
 import { saveRows } from './igstats.mjs';
+import { followerStep } from './followers.mjs';
 
 /**
  * The insights read with each reel. Views are its plays with replays
  * (fb_reels_total_plays), which is how Instagram and YouTube count a reel's
- * or a Short's views; the rest ride along in `data`.
+ * or a Short's views; the rest ride along in `data` — among them
+ * post_video_followers, "the number of follows for your reel" in Meta's
+ * words, the Dashboard's followers for it (YouTube and Instagram name no
+ * video for a follower, see followers.mjs).
  */
-export const REEL_METRICS = ['fb_reels_total_plays', 'blue_reels_play_count', 'post_video_avg_time_watched', 'post_video_social_actions'];
+export const REEL_METRICS = [
+	'fb_reels_total_plays',
+	'blue_reels_play_count',
+	'post_video_avg_time_watched',
+	'post_video_social_actions',
+	'post_video_followers'
+];
 
 const FIELDS =
 	'id,created_time,status,description,permalink_url,length,likes.summary(true).limit(0),comments.summary(true).limit(0)';
@@ -121,6 +131,29 @@ const said = new Map();
 /** Page id -> { until, why }: when the insights were last refused, and why. */
 const noInsights = new Map();
 const reports = {};
+const followerSaid = new Map();
+
+/**
+ * The Page's follower count, kept with its history (followers.mjs) for the
+ * Dashboard's followers gained per period. Nothing is credited from it:
+ * Facebook names the reel a follow came from itself (post_video_followers).
+ */
+async function readPageFollowers(pb, page, log) {
+	const name = page.pageName || page.pageId;
+	try {
+		const me = await graph(page, `/${page.pageId}`, { params: { fields: 'followers_count' } });
+		if (typeof me.followers_count !== 'number') throw new Error('Facebook gave no follower count');
+		await followerStep({ pb, platform: 'facebook', account: String(page.pageId), name, count: me.followers_count, posts: [] });
+		if (followerSaid.get(page.pageId)) log(`followers ${name}: recovered`);
+		followerSaid.delete(page.pageId);
+	} catch (err) {
+		const message = explainFacebook(err).message;
+		if (message !== followerSaid.get(page.pageId)) {
+			log(`followers ${name} not read: ${message.split('\n')[0]}`);
+			followerSaid.set(page.pageId, message);
+		}
+	}
+}
 
 /** A Page's reels with their insights when the grant allows, without them when it does not. */
 async function readPage(page, limit) {
@@ -171,6 +204,7 @@ export async function facebookStatsPass({ pb, config, log }) {
 				return views ? keepViews(byPost.get(row.post_id), row) : row;
 			});
 			const added = await saveRows(pb, byPost, rows, now);
+			await readPageFollowers(pb, page, log);
 			if (added) log(`facebook stats ${name}: ${added} new reel${added === 1 ? '' : 's'}`);
 			const note = views ? `views: ${views}` : '';
 			if (note !== before) {

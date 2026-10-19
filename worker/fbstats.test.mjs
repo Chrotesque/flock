@@ -114,3 +114,15 @@ test('saveRows creates new posts, patches changed ones and samples only moved co
 	assert.equal(calls[1][0], 'create');
 	assert.deepEqual(calls[1][1].history, [[now, 312, 4, 2]]);
 });
+
+test("a reel's follows ride in its insights, and a change in them alone is a change", () => {
+	const followed = {
+		...item,
+		video_insights: { data: [...item.video_insights.data, { name: 'post_video_followers', period: 'lifetime', values: [{ value: 3 }] }] }
+	};
+	const row = toFacebookRow(followed, page);
+	assert.equal(row.data.insights.post_video_followers, 3);
+	const before = toFacebookRow(item, page);
+	assert.equal(differs(before, row), true);
+	assert.equal(differs(row, toFacebookRow(followed, page)), false);
+});

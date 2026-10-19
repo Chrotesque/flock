@@ -24,7 +24,6 @@ import {
 	storedFilter,
 	sumOf,
 	thin,
-	uploadsOfDay,
 	verdictOf,
 	viewsAt,
 	visibilityOf,
@@ -90,6 +89,7 @@ function post(at: number, samples: [number, number][], views: number | null = nu
 		views: views ?? samples[samples.length - 1]?.[1] ?? null,
 		likes: null,
 		comments: null,
+		followers: null,
 		samples
 	};
 }
@@ -497,6 +497,44 @@ describe('periodStats', () => {
 		expect(month.released).toBe(2);
 		expect(month.views).toBe(1340);
 	});
+
+	it('runs from today to this year, quarters on the calendar', () => {
+		const periods = periodStats([], DEFAULT_FILTER, new Date(2026, 10, 3, 12, 0));
+		expect(periods.map((p) => p.key)).toEqual(['today', 'week', 'month', 'quarter', 'year']);
+		expect(periods[3].from).toEqual(new Date(2026, 9, 1));
+		expect(periods[4].from).toEqual(new Date(2026, 0, 1));
+	});
+
+	it("adds up the accounts' follower moves over the platforms in view", () => {
+		const now = new Date(2026, 9, 14, 12, 0);
+		const at = (d: number, h: number) => iso(new Date(2026, 9, d, h, 0).getTime());
+		const state = (platform: 'youtube' | 'instagram' | 'facebook', history: [string, number][]) => ({
+			platform,
+			account: platform,
+			name: platform,
+			count: history[history.length - 1][1],
+			at: iso(now.getTime()),
+			since: history[0][0],
+			history,
+			credits: {}
+		});
+		const followers = [
+			// Since midnight +3, since Monday the 12th +5.
+			state('youtube', [[at(11, 9), 700], [at(13, 9), 702], [at(14, 9), 705]]),
+			// First read this morning: counts from there, partly.
+			state('instagram', [[at(14, 7), 50], [at(14, 10), 49]]),
+			state('facebook', [[at(1, 0), 1016]])
+		];
+		const [day, week] = periodStats([], DEFAULT_FILTER, now, followers);
+		expect(day.byPlatform.youtube.followers).toEqual({ gained: 3, partly: false });
+		expect(day.byPlatform.instagram.followers).toEqual({ gained: -1, partly: true });
+		expect(day.byPlatform.facebook.followers).toEqual({ gained: 0, partly: false });
+		expect(day.followers).toEqual({ gained: 2, partly: true });
+		expect(week.byPlatform.youtube.followers).toEqual({ gained: 5, partly: false });
+		const ytOnly = periodStats([], { ...DEFAULT_FILTER, platforms: ['youtube'] }, now, followers);
+		expect(ytOnly[0].followers).toEqual({ gained: 3, partly: false });
+		expect(periodStats([], DEFAULT_FILTER, now)[0].followers).toBeNull();
+	});
 });
 
 describe('sortRows', () => {
@@ -518,6 +556,13 @@ describe('sortRows', () => {
 		{ release: r('new', 3), views: 10, likes: 4, comments: 1, ratio: null },
 		{ release: r('mid', 2), views: 90, likes: 2, comments: 1, ratio: 0.5 }
 	];
+
+	it('sorts by followers most first, unknown last either way', () => {
+		const followed = rows.map((row, i) => ({ ...row, followers: [3, null, 7][i] }));
+		expect(sortRows(followed, 'followers').map((x) => x.release.key)).toEqual(['mid', 'old', 'new']);
+		expect(sortRows(followed, 'followers', true).map((x) => x.release.key)).toEqual(['old', 'mid', 'new']);
+		expect(sortWords('followers', false)).toBe('most first');
+	});
 
 	it('sorts newest or most first, missing last, ties newest first', () => {
 		expect(sortRows(rows, 'date').map((x) => x.release.key)).toEqual(['new', 'mid', 'old']);
@@ -586,38 +631,5 @@ describe('skip rate', () => {
 			])
 		).toBeCloseTo((300 + 80) / 1100 * 100);
 		expect(pooledSkipRate([{ views: 10, skipRate: null }])).toBeNull();
-	});
-});
-
-describe('uploadsOfDay', () => {
-	const post = (id: string, job: string, platform: 'youtube' | 'instagram' | 'facebook', at: string, title = '') => ({
-		id,
-		job,
-		platform,
-		status: 'pending',
-		scheduled_at: at,
-		title,
-		jobTitle: `Job ${job}`
-	});
-
-	it('puts an upload’s posts together whatever their slots, in the order of first slots', () => {
-		const out = uploadsOfDay([
-			post('1', 'b', 'youtube', '2026-10-14 15:00:00.000Z'),
-			post('2', 'a', 'facebook', '2026-10-14 09:00:00.000Z'),
-			post('3', 'b', 'instagram', '2026-10-14 10:00:00.000Z'),
-			post('4', 'a', 'youtube', '2026-10-14 09:00:00.000Z'),
-			post('5', 'b', 'facebook', '2026-10-14 15:00:00.000Z')
-		]);
-		expect(out.map((u) => u.job)).toEqual(['a', 'b']);
-		expect(out[0].posts.map((p) => p.platform)).toEqual(['youtube', 'facebook']);
-		expect(out[1].posts.map((p) => p.platform)).toEqual(['instagram', 'youtube', 'facebook']);
-		expect(out[1].first).toBe(Date.parse('2026-10-14T10:00:00Z'));
-		expect(out[1].title).toBe('Job b');
-	});
-
-	it('falls back to a post’s own title, then Untitled', () => {
-		const lone = { ...post('1', 'c', 'youtube', '2026-10-14 15:00:00.000Z', 'Own title'), jobTitle: '' };
-		expect(uploadsOfDay([lone])[0].title).toBe('Own title');
-		expect(uploadsOfDay([{ ...lone, title: '' }])[0].title).toBe('Untitled');
 	});
 });
