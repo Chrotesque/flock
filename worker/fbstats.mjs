@@ -13,7 +13,7 @@ import { GraphError, graph } from './instagram.mjs';
 import { explainFacebook, facebookAccount, reelUrl } from './facebook.mjs';
 import { facebookReady } from './accounts.mjs';
 import { saveRows } from './igstats.mjs';
-import { followerStep } from './followers.mjs';
+import { followerStep, mergeBackfill, readState, settingKey } from './followers.mjs';
 
 /**
  * The insights read with each reel. Views are its plays with replays
@@ -132,11 +132,58 @@ const said = new Map();
 const noInsights = new Map();
 const reports = {};
 const followerSaid = new Map();
+const backfillSaid = new Map();
+
+/** How far back a Page's follower count is filled in, once (Facebook keeps two years and more). */
+export const BACKFILL_DAYS = 730;
+/** Facebook answers at most 93 days of a day metric at a time. */
+const WINDOW_DAYS = 90;
+
+/** Facebook's day values as `[iso, value]`, the day's end and its count. */
+export function dailyValues(res) {
+	return (res?.data?.[0]?.values ?? [])
+		.filter((v) => typeof v?.value === 'number' && v.end_time)
+		.map((v) => [new Date(v.end_time).toISOString(), v.value]);
+}
+
+/** The Page's follower count at the end of each day, `days` back, oldest first (page_follows, read_insights). */
+async function pageFollowsHistory(page, days) {
+	const out = [];
+	let until = Math.floor(Date.now() / 1000);
+	const stop = until - days * 86_400;
+	while (until > stop) {
+		const since = Math.max(stop, until - WINDOW_DAYS * 86_400);
+		const res = await graph(page, `/${page.pageId}/insights`, {
+			params: { metric: 'page_follows', period: 'day', since: String(since), until: String(until) }
+		});
+		const values = dailyValues(res);
+		if (values.length === 0) break;
+		out.push(...values);
+		until = since;
+	}
+	return out.sort((a, b) => Date.parse(a[0]) - Date.parse(b[0]));
+}
+
+/**
+ * The Page's past follower counts filled in once, so the Dashboard's periods
+ * reach back before flock started reading (worker/followers.mjs). Retried on
+ * the next pass if Facebook refuses; said once.
+ */
+async function backfillPage(pb, page, log) {
+	const key = settingKey('facebook', String(page.pageId));
+	const state = readState((await pb.getSetting(key))?.value);
+	if (!state || state.backfilled) return;
+	const daily = await pageFollowsHistory(page, BACKFILL_DAYS);
+	const merged = mergeBackfill(state, daily, Date.now());
+	await pb.setSetting(key, merged);
+	log(`followers ${page.pageName || page.pageId}: filled in ${daily.length} days of past counts from Facebook (since ${merged.since.slice(0, 10)})`);
+}
 
 /**
  * The Page's follower count, kept with its history (followers.mjs) for the
- * Dashboard's followers gained per period. Nothing is credited from it:
- * Facebook names the reel a follow came from itself (post_video_followers).
+ * Dashboard's followers gained per period, its past filled in once from
+ * Facebook's daily counts. Nothing is credited from it: Facebook names the
+ * reel a follow came from itself (post_video_followers).
  */
 async function readPageFollowers(pb, page, log) {
 	const name = page.pageName || page.pageId;
@@ -144,6 +191,14 @@ async function readPageFollowers(pb, page, log) {
 		const me = await graph(page, `/${page.pageId}`, { params: { fields: 'followers_count' } });
 		if (typeof me.followers_count !== 'number') throw new Error('Facebook gave no follower count');
 		await followerStep({ pb, platform: 'facebook', account: String(page.pageId), name, count: me.followers_count, posts: [] });
+		try {
+			await backfillPage(pb, page, log);
+		} catch (err) {
+			const why = explainFacebook(err).message.split('\n')[0];
+			const message = `followers ${name}: past counts not filled in (${why}) — tried again next pass`;
+			if (backfillSaid.get(page.pageId) !== message) log(message);
+			backfillSaid.set(page.pageId, message);
+		}
 		if (followerSaid.get(page.pageId)) log(`followers ${name}: recovered`);
 		followerSaid.delete(page.pageId);
 	} catch (err) {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { insightsRefused, keepViews, publishedAt, readInsights, toFacebookRow, viewsWhy } from './fbstats.mjs';
+import { dailyValues, insightsRefused, keepViews, publishedAt, readInsights, toFacebookRow, viewsWhy } from './fbstats.mjs';
 import { differs, saveRows } from './igstats.mjs';
 import { GraphError } from './instagram.mjs';
 
@@ -125,4 +125,22 @@ test("a reel's follows ride in its insights, and a change in them alone is a cha
 	const before = toFacebookRow(item, page);
 	assert.equal(differs(before, row), true);
 	assert.equal(differs(row, toFacebookRow(followed, page)), false);
+});
+
+test("a Page's daily follower counts read as [day's end, count]", () => {
+	const res = {
+		data: [
+			{
+				name: 'page_follows',
+				period: 'day',
+				values: [
+					{ value: 1016, end_time: '2026-10-19T07:00:00+0000' },
+					{ value: 'x', end_time: '2026-10-20T07:00:00+0000' },
+					{ value: 1015 }
+				]
+			}
+		]
+	};
+	assert.deepEqual(dailyValues(res), [['2026-10-19T07:00:00.000Z', 1016]]);
+	assert.deepEqual(dailyValues({}), []);
 });

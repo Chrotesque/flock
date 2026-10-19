@@ -226,6 +226,8 @@ The worker keeps each Page's own token, which does not expire.
 - **Covers:** a cover image is placed on your Page as an *unpublished* photo
   (it never appears there), handed to Instagram, then deleted. If that fails,
   the reel uses its *Cover frame*.
+- **Paid partnership:** the Details step's tick sends Instagram's label with
+  the reel.
 - **Reel views:** with `instagram_manage_insights` granted, the worker also
   reads each account's newest 100 posts, their views and each reel's skip rate
   every 10 minutes, into PocketBase's `post_stats` (`igStatsPosts`,
@@ -466,6 +468,10 @@ The boxes on the right follow the platform you are writing for:
 - **Instagram and Facebook:** an optional *Cover* image for the reel (JPEG or
   PNG, up to 8 MB for Instagram and 10 MB for Facebook). One image serves both;
   the switch in the box's corner gives each its own.
+- **Instagram:** *Branded content*, whose *Paid partnership label* tick makes
+  Instagram show "Paid partnership" on the reel — for ads and branded content.
+  If Instagram refuses the label, the reel still goes out, without it, and the
+  post says so. Facebook's API cannot label a reel this way.
 - **YouTube:** playlists, from the channel's own. Click the field, tick as
   many as you like, then *Done*; each shows as a tag with an × to take it off.
 - **TikTok:** the *Post to TikTok* box, with the choices TikTok wants made on

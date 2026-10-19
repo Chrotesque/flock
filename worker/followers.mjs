@@ -44,7 +44,9 @@ export function readState(raw) {
 		at: String(raw.at),
 		since: Number.isFinite(time(raw.since)) ? String(raw.since) : String(raw.at),
 		history,
-		credits
+		credits,
+		// When the platform's own past counts were filled in (mergeBackfill); '' before.
+		backfilled: typeof raw.backfilled === 'string' ? raw.backfilled : ''
 	};
 }
 
@@ -157,6 +159,31 @@ export function creditStep(previous, { platform, account, name, count, now, post
 		state: { ...previous, platform, account, name: name || previous.name, count, at: iso, history, credits },
 		gained,
 		credited
+	};
+}
+
+/**
+ * The platform's own past counts put in front of what flock recorded:
+ * `daily` is `[iso, count]` (Facebook's page_follows, a count per day). Only
+ * days before the first recorded sample are taken, and of those only the
+ * first and every change, as flock records them; `since` moves back to the
+ * first, and `backfilled` says it was done, so it is done once.
+ */
+export function mergeBackfill(state, daily, now) {
+	const first = state.history.length ? time(state.history[0][0]) : Infinity;
+	const earlier = daily
+		.filter(([iso, count]) => typeof count === 'number' && Number.isFinite(time(iso)) && time(iso) < first)
+		.sort((a, b) => time(a[0]) - time(b[0]));
+	const kept = [];
+	for (const [iso, count] of earlier) {
+		if (kept.length === 0 || kept[kept.length - 1][1] !== count) kept.push([new Date(time(iso)).toISOString(), count]);
+	}
+	const history = [...kept, ...state.history].slice(-HISTORY_CAP);
+	return {
+		...state,
+		history,
+		since: kept.length ? kept[0][0] : state.since,
+		backfilled: new Date(now).toISOString()
 	};
 }
 

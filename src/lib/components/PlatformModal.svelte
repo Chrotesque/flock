@@ -10,7 +10,7 @@
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { draft } from '$lib/stores/draft.svelte';
-	import { CAMPAIGN_OPTION } from '$lib/jestrcampaign';
+	import { BOX_OPTIONS, keptOnReset } from '$lib/paidpartnership';
 	import type { OptionValues, PlatformId } from '$lib/types';
 
 	let {
@@ -47,19 +47,20 @@
 		draft.overrides[platform] = { ...values };
 	}
 
-	// The Jestr campaign tick rides on the overrides too (jestrcampaign.ts), but
-	// it is the Details box's, not an option: a reset keeps it, and it alone
-	// does not count as the video's options being changed.
+	// The Jestr campaign tick and Instagram's Paid partnership label ride on
+	// the overrides too (jestrcampaign.ts, paidpartnership.ts), but they are the
+	// Details boxes', not options: a reset keeps them, and they alone do not
+	// count as the video's options being changed.
 	function resetOverrides() {
 		if (!platform) return;
-		const ticked = draft.overrides[platform]?.[CAMPAIGN_OPTION] === true;
+		const kept = keptOnReset(draft.overrides[platform]);
 		delete draft.overrides[platform];
-		if (ticked) draft.overrides[platform] = { [CAMPAIGN_OPTION]: true };
+		if (Object.keys(kept).length > 0) draft.overrides[platform] = kept;
 		draft.overrides = { ...draft.overrides };
 	}
 
 	let hasOverrides = $derived(
-		platform ? Object.keys(draft.overrides[platform] ?? {}).some((key) => key !== CAMPAIGN_OPTION) : false
+		platform ? Object.keys(draft.overrides[platform] ?? {}).some((key) => !BOX_OPTIONS.includes(key)) : false
 	);
 </script>
 

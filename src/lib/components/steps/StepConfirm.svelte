@@ -33,6 +33,7 @@
 	import { projects } from '$lib/stores/projects.svelte';
 	import { mentionWords, otherBrandMentions, postTexts, type BrandMention } from '$lib/brandmention';
 	import { CAMPAIGN_OPTION } from '$lib/jestrcampaign';
+	import { PAID_PARTNERSHIP_OPTION } from '$lib/paidpartnership';
 	import { playlistsOf } from '$lib/playlists';
 	import type { PlanRow } from '$lib/plan';
 	import type { PlatformId } from '$lib/types';
@@ -596,6 +597,9 @@
 						{/if}
 						{#if row.options[CAMPAIGN_OPTION] === true}
 							<span class="dot">·</span>Jestr campaign
+						{/if}
+						{#if row.platform === 'instagram' && row.options[PAID_PARTNERSHIP_OPTION] === true}
+							<span class="dot">·</span>Paid partnership label
 						{/if}
 						{#if row.hits > 0}
 							<span class="dot">·</span><span class="adapted">{row.hits} adapted</span>

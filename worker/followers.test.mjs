@@ -5,6 +5,7 @@ import {
 	creditStep,
 	creditWords,
 	followerStep,
+	mergeBackfill,
 	readState,
 	recentHigh,
 	settingKey,
@@ -162,4 +163,34 @@ test('a step reads the row afresh and writes it back under the account key', asy
 	const again = await followerStep({ pb, platform: 'youtube', account: 'UC1', name: 'Owls Nest', count: 710, posts, now: T + MIN });
 	assert.equal(again.gained, 0);
 	assert.equal(creditWords('Owls Nest', step, (id) => (id === 'a' ? 'A Short' : '')), 'followers Owls Nest: +1 (now 710) — 1 to "A Short"');
+});
+
+test("the platform's past counts go in front, changes only, once", () => {
+	const day = 86_400_000;
+	const state = { ...start(1016, T - 10 * MIN), history: [[iso(T - 2 * day), 1016]], since: iso(T - 2 * day) };
+	const daily = [
+		[iso(T - 6 * day), 1020],
+		[iso(T - 5 * day), 1020],
+		[iso(T - 4 * day), 1018],
+		[iso(T - 3 * day), 1017],
+		// From the day flock was reading on, its own samples stand.
+		[iso(T - 2 * day), 9999],
+		[iso(T - day), 9999]
+	];
+	const merged = mergeBackfill(state, daily, T);
+	assert.deepEqual(merged.history, [
+		[iso(T - 6 * day), 1020],
+		[iso(T - 4 * day), 1018],
+		[iso(T - 3 * day), 1017],
+		[iso(T - 2 * day), 1016]
+	]);
+	assert.equal(merged.since, iso(T - 6 * day));
+	assert.equal(merged.backfilled, iso(T));
+	// Kept through the next read.
+	assert.equal(readState(merged).backfilled, iso(T));
+	const next = creditStep(readState(merged), { platform: 'facebook', account: 'P', name: 'Owls Nest', count: 1016, now: T + MIN, posts: [] });
+	assert.equal(next.state.backfilled, iso(T));
+	// Nothing given: marked done all the same, so it is not asked again.
+	assert.equal(mergeBackfill(state, [], T).backfilled, iso(T));
+	assert.deepEqual(mergeBackfill(state, [], T).history, state.history);
 });

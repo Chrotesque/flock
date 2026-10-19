@@ -297,6 +297,15 @@ export async function accountInfo(ig) {
 	return info;
 }
 
+/**
+ * Whether Instagram refused the container over the Paid partnership label
+ * (an account it does not allow branded content for, say) rather than over
+ * the reel: then the reel goes out without the label, and the post says so.
+ */
+export function labelRefused(err, params) {
+	return Boolean(params?.is_paid_partnership) && err instanceof GraphError && /partnership|branded/i.test(err.message);
+}
+
 /** The container's parameters, from the target's options. */
 export function buildContainer(target, options, durationSeconds) {
 	const params = {
@@ -323,6 +332,11 @@ export function buildContainer(target, options, durationSeconds) {
 
 	const audio = String(options.audioName ?? '').trim();
 	if (audio) params.audio_name = audio;
+
+	// The "Paid partnership" label, ticked on the Details step
+	// (src/lib/paidpartnership.ts): Meta's Content Publishing API takes it on
+	// the container since April 2026, Facebook Login only.
+	if (options.paidPartnership === true) params.is_paid_partnership = true;
 	return params;
 }
 
@@ -580,11 +594,25 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 	// A refusal a new container gets past (`freshContainerHelps`) is tried
 	// again on one, the file opened afresh. The spent container is left
 	// unpublished, and Instagram drops those within a day.
+	const notes = [];
+	const createContainer = async () => {
+		try {
+			return await graph(ig, `/${ig.igUserId}/media`, { method: 'POST', params });
+		} catch (err) {
+			if (!labelRefused(err, params)) throw err;
+			// The caption still carries whatever notice it was written with.
+			delete params.is_paid_partnership;
+			const why = err.message.split('\n')[0];
+			log(`Paid partnership label refused (${why}) — posting without it`);
+			notes.push(`Paid partnership label refused by Instagram (${why}); add it in the Instagram app.`);
+			return graph(ig, `/${ig.igUserId}/media`, { method: 'POST', params });
+		}
+	};
 	let container;
 	try {
 		for (let attempt = 1; ; attempt += 1) {
 			try {
-				container = await graph(ig, `/${ig.igUserId}/media`, { method: 'POST', params });
+				container = await createContainer();
 				if (!container.id) throw new Error('Instagram returned no container id.');
 
 				// Recorded before a byte goes up, or nothing does — see orphans.mjs.
@@ -661,7 +689,8 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 		mediaId,
 		containerId: container.id,
 		scheduled: false,
-		privacyStatus: params.share_to_feed ? 'a reel, shown in the feed too' : 'a reel, in the Reels tab only'
+		privacyStatus: params.share_to_feed ? 'a reel, shown in the feed too' : 'a reel, in the Reels tab only',
+		...(notes.length > 0 ? { notes } : {})
 	};
 }
 

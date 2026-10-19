@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildContainer, checkGrant, freshContainerHelps, INSTAGRAM_SCOPES } from './instagram.mjs';
+import { buildContainer, checkGrant, freshContainerHelps, GraphError, INSTAGRAM_SCOPES, labelRefused } from './instagram.mjs';
 
 const granted = (names) => names.map((permission) => ({ permission, status: 'granted' }));
 const names = (list) => list.map((p) => p.name);
@@ -73,4 +73,20 @@ test('any other refusal of the upload fails the reel as before', () => {
 	assert.equal(freshContainerHelps({ debug_info: { type: 'SomethingElse' } }), false);
 	assert.equal(freshContainerHelps({}), false);
 	assert.equal(freshContainerHelps(undefined), false);
+});
+
+test('the Paid partnership tick puts the label on the container, and only then', () => {
+	assert.equal(buildContainer({}, { paidPartnership: true }, 30).is_paid_partnership, true);
+	assert.equal('is_paid_partnership' in buildContainer({}, { paidPartnership: false }, 30), false);
+	assert.equal('is_paid_partnership' in buildContainer({}, {}, 30), false);
+});
+
+test('a refusal over the label is told apart from one over the reel', () => {
+	const params = { is_paid_partnership: true };
+	const label = new GraphError({ code: 100, message: 'Invalid parameter: is_paid_partnership is not available for this account' }, 400);
+	const other = new GraphError({ code: 100, message: 'The video file is too short' }, 400);
+	assert.equal(labelRefused(label, params), true);
+	assert.equal(labelRefused(other, params), false);
+	assert.equal(labelRefused(label, {}), false);
+	assert.equal(labelRefused(new Error('branded content'), params), false);
 });
