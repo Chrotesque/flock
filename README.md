@@ -588,7 +588,8 @@ press Esc or go to another page to close it. For the brand in view it shows:
   and Instagram report about it, and to play it. It plays the copy flock filed
   in the upload's NAS folder, streamed by the NAS worker; a video sent from the
   browser plays from flock's own copy when the worker cannot. Click the
-  picture to play or pause; the corner button, a double-click or F goes full
+  picture to play or pause; hover the speaker for the volume (↑ ↓ too; the
+  browser remembers it); the corner button, a double-click or F goes full
   screen and Esc comes back. A video that did not go out through flock has no
   copy to play. A number that has moved since you opened the
   dashboard turns green, as in `940 (+9)`; the refresh button (the two

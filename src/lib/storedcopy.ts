@@ -67,6 +67,21 @@ export function mixedContent(pageProtocol: string, url: string): boolean {
 	return !['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname);
 }
 
+/** Where this browser keeps the player's volume. */
+export const VOLUME_KEY = 'flock.player.volume';
+
+/** A stored volume, 0 to 1; full for nothing stored or anything unreadable. */
+export function readVolume(raw: string | null | undefined): number {
+	if (raw == null || raw.trim() === '') return 1;
+	const value = Number(raw);
+	return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
+}
+
+/** The volume one arrow-key step away, kept to 0–1 and to whole twentieths. */
+export function stepVolume(volume: number, by: number): number {
+	return Math.round(Math.min(1, Math.max(0, volume + by)) * 20) / 20;
+}
+
 /** The player's height for an upright video, and width for a wide one. */
 export const TALL = 352;
 export const WIDE = 432;

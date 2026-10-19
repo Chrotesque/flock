@@ -13,8 +13,11 @@
 		notAnswering,
 		playbackReason,
 		playerBox,
+		readVolume,
 		shortPath,
+		stepVolume,
 		storedProblem,
+		VOLUME_KEY,
 		type Reason
 	} from '$lib/storedcopy';
 
@@ -57,6 +60,8 @@
 	let started = $state(false);
 	let paused = $state(true);
 	let muted = $state(false);
+	/** 0 to 1, bound to the video and remembered by this browser. */
+	let volume = $state(storedVolume());
 	let awake = $state(false);
 	let fullscreen = $state(false);
 	let current = $state(0);
@@ -69,6 +74,8 @@
 	let scrubber = $state<HTMLDivElement>();
 
 	const size = $derived(playerBox(ratio || (upright ? 9 / 16 : 16 / 9)));
+	/** What is heard: nothing while muted. */
+	const level = $derived(muted ? 0 : volume);
 	const shown = $derived(length || duration);
 	const progress = $derived(shown > 0 ? Math.min(1, current / shown) : 0);
 
@@ -181,10 +188,36 @@
 		wake();
 	}
 
+	function storedVolume(): number {
+		try {
+			return readVolume(localStorage.getItem(VOLUME_KEY));
+		} catch {
+			return 1;
+		}
+	}
+
+	$effect(() => {
+		const value = volume;
+		try {
+			localStorage.setItem(VOLUME_KEY, String(value));
+		} catch {
+			// A private window or blocked site data: it just is not remembered.
+		}
+	});
+
+	/** Muting from silence brings the sound back at half, not at nothing. */
 	function toggleMute() {
-		if (!video) return;
-		video.muted = !video.muted;
-		muted = video.muted;
+		if (level > 0) muted = true;
+		else {
+			muted = false;
+			if (volume === 0) volume = 0.5;
+		}
+		wake();
+	}
+
+	function setLevel(value: number) {
+		volume = value;
+		if (value > 0) muted = false;
 		wake();
 	}
 
@@ -219,11 +252,15 @@
 	function onKey(event: KeyboardEvent) {
 		if (phase.kind !== 'ready' || event.ctrlKey || event.metaKey || event.altKey) return;
 		const key = event.key.toLowerCase();
+		// The volume slider moves itself with the arrows.
+		if (key.startsWith('arrow') && event.target instanceof HTMLInputElement) return;
 		if (key === 'f') toggleFullscreen();
 		else if (key === 'm') toggleMute();
 		else if (key === 'k') toggle();
 		else if (key === 'arrowright') seekBy(5);
 		else if (key === 'arrowleft') seekBy(-5);
+		else if (key === 'arrowup') setLevel(stepVolume(level, 0.1));
+		else if (key === 'arrowdown') setLevel(stepVolume(level, -0.1));
 		else return;
 		event.preventDefault();
 	}
@@ -320,6 +357,8 @@
 				src={phase.src}
 				preload="metadata"
 				playsinline
+				bind:volume
+				bind:muted
 				onloadedmetadata={onMeta}
 				ontimeupdate={() => !scrubbing && video && (current = video.currentTime)}
 				onprogress={onProgress}
@@ -329,7 +368,6 @@
 					paused = true;
 					wake();
 				}}
-				onvolumechange={() => video && (muted = video.muted)}
 				onerror={onError}
 			></video>
 		{/if}
@@ -391,16 +429,33 @@
 						</button>
 						<span class="time">{clock(current)}<span class="total"> / {clock(shown)}</span></span>
 						<span class="grow"></span>
-						<button onclick={toggleMute} aria-label={muted ? 'Sound on' : 'Mute'} title="Mute (M)">
-							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-								<path d="M2 6h2.5L8 3v10L4.5 10H2z" />
-								{#if muted}
-									<path class="line" d="M10.5 6l4 4m0-4-4 4" />
-								{:else}
-									<path class="line" d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.3 3.6a6 6 0 0 1 0 8.8" />
-								{/if}
-							</svg>
-						</button>
+						<!-- The slider opens leftwards, so the speaker stays under the pointer. -->
+						<div class="vol">
+							<input
+								class="level"
+								type="range"
+								min="0"
+								max="1"
+								step="0.05"
+								value={level}
+								oninput={(event) => setLevel(Number(event.currentTarget.value))}
+								aria-label="Volume"
+								title="Volume (↑ ↓)"
+								style:--level="{level * 100}%"
+							/>
+							<button onclick={toggleMute} aria-label={level === 0 ? 'Sound on' : 'Mute'} title="Mute (M)">
+								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+									<path d="M2 6h2.5L8 3v10L4.5 10H2z" />
+									{#if level === 0}
+										<path class="line" d="M10.5 6l4 4m0-4-4 4" />
+									{:else if level < 0.5}
+										<path class="line" d="M10.5 5.5a3.5 3.5 0 0 1 0 5" />
+									{:else}
+										<path class="line" d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.3 3.6a6 6 0 0 1 0 8.8" />
+									{/if}
+								</svg>
+							</button>
+						</div>
 						<button
 							class="fs"
 							onclick={toggleFullscreen}
@@ -750,6 +805,94 @@
 
 	.grow {
 		flex: 1;
+	}
+
+	/* ---- the volume: a slider beside the speaker while it is hovered ---- */
+
+	.vol {
+		display: flex;
+		align-items: center;
+	}
+
+	.level {
+		width: 0;
+		height: 28px;
+		margin: 0;
+		padding: 0;
+		opacity: 0;
+		appearance: none;
+		-webkit-appearance: none;
+		background: transparent;
+		cursor: pointer;
+		transition:
+			width 0.15s,
+			opacity 0.15s,
+			margin 0.15s;
+	}
+
+	.vol:hover .level,
+	.vol:focus-within .level {
+		width: 64px;
+		margin-right: 4px;
+		opacity: 1;
+	}
+
+	/* An upright player has room only for a shorter one. */
+	.narrow .player:not(.fullscreen) .vol:hover .level,
+	.narrow .player:not(.fullscreen) .vol:focus-within .level {
+		width: 46px;
+	}
+
+	.fullscreen .vol:hover .level,
+	.fullscreen .vol:focus-within .level {
+		width: 96px;
+	}
+
+	.level:focus-visible {
+		outline: none;
+	}
+
+	.level::-webkit-slider-runnable-track {
+		height: 4px;
+		border-radius: 2px;
+		background: linear-gradient(
+			to right,
+			#a855f7,
+			#ff4d9e var(--level),
+			rgba(255, 255, 255, 0.22) var(--level)
+		);
+	}
+
+	.level::-webkit-slider-thumb {
+		width: 10px;
+		height: 10px;
+		margin-top: -3px;
+		border-radius: 50%;
+		background: #fff;
+		box-shadow: 0 0 0 3px rgba(255, 77, 158, 0.5);
+		appearance: none;
+		-webkit-appearance: none;
+	}
+
+	.level::-moz-range-track {
+		height: 4px;
+		border-radius: 2px;
+		background: rgba(255, 255, 255, 0.22);
+	}
+
+	.level::-moz-range-progress {
+		height: 4px;
+		border-radius: 2px;
+		background: var(--accent-grad);
+	}
+
+	.level::-moz-range-thumb {
+		width: 10px;
+		height: 10px;
+		border: 0;
+		border-radius: 50%;
+		background: #fff;
+		box-shadow: 0 0 0 3px rgba(255, 77, 158, 0.5);
 	}
 
 	/* ---- full screen: the whole box, so the bar comes along ---- */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { copyOf, mixedContent, playerBox, shortPath, storedProblem, TALL, WIDE } from './storedcopy';
+import { copyOf, mixedContent, playerBox, readVolume, shortPath, stepVolume, storedProblem, TALL, WIDE } from './storedcopy';
 
 const job = (fields: Partial<Parameters<typeof copyOf>[0]> = {}) => ({
 	destination_path: '\\\\nas\\shared\\testing',
@@ -74,6 +74,37 @@ describe('playerBox', () => {
 	it('takes a wide box for a shape it cannot read', () => {
 		expect(playerBox(NaN)).toEqual(playerBox(16 / 9));
 		expect(playerBox(0)).toEqual(playerBox(16 / 9));
+	});
+});
+
+describe('readVolume', () => {
+	it('reads a stored level and keeps it between silent and full', () => {
+		expect(readVolume('0.35')).toBe(0.35);
+		expect(readVolume('0')).toBe(0);
+		expect(readVolume('7')).toBe(1);
+		expect(readVolume('-1')).toBe(0);
+	});
+
+	it('plays at full volume with nothing stored, or nothing readable', () => {
+		expect(readVolume(null)).toBe(1);
+		expect(readVolume(undefined)).toBe(1);
+		expect(readVolume('')).toBe(1);
+		expect(readVolume('loud')).toBe(1);
+	});
+});
+
+describe('stepVolume', () => {
+	it('moves by the step and stops at either end', () => {
+		expect(stepVolume(0.5, 0.1)).toBe(0.6);
+		expect(stepVolume(0.95, 0.1)).toBe(1);
+		expect(stepVolume(0.05, -0.1)).toBe(0);
+	});
+
+	it('lands on whole twentieths, so repeated steps do not drift', () => {
+		let volume = 0;
+		for (let i = 0; i < 7; i++) volume = stepVolume(volume, 0.1);
+		expect(volume).toBe(0.7);
+		expect(stepVolume(0.33, 0.1)).toBe(0.45);
 	});
 });
 
