@@ -114,7 +114,7 @@
 						class="chip"
 						class:fixed={def.fixed}
 						class:target={Boolean(drag?.moved) && drag?.before === id}
-						class:num={id !== 'video' && id !== 'curve' && id !== 'thumb'}
+						class:num={id !== 'video' && id !== 'thumb'}
 						onpointerdown={(e) => onDown(e, id)}
 						onpointermove={onMove}
 						onpointerup={onUp}

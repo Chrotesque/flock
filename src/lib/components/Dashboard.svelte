@@ -30,7 +30,7 @@
 		subscribeTargets,
 		toDashboardVideo
 	} from '$lib/repo';
-	import { formatBytes, formatDuration } from '$lib/format';
+	import { formatBytes, formatDuration, shortCount } from '$lib/format';
 	import { KIND_LABELS } from '$lib/videokind';
 	import { reelFacts, youtubeFacts, type FactGroup } from '$lib/videofacts';
 	import type { PlatformId, UploadJob, UploadTarget, VideoStats } from '$lib/types';
@@ -407,6 +407,7 @@
 	};
 	const followerWord = (p: StatPlatform, n: number) => FOLLOWER_WORDS[p][Math.abs(n) === 1 ? 0 : 1];
 	const signed = (n: number) => (n > 0 ? `+${whole.format(n)}` : n < 0 ? `−${whole.format(-n)}` : '0');
+	const signedShort = (n: number) => (n > 0 ? `+${short(n)}` : n < 0 ? `−${short(-n)}` : '0');
 	const onDay = (iso: string) => new Date(postTime(iso)).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 
 	/** The accounts' counts now, for the column's tooltip. */
@@ -694,6 +695,8 @@
 	const num = (n: number | null | undefined) => (n == null ? '—' : whole.format(n));
 	/** Big, but readable: 12,345 up to five digits, 123.4K past them. */
 	const big = (n: number) => (n >= 100_000 ? compact.format(n) : whole.format(n));
+	/** The period boxes' numbers: 999, then 1k, 1.1k, 80.6k (shortCount); the popups have them exact. */
+	const short = (n: number) => shortCount(n);
 
 	function ago(iso: string | undefined | null): string {
 		const t = Date.parse(String(iso ?? '').replace(' ', 'T'));
@@ -885,7 +888,7 @@
 			<PlatformIcon platform="instagram" size={11} />Skipped{#if sort === 'skip'}<span class="arrow" aria-hidden="true">{reversed ? '↑' : '↓'}</span>{/if}
 		</button>
 	{:else if col === 'curve'}
-		<span class="colhead plain {cellOf(col)}" title="Views from release, up to its first week; dashed: the usual for its kind">From release</span>
+		<span class="colhead {cellOf(col)}" title="Views from release, up to its first week; dashed: the usual for its kind">From release</span>
 	{:else if col === 'usual'}
 		{@render sortHead('usual', 'vs usual', cellOf(col))}
 	{/if}
@@ -1152,16 +1155,17 @@
 				<h2>{period.label}</h2>
 				<div class="trio">
 					<div>
-						<span class="bignum accent">{big(period.released)}</span>
+						<span class="bignum accent">{short(period.released)}</span>
 						<span class="unit">{period.released === 1 ? 'video out' : 'videos out'}</span>
 					</div>
 					<!-- The views' gains and each platform's share, on hover or focus. -->
 					<div class="hold">
 						<button class="holdnum" aria-describedby="views-{period.key}">
-							<span class="bignum">{big(period.views)}</span>
+							<span class="bignum">{short(period.views)}</span>
 							<span class="unit">views on them</span>
 						</button>
 						<div class="ppop" id="views-{period.key}" role="tooltip">
+							<p class="gained"><strong class="exact">{whole.format(period.views)}</strong> views on the videos out</p>
 							<p class="gained">
 								<strong>+{whole.format(period.gained)}</strong> views gained{period.partly ? ' (at least)' : ''}
 							</p>
@@ -1187,7 +1191,7 @@
 					<div class="hold">
 						<button class="holdnum" aria-describedby="followers-{period.key}">
 							<span class="bignum" class:faint={!period.followers}
-								>{period.followers ? signed(period.followers.gained) : '—'}</span
+								>{period.followers ? signedShort(period.followers.gained) : '—'}</span
 							>
 							<span class="unit">followers / subs</span>
 						</button>
@@ -1937,6 +1941,10 @@
 	.ppop .gained strong {
 		color: var(--ok);
 		font-weight: 650;
+	}
+
+	.ppop strong.exact {
+		color: var(--text);
 	}
 
 	.ppop strong.down {

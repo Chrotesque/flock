@@ -574,8 +574,9 @@ press Esc or go to another page to close it. For the brand in view it shows:
   change it; the choice is kept per browser.
 - **Today, this week, this month, this quarter and this year:** videos out,
   the views on them and the followers gained (or lost) on every platform
-  together. Hover the views for the views gained and each platform's share,
-  and the followers for each platform's. These count every video the filter
+  together, shortened from 1,000 up (80.6k). Hover the views for the exact
+  figure, the views gained and each platform's share, and the followers for
+  each platform's. These count every video the filter
   keeps, whatever its timeframe. Followers count from when the worker first
   read each account.
 - **Every video:** YouTube videos and Instagram reels, with a video posted to

@@ -83,6 +83,22 @@ export function formatBytes(bytes: number): string {
 	return `${value.toFixed(value >= 10 || exp === 0 ? 0 : 1)} ${units[exp]}`;
 }
 
+/**
+ * A count shortened from 1,000 up: 1k, 1.1k, 80.6k, 1.2m — one decimal at
+ * most, cut rather than rounded so it never claims more than there is
+ * (1,999 is 1.9k), the decimal mark the browser's. Under 1,000 the number
+ * itself. A negative count keeps its sign.
+ */
+export function shortCount(n: number, locale?: string): string {
+	const abs = Math.abs(n);
+	const sign = n < 0 ? '-' : '';
+	if (abs < 1000) return sign + new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(Math.trunc(abs));
+	// Whole tenths first (an exact division of the count), so 4,600 cannot come out 4.5k.
+	const k = Math.floor(abs / 100) / 10;
+	if (k < 1000) return `${sign}${new Intl.NumberFormat(locale, { maximumFractionDigits: 1, useGrouping: false }).format(k)}k`;
+	return `${sign}${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(Math.floor(abs / 100_000) / 10)}m`;
+}
+
 export function formatDuration(seconds: number): string {
 	if (!Number.isFinite(seconds) || seconds <= 0) return '';
 	const total = Math.round(seconds);

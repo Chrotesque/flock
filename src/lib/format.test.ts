@@ -12,6 +12,7 @@ import {
 	makeTime,
 	firstLine,
 	parseTagList,
+	shortCount,
 	tagListLength
 } from './format';
 
@@ -137,5 +138,33 @@ describe('dayStart and rangeLabel', () => {
 		expect(rangeLabel(new Date(2026, 9, 12), new Date(2026, 9, 25))).toBe('12 – 25 Oct 2026');
 		expect(rangeLabel(new Date(2026, 9, 28), new Date(2026, 10, 10))).toBe('28 Oct – 10 Nov 2026');
 		expect(rangeLabel(new Date(2026, 11, 28), new Date(2027, 0, 10))).toBe('28 Dec 2026 – 10 Jan 2027');
+	});
+});
+
+describe('shortCount', () => {
+	it('keeps a count under 1,000 as it is', () => {
+		expect(shortCount(0, 'en-US')).toBe('0');
+		expect(shortCount(999, 'en-US')).toBe('999');
+	});
+
+	it('shortens from 1,000 up to one decimal, dropping a .0', () => {
+		expect(shortCount(1000, 'en-US')).toBe('1k');
+		expect(shortCount(1100, 'en-US')).toBe('1.1k');
+		expect(shortCount(80_638, 'en-US')).toBe('80.6k');
+		expect(shortCount(165_700, 'en-US')).toBe('165.7k');
+		expect(shortCount(1_234_567, 'en-US')).toBe('1.2m');
+	});
+
+	it('cuts rather than rounds, so it never says more than there is', () => {
+		expect(shortCount(1999, 'en-US')).toBe('1.9k');
+		expect(shortCount(999_999, 'en-US')).toBe('999.9k');
+		expect(shortCount(1_000_000, 'en-US')).toBe('1m');
+		for (let n = 1000; n < 20_000; n += 100) expect(shortCount(n, 'en-US')).toBe(`${n / 1000}k`);
+	});
+
+	it("uses the locale's decimal mark and keeps a sign", () => {
+		expect(shortCount(80_638, 'de-DE')).toBe('80,6k');
+		expect(shortCount(-1500, 'en-US')).toBe('-1.5k');
+		expect(shortCount(-12, 'en-US')).toBe('-12');
 	});
 });
