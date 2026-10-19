@@ -16,7 +16,7 @@
 	import { flaggedPosts, isCampaign, type CampaignPosts } from '$lib/jestrcampaign';
 	import { newestByPost, renameChoices, renameNotes, type RenameChoice } from '$lib/retitle';
 	import { accountLabel, postAllowance } from '$lib/accounts';
-	import { LEVEL_WORDS, lineLevel, worstLevel, type StatusLevel } from '$lib/dashstatus';
+	import { LEVEL_WORDS, limitLevel, lineLevel, shortError, worstLevel, type StatusLevel } from '$lib/dashstatus';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import {
 		deleteJob,
@@ -486,7 +486,9 @@
 		platform: StatPlatform;
 		level: StatusLevel;
 		read: string;
+		/** The error as one line, and as the worker wrote it (the line's tooltip). */
 		error: string;
+		detail: string;
 		limit: { used: number; total: number; words: string } | null;
 		note: string;
 	}
@@ -500,7 +502,8 @@
 				platform: 'youtube',
 				level: lineLevel({ error: ytBeat.error, ...limit }),
 				read: ago(ytBeat.polledAt),
-				error: ytBeat.error ?? '',
+				error: shortError(ytBeat.error),
+				detail: ytBeat.error ?? '',
 				limit,
 				note: ''
 			});
@@ -511,7 +514,8 @@
 				platform: 'instagram',
 				level: lineLevel({ error: igBeat?.error, ...limit }),
 				read: ago(igBeat?.polledAt),
-				error: igBeat?.error ?? '',
+				error: shortError(igBeat?.error),
+				detail: igBeat?.error ?? '',
 				limit,
 				note: ''
 			});
@@ -521,9 +525,10 @@
 				platform: 'facebook',
 				level: lineLevel({ error: fbBeat?.error, partial: Boolean(fbBeat?.views) }),
 				read: ago(fbBeat?.polledAt),
-				error: fbBeat?.error ?? '',
+				error: shortError(fbBeat?.error),
+				detail: fbBeat?.error ?? '',
 				limit: null,
-				note: fbBeat?.views ? `Views not read: ${fbBeat.views}` : ''
+				note: fbBeat?.views ? `Views not read: ${shortError(fbBeat.views)}` : ''
 			});
 		}
 		return lines;
@@ -781,11 +786,11 @@
 										<span class="sread">read {line.read}</span>
 									</p>
 									{#if line.error}
-										<p class="serror">{line.error}</p>
+										<p class="serror" title={line.detail}>{line.error}</p>
 									{/if}
 									{#if line.limit}
 										<p class="slimit">
-											<span class="meter"
+											<span class="meter {limitLevel(line.limit.used, line.limit.total)}"
 												><i style:width="{Math.min(100, (line.limit.used / line.limit.total) * 100)}%"></i></span
 											>
 											{big(line.limit.used)} of {big(line.limit.total)} {line.limit.words}
@@ -1330,22 +1335,26 @@
 	/* The status colours: green all good, yellow a limit half used, orange
 	   nearly used (or something to look at), red an error or a limit used up. */
 	.info.ok,
-	.sline.ok {
+	.sline.ok,
+	.meter.ok {
 		--level: var(--ok);
 	}
 
 	.info.half,
-	.sline.half {
+	.sline.half,
+	.meter.half {
 		--level: #facc15;
 	}
 
 	.info.close,
-	.sline.close {
+	.sline.close,
+	.meter.close {
 		--level: #fb923c;
 	}
 
 	.info.bad,
-	.sline.bad {
+	.sline.bad,
+	.meter.bad {
 		--level: #ef4444;
 	}
 
@@ -1464,7 +1473,6 @@
 	.snote {
 		color: var(--level);
 		line-height: 1.45;
-		white-space: pre-line;
 	}
 
 	.slimit {

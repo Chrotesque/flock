@@ -41,6 +41,43 @@ export function lineLevel(line: { error?: string | null; used?: number; total?: 
 	return line.partial ? worstLevel([limit, 'close']) : limit;
 }
 
+// The worker's wording for a refused API call: "YouTube GET /playlistItems ->
+// 500: {…}" (stats.mjs, the body cut at 300 characters) or with a newline
+// before the body (youtube.mjs).
+const HTTP_ERROR = /^(\S+) (GET|POST|PUT|PATCH|DELETE) (\S+) -> (\d{3})(?::\s*|\s+)?([\s\S]*)$/;
+
+/** The message an API's error body carries, from JSON — or, cut short, from its first "message". */
+function bodyMessage(body: string): string {
+	try {
+		const json = JSON.parse(body);
+		const message = json?.error?.message ?? json?.error_description ?? json?.message;
+		if (typeof message === 'string') return message.trim();
+	} catch {
+		// cut short: fall through to the pattern
+	}
+	const found = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(body);
+	return found ? found[1].replace(/\\(.)/g, '$1').trim() : '';
+}
+
+/**
+ * An error as one short line for the status popup: a refused API call as
+ * "Error 500 on /playlistItems: Internal error encountered." (the line
+ * already names its platform), anything else as its first line, without
+ * Meta's trace id.
+ */
+export function shortError(text: string | null | undefined): string {
+	const raw = String(text ?? '').trim();
+	if (!raw) return '';
+	const http = HTTP_ERROR.exec(raw);
+	if (http) {
+		const [, , , path, status, body] = http;
+		const message = bodyMessage(body);
+		return `Error ${status} on ${path.split('?')[0]}${message ? `: ${message}` : ''}`;
+	}
+	const first = raw.split('\n').find((line) => line.trim()) ?? raw;
+	return first.replace(/\s*\(trace [^)]*\)/g, '').trim();
+}
+
 /** What the icon says in words, for its label. */
 export const LEVEL_WORDS: Record<StatusLevel, string> = {
 	ok: 'all good',
