@@ -9,6 +9,9 @@ import type { StatPlatform } from './releases';
  * stretch, by those views, or to the newest post when none did. Facebook
  * counts follows per reel itself (post_video_followers in a reel's insights);
  * its row only keeps the Page's count, for the follower gains of a period.
+ * YouTube's own per-video figures, from YouTube Analytics once the channel's
+ * grant allows it (worker/ytanalytics.mjs), win over the credit for every
+ * video out by the last day they cover.
  */
 
 export const FOLLOWER_PREFIX = 'followers:';
@@ -27,6 +30,10 @@ export interface FollowerState {
 	history: [string, number][];
 	/** Followers credited so far, by the platform's post id. */
 	credits: Record<string, number>;
+	/** YouTube Analytics' subscribers per video, [gained, lost]; null until read. */
+	analytics: Record<string, [number, number]> | null;
+	/** The last day those cover, 'YYYY-MM-DD' (YouTube's, Pacific); '' until read. */
+	analyticsThrough: string;
 }
 
 const time = (iso: unknown) => Date.parse(String(iso ?? '').replace(' ', 'T'));
@@ -45,6 +52,13 @@ export function readFollowerState(raw: unknown): FollowerState | null {
 	const credits: Record<string, number> = {};
 	const stored = r.credits && typeof r.credits === 'object' ? (r.credits as Record<string, unknown>) : {};
 	for (const [id, n] of Object.entries(stored)) if (typeof n === 'number' && n > 0) credits[id] = n;
+	let analytics: Record<string, [number, number]> | null = null;
+	if (r.analytics && typeof r.analytics === 'object') {
+		analytics = {};
+		for (const [id, pair] of Object.entries(r.analytics as Record<string, unknown>)) {
+			if (Array.isArray(pair) && typeof pair[0] === 'number' && typeof pair[1] === 'number') analytics[id] = [pair[0], pair[1]];
+		}
+	}
 	return {
 		platform,
 		account: String(r.account ?? ''),
@@ -53,7 +67,9 @@ export function readFollowerState(raw: unknown): FollowerState | null {
 		at: String(r.at),
 		since: Number.isFinite(time(r.since)) ? String(r.since) : String(r.at),
 		history,
-		credits
+		credits,
+		analytics,
+		analyticsThrough: typeof r.analyticsThrough === 'string' ? r.analyticsThrough : ''
 	};
 }
 
@@ -62,14 +78,28 @@ export function stateOf(states: FollowerState[], platform: StatPlatform, account
 	return account ? states.find((s) => s.platform === platform && s.account === account) : undefined;
 }
 
+/** When a YouTube day (Pacific) ends, near enough: 08:00 UTC the next morning (as the worker reckons it). */
+export function dayEnd(day: string): number {
+	return Date.parse(`${day}T08:00:00Z`) + 86_400_000;
+}
+
+/** Where a post's followers come from: YouTube Analytics for a video out by its last day, else flock's credit. */
+export function followerSource(state: FollowerState | undefined, at: number): 'analytics' | 'credit' {
+	return state?.analytics && state.analyticsThrough && at < dayEnd(state.analyticsThrough) ? 'analytics' : 'credit';
+}
+
 /**
- * A YouTube video's or an Instagram post's followers: what was credited to
- * it. Null with no record for its account, and for a post that came out
- * before flock first read the count and was credited nothing since — that
- * is not known, not none.
+ * A YouTube video's or an Instagram post's followers: YouTube Analytics'
+ * gained less lost for a video it covers, else what flock credited. Null with
+ * no record for its account, and for a post that came out before flock first
+ * read the count and was credited nothing since — that is not known, not none.
  */
 export function creditedFollowers(state: FollowerState | undefined, postId: string, at: number): number | null {
 	if (!state) return null;
+	if (followerSource(state, at) === 'analytics') {
+		const pair = state.analytics?.[postId];
+		return pair ? pair[0] - pair[1] : 0;
+	}
 	const credit = state.credits[postId] ?? 0;
 	if (credit === 0 && at < time(state.since)) return null;
 	return credit;

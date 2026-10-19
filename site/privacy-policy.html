@@ -84,6 +84,7 @@
   <ul>
     <li><code>youtube.upload</code> — uploading videos to the connected channel</li>
     <li><code>youtube.readonly</code> — reading that channel's own videos, their public counters and the channel's subscriber count (the number, not who the subscribers are)</li>
+    <li><code>yt-analytics.readonly</code> — reading that channel's YouTube Analytics: how many subscribers each of its videos brought, and the channel's subscribers gained and lost per day (numbers only, never who they are)</li>
     <li><code>youtube</code> — only if enabled, for adding a video to a playlist</li>
   </ul>
   <p>From Meta, through Facebook Login, flock asks for:</p>
@@ -124,7 +125,7 @@
     <li>TikTok's access and refresh tokens, in the same configuration file</li>
     <li>each connected account's identifier, username and display name, each Facebook Page's name, username and link, and Instagram's count of posts used today</li>
     <li>the connected channel's own videos, the connected Instagram accounts' own posts and the connected Facebook Pages' own reels as those services report them — title or caption, link, release time — with their counters (views, likes, comments; on Instagram reach; on Facebook plays, average watch time, shares and follows) and a history of how views, likes and comments changed</li>
-    <li>the connected channel's subscriber count and the connected Instagram accounts' and Facebook Pages' follower counts — numbers only — with a history of how each changed, and how many of those followers flock attributes to each video</li>
+    <li>the connected channel's subscriber count and the connected Instagram accounts' and Facebook Pages' follower counts — numbers only — with a history of how each changed, and how many of those followers each video brought, as YouTube Analytics reports it or as flock attributes it</li>
     <li>the most recent creator information read from TikTok, as described above</li>
   </ul>
   <p>Data leaves the operator's machines only to publish a video, to Google, Meta

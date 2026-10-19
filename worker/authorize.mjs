@@ -80,10 +80,16 @@ const FACEBOOK_GRAPH = 'https://graph.facebook.com';
  * worth handing a publishing tool delete rights by default.
  *
  * Pass --with-playlists to opt into the broader grant.
+ *
+ * `yt-analytics.readonly` reads the channel's YouTube Analytics — how many
+ * subscribers each video brought, and the channel's per day — for the
+ * Dashboard's followers (worker/ytanalytics.mjs); read-only, it changes
+ * nothing.
  */
 const GOOGLE_DEFAULT = [
 	'https://www.googleapis.com/auth/youtube.upload',
-	'https://www.googleapis.com/auth/youtube.readonly'
+	'https://www.googleapis.com/auth/youtube.readonly',
+	'https://www.googleapis.com/auth/yt-analytics.readonly'
 ];
 const GOOGLE_WITH_PLAYLISTS = [...GOOGLE_DEFAULT, 'https://www.googleapis.com/auth/youtube'];
 
@@ -239,8 +245,8 @@ async function google(config) {
 		redirectUri: '',
 		state,
 		intro: withPlaylists
-			? '\nRequesting upload + read-only + full account access (needed for "Add to playlist").'
-			: '\nRequesting upload and read-only access. Re-run with --with-playlists if you\n' +
+			? '\nRequesting upload + read-only + Analytics + full account access (needed for "Add to playlist").'
+			: '\nRequesting upload, read-only and Analytics access. Re-run with --with-playlists if you\n' +
 				'want the "Add to playlist" option to work; it needs far broader permission.',
 		buildUrl: (redirectUri) => {
 			const auth = new URL(GOOGLE_AUTH);

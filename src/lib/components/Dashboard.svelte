@@ -17,7 +17,7 @@
 	import { newestByPost, renameChoices, renameNotes, type RenameChoice } from '$lib/retitle';
 	import { accountLabel, postAllowance } from '$lib/accounts';
 	import { LEVEL_WORDS, limitLevel, lineLevel, shortError, worstLevel, type StatusLevel } from '$lib/dashstatus';
-	import { creditedFollowers, stateOf, type FollowerGain, type FollowerState } from '$lib/followers';
+	import { creditedFollowers, followerSource, stateOf, type FollowerGain, type FollowerState } from '$lib/followers';
 	import { COLUMNS, gridTemplate, shownColumns, type ColumnId } from '$lib/dashcolumns';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import {
@@ -417,8 +417,8 @@
 			.map((s) => `${s.name || PLATFORMS[s.platform].label} (${PLATFORMS[s.platform].label}) ${whole.format(s.count)} ${followerWord(s.platform, s.count)}`)
 	);
 	const followersAbout = $derived(
-		'Followers and subscribers each video brought. Facebook counts the follows from a reel itself. ' +
-			"YouTube and Instagram only say how many an account has, so flock credits each rise in that count to the videos gaining views at the moment — in proportion to those views, or to the newest video when none was — which is flock's estimate, not a platform figure." +
+		'Followers and subscribers each video brought. Facebook counts the follows from a reel itself, and YouTube Analytics the subscribers from a video (gained less lost, about two days late). ' +
+			"Instagram only says how many an account has, so flock credits each rise in that count to the videos gaining views at the moment — in proportion to those views, or to the newest video when none was — which is flock's estimate, not a platform figure; it also stands in for YouTube's newest days." +
 			(followerCounts.length ? `\n\nNow: ${followerCounts.join(' · ')}` : '')
 	);
 
@@ -432,6 +432,9 @@
 					return post.followers === null
 						? `${label}: not read yet (needs read_insights)`
 						: `${label}: ${whole.format(post.followers)}, Facebook's own count of follows from this reel`;
+				}
+				if (post.platform === 'youtube' && state && post.followers !== null && followerSource(state, post.at) === 'analytics') {
+					return `${label}: ${whole.format(post.followers)}, YouTube Analytics' count (gained less lost, through ${onDay(state.analyticsThrough)})`;
 				}
 				if (post.followers === null) {
 					return state
@@ -1431,9 +1434,10 @@
 	<p class="foot">
 		Views, likes and comments are each platform's own counters.
 		{combined || multi ? 'Sums across platforms, ' : ''}"usual", the verdicts and the curves are flock's arithmetic over them,
-		not figures any platform reports. A video's followers are Facebook's own count for a reel, and flock's estimate for
-		YouTube and Instagram, which only report how many an account has: each rise is credited to the videos gaining views at
-		the time. One channel at a time; nothing is added up across channels.
+		not figures any platform reports. A video's followers are Facebook's own count for a reel and YouTube Analytics' for a
+		video; for Instagram, which only reports how many an account has, and for YouTube's newest days they are flock's
+		estimate: each rise is credited to the videos gaining views at the time. One channel at a time; nothing is added up
+		across channels.
 	</p>
 </div>
 

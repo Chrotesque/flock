@@ -516,7 +516,9 @@ describe('periodStats', () => {
 			at: iso(now.getTime()),
 			since: history[0][0],
 			history,
-			credits: {}
+			credits: {},
+			analytics: null,
+			analyticsThrough: ''
 		});
 		const followers = [
 			// Since midnight +3, since Monday the 12th +5.

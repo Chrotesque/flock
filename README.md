@@ -114,8 +114,8 @@ cp worker/.worker-config.example.json worker/.worker-config.json
 
 In the [Google Cloud console](https://console.cloud.google.com):
 
-1. Create a project and enable **YouTube Data API v3** (*APIs & Services →
-   Library*).
+1. Create a project and enable **YouTube Data API v3** and **YouTube Analytics
+   API** (*APIs & Services → Library*).
 2. Set up the **OAuth consent screen** as **External**, and add each Google
    account that owns a channel as a **test user**.
 3. Under *Credentials*, create an **OAuth client ID** of type **Desktop app**.
@@ -136,6 +136,9 @@ Good to know:
 - **Playlists need a broader permission.** Connect with
   `pnpm worker:auth --with-playlists` to have videos added to playlists.
   Without it they are skipped, and the Review step says so.
+- **Subscribers per video** come from YouTube Analytics, about two days late.
+  A channel connected before flock asked for Analytics (0.16.40) keeps flock's
+  own estimate until it is connected again.
 - **Thumbnails and paid promotion are set in YouTube Studio**, not by flock.
   *To finish* in the sidebar links each video's Studio page.
 - **Stats cost API quota.** The Dashboard's YouTube numbers come from the

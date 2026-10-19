@@ -17,6 +17,7 @@ import { forgetToken } from './google.mjs';
 import { youtubeChannels, youtubeToken } from './youtube.mjs';
 import { fetchOrExplain } from './net.mjs';
 import { creditWords, followerStep } from './followers.mjs';
+import { analyticsPass } from './ytanalytics.mjs';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 
@@ -399,6 +400,8 @@ async function pollChannel({ pb, config, log, account }) {
 			});
 		}
 		await readSubscribers(pb, config, log, account, items.map(toRow), byVideo);
+		// YouTube's own subscribers per video, every six hours, its own quota (ytanalytics.mjs).
+		await analyticsPass({ pb, config, log, account });
 
 		if (state.lastError) log(`stats ${account.title}: recovered`);
 		state.lastError = '';

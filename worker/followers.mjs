@@ -46,8 +46,22 @@ export function readState(raw) {
 		history,
 		credits,
 		// When the platform's own past counts were filled in (mergeBackfill); '' before.
-		backfilled: typeof raw.backfilled === 'string' ? raw.backfilled : ''
+		backfilled: typeof raw.backfilled === 'string' ? raw.backfilled : '',
+		// YouTube Analytics' subscribers per video, [gained, lost], and the last day it covers (ytanalytics.mjs).
+		analytics: readAnalytics(raw.analytics),
+		analyticsThrough: typeof raw.analyticsThrough === 'string' ? raw.analyticsThrough : '',
+		analyticsAt: typeof raw.analyticsAt === 'string' ? raw.analyticsAt : ''
 	};
+}
+
+/** Per-video [gained, lost] pairs, read back; null when there are none stored. */
+function readAnalytics(raw) {
+	if (!raw || typeof raw !== 'object') return null;
+	const out = {};
+	for (const [id, pair] of Object.entries(raw)) {
+		if (Array.isArray(pair) && typeof pair[0] === 'number' && typeof pair[1] === 'number') out[id] = [pair[0], pair[1]];
+	}
+	return out;
 }
 
 /** A post's views at a moment, from its samples (`[iso, views, …]`, written on change); null before its first. */
