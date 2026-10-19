@@ -1804,25 +1804,30 @@
 		container-type: inline-size;
 	}
 
+	/* Each box sizes its numbers to itself, so five of them never crowd. */
 	.period {
 		min-width: 0;
 		padding: 0 18px;
+		container-type: inline-size;
 	}
 
 	.period + .period {
 		border-left: 1px solid var(--border);
 	}
 
+	/* Each number as wide as it is, spread over the box: equal thirds let
+	   "166.2k" run into the followers beside it. */
 	.trio {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: repeat(3, auto);
+		justify-content: space-between;
 		gap: 10px;
 	}
 
-	/* A number whose details open on hover or focus. */
+	/* A number whose details open on hover or focus. No min-width: 0 — the
+	   number's own width is the column's floor. */
 	.hold {
 		position: relative;
-		min-width: 0;
 	}
 
 	.holdnum {
@@ -1953,7 +1958,7 @@
 
 	.bignum {
 		display: block;
-		font-size: clamp(22px, 2.2cqi, 32px);
+		font-size: clamp(20px, 11cqi, 32px);
 		font-weight: 700;
 		line-height: 1.05;
 		letter-spacing: -0.02em;
@@ -2658,7 +2663,8 @@
 
 	/* ---- narrower ---- */
 
-	@media (max-width: 1200px) {
+	/* Five boxes need about 230px each; below that they go three to a row. */
+	@media (max-width: 1440px) {
 		.periods {
 			grid-template-columns: repeat(3, minmax(0, 1fr));
 			row-gap: 14px;
@@ -2674,6 +2680,9 @@
 			padding-top: 12px;
 			border-top: 1px solid var(--border);
 		}
+	}
+
+	@media (max-width: 1200px) {
 		.list {
 			--thumbcol: 56px;
 		}
