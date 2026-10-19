@@ -1193,7 +1193,7 @@
 							<span class="bignum" class:faint={!period.followers}
 								>{period.followers ? signedShort(period.followers.gained) : '—'}</span
 							>
-							<span class="unit">followers / subs</span>
+							<span class="unit">follows</span>
 						</button>
 						<div class="ppop" id="followers-{period.key}" role="tooltip">
 							<p class="gained">
@@ -2351,10 +2351,11 @@
 		height: 6px;
 	}
 
+	/* Right-bound like every other column: the curve is narrower than its column. */
 	.spark {
 		display: flex;
 		align-items: center;
-		justify-content: center;
+		justify-content: flex-end;
 		min-width: 0;
 	}
 
