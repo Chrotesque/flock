@@ -97,11 +97,16 @@ const STATUS_TIMEOUT_MS = 30 * 60_000;
 const MAX_STATUS_MISSES = 12;
 const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
 
-// How many containers one reel may take when rupload turns the bytes down
-// in a way a new container gets past (`freshContainerHelps`), and the pause
-// before each new one.
-const UPLOAD_ATTEMPTS = 3;
-const UPLOAD_RETRY_MS = 30_000;
+// How long one reel keeps taking new containers when rupload turns the bytes
+// down in a way a new container gets past (`freshContainerHelps`), or the
+// connection fails: new tries start until UPLOAD_GRACE_MS past the slot, or
+// past the start for a reel picked up late (a retry pressed after its slot),
+// pausing longer each time. The cap is only for refusals that come at once.
+// On 20 Oct 2026 Meta refused every container for over 20 minutes; three
+// tries 30 s apart had given up five minutes before the slot.
+const UPLOAD_GRACE_MS = 15 * 60_000;
+const UPLOAD_PAUSES_MS = [30_000, 60_000, 120_000];
+const MAX_UPLOAD_ATTEMPTS = 12;
 
 // How often the account's details are re-read for the compose screen.
 const ACCOUNT_TTL_MS = 30 * 60_000;
@@ -415,6 +420,19 @@ export function freshContainerHelps(answer) {
 }
 
 /**
+ * The pause before the container after try `attempt` (1-based) failed, or
+ * null to give up: after MAX_UPLOAD_ATTEMPTS, or when the next try would
+ * start UPLOAD_GRACE_MS or more past the slot (or past `startedAt`, if that
+ * is later). Times in milliseconds; `slot` as stored.
+ */
+export function nextUploadPause({ attempt, slot, startedAt, now }) {
+	if (attempt >= MAX_UPLOAD_ATTEMPTS) return null;
+	const from = Math.max(Date.parse(slot) || 0, startedAt);
+	const pause = UPLOAD_PAUSES_MS[Math.min(attempt, UPLOAD_PAUSES_MS.length) - 1];
+	return now + pause < from + UPLOAD_GRACE_MS ? pause : null;
+}
+
+/**
  * Polls the container until Instagram has processed the video.
  *
  * A poll that cannot reach Instagram, or gets a server error or a rate
@@ -591,9 +609,12 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 		}
 	};
 
-	// A refusal a new container gets past (`freshContainerHelps`) is tried
-	// again on one, the file opened afresh. The spent container is left
-	// unpublished, and Instagram drops those within a day.
+	// A refusal a new container gets past (`freshContainerHelps`), or a
+	// connection that failed making the container or sending the bytes, is
+	// tried again on a new container, the file opened afresh, for as long as
+	// `nextUploadPause` allows. Only the container that took the bytes is ever
+	// published; a spent one is left unpublished, and Instagram drops those
+	// within a day.
 	const notes = [];
 	const createContainer = async () => {
 		try {
@@ -608,38 +629,58 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 			return graph(ig, `/${ig.igUserId}/media`, { method: 'POST', params });
 		}
 	};
+	// One try: a new container, its handle saved, the bytes sent. Resolves
+	// with nothing once they are in, with the error when another container may
+	// get past it, and throws anything else.
 	let container;
+	const sendToContainer = async () => {
+		try {
+			container = await createContainer();
+			if (!container.id) throw new Error('Instagram returned no container id.');
+		} catch (err) {
+			if (isNetworkError(err)) return err;
+			video.stream.destroy();
+			throw err;
+		}
+		try {
+			// Recorded before a byte goes up, or nothing does — see orphans.mjs.
+			await saveHandle({
+				kind: 'instagram-container',
+				containerId: container.id,
+				// So a worker taking over asks with this account's token.
+				account: ig.igUserId,
+				...(hosted ? { coverPhotoId: hosted.id } : {})
+			});
+		} catch (err) {
+			video.stream.destroy();
+			throw err;
+		}
+
+		log(
+			`uploading ${name} (${(video.size / MiB).toFixed(1)} MB) into container ${container.id} ` +
+				`for @${ig.username || ig.igUserId}`
+		);
+		try {
+			await uploadBytes(ig, container, video, log);
+			return null;
+		} catch (err) {
+			if (err.freshContainer || isNetworkError(err)) return err;
+			throw err;
+		}
+	};
+	const startedAt = Date.now();
 	try {
 		for (let attempt = 1; ; attempt += 1) {
-			try {
-				container = await createContainer();
-				if (!container.id) throw new Error('Instagram returned no container id.');
-
-				// Recorded before a byte goes up, or nothing does — see orphans.mjs.
-				await saveHandle({
-					kind: 'instagram-container',
-					containerId: container.id,
-					// So a worker taking over asks with this account's token.
-					account: ig.igUserId,
-					...(hosted ? { coverPhotoId: hosted.id } : {})
-				});
-			} catch (err) {
-				video.stream.destroy();
-				throw err;
+			const failure = await sendToContainer();
+			if (!failure) break;
+			video.stream.destroy();
+			const pause = nextUploadPause({ attempt, slot: target.scheduled_at, startedAt, now: Date.now() });
+			if (pause === null) {
+				if (attempt > 1) failure.message += ` (gave up after ${attempt} containers)`;
+				throw failure;
 			}
-
-			log(
-				`uploading ${name} (${(video.size / MiB).toFixed(1)} MB) into container ${container.id} ` +
-					`for @${ig.username || ig.igUserId}`
-			);
-			try {
-				await uploadBytes(ig, container, video, log);
-				break;
-			} catch (err) {
-				if (!err.freshContainer || attempt >= UPLOAD_ATTEMPTS) throw err;
-				log(`${err.message} — trying a new container in ${UPLOAD_RETRY_MS / 1000}s`);
-			}
-			await sleep(UPLOAD_RETRY_MS);
+			log(`${failure.message} — trying a new container in ${pause < 60_000 ? `${pause / 1000}s` : `${pause / 60_000} min`}`);
+			await sleep(pause);
 			video = await pb.openVideo(job);
 		}
 		await waitForContainer(ig, container.id, log);

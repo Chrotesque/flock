@@ -80,6 +80,7 @@ import { instagramStatsPass } from './igstats.mjs';
 import { facebookStatsPass } from './fbstats.mjs';
 import { tiktokStatsPass, statsReach, videoIdOf } from './ttstats.mjs';
 import { msUntil } from './upload.mjs';
+import { errorText } from './net.mjs';
 import { startPreviewServer } from './preview.mjs';
 import { makeRemoteLog } from './remotelog.mjs';
 import { randomBytes } from 'node:crypto';
@@ -323,7 +324,8 @@ async function publishOne(pb, config, platform, target, job, label, claim) {
 			log: (message) => log(`  ${message}`)
 		});
 	} catch (err) {
-		failure = err instanceof Error ? err.message : String(err);
+		// Never '': a post's error is what To finish shows.
+		failure = errorText(err);
 		moved = Boolean(err?.moved);
 	}
 

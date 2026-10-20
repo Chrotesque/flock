@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildContainer, checkGrant, freshContainerHelps, GraphError, INSTAGRAM_SCOPES, labelRefused } from './instagram.mjs';
+import {
+	buildContainer,
+	checkGrant,
+	freshContainerHelps,
+	GraphError,
+	INSTAGRAM_SCOPES,
+	labelRefused,
+	nextUploadPause
+} from './instagram.mjs';
 
 const granted = (names) => names.map((permission) => ({ permission, status: 'granted' }));
 const names = (list) => list.map((p) => p.name);
@@ -73,6 +81,35 @@ test('any other refusal of the upload fails the reel as before', () => {
 	assert.equal(freshContainerHelps({ debug_info: { type: 'SomethingElse' } }), false);
 	assert.equal(freshContainerHelps({}), false);
 	assert.equal(freshContainerHelps(undefined), false);
+});
+
+const MIN = 60_000;
+const slot = '2026-10-20 16:00:00.000Z';
+const at = (minutes) => Date.parse('2026-10-20T16:00:00Z') + minutes * MIN;
+
+test('new containers wait 30 s, then 1 min, then 2 min each', () => {
+	const pauses = [1, 2, 3, 4].map((attempt) => nextUploadPause({ attempt, slot, startedAt: at(-10), now: at(-8) }));
+	assert.deepEqual(pauses, [30_000, MIN, 2 * MIN, 2 * MIN]);
+});
+
+test('tries go on past the slot and stop starting 15 minutes after it', () => {
+	assert.equal(nextUploadPause({ attempt: 6, slot, startedAt: at(-10), now: at(12) }), 2 * MIN);
+	assert.equal(nextUploadPause({ attempt: 7, slot, startedAt: at(-10), now: at(13) }), null);
+});
+
+test('a reel picked up after its slot (a late Retry) gets 15 minutes from then', () => {
+	assert.equal(nextUploadPause({ attempt: 2, slot, startedAt: at(12), now: at(20) }), MIN);
+	assert.equal(nextUploadPause({ attempt: 5, slot, startedAt: at(12), now: at(26) }), null);
+});
+
+test('refusals that come at once stop after twelve containers', () => {
+	assert.equal(nextUploadPause({ attempt: 11, slot, startedAt: at(-10), now: at(-9) }), 2 * MIN);
+	assert.equal(nextUploadPause({ attempt: 12, slot, startedAt: at(-10), now: at(-9) }), null);
+});
+
+test('a row without a slot counts from the start', () => {
+	assert.equal(nextUploadPause({ attempt: 1, slot: '', startedAt: at(0), now: at(14) }), 30_000);
+	assert.equal(nextUploadPause({ attempt: 1, slot: '', startedAt: at(0), now: at(15) }), null);
 });
 
 test('the Paid partnership tick puts the label on the container, and only then', () => {

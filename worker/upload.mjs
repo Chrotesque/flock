@@ -9,6 +9,7 @@ import { request as httpsRequest } from 'node:https';
 import { extname } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { describeNetworkError } from './net.mjs';
 
 const MIME_BY_EXTENSION = {
 	'.mp4': 'video/mp4',
@@ -143,11 +144,14 @@ export function progressMeter(size, onProgress) {
  * node:https rather than fetch for the same reason youtube.mjs uses it: a
  * stream body through fetch goes out chunked, and an upload endpoint that
  * wants the size up front refuses that. Resolves with the status and body
- * text whatever the status — the caller decides what counts as success.
+ * text whatever the status — the caller decides what counts as success. A
+ * connection that fails or drops rejects with a "Cannot reach" error
+ * (`isNetworkError`); a file that cannot be read rejects with its own.
  */
 export function streamRequest({ url, method = 'POST', headers = {}, body, size, onProgress }) {
 	return new Promise((resolve, reject) => {
 		const target = new URL(url);
+		const lost = (err) => reject(describeNetworkError(url, err));
 		const req = httpsRequest(
 			{
 				hostname: target.hostname,
@@ -161,9 +165,13 @@ export function streamRequest({ url, method = 'POST', headers = {}, body, size, 
 				res.setEncoding('utf8');
 				res.on('data', (chunk) => (text += chunk));
 				res.on('end', () => resolve({ status: res.statusCode ?? 0, text }));
+				// The connection dropping halfway through the answer.
+				res.on('error', lost);
 			}
 		);
-		req.on('error', reject);
+		// Registered before pipeline's own listener, so a socket error is
+		// reported as one rather than raw.
+		req.on('error', lost);
 		const meter = onProgress ? progressMeter(size, onProgress) : null;
 		pipeline(...(meter ? [body, meter, req] : [body, req])).catch(reject);
 	});

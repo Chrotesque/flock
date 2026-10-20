@@ -11,7 +11,7 @@ import { accessToken, forgetToken, grantedScope } from './google.mjs';
 import { pickAccount } from './accounts.mjs';
 import { youtubeVideoId } from './moves.mjs';
 import { sameTitle, snippetPatch } from './retitle.mjs';
-import { fetchOrExplain } from './net.mjs';
+import { describeNetworkError, fetchOrExplain } from './net.mjs';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/youtube/v3/videos';
@@ -410,7 +410,7 @@ function putVideo(uploadUrl, body, { size, mimeType, onProgress }) {
 				});
 			}
 		);
-		req.on('error', reject);
+		req.on('error', (err) => reject(describeNetworkError(uploadUrl, err)));
 
 		pipeline(body, progressMeter(size, onProgress), req).catch(reject);
 	});
@@ -592,7 +592,7 @@ export async function probeYouTube(config, handle) {
 				res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, text: body }));
 			}
 		);
-		req.on('error', reject);
+		req.on('error', (err) => reject(describeNetworkError(handle.uploadUrl, err)));
 		req.end();
 	});
 

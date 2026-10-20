@@ -4,8 +4,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:net';
 import { Readable } from 'node:stream';
-import { planChunks, readChunks, mimeFromName, videoMime, MiB, pbDate } from './upload.mjs';
+import { planChunks, readChunks, mimeFromName, videoMime, MiB, pbDate, streamRequest } from './upload.mjs';
+import { isNetworkError } from './net.mjs';
 
 test('a file under 5 MB is one chunk the exact size of the file', () => {
 	const plan = planChunks(3 * MiB);
@@ -123,4 +125,22 @@ test('MIME comes from the extension only when PocketBase reported nothing usable
 
 test('pbDate is the space-separated UTC form PocketBase compares', () => {
 	assert.equal(pbDate('2026-09-06T12:34:56.789Z'), '2026-09-06 12:34:56.789Z');
+});
+
+test('a connection that cannot be made is a "Cannot reach" error naming the host', async () => {
+	// A port that was free a moment ago: nothing listens there now.
+	const server = createServer();
+	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+	const { port } = server.address();
+	await new Promise((resolve) => server.close(resolve));
+
+	const body = Readable.from([Buffer.from('0123456789')]);
+	await assert.rejects(
+		streamRequest({ url: `https://127.0.0.1:${port}/upload`, body, size: 10 }),
+		(err) => {
+			assert.equal(isNetworkError(err), true);
+			assert.ok(err.message.startsWith(`Cannot reach https://127.0.0.1:${port} (ECONNREFUSED`), err.message);
+			return true;
+		}
+	);
 });
