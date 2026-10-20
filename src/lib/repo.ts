@@ -1570,7 +1570,7 @@ export async function markProject(
 export async function saveProjectDraft(
 	id: string,
 	draft: unknown,
-	images: { thumbnail?: File | null; cover?: File | null; tiktok_cover?: File | null }
+	images: { thumbnail?: File | null; cover?: File | null }
 ): Promise<void> {
 	assertDeviceNamed();
 	const removed = Object.entries(images).filter(([, file]) => file === null);
@@ -1583,11 +1583,7 @@ export async function saveProjectDraft(
 }
 
 /** A stored project image, under the name it was picked with. */
-export async function loadProjectImage(
-	row: ProjectRow,
-	field: 'thumbnail' | 'cover' | 'tiktok_cover',
-	name: string
-): Promise<File | null> {
+export async function loadProjectImage(row: ProjectRow, field: 'thumbnail' | 'cover', name: string): Promise<File | null> {
 	const stored = row[field];
 	if (!stored) return null;
 	const res = await fetch(pb.files.getURL(row, stored));

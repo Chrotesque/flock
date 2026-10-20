@@ -182,9 +182,10 @@ Limits:
   (its app review, then its Content Posting API audit). Until then, posts are
   visible to the account alone.
 - **Videos:** MP4, MOV or WebM, under 4 GB.
-- **Cover:** TikTok takes no cover image, only a moment in the video. Give the
-  upload a *Cover* image and the worker holds it for 0.2 s at the end of the
-  video (or the beginning) and makes that moment the cover; this needs ffmpeg
+- **Cover:** TikTok takes no cover image, only a moment in the video. When the
+  upload has a *Cover* image (picked while writing for Instagram or Facebook),
+  the worker holds it for 0.2 s at the end of the TikTok video (or the
+  beginning) and makes that moment the cover; this needs ffmpeg
   and ffprobe where the worker runs (on the PATH, beside the config, or named
   by `ffmpegPath` / `FLOCK_FFMPEG`). Without an image, or without ffmpeg, the
   cover is the *Cover frame* set in TikTok's options, and the post says why.
@@ -475,11 +476,11 @@ are writing for.
 
 The boxes on the right follow the platform you are writing for:
 
-- **Instagram, Facebook and TikTok:** an optional *Cover* image (JPEG or PNG,
-  up to 8 MB for Instagram and 10 MB for Facebook and TikTok). One image serves
-  all of them; the switch in the box's corner gives each its own. For TikTok
-  the box also asks where the image goes in the video, *Beginning* or *End*
-  (the default).
+- **Instagram and Facebook:** an optional *Cover* image (JPEG or PNG, up to
+  8 MB for Instagram and 10 MB for Facebook). One image serves both; the switch
+  in the box's corner gives each its own. TikTok takes the same image
+  (Instagram's, when the two have their own); its *Cover* box only asks where
+  in the video it goes, *Beginning* or *End* (the default).
 - **Instagram:** *Branded content*, whose *Paid partnership label* tick makes
   Instagram show "Paid partnership" on the reel — for ads and branded content.
   If Instagram refuses the label, the reel still goes out, without it, and the

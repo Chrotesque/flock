@@ -2,7 +2,16 @@
 	import { untrack } from 'svelte';
 	import { base } from '$app/paths';
 	import ThumbnailPicker from '../ThumbnailPicker.svelte';
-	import { coverAt, imageFits, isImagePlatform, withCoverAt } from '$lib/coverimage';
+	import {
+		PICKED_PLATFORMS,
+		coverAt,
+		imageFits,
+		imageGroups,
+		isImagePlatform,
+		tiktokImageNote,
+		withCoverAt,
+		type ImagePlatform
+	} from '$lib/coverimage';
 	import FoldBox from '../FoldBox.svelte';
 	import PlaylistPicker from '../PlaylistPicker.svelte';
 	import PlatformIcon from '../PlatformIcon.svelte';
@@ -99,22 +108,26 @@
 	let showPaidBox = $derived(composing === 'instagram' && draft.activePlatforms.includes('instagram'));
 	let paidTicked = $derived(paidPartnershipIn(draft.overrides));
 	let tiktokActive = $derived(draft.activePlatforms.includes('tiktok'));
-	// The image box is the cover of Instagram's and Facebook's reels and,
-	// since v0.16.44, TikTok's — put into its video at the start or end by the
-	// worker (coverimage.ts). YouTube's thumbnail was dropped in v0.11.7.
+	// The image box is the cover of Instagram's and Facebook's reels. TikTok
+	// takes one of their pictures — put into its video by the worker since
+	// v0.16.44 — and has no picker of its own since v0.16.45 (the user's
+	// call), so its box only says where in the video the picture goes
+	// (coverimage.ts). YouTube's thumbnail was dropped in v0.11.7.
 	let imagePlatforms = $derived(draft.activePlatforms.filter(isImagePlatform));
 	let imageComposing = $derived(composing && isImagePlatform(composing) ? composing : null);
 	let showImageBox = $derived(imagePlatforms.length > 0 && imageComposing !== null);
-	// Linked, one box serves every image platform; unlinked, the box is the
-	// platform in view's own. With one of them ticked there is nothing to
-	// link, so the switch shows only for a draft that was unlinked.
-	let imageBoxPlatforms = $derived(
-		draft.imagesLinked || !imageComposing ? imagePlatforms : [imageComposing]
+	let tiktokImageBox = $derived(imageComposing === 'tiktok');
+	// The picture the box in view picks and every platform it goes to:
+	// linked, all of them; unlinked, the platform in view's own, with TikTok
+	// riding on Instagram's (Facebook's without Instagram).
+	let imageGroup = $derived(
+		imageGroups(draft.activePlatforms, draft.imagesLinked).find(
+			(g) => imageComposing !== null && g.platforms.includes(imageComposing)
+		) ?? null
 	);
-	// Unlinked, Instagram's own picture is `cover`, TikTok's `tiktokCover`
-	// and Facebook's `thumbnail` (draft.imageFor).
-	let boxSlot = $derived(
-		draft.imagesLinked ? 'thumbnail' : imageComposing === 'instagram' ? 'cover' : imageComposing === 'tiktok' ? 'tiktokCover' : 'thumbnail'
+	let boxSlot = $derived(imageGroup?.slot ?? 'thumbnail');
+	let imageBoxPlatforms = $derived<ImagePlatform[]>(
+		tiktokImageBox ? ['tiktok'] : (imageGroup?.platforms ?? imagePlatforms)
 	);
 	// Where TikTok's image goes in its video; the end unless chosen otherwise.
 	let placement = $derived(coverAt(draft.overrides));
@@ -123,7 +136,12 @@
 	let imageBoxDone = $derived(
 		imageBoxFile !== null && imageBoxPlatforms.every((p) => imageFits(imageBoxFile, p))
 	);
-	let showLinkSwitch = $derived(imagePlatforms.length > 1 || !draft.imagesLinked);
+	// Only Instagram and Facebook have pictures to link; with one of them
+	// ticked the switch shows only for a draft that was unlinked.
+	let pickedCount = $derived(
+		draft.activePlatforms.filter((p) => isImagePlatform(p) && PICKED_PLATFORMS.includes(p)).length
+	);
+	let showLinkSwitch = $derived(!tiktokImageBox && (pickedCount > 1 || !draft.imagesLinked));
 	// The boxes follow the pill being composed, like the playlist box: the
 	// TikTok box shows only while TikTok is.
 	let showTiktokBox = $derived(tiktokActive && composing === 'tiktok');
@@ -1219,25 +1237,14 @@
 
 		{#if showImageBox}
 			{#key imageBoxLabel}
-				<FoldBox
-					label={imageBoxLabel}
-					platforms={imageBoxPlatforms}
-					done={imageBoxDone}
-					summary={imageBoxFile
-						? `${imageBoxFile.name}${imageComposing === 'tiktok' ? ` · ${placement === 'start' ? 'beginning' : 'end'}` : ''}`
-						: ''}
-					action={showLinkSwitch ? linkSwitch : undefined}
-				>
-					{#if boxSlot === 'cover'}
-						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.cover} />
-					{:else if boxSlot === 'tiktokCover'}
-						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.tiktokCover} />
-					{:else}
-						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.thumbnail} />
-					{/if}
-					{#if imageComposing === 'tiktok'}
-						<!-- TikTok takes no picture, only a moment: the image is held 0.2 s in the video. -->
-						<div class="coverat" role="radiogroup" aria-label="Where TikTok's cover image goes">
+				{#if tiktokImageBox}
+					<!--
+						TikTok takes no picture, only a moment: Instagram's or Facebook's
+						picture is held 0.2 s in its video. Never folded — the choice is
+						all the box holds, and it always has one (the end by default).
+					-->
+					<FoldBox label={imageBoxLabel} platforms={imageBoxPlatforms} done={false}>
+						<div class="coverat first" role="radiogroup" aria-label="Where TikTok's cover image goes">
 							<span class="coveratlabel">In the video</span>
 							{#each [['start', 'Beginning'], ['end', 'End']] as [value, label] (value)}
 								<button
@@ -1251,6 +1258,7 @@
 								</button>
 							{/each}
 						</div>
+						<p class="boxnote">{tiktokImageNote(draft.activePlatforms, draft.imagesLinked, imageBoxFile)}</p>
 						<p class="boxnote">
 							TikTok takes no cover picture, so the image is held for 0.2 s at the {placement === 'start'
 								? 'beginning'
@@ -1258,8 +1266,22 @@
 								? ' At the beginning it is the first thing viewers see.'
 								: ' At the end it leaves the opening untouched; viewers who reach the end see it before the loop.'}
 						</p>
-					{/if}
-				</FoldBox>
+					</FoldBox>
+				{:else}
+					<FoldBox
+						label={imageBoxLabel}
+						platforms={imageBoxPlatforms}
+						done={imageBoxDone}
+						summary={imageBoxFile?.name ?? ''}
+						action={showLinkSwitch ? linkSwitch : undefined}
+					>
+						{#if boxSlot === 'cover'}
+							<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.cover} />
+						{:else}
+							<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.thumbnail} />
+						{/if}
+					</FoldBox>
+				{/if}
 			{/key}
 		{/if}
 	</div>
@@ -2174,6 +2196,10 @@
 		align-items: center;
 		gap: 6px;
 		margin-top: 10px;
+	}
+
+	.coverat.first {
+		margin-top: 0;
 	}
 
 	.coveratlabel {

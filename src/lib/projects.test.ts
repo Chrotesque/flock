@@ -90,7 +90,6 @@ describe('readSavedDraft', () => {
 			imagesLinked: false,
 			thumbnailName: 'thumb.png',
 			coverName: '',
-			tiktokCoverName: '',
 			queued: ['all'],
 			repick: true
 		});

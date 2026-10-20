@@ -21,10 +21,7 @@ interface SavedState {
 	json: string;
 	thumbnail: File | null;
 	cover: File | null;
-	tiktokCover: File | null;
 }
-
-type DraftImages = { thumbnail: File | null; cover: File | null; tiktokCover: File | null };
 
 /**
  * The project folders the workers found (projects.ts), and the upload one of
@@ -126,17 +123,13 @@ class ProjectsStore {
 		draft.followBrand(brands.currentId);
 		draft.restoreSaved(saved);
 
-		const [thumbnail, cover, tiktokCover] = await Promise.all([
+		const [thumbnail, cover] = await Promise.all([
 			loadProjectImage(row, 'thumbnail', saved.thumbnailName).catch(() => null),
-			saved.imagesLinked ? Promise.resolve(null) : loadProjectImage(row, 'cover', saved.coverName).catch(() => null),
-			saved.imagesLinked
-				? Promise.resolve(null)
-				: loadProjectImage(row, 'tiktok_cover', saved.tiktokCoverName).catch(() => null)
+			saved.imagesLinked ? Promise.resolve(null) : loadProjectImage(row, 'cover', saved.coverName).catch(() => null)
 		]);
 		if (seq !== this.#entering) return;
 		draft.thumbnail = thumbnail;
 		draft.cover = cover;
-		draft.tiktokCover = tiktokCover;
 
 		const notes: string[] = [];
 		if (saved.repick) {
@@ -202,8 +195,7 @@ class ProjectsStore {
 		this.#saved.set(id, {
 			json: JSON.stringify(draft.projectSnapshot()),
 			thumbnail: draft.thumbnail,
-			cover: draft.cover,
-			tiktokCover: draft.tiktokCover
+			cover: draft.cover
 		});
 	}
 
@@ -212,17 +204,11 @@ class ProjectsStore {
 	 * 800 ms after the last change, and only what differs from the last
 	 * write: the images go up only when they are new.
 	 */
-	queueSave(id: string, snapshot: SavedDraft, images: DraftImages) {
+	queueSave(id: string, snapshot: SavedDraft, images: { thumbnail: File | null; cover: File | null }) {
 		const json = JSON.stringify(snapshot);
 		const saved = this.#saved.get(id);
 		if (this.#queued && this.#queued.id !== id) void this.flush();
-		if (
-			saved &&
-			saved.json === json &&
-			saved.thumbnail === images.thumbnail &&
-			saved.cover === images.cover &&
-			saved.tiktokCover === images.tiktokCover
-		) {
+		if (saved && saved.json === json && saved.thumbnail === images.thumbnail && saved.cover === images.cover) {
 			if (this.#queued?.id === id) this.#cancelQueued();
 			return;
 		}
@@ -244,13 +230,12 @@ class ProjectsStore {
 		if (next) {
 			this.#chain = this.#chain.then(async () => {
 				const saved = this.#saved.get(next.id);
-				const images: { thumbnail?: File | null; cover?: File | null; tiktok_cover?: File | null } = {};
+				const images: { thumbnail?: File | null; cover?: File | null } = {};
 				if (next.thumbnail !== (saved?.thumbnail ?? null)) images.thumbnail = next.thumbnail;
 				if (next.cover !== (saved?.cover ?? null)) images.cover = next.cover;
-				if (next.tiktokCover !== (saved?.tiktokCover ?? null)) images.tiktok_cover = next.tiktokCover;
 				try {
 					await saveProjectDraft(next.id, JSON.parse(next.json), images);
-					this.#saved.set(next.id, { json: next.json, thumbnail: next.thumbnail, cover: next.cover, tiktokCover: next.tiktokCover });
+					this.#saved.set(next.id, { json: next.json, thumbnail: next.thumbnail, cover: next.cover });
 					this.saveError = '';
 				} catch (err) {
 					// The next change tries again, from the last state that did land.

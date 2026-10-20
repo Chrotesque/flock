@@ -10,13 +10,77 @@ import type { PlatformId } from './types';
  * (`video_cover_timestamp_ms`, checked 11 Oct 2026), so since v0.16.44 its
  * image is put into the video itself — held 0.2 s at the end (the default)
  * or the beginning, the cover time pointed at it (worker/tiktokcover.mjs).
- * The image is checked against every platform it would go to, and one it
+ * TikTok has no picker of its own since v0.16.45 (the user's call): it
+ * takes the picture picked for Instagram or Facebook (`imageSlot`), and its
+ * Cover box only says where in the video it goes. The image is checked against every platform it would go to, and one it
  * does not fit uses its frame instead — said beside the picker, never
  * decided silently at confirm.
  */
 export type ImagePlatform = 'instagram' | 'facebook' | 'tiktok';
 
 export const IMAGE_PLATFORMS: readonly ImagePlatform[] = ['instagram', 'facebook', 'tiktok'];
+
+/** The platforms the Cover box picks a picture for; TikTok takes one of theirs. */
+export const PICKED_PLATFORMS: readonly ImagePlatform[] = ['instagram', 'facebook'];
+
+const NAMES: Record<ImagePlatform, string> = { instagram: 'Instagram', facebook: 'Facebook', tiktok: 'TikTok' };
+
+/** The draft's two pictures: `thumbnail` (the name pastes and saved drafts use) and `cover`. */
+export type ImageSlot = 'thumbnail' | 'cover';
+
+/**
+ * Which picture a platform gets. Linked, all get `thumbnail`; unlinked,
+ * Instagram gets `cover` and Facebook keeps `thumbnail`, and TikTok takes
+ * Instagram's when Instagram is in the upload, else Facebook's.
+ */
+export function imageSlot(platform: ImagePlatform, linked: boolean, active: readonly PlatformId[]): ImageSlot {
+	if (linked) return 'thumbnail';
+	if (platform === 'instagram') return 'cover';
+	if (platform === 'tiktok') return active.includes('instagram') ? 'cover' : 'thumbnail';
+	return 'thumbnail';
+}
+
+export interface ImageGroup {
+	slot: ImageSlot;
+	platforms: ImagePlatform[];
+}
+
+/** The pictures an upload carries, each with the platforms it goes to, in `active`'s order. */
+export function imageGroups(active: readonly PlatformId[], linked: boolean): ImageGroup[] {
+	const groups: ImageGroup[] = [];
+	for (const platform of active) {
+		if (!isImagePlatform(platform)) continue;
+		const slot = imageSlot(platform, linked, active);
+		const group = groups.find((g) => g.slot === slot);
+		if (group) group.platforms.push(platform);
+		else groups.push({ slot, platforms: [platform] });
+	}
+	return groups;
+}
+
+/** Where TikTok's cover image comes from, in words, for its Cover box. */
+export function tiktokImageNote(
+	active: readonly PlatformId[],
+	linked: boolean,
+	file: { name: string; type: string; size: number } | null
+): string {
+	const picked = PICKED_PLATFORMS.filter((p) => active.includes(p)).map((p) => NAMES[p]);
+	if (file) {
+		const from = !linked
+			? `${NAMES[active.includes('instagram') ? 'instagram' : 'facebook']}'s cover`
+			: picked.length > 0
+				? `the cover picked for ${picked.join(' and ')}`
+				: 'the cover image';
+		const problem = imageProblem(file, 'tiktok');
+		return problem
+			? `${from[0].toUpperCase()}${from.slice(1)}, ${file.name}, does not fit TikTok (${problem}), so TikTok uses its cover frame.`
+			: `Uses ${from}: ${file.name}.`;
+	}
+	if (picked.length > 0) {
+		return `No cover image yet: pick one while writing for ${picked.join(' or ')}. Without one, TikTok uses its cover frame.`;
+	}
+	return 'TikTok takes the cover image picked for Instagram or Facebook. Neither is in this upload, so it uses its cover frame.';
+}
 
 interface Limit {
 	bytes: number;

@@ -419,7 +419,7 @@
 		if (!id || phase === 'done') return;
 		const snapshot = draft.projectSnapshot();
 		JSON.stringify(snapshot);
-		const images = { thumbnail: draft.thumbnail, cover: draft.cover, tiktokCover: draft.tiktokCover };
+		const images = { thumbnail: draft.thumbnail, cover: draft.cover };
 		untrack(() => projects.queueSave(id, snapshot, images));
 	});
 

@@ -4,7 +4,7 @@ import { tiktokProblems } from '../tiktok';
 import { PASTE_TAG_BOX, type FlockPaste, type PastedPlatform } from '../flockpaste';
 import { withPlaylists } from '../playlists';
 import { SAVED_VERSION, withoutHandPicked, type SavedDraft } from '../projects';
-import type { ImagePlatform } from '../coverimage';
+import { imageSlot, type ImagePlatform } from '../coverimage';
 import { settings } from './settings.svelte';
 import { accounts } from './accounts.svelte';
 import { DEFAULT_SCHEDULING } from '../types';
@@ -128,21 +128,19 @@ class DraftStore {
 	 * The custom image: the reel cover for Instagram and Facebook (see
 	 * coverimage.ts), still named `thumbnail` because the paste format and
 	 * saved drafts call it so. Optional; without one each uses a frame.
-	 * TikTok takes a cover *time*, not an image, and YouTube's thumbnail was
-	 * dropped in v0.11.7.
+	 * TikTok has no picture of its own: it takes Instagram's or Facebook's
+	 * (`imageSlot`). YouTube's thumbnail was dropped in v0.11.7.
 	 *
 	 * Linked (the default), all of them get `thumbnail`. Unlinked, Instagram
-	 * gets `cover`, TikTok `tiktokCover` and Facebook keeps `thumbnail`.
+	 * gets `cover` and Facebook keeps `thumbnail`.
 	 */
 	thumbnail = $state<File | null>(null);
 	cover = $state<File | null>(null);
-	tiktokCover = $state<File | null>(null);
 	imagesLinked = $state(true);
 
 	/** The image a platform gets, linked or not. */
 	imageFor(platform: ImagePlatform): File | null {
-		if (this.imagesLinked) return this.thumbnail;
-		return platform === 'instagram' ? this.cover : platform === 'tiktok' ? this.tiktokCover : this.thumbnail;
+		return this[imageSlot(platform, this.imagesLinked, this.activePlatforms)];
 	}
 
 	/**
@@ -154,17 +152,11 @@ class DraftStore {
 		if (linked === this.imagesLinked) return;
 		if (linked) {
 			const keep =
-				this.composing === 'instagram'
-					? (this.cover ?? this.thumbnail ?? this.tiktokCover)
-					: this.composing === 'tiktok'
-						? (this.tiktokCover ?? this.thumbnail ?? this.cover)
-						: (this.thumbnail ?? this.cover ?? this.tiktokCover);
+				this.composing === 'instagram' ? (this.cover ?? this.thumbnail) : (this.thumbnail ?? this.cover);
 			this.thumbnail = keep;
 			this.cover = null;
-			this.tiktokCover = null;
 		} else {
 			this.cover = this.thumbnail;
-			this.tiktokCover = this.thumbnail;
 		}
 		this.imagesLinked = linked;
 	}
@@ -496,7 +488,7 @@ class DraftStore {
 		return (
 			Object.values(this.texts).some((t) => Boolean(t && (t.title.trim() || t.description.trim()))) ||
 			Object.values(this.videos).some((v) => Boolean(v.file || v.nasFile)) ||
-			Boolean(this.thumbnail || this.cover || this.tiktokCover)
+			Boolean(this.thumbnail || this.cover)
 		);
 	}
 
@@ -531,7 +523,6 @@ class DraftStore {
 			imagesLinked: this.imagesLinked,
 			thumbnailName: this.thumbnail?.name ?? '',
 			coverName: this.cover?.name ?? '',
-			tiktokCoverName: this.tiktokCover?.name ?? '',
 			queued: this.queued,
 			repick: dropped
 		};
@@ -605,7 +596,6 @@ class DraftStore {
 		this.previewed = {};
 		this.thumbnail = null;
 		this.cover = null;
-		this.tiktokCover = null;
 		this.imagesLinked = true;
 		this.selected = {};
 		this.overrides = {};

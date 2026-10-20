@@ -20,7 +20,7 @@
 		YOUTUBE_EDIT_SETUP,
 		type Allowance
 	} from '$lib/accounts';
-	import { coverAt, imageFits, isImagePlatform, type ImagePlatform } from '$lib/coverimage';
+	import { coverAt, imageFits, imageGroups, isImagePlatform, type ImagePlatform } from '$lib/coverimage';
 	import {
 		tiktokProblems,
 		readDisclosure,
@@ -266,12 +266,13 @@
 				{ key: 'image', label: 'Cover', noun: 'cover', platforms: imagePlatforms, file: draft.thumbnail }
 			];
 		}
-		return imagePlatforms.map((p) => ({
-			key: `image-${p}`,
+		// Unlinked: Instagram's and Facebook's pictures, TikTok on one of them.
+		return imageGroups(imagePlatforms, false).map((group) => ({
+			key: `image-${group.slot}`,
 			label: 'Cover',
 			noun: 'cover',
-			platforms: [p],
-			file: draft.imageFor(p)
+			platforms: group.platforms,
+			file: draft.imageFor(group.platforms[0])
 		}));
 	});
 	let shownImage = $derived(imageTabs.find((t) => t.key === tab) ?? null);

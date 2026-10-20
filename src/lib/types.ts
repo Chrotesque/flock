@@ -369,7 +369,6 @@ export interface ProjectRow {
 	draft: unknown;
 	thumbnail: string;
 	cover: string;
-	tiktok_cover?: string;
 	done_at: string;
 	/**
 	 * Set by the worker once the project is sent: when it renamed the file

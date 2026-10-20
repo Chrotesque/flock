@@ -370,14 +370,6 @@ const collections = [
 				maxSize: 8388608,
 				mimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 			},
-			// TikTok's own picture while the images are unlinked.
-			{
-				type: 'file',
-				name: 'tiktok_cover',
-				maxSelect: 1,
-				maxSize: 10485760,
-				mimeTypes: ['image/jpeg', 'image/png']
-			},
 			{ type: 'date', name: 'done_at' },
 			{ type: 'json', name: 'jobs', maxSize: 20000 },
 			// The worker again: when it renamed the sent project's file, and to

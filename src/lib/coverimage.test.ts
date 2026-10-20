@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { acceptedTypes, coverAt, imageFits, imageProblem, isImagePlatform, largestAccepted, withCoverAt } from './coverimage';
+import {
+	acceptedTypes,
+	coverAt,
+	imageFits,
+	imageGroups,
+	imageProblem,
+	imageSlot,
+	isImagePlatform,
+	largestAccepted,
+	tiktokImageNote,
+	withCoverAt
+} from './coverimage';
 
 const MB = 1024 * 1024;
 
@@ -57,5 +68,54 @@ describe("TikTok's cover image", () => {
 		expect(start.tiktok).toEqual({ privacy: 'Public', coverImageAt: 'start' });
 		expect(coverAt(start)).toBe('start');
 		expect(coverAt(withCoverAt(start, 'end'))).toBe('end');
+	});
+});
+
+describe('which picture each platform gets', () => {
+	const all = ['youtube', 'instagram', 'tiktok', 'facebook'] as const;
+
+	it('is the one picture while linked', () => {
+		expect(imageSlot('tiktok', true, all)).toBe('thumbnail');
+		expect(imageGroups(all, true)).toEqual([{ slot: 'thumbnail', platforms: ['instagram', 'tiktok', 'facebook'] }]);
+	});
+
+	it("unlinked, gives TikTok Instagram's picture, or Facebook's without Instagram", () => {
+		expect(imageSlot('instagram', false, all)).toBe('cover');
+		expect(imageSlot('facebook', false, all)).toBe('thumbnail');
+		expect(imageSlot('tiktok', false, all)).toBe('cover');
+		expect(imageSlot('tiktok', false, ['tiktok', 'facebook'])).toBe('thumbnail');
+		expect(imageGroups(all, false)).toEqual([
+			{ slot: 'cover', platforms: ['instagram', 'tiktok'] },
+			{ slot: 'thumbnail', platforms: ['facebook'] }
+		]);
+	});
+
+	it('leaves out the platforms that take no picture', () => {
+		expect(imageGroups(['youtube'], true)).toEqual([]);
+		expect(imageGroups(['youtube', 'tiktok'], true)).toEqual([{ slot: 'thumbnail', platforms: ['tiktok'] }]);
+	});
+});
+
+describe("TikTok's Cover box note", () => {
+	const jpg = { name: 'cover.jpg', type: 'image/jpeg', size: 1024 };
+
+	it('names where the picture comes from', () => {
+		expect(tiktokImageNote(['instagram', 'tiktok', 'facebook'], true, jpg)).toBe(
+			'Uses the cover picked for Instagram and Facebook: cover.jpg.'
+		);
+		expect(tiktokImageNote(['instagram', 'tiktok', 'facebook'], false, jpg)).toBe("Uses Instagram's cover: cover.jpg.");
+		expect(tiktokImageNote(['tiktok', 'facebook'], false, jpg)).toBe("Uses Facebook's cover: cover.jpg.");
+		expect(tiktokImageNote(['tiktok'], true, jpg)).toBe('Uses the cover image: cover.jpg.');
+	});
+
+	it('says where to pick one, or that there is nowhere to', () => {
+		expect(tiktokImageNote(['instagram', 'tiktok'], true, null)).toMatch(/^No cover image yet: pick one while writing for Instagram\./);
+		expect(tiktokImageNote(['tiktok'], true, null)).toMatch(/Neither is in this upload/);
+	});
+
+	it('says when the picture does not fit TikTok', () => {
+		expect(tiktokImageNote(['tiktok', 'facebook'], true, { ...jpg, size: 11 * 1024 * 1024 })).toBe(
+			'The cover picked for Facebook, cover.jpg, does not fit TikTok (over its 10 MB limit), so TikTok uses its cover frame.'
+		);
 	});
 });

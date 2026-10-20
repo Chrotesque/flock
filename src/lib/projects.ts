@@ -47,7 +47,6 @@ export interface SavedDraft {
 	/** The images' own names; PocketBase stores them under suffixed ones. */
 	thumbnailName: string;
 	coverName: string;
-	tiktokCoverName: string;
 	/** Slots already written by a confirm that failed part-way. */
 	queued: Slot[];
 	/** Hand-picked choices were left out on saving (see HAND_PICKED). */
@@ -183,7 +182,6 @@ export function readSavedDraft(raw: unknown): SavedDraft | null {
 		imagesLinked: raw.imagesLinked !== false,
 		thumbnailName: str(raw.thumbnailName),
 		coverName: str(raw.coverName),
-		tiktokCoverName: str(raw.tiktokCoverName),
 		queued: Array.isArray(raw.queued) ? [...new Set(raw.queued.filter(isSlot))] : [],
 		repick: raw.repick === true
 	};
