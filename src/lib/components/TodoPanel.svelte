@@ -10,7 +10,7 @@
 	import { attention } from '$lib/stores/attention.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { general } from '$lib/stores/general.svelte';
-	import { WAITING, type TodoLine } from '$lib/videotodo';
+	import { INSTAGRAM_STEP, WAITING, type InstagramStep, type TodoLine } from '$lib/videotodo';
 	import type { Attention } from '$lib/attention';
 	import PlatformIcon from './PlatformIcon.svelte';
 	import RetryButton from './RetryButton.svelte';
@@ -115,6 +115,17 @@
 			: 'Open in YouTube Studio — nothing left to set there';
 	}
 
+	/** The Instagram button's tooltip: the label is added in the app, which flock cannot check. */
+	function instagramTitle(step: InstagramStep): string {
+		if (step.state === 'waiting') {
+			const when = goesPublic(step.at);
+			return `${when ? `Goes out ${when}` : 'Not out yet'} — add its ${INSTAGRAM_STEP} after that`;
+		}
+		return step.state === 'open'
+			? `Open the reel on Instagram and add the ${INSTAGRAM_STEP} in the app — counts as done`
+			: 'Open the reel on Instagram — its label was added';
+	}
+
 	const PAID = {
 		on: { label: 'Ticked', title: 'Paid promotion is ticked on YouTube' },
 		off: { label: 'Not ticked', title: 'Paid promotion is not ticked on YouTube — tick it in Studio if this video has any' },
@@ -144,7 +155,8 @@
 				<p class="sub">
 					What needs attention comes first: click a post for its upload in the Log, retry a failed one, and
 					dismiss it once dealt with. Then what is left to do by hand on each video: the Studio button opens it in YouTube Studio and
-					counts as done; the $ is what YouTube reports about paid promotion.{#if jestr}{' '}Jestr's button goes
+					counts as done, and the Instagram one opens its reel, for the Paid partnership label only the app can add; the $ is what
+					YouTube reports about paid promotion.{#if jestr}{' '}Jestr's button goes
 						once the video is linked there.{/if}
 				</p>
 			</div>
@@ -213,7 +225,7 @@
 					<span>Video</span>
 					<span></span>
 					<span class="mid">Paid promotion</span>
-					<span class="mid">Studio</span>
+					<span class="mid">Studio · Instagram</span>
 					{#if jestr}<span class="mid">Jestr</span>{/if}
 				</div>
 				<ul>
@@ -255,6 +267,9 @@
 								{#if line.studio.length > 0}
 									<p class="steps">Left in Studio: {line.studio.join(', ')}</p>
 								{/if}
+								{#if line.instagram?.state === 'open'}
+									<p class="steps">Left on Instagram: {INSTAGRAM_STEP}</p>
+								{/if}
 							</div>
 
 							<div class="cell">
@@ -275,7 +290,7 @@
 								{/if}
 							</div>
 
-							<div class="cell">
+							<div class="cell byhand">
 								{#if line.studioUrl}
 									<!-- The logo is never altered (YouTube's branding rules): a
 									     badge on its corner says the state, yellow until Studio
@@ -313,6 +328,49 @@
 									</a>
 								{:else}
 									<span class="spinner" role="status" title={line.waiting ?? ''} aria-label={line.waiting ?? ''}></span>
+								{/if}
+								{#if line.instagram}
+									{@const ig = line.instagram}
+									<!-- The same upload's reel, for the label only the app adds
+									     (videotodo.ts): opening it through here is the record. -->
+									{#if ig.state === 'waiting'}
+										<span class="studio waiting" title={instagramTitle(ig)}>
+											<span class="yt"><PlatformIcon platform="instagram" size={18} /></span>
+											Add label
+										</span>
+									{:else}
+										<a
+											class="studio"
+											class:done={ig.state === 'done'}
+											href={ig.url}
+											target="_blank"
+											rel="noopener"
+											title={instagramTitle(ig)}
+											onclick={() => {
+												if (ig.state === 'open') void videoTodo.markInstagram(line);
+											}}
+										>
+											<span class="yt">
+												<PlatformIcon platform="instagram" size={18} />
+												{#if ig.state === 'open'}
+													<span class="badge open" aria-hidden="true"></span>
+												{:else}
+													<span class="badge done" aria-hidden="true">
+														<svg viewBox="0 0 10 10" width="8" height="8" fill="none">
+															<path
+																d="M2.3 5.3 4.3 7.2 7.8 3.2"
+																stroke="currentColor"
+																stroke-width="1.7"
+																stroke-linecap="round"
+																stroke-linejoin="round"
+															/>
+														</svg>
+													</span>
+												{/if}
+											</span>
+											{ig.state === 'open' ? 'Add label' : 'Label done'}
+										</a>
+									{/if}
 								{/if}
 							</div>
 
@@ -543,12 +601,13 @@
 	}
 
 	/* One grid for the head and every row, so the columns line up. */
+	/* The Studio cell holds YouTube's button and the reel's beside it. */
 	.table {
-		--cols: 44px minmax(0, 1fr) 120px 170px 100px;
+		--cols: 44px minmax(0, 1fr) 120px 290px 100px;
 	}
 
 	.table.nojestr {
-		--cols: 44px minmax(0, 1fr) 120px 170px;
+		--cols: 44px minmax(0, 1fr) 120px 290px;
 	}
 
 	.thead,
@@ -741,6 +800,21 @@
 		color: var(--text);
 	}
 
+	.cell.byhand {
+		display: flex;
+		justify-content: center;
+		gap: 8px;
+	}
+
+	/* A reel not out yet: nothing to label until it is. */
+	.studio.waiting {
+		border-color: var(--border);
+		background: none;
+		color: var(--text-faint);
+		cursor: default;
+		opacity: 0.6;
+	}
+
 	.yt {
 		position: relative;
 		display: grid;
@@ -824,10 +898,10 @@
 
 	@media (max-width: 1100px) {
 		.table {
-			--cols: 44px minmax(0, 1fr) 90px 150px 80px;
+			--cols: 44px minmax(0, 1fr) 90px 270px 80px;
 		}
 		.table.nojestr {
-			--cols: 44px minmax(0, 1fr) 90px 150px;
+			--cols: 44px minmax(0, 1fr) 90px 270px;
 		}
 	}
 </style>

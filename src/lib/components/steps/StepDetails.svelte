@@ -23,7 +23,6 @@
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { JESTR_PLATFORMS, tickedIn, withTick } from '$lib/jestrcampaign';
-	import { paidPartnershipIn, withPaidPartnership } from '$lib/paidpartnership';
 	import { templates, tokenOf } from '$lib/stores/templates.svelte';
 	import {
 		loadPlaylists,
@@ -103,10 +102,6 @@
 		general.value.jestrIntegration && composing !== null && jestrPlatforms.includes(composing)
 	);
 	let jestrTicked = $derived(tickedIn(draft.overrides));
-	// Instagram's "Paid partnership" label (paidpartnership.ts), while composing
-	// Instagram. Facebook's reels API has no such field, so there is no box for it.
-	let showPaidBox = $derived(composing === 'instagram' && draft.activePlatforms.includes('instagram'));
-	let paidTicked = $derived(paidPartnershipIn(draft.overrides));
 	let tiktokActive = $derived(draft.activePlatforms.includes('tiktok'));
 	// The image box is the cover of Instagram's and Facebook's reels. TikTok
 	// takes one of their pictures — put into its video by the worker since
@@ -1061,20 +1056,6 @@
 					label="Jestr campaign"
 					onchange={(next) => (draft.overrides = withTick(draft.overrides, next))}
 				/>
-			</FoldBox>
-		{/if}
-
-		{#if showPaidBox}
-			<FoldBox label="Branded content" platforms={['instagram']}>
-				<Checkbox
-					checked={paidTicked}
-					label="Paid partnership label"
-					onchange={(next) => (draft.overrides = withPaidPartnership(draft.overrides, next))}
-				/>
-				<p class="boxnote">
-					Instagram shows “Paid partnership” on the reel — for ads and branded content. Facebook's API cannot set
-					its label on a reel.
-				</p>
 			</FoldBox>
 		{/if}
 

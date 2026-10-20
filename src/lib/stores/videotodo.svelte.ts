@@ -1,15 +1,18 @@
-import { getSetting, loadTodoStats, loadTodoUploads, setSetting, subscribeYouTubeTargets } from '../repo';
+import { getSetting, loadTodoReels, loadTodoStats, loadTodoUploads, setSetting, subscribeTodoTargets } from '../repo';
 import { logAction } from '../log';
 import { device } from './device.svelte';
 import { general } from './general.svelte';
 import {
 	LEGACY_JESTR_KEY,
+	INSTAGRAM_STEP,
 	TODO_KEY,
+	isComplete,
 	markDone,
 	mergeStates,
 	readTodoState,
 	startOfDay,
 	todoLines,
+	type TodoReelRow,
 	type StatsRow,
 	type TodoKind,
 	type TodoLine,
@@ -31,6 +34,7 @@ const WAITING_POLL_MS = 10_000;
 class VideoTodoStore {
 	#stats = $state<StatsRow[]>([]);
 	#uploads = $state<UploadRow[]>([]);
+	#reels = $state<TodoReelRow[]>([]);
 	#state = $state<TodoState | null>(null);
 	/** `kind:id` being saved: a poll landing mid-save must not bring the line back. */
 	#marking = $state<string[]>([]);
@@ -42,22 +46,26 @@ class VideoTodoStore {
 		const state: TodoState = {
 			...this.#state,
 			jestr: [...this.#state.jestr, ...marking.filter((m) => m.startsWith('jestr:')).map((m) => m.slice(6))],
-			studio: [...this.#state.studio, ...marking.filter((m) => m.startsWith('studio:')).map((m) => m.slice(7))]
+			studio: [...this.#state.studio, ...marking.filter((m) => m.startsWith('studio:')).map((m) => m.slice(7))],
+			instagram: [
+				...this.#state.instagram,
+				...marking.filter((m) => m.startsWith('instagram:')).map((m) => m.slice(10))
+			]
 		};
-		return todoLines(this.#stats, this.#uploads, state, { jestr: general.value.jestrIntegration });
+		return todoLines(this.#stats, this.#uploads, state, { jestr: general.value.jestrIntegration }, this.#reels);
 	});
 
 	#lastRead = 0;
 	#soon: ReturnType<typeof setTimeout> | null = null;
 
 	/**
-	 * Starts polling — faster while a line waits — and follows YouTube's
-	 * upload rows live, so a confirm, a claim or a link shows at once; the
-	 * returned function stops it all.
+	 * Starts polling — faster while a line waits — and follows YouTube's and
+	 * Instagram's upload rows live, so a confirm, a claim or a link shows at
+	 * once; the returned function stops it all.
 	 */
 	start(): () => void {
 		void this.refresh();
-		const stopLive = subscribeYouTubeTargets(() => {
+		const stopLive = subscribeTodoTargets(() => {
 			// A confirm writes several rows at once; one read covers them.
 			if (this.#soon) clearTimeout(this.#soon);
 			this.#soon = setTimeout(() => {
@@ -79,19 +87,23 @@ class VideoTodoStore {
 		};
 	}
 
-	async #readState(): Promise<{ state: TodoState; stored: boolean }> {
+	async #readState(): Promise<{ state: TodoState; complete: boolean }> {
 		const [stored, legacy] = await Promise.all([
 			getSetting<unknown>(TODO_KEY, null),
 			getSetting<unknown>(LEGACY_JESTR_KEY, null)
 		]);
-		return { state: readTodoState(stored, legacy, this.#state?.since ?? startOfDay(new Date())), stored: Boolean(stored) };
+		return {
+			state: readTodoState(stored, legacy, this.#state?.since ?? startOfDay(new Date())),
+			complete: isComplete(stored)
+		};
 	}
 
 	/**
-	 * Re-reads the state and both lists. The first read on an install writes
+	 * Re-reads the state and the lists. The first read on an install writes
 	 * the state down, starting the list at today's midnight — written, so the
 	 * start stays put rather than moving with the date (and only by a named
-	 * device, like every write).
+	 * device, like every write). A row from before the reels were listed gets
+	 * their start the same way.
 	 */
 	#again = false;
 
@@ -105,12 +117,17 @@ class VideoTodoStore {
 		try {
 			const read = await this.#readState();
 			let state = read.state;
-			if (!read.stored && device.named) await setSetting(TODO_KEY, state).catch(() => {});
+			if (!read.complete && device.named) await setSetting(TODO_KEY, state).catch(() => {});
 			if (this.#state) state = mergeStates(state, this.#state);
-			const [stats, uploads] = await Promise.all([loadTodoStats(state.since), loadTodoUploads(state.since)]);
+			const [stats, uploads, reels] = await Promise.all([
+				loadTodoStats(state.since),
+				loadTodoUploads(state.since),
+				loadTodoReels(state.since)
+			]);
 			this.#state = state;
 			this.#stats = stats;
 			this.#uploads = uploads;
+			this.#reels = reels;
 			this.#lastRead = Date.now();
 		} catch {
 			// Unreachable PocketBase: the list stays as it was until the next poll.
@@ -129,13 +146,13 @@ class VideoTodoStore {
 	 * survives. A failed write (no device name, PocketBase unreachable) puts
 	 * it back.
 	 */
-	async #mark(kind: TodoKind, line: TodoLine, action: string, detail: string): Promise<void> {
+	async #mark(kind: TodoKind, id: string, action: string, detail: string): Promise<void> {
 		if (!this.#state) return;
-		const key = `${kind}:${line.id}`;
+		const key = `${kind}:${id}`;
 		this.#marking = [...this.#marking, key];
 		try {
 			const read = await this.#readState();
-			const next = markDone(mergeStates(read.state, this.#state), kind, line.id);
+			const next = markDone(mergeStates(read.state, this.#state), kind, id);
 			await setSetting(TODO_KEY, next);
 			this.#state = next;
 			logAction('upload', action, detail);
@@ -150,7 +167,7 @@ class VideoTodoStore {
 	markJestr(line: TodoLine): Promise<void> {
 		return this.#mark(
 			'jestr',
-			line,
+			line.id,
 			`Linked on Jestr: "${line.title}"`,
 			`${line.channel ? `${line.channel} · ` : ''}${line.watchUrl}`
 		);
@@ -158,7 +175,19 @@ class VideoTodoStore {
 
 	/** The YouTube icon, when it carries Studio steps: opening Studio counts as doing them. */
 	markStudio(line: TodoLine): Promise<void> {
-		return this.#mark('studio', line, `Opened in Studio: "${line.title}"`, `to set ${line.studio.join(' and ')} · ${line.studioUrl}`);
+		return this.#mark('studio', line.id, `Opened in Studio: "${line.title}"`, `to set ${line.studio.join(' and ')} · ${line.studioUrl}`);
+	}
+
+	/** The Instagram icon, once the reel is out: opening it counts as adding its label. */
+	markInstagram(line: TodoLine): Promise<void> {
+		const reel = line.instagram;
+		if (reel?.state !== 'open') return Promise.resolve();
+		return this.#mark(
+			'instagram',
+			reel.target,
+			`Opened on Instagram: "${line.title}"`,
+			`to add the ${INSTAGRAM_STEP} · ${reel.url}`
+		);
 	}
 }
 

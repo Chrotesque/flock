@@ -139,8 +139,9 @@ Good to know:
 - **Subscribers per video** come from YouTube Analytics, about two days late.
   A channel connected before flock asked for Analytics (0.16.40) keeps flock's
   own estimate until it is connected again.
-- **Thumbnails and paid promotion are set in YouTube Studio**, not by flock.
-  *To finish* in the sidebar links each video's Studio page.
+- **Thumbnails and paid promotion are set in YouTube Studio**, not by flock,
+  and **Instagram's Paid partnership label in the Instagram app**. *To finish*
+  in the sidebar links each video's Studio page and its reel.
 - **Stats cost API quota.** The Dashboard's YouTube numbers come from the
   newest 50 videos, read every 30 seconds, and each channel's subscriber count,
   read every 10 minutes: under half the daily quota that uploads also use. `statsSeconds`, `statsVideos` and `statsBudget` in the
@@ -261,8 +262,9 @@ The worker keeps each Page's own token, which does not expire.
 - **Covers:** a cover image is placed on your Page as an *unpublished* photo
   (it never appears there), handed to Instagram, then deleted. If that fails,
   the reel uses its *Cover frame*.
-- **Paid partnership:** the Details step's tick sends Instagram's label with
-  the reel.
+- **Paid partnership:** Meta's API takes Instagram's label but does not show
+  it, so flock does not send it. Add it in the Instagram app; *To finish* lists
+  each reel for it.
 - **Reel views:** with `instagram_manage_insights` granted, the worker also
   reads each account's newest 100 posts, their views and each reel's skip rate
   every 10 minutes, into PocketBase's `post_stats` (`igStatsPosts`,
@@ -508,10 +510,6 @@ The boxes on the right follow the platform you are writing for:
   in the box's corner gives each its own. TikTok takes the same image
   (Instagram's, when the two have their own); its *Cover Time* box only asks
   where in the video it goes, *Beginning* or *End* (the default).
-- **Instagram:** *Branded content*, whose *Paid partnership label* tick makes
-  Instagram show "Paid partnership" on the reel — for ads and branded content.
-  If Instagram refuses the label, the reel still goes out, without it, and the
-  post says so. Facebook's API cannot label a reel this way.
 - **YouTube:** playlists, from the channel's own. Click the field, tick as
   many as you like, then *Done*; each shows as a tag with an × to take it off.
 - **TikTok:** the *Post to TikTok* box, with the choices TikTok wants made on
@@ -747,7 +745,10 @@ how many things are listed. Click it to open the list over the page.
 - Each video row has the thumbnail (hover it to see it larger), the title (opens the
   video), whether YouTube reports paid promotion (green $ ticked, red not), and
   a *Studio* button opening the video in YouTube Studio — a yellow dot until it
-  was opened from here, a check after.
+  was opened from here, a check after. Beside it, the upload's Instagram reel
+  has an *Add label* button, for the Paid partnership label only the Instagram
+  app can add: it opens the reel and works the same way, and stays grey until
+  the reel is out. Reels going out from 20 Oct 2026 on are listed.
 - From confirm until YouTube has the video, the row shows a turning ring:
   the upload went through, and YouTube is still to answer.
 - With the **Jestr integration** on (off by default; its switch is not part
@@ -771,8 +772,9 @@ how many things are listed. Click it to open the list over the page.
 - *Dashboard:* the columns of the Dashboard's list of videos. Drag them into
   order in the preview, or move them one place at a time below it, and untick
   any you do not want. The thumbnail and the title always lead.
-- *Other:* YouTube's official branding, whether *To finish* shows, and extra
-  time zones for the calendar.
+- *Other:* YouTube's official branding, whether the *To finish* Indicator
+  shows (each of its states is drawn there with what it means), and extra time
+  zones for the calendar.
 
 **The brand in view** has:
 

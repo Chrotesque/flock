@@ -10,7 +10,7 @@
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { draft } from '$lib/stores/draft.svelte';
-	import { BOX_OPTIONS, keptOnReset } from '$lib/paidpartnership';
+	import { BOX_OPTIONS, keptOnReset } from '$lib/boxoptions';
 	import type { OptionValues, PlatformId } from '$lib/types';
 
 	let {
@@ -47,10 +47,10 @@
 		draft.overrides[platform] = { ...values };
 	}
 
-	// The Jestr campaign tick and Instagram's Paid partnership label ride on
-	// the overrides too (jestrcampaign.ts, paidpartnership.ts), but they are the
-	// Details boxes', not options: a reset keeps them, and they alone do not
-	// count as the video's options being changed.
+	// The Jestr campaign tick and TikTok's cover placement ride on the
+	// overrides too (boxoptions.ts), but they are the Details boxes', not
+	// options: a reset keeps them, and they alone do not count as the video's
+	// options being changed.
 	function resetOverrides() {
 		if (!platform) return;
 		const kept = keptOnReset(draft.overrides[platform]);

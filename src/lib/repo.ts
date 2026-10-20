@@ -7,7 +7,7 @@ import { logAction, assertDeviceNamed, deviceName } from './log';
 import { MOVING, canMove, planMove, readMove, type MoveRequest, type MoveStep } from './brandmove';
 import { newId } from './id';
 import { firstLine, formatSchedule } from './format';
-import { STATS_FIELDS, UPLOAD_FIELDS, type StatsRow, type UploadRow } from './videotodo';
+import { REEL_FIELDS, STATS_FIELDS, UPLOAD_FIELDS, type StatsRow, type TodoReelRow, type UploadRow } from './videotodo';
 import { canRetry, retryWhen } from './attention';
 import {
 	FIRST_BRAND_NAME,
@@ -927,13 +927,13 @@ export async function loadTodoStats(since: string): Promise<StatsRow[]> {
 }
 
 /**
- * Calls back whenever a YouTube `upload_targets` row is created or changes —
- * a confirm, the worker claiming it, the link arriving — so To finish follows
- * it live rather than on its next poll.
+ * Calls back whenever a YouTube or Instagram `upload_targets` row is created
+ * or changes — a confirm, the worker claiming it, the link arriving — so To
+ * finish follows it live rather than on its next poll.
  */
-export function subscribeYouTubeTargets(onChange: () => void): () => void {
+export function subscribeTodoTargets(onChange: () => void): () => void {
 	const sub = pb.collection('upload_targets').subscribe('*', (e) => {
-		if (e.record?.platform === 'youtube') onChange();
+		if (e.record?.platform === 'youtube' || e.record?.platform === 'instagram') onChange();
 	});
 	sub.catch(() => {});
 	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
@@ -958,6 +958,22 @@ export async function loadTodoUploads(since: string): Promise<UploadRow[]> {
 			{ since: new Date(since) }
 		),
 		fields: UPLOAD_FIELDS,
+		sort: 'created'
+	});
+}
+
+/**
+ * flock's Instagram reels since the list began: those out, for the Paid
+ * partnership label only the app can add, and those on their way. Joined to
+ * their YouTube upload's line by job; which are listed is videotodo.ts's.
+ */
+export async function loadTodoReels(since: string): Promise<TodoReelRow[]> {
+	return pb.collection('upload_targets').getFullList<TodoReelRow>({
+		filter: pb.filter(
+			"platform = 'instagram' && created >= {:since} && (remote_url != '' || status = 'pending' || status = 'publishing')",
+			{ since: new Date(since) }
+		),
+		fields: REEL_FIELDS,
 		sort: 'created'
 	});
 }

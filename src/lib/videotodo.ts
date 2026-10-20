@@ -9,6 +9,13 @@ import { studioTasks, studioUrl, videoIdOf } from './studio';
  * - Studio: every flock upload YouTube has, for its thumbnail (a Short's
  *   cover) and paid promotion, which flock does not set (studio.ts).
  *   Opening it through the icon counts as done.
+ * - Instagram: the same upload's reel, for its Paid partnership label,
+ *   which only the Instagram app sets — Meta's API took the label and
+ *   never showed it (tested 20 Oct 2026), so since v0.16.62 flock does
+ *   not offer it and lists the reel here instead: every reel going out
+ *   from `instagramSince` on, whenever it was confirmed. Opening the reel
+ *   through its icon counts as done; a reel not out yet waits, greyed. A
+ *   reel is joined to its line by the upload job.
  *
  * Beside that, each line says whether YouTube reports paid promotion on
  * the video (`paid`), from the stats row: tested on 12 Oct 2026 with an
@@ -28,21 +35,32 @@ import { studioTasks, studioUrl, videoIdOf } from './studio';
  *   never mistaken for a missing one (v0.11.7, the user's request).
  *
  * A line goes once nothing is left on it. Stored in `app_settings` under
- * `video_todo` as { since, jestr, studio }: `since` is where the list began,
- * so a new install or a newly connected channel does not list everything it
- * already had; the other two are the video ids done for each.
+ * `video_todo` as { since, jestr, studio, instagram, instagramSince }:
+ * `since` is where the list began, so a new install or a newly connected
+ * channel does not list everything it already had, and `instagramSince` the
+ * same for the reels, by when each goes out; `jestr` and `studio` are the YouTube video ids done
+ * for each, `instagram` the reels' `upload_targets` ids.
  */
 export interface TodoState {
 	since: string;
 	jestr: string[];
 	studio: string[];
+	instagram: string[];
+	instagramSince: string;
 }
 
-export type TodoKind = 'jestr' | 'studio';
+export type TodoKind = 'jestr' | 'studio' | 'instagram';
 
 export const TODO_KEY = 'video_todo';
 /** Where v0.9.12's Jestr-only list kept { since, done }; adopted once. */
 export const LEGACY_JESTR_KEY = 'jestr';
+
+/**
+ * Where the reels begin for a list started before they were listed: local
+ * midnight, Berlin, of 20 Oct 2026, the day the label went to To finish
+ * (v0.16.62). A list started later begins its reels where it begins.
+ */
+export const REELS_LISTED_FROM = '2026-10-19T22:00:00.000Z';
 
 /** Done ids kept per kind, newest last; at a few videos a day this is years. */
 export const TODO_DONE_MAX = 2000;
@@ -68,6 +86,8 @@ export const STATS_FIELDS =
 /** A flock YouTube upload (`upload_targets` row) with only what the list reads. */
 export interface UploadRow {
 	id: string;
+	/** The upload job, which its Instagram reel shares. */
+	job?: string;
 	title?: string;
 	remote_url?: string;
 	/** `pending` (queued) and `publishing` (uploading) are the waiting ones. */
@@ -75,7 +95,37 @@ export interface UploadRow {
 	created?: string;
 }
 
-export const UPLOAD_FIELDS = 'id,title,remote_url,status,created';
+export const UPLOAD_FIELDS = 'id,job,title,remote_url,status,created';
+
+/** A flock Instagram reel (`upload_targets` row) with only what the list reads. */
+export interface TodoReelRow {
+	id: string;
+	job?: string;
+	/** The reel's permalink once it is out. */
+	remote_url?: string;
+	status?: string;
+	scheduled_at?: string;
+	/** When it went out; '' until then. */
+	published_at?: string;
+	created?: string;
+}
+
+export const REEL_FIELDS = 'id,job,remote_url,status,scheduled_at,published_at,created';
+
+/** What a line's reel is left for. */
+export const INSTAGRAM_STEP = 'Paid partnership label';
+
+/** A line's Instagram reel and its label. */
+export interface InstagramStep {
+	/** `open` to add the label now, `waiting` until the reel is out, `done` once opened through here. */
+	state: 'open' | 'waiting' | 'done';
+	/** Its `upload_targets` id, which marking it done records. */
+	target: string;
+	/** The reel on Instagram; '' while it waits. */
+	url: string;
+	/** When it goes out, while it waits; null when not known. */
+	at: string | null;
+}
 
 /** What a waiting line is waiting for, in the words its spinner's tooltip uses. */
 export const WAITING = {
@@ -96,6 +146,8 @@ export interface TodoLine {
 	studio: string[];
 	/** `open` to link now, `waiting` until it goes public, null when not asked or done. */
 	jestr: 'open' | 'waiting' | null;
+	/** The same upload's Instagram reel and its label; null when it has none listed. */
+	instagram: InstagramStep | null;
 	/** When a scheduled video goes public; null once it is (or when not known). */
 	publicAt: string | null;
 	/** Whether YouTube reports paid promotion on it; null until the stats pass has read it. */
@@ -132,15 +184,36 @@ const validDate = (value: unknown): value is string => typeof value === 'string'
 
 /**
  * A stored state read field by field. Without one, the Jestr-only list's row
- * (`{ since, done }`) is adopted, so its start and its marks carry over.
+ * (`{ since, done }`) is adopted, so its start and its marks carry over. A
+ * row from before the reels were listed starts them at REELS_LISTED_FROM,
+ * which is then written down (`isComplete`); a new list at its own start.
  */
 export function readTodoState(value: unknown, legacy: unknown, fallbackSince: string): TodoState {
 	const v = (value && typeof value === 'object' ? value : null) as Record<string, unknown> | null;
 	if (v) {
-		return { since: validDate(v.since) ? v.since : fallbackSince, jestr: ids(v.jestr), studio: ids(v.studio) };
+		return {
+			since: validDate(v.since) ? v.since : fallbackSince,
+			jestr: ids(v.jestr),
+			studio: ids(v.studio),
+			instagram: ids(v.instagram),
+			instagramSince: validDate(v.instagramSince) ? v.instagramSince : REELS_LISTED_FROM
+		};
 	}
 	const old = (legacy && typeof legacy === 'object' ? legacy : {}) as Record<string, unknown>;
-	return { since: validDate(old.since) ? old.since : fallbackSince, jestr: ids(old.done), studio: [] };
+	const since = validDate(old.since) ? old.since : fallbackSince;
+	return {
+		since,
+		jestr: ids(old.done),
+		studio: [],
+		instagram: [],
+		instagramSince: validDate(old.since) ? REELS_LISTED_FROM : since
+	};
+}
+
+/** Whether a stored row has both starts written down, so neither moves with the date. */
+export function isComplete(value: unknown): boolean {
+	const v = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
+	return validDate(v.since) && validDate(v.instagramSince);
 }
 
 /** The state with one more video done for a kind, each id once, the oldest dropped past the cap. */
@@ -149,15 +222,38 @@ export function markDone(state: TodoState, kind: TodoKind, id: string): TodoStat
 	return { ...state, [kind]: done };
 }
 
-/** Both browsers' marks, for when two save near the same moment; `a`'s start wins. */
+/** Both browsers' marks, for when two save near the same moment; `a`'s starts win. */
 export function mergeStates(a: TodoState, b: TodoState): TodoState {
 	const union = (x: string[], y: string[]) => [...x, ...y.filter((id) => !x.includes(id))].slice(-TODO_DONE_MAX);
-	return { since: a.since, jestr: union(a.jestr, b.jestr), studio: union(a.studio, b.studio) };
+	return {
+		since: a.since,
+		jestr: union(a.jestr, b.jestr),
+		studio: union(a.studio, b.studio),
+		instagram: union(a.instagram, b.instagram),
+		instagramSince: a.instagramSince
+	};
 }
 
 /** PocketBase writes dates as "2026-10-11 07:00:14.000Z"; that space is not ISO. */
 function instant(value: string | undefined): number {
 	return value ? Date.parse(value.replace(' ', 'T')) : NaN;
+}
+
+/**
+ * The reel's step: open once it is out, waiting until then, done once
+ * opened; none when it failed, or went out before the reels were listed.
+ */
+function instagramStep(reel: TodoReelRow, state: TodoState): InstagramStep | null {
+	const published = instant(reel.published_at);
+	const out = Number.isFinite(published) ? published : instant(reel.scheduled_at);
+	if (!(out >= Date.parse(state.instagramSince))) return null;
+	if (reel.remote_url) {
+		return { state: state.instagram.includes(reel.id) ? 'done' : 'open', target: reel.id, url: reel.remote_url, at: null };
+	}
+	if (reel.status === 'pending' || reel.status === 'publishing') {
+		return { state: 'waiting', target: reel.id, url: '', at: reel.scheduled_at || null };
+	}
+	return null;
 }
 
 /** The link to paste into Jestr: a Short's own address for a Short, the watch page otherwise. */
@@ -171,15 +267,19 @@ export function videoUrl(id: string, duration: number | undefined, live: boolean
  * The lines to show, oldest first — the one waiting longest on top. Uploads
  * and channel videos are joined by YouTube's video id; the stats row, when
  * the worker has read the video, supplies its length, channel and state.
+ * A reel joins the YouTube upload of the same job.
  */
 export function todoLines(
 	stats: StatsRow[],
 	uploads: UploadRow[],
 	state: TodoState,
-	options: { jestr: boolean }
+	options: { jestr: boolean },
+	reels: TodoReelRow[] = []
 ): TodoLine[] {
 	const since = Date.parse(state.since);
 	const statsById = new Map(stats.filter((row) => row.video_id).map((row) => [row.video_id, row]));
+	const reelByJob = new Map<string, TodoReelRow>();
+	for (const reel of reels) if (reel.job && !reelByJob.has(reel.job)) reelByJob.set(reel.job, reel);
 	const lines = new Map<string, TodoLine & { at: number }>();
 
 	const lineFor = (id: string, at: number, fallbackTitle?: string) => {
@@ -196,6 +296,7 @@ export function todoLines(
 			studioUrl: studioUrl(id),
 			studio: [] as string[],
 			jestr: null as TodoLine['jestr'],
+			instagram: null as InstagramStep | null,
 			publicAt: publishAt || null,
 			paid: stat ? stat.data?.paidProductPlacementDetails?.hasPaidProductPlacement === true : null,
 			thumb: stat?.data?.snippet?.thumbnails?.medium?.url ?? '',
@@ -223,6 +324,7 @@ export function todoLines(
 				studioUrl: '',
 				studio: [],
 				jestr: null,
+				instagram: null,
 				publicAt: null,
 				paid: null,
 				thumb: '',
@@ -238,10 +340,13 @@ export function todoLines(
 		if (options.jestr && !statsById.has(id) && !state.jestr.includes(id)) {
 			lineFor(id, created, upload.title).waiting = WAITING.listing;
 		}
-		if (state.studio.includes(id)) continue;
 		const stat = statsById.get(id);
-		lineFor(id, Number.isFinite(instant(stat?.published_at)) ? instant(stat?.published_at) : created, upload.title).studio =
-			studioTasks(stat?.duration);
+		const at = Number.isFinite(instant(stat?.published_at)) ? instant(stat?.published_at) : created;
+		const reel = upload.job ? reelByJob.get(upload.job) : undefined;
+		const step = reel ? instagramStep(reel, state) : null;
+		if (step) lineFor(id, at, upload.title).instagram = step;
+		if (state.studio.includes(id)) continue;
+		lineFor(id, at, upload.title).studio = studioTasks(stat?.duration);
 	}
 
 	if (options.jestr) {
@@ -255,7 +360,13 @@ export function todoLines(
 	}
 
 	return [...lines.values()]
-		.filter((line) => line.studio.length > 0 || line.jestr !== null || line.waiting !== null)
+		.filter(
+			(line) =>
+				line.studio.length > 0 ||
+				line.jestr !== null ||
+				(line.instagram !== null && line.instagram.state !== 'done') ||
+				line.waiting !== null
+		)
 		.sort((a, b) => a.at - b.at)
 		.map((line): TodoLine => ({
 			id: line.id,
@@ -265,6 +376,7 @@ export function todoLines(
 			studioUrl: line.studioUrl,
 			studio: line.studio,
 			jestr: line.jestr,
+			instagram: line.instagram,
 			publicAt: line.publicAt,
 			paid: line.paid,
 			thumb: line.thumb,

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+	REELS_LISTED_FROM,
 	TODO_DONE_MAX,
+	isComplete,
 	markDone,
 	mergeStates,
 	readTodoState,
@@ -9,12 +11,13 @@ import {
 	videoUrl,
 	WAITING,
 	type StatsRow,
+	type TodoReelRow,
 	type TodoState,
 	type UploadRow
 } from './videotodo';
 
 const since = '2026-10-10T22:00:00.000Z';
-const fresh: TodoState = { since, jestr: [], studio: [] };
+const fresh: TodoState = { since, jestr: [], studio: [], instagram: [], instagramSince: since };
 
 const stat = (id: string, published: string, extra: Partial<StatsRow> = {}): StatsRow => ({
 	video_id: id,
@@ -44,27 +47,47 @@ describe('startOfDay', () => {
 
 describe('readTodoState', () => {
 	it('keeps a good row', () => {
-		expect(readTodoState({ since, jestr: ['a'], studio: ['b'] }, null, 'x')).toEqual({
-			since,
-			jestr: ['a'],
-			studio: ['b']
-		});
+		const row = { since, jestr: ['a'], studio: ['b'], instagram: ['r1'], instagramSince: '2026-10-20T22:00:00.000Z' };
+		expect(readTodoState(row, null, 'x')).toEqual(row);
+		expect(isComplete(row)).toBe(true);
 	});
 
 	it('adopts the Jestr-only list’s start and marks when there is no row', () => {
-		expect(readTodoState(null, { since, done: ['a', 'b'] }, 'x')).toEqual({ since, jestr: ['a', 'b'], studio: [] });
+		expect(readTodoState(null, { since, done: ['a', 'b'] }, 'x')).toEqual({
+			since,
+			jestr: ['a', 'b'],
+			studio: [],
+			instagram: [],
+			instagramSince: REELS_LISTED_FROM
+		});
 	});
 
 	it('falls back on a missing or broken row, and drops what is not an id', () => {
 		expect(readTodoState(null, null, since)).toEqual(fresh);
-		expect(readTodoState({ since: 'soon', jestr: ['a', 3] }, null, since)).toEqual({ since, jestr: ['a'], studio: [] });
+		expect(readTodoState({ since: 'soon', jestr: ['a', 3] }, null, since)).toEqual({
+			...fresh,
+			jestr: ['a'],
+			instagramSince: REELS_LISTED_FROM
+		});
+	});
+
+	it('starts the reels on the day they were first listed for a row from before them, until that is written', () => {
+		const old = { since, jestr: [], studio: ['v1'] };
+		expect(readTodoState(old, null, 'x').instagramSince).toBe(REELS_LISTED_FROM);
+		expect(isComplete(old)).toBe(false);
+		expect(isComplete(null)).toBe(false);
+	});
+
+	it('starts a new list’s reels where the list starts', () => {
+		expect(readTodoState(null, null, '2026-12-01T23:00:00.000Z').instagramSince).toBe('2026-12-01T23:00:00.000Z');
 	});
 });
 
 describe('markDone and mergeStates', () => {
 	it('adds each id once, per kind', () => {
 		const once = markDone(fresh, 'studio', 'a');
-		expect(markDone(once, 'studio', 'a')).toEqual({ since, jestr: [], studio: ['a'] });
+		expect(markDone(once, 'studio', 'a')).toEqual({ ...fresh, studio: ['a'] });
+		expect(markDone(fresh, 'instagram', 'r1').instagram).toEqual(['r1']);
 	});
 
 	it('drops the oldest past the cap', () => {
@@ -75,8 +98,11 @@ describe('markDone and mergeStates', () => {
 	});
 
 	it('keeps both browsers’ marks', () => {
-		const merged = mergeStates({ since, jestr: ['a'], studio: [] }, { since: 'other', jestr: ['b'], studio: ['c'] });
-		expect(merged).toEqual({ since, jestr: ['a', 'b'], studio: ['c'] });
+		const merged = mergeStates(
+			{ ...fresh, jestr: ['a'], instagram: ['r1'] },
+			{ since: 'other', jestr: ['b'], studio: ['c'], instagram: ['r2'], instagramSince: 'other' }
+		);
+		expect(merged).toEqual({ since, jestr: ['a', 'b'], studio: ['c'], instagram: ['r1', 'r2'], instagramSince: since });
 	});
 });
 
@@ -119,7 +145,7 @@ describe('todoLines', () => {
 	});
 
 	it('drops a line once nothing is left on it', () => {
-		const state = { since, jestr: ['early', 'late'], studio: ['soon'] };
+		const state = { ...fresh, jestr: ['early', 'late'], studio: ['soon'] };
 		expect(todoLines(stats, uploads, state, { jestr: true }).map((l) => [l.id, l.studio, l.jestr])).toEqual([
 			['soon', [], 'waiting']
 		]);
@@ -201,5 +227,59 @@ describe('todoLines', () => {
 		const up: UploadRow = { id: 't1', status: 'scheduled', remote_url: 'https://www.youtube.com/watch?v=v1', created: '2026-10-11 20:50:30.000Z' };
 		expect(todoLines([], [up], fresh, { jestr: false }).map((l) => l.studio)).toEqual([['thumbnail', 'paid promotion']]);
 		expect(todoLines([], [up], { ...fresh, studio: ['v1'] }, { jestr: false })).toEqual([]);
+	});
+});
+
+describe('todoLines with Instagram reels', () => {
+	const up: UploadRow = {
+		id: 't1',
+		job: 'j1',
+		title: 'Fresh',
+		status: 'scheduled',
+		remote_url: 'https://www.youtube.com/watch?v=v1',
+		created: '2026-10-11 20:50:30.000Z'
+	};
+	const reel = (extra: Partial<TodoReelRow> = {}): TodoReelRow => ({
+		id: 'r1',
+		job: 'j1',
+		remote_url: 'https://www.instagram.com/reel/abc/',
+		status: 'published',
+		scheduled_at: '2026-10-12 06:00:00.000Z',
+		published_at: '2026-10-12 06:00:04.000Z',
+		created: '2026-10-11 20:50:31.000Z',
+		...extra
+	});
+
+	it('puts the same upload’s reel on its line, open once it is out', () => {
+		const [line] = todoLines([], [up], fresh, { jestr: false }, [reel(), reel({ id: 'r2', job: 'other' })]);
+		expect(line.instagram).toEqual({ state: 'open', target: 'r1', url: 'https://www.instagram.com/reel/abc/', at: null });
+	});
+
+	it('waits for a reel not out yet, with its slot', () => {
+		const waiting = reel({ remote_url: '', status: 'pending', published_at: '' });
+		const [line] = todoLines([], [up], fresh, { jestr: false }, [waiting]);
+		expect(line.instagram).toEqual({ state: 'waiting', target: 'r1', url: '', at: '2026-10-12 06:00:00.000Z' });
+		expect(todoLines([], [up], fresh, { jestr: false }, [reel({ remote_url: '', status: 'failed' })])[0].instagram).toBeNull();
+	});
+
+	it('keeps a line for its reel after Studio, and drops it once the reel was opened', () => {
+		const studioDone = { ...fresh, studio: ['v1'] };
+		const lines = todoLines([], [up], studioDone, { jestr: false }, [reel()]);
+		expect(lines.map((l) => [l.id, l.studio, l.instagram?.state])).toEqual([['v1', [], 'open']]);
+		expect(todoLines([], [up], { ...studioDone, instagram: ['r1'] }, { jestr: false }, [reel()])).toEqual([]);
+	});
+
+	it('shows a reel done while the line stays for something else', () => {
+		const [line] = todoLines([], [up], { ...fresh, instagram: ['r1'] }, { jestr: false }, [reel()]);
+		expect([line.studio.length, line.instagram?.state]).toEqual([2, 'done']);
+	});
+
+	it('lists the reels going out since they were listed, whenever they were confirmed', () => {
+		const listed = { ...fresh, instagramSince: '2026-10-12T00:00:00.000Z' };
+		expect(todoLines([], [up], listed, { jestr: false }, [reel()])[0].instagram?.state).toBe('open');
+		const later = { ...fresh, instagramSince: '2026-10-12T07:00:00.000Z' };
+		expect(todoLines([], [up], later, { jestr: false }, [reel()])[0].instagram).toBeNull();
+		const queued = reel({ remote_url: '', status: 'pending', published_at: '', scheduled_at: '2026-10-13 06:00:00.000Z' });
+		expect(todoLines([], [up], later, { jestr: false }, [queued])[0].instagram?.state).toBe('waiting');
 	});
 });

@@ -102,7 +102,10 @@
 	 * go out outranks all of it: the box turns red and pulses.
 	 */
 	let needsDoing = $derived(
-		attention.items.length > 0 || videoTodo.lines.some((line) => line.studio.length > 0 || line.jestr === 'open')
+		attention.items.length > 0 ||
+			videoTodo.lines.some(
+				(line) => line.studio.length > 0 || line.jestr === 'open' || line.instagram?.state === 'open'
+			)
 	);
 	let postFailed = $derived(attention.failed);
 	let todoCount = $derived(attention.items.length + videoTodo.lines.length);

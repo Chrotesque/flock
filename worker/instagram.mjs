@@ -338,9 +338,11 @@ export function buildContainer(target, options, durationSeconds) {
 	const audio = String(options.audioName ?? '').trim();
 	if (audio) params.audio_name = audio;
 
-	// The "Paid partnership" label, ticked on the Details step
-	// (src/lib/paidpartnership.ts): Meta's Content Publishing API takes it on
-	// the container since April 2026, Facebook Login only.
+	// The "Paid partnership" label, on rows queued while the Details step
+	// offered it (until v0.16.62): Meta's Content Publishing API takes it on
+	// the container since April 2026, Facebook Login only, but never showed
+	// it (tested 20 Oct 2026), so the page dropped the tick and To finish
+	// reminds of the label instead (src/lib/videotodo.ts).
 	if (options.paidPartnership === true) params.is_paid_partnership = true;
 	return params;
 }
