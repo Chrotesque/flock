@@ -313,6 +313,18 @@ export function makeClient(baseUrl) {
 			return res.items ?? [];
 		},
 
+		/** The video ids flock has a row for on one channel, every page (ytanalytics.mjs). */
+		async listChannelVideoIds(channelId) {
+			const ids = [];
+			for (let page = 1; ; page++) {
+				const res = await request(
+					`/api/collections/video_stats/records?perPage=500&page=${page}&fields=video_id,data.snippet.channelId`
+				);
+				for (const row of res.items ?? []) if (row.data?.snippet?.channelId === channelId) ids.push(row.video_id);
+				if (page >= (res.totalPages ?? 1)) return ids;
+			}
+		},
+
 		async createVideoStats(data) {
 			return request('/api/collections/video_stats/records', {
 				method: 'POST',

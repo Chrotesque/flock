@@ -22,9 +22,13 @@ export const ANALYTICS_SCOPE = 'https://www.googleapis.com/auth/yt-analytics.rea
 const FIRST_DAY = '2005-02-14';
 /** YouTube Analytics updates once a day; four reads a day catch it soon enough. */
 const ANALYTICS_TTL_MS = 6 * 60 * 60 * 1000;
-/** The top-videos report gives at most 200 rows a page. */
-const PAGE = 200;
-const MAX_PAGES = 5;
+/**
+ * Videos asked about per request. Per-video figures come from a report
+ * filtered to the videos flock lists: the top-videos report stops at 200 and
+ * refuses a second page (`startIndex` 201 answered "The query is not
+ * supported" on 19 Oct 2026, for the one channel with more).
+ */
+const BATCH = 200;
 
 const DAY = 86_400_000;
 
@@ -70,7 +74,12 @@ export function dayEnd(day) {
  * are YouTube's, the level flock's.
  */
 export function dailyCounts(dayRows, anchor = null) {
-	const days = [...dayRows].sort((a, b) => String(a.day).localeCompare(String(b.day)));
+	const sorted = [...dayRows].sort((a, b) => String(a.day).localeCompare(String(b.day)));
+	// A report from 2005 holds every empty day before the channel's first
+	// subscriber: from the day before that one on is enough.
+	const first = sorted.findIndex((row) => Number(row.subscribersGained) || Number(row.subscribersLost));
+	if (first < 0) return [];
+	const days = sorted.slice(Math.max(0, first - 1));
 	let total = 0;
 	const out = days.map((row) => {
 		total += (Number(row.subscribersGained) || 0) - (Number(row.subscribersLost) || 0);
@@ -82,9 +91,11 @@ export function dailyCounts(dayRows, anchor = null) {
 	return out.map(([iso, count]) => [iso, count + offset]);
 }
 
-/** Whether the top-videos report has more to give after this page. */
-export function morePages(rows, page) {
-	return rows.length === PAGE && page < MAX_PAGES && (Number(rows.at(-1)?.subscribersGained) || 0) > 0;
+/** A list cut into runs of at most `size`. */
+export function batches(list, size = BATCH) {
+	const out = [];
+	for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+	return out;
 }
 
 async function report(config, account, params, retry = true) {
@@ -147,21 +158,13 @@ export async function analyticsPass({ pb, config, log, account }) {
 		const endDate = new Date().toISOString().slice(0, 10);
 		const metrics = 'subscribersGained,subscribersLost';
 		const days = reportRows(await report(config, account, { startDate: FIRST_DAY, endDate, metrics, dimensions: 'day', sort: 'day' }));
+		// The videos the Dashboard can show: those flock has a row for.
 		const videos = [];
-		for (let page = 1; ; page++) {
+		for (const ids of batches(await pb.listChannelVideoIds(account.channelId))) {
 			const rows = reportRows(
-				await report(config, account, {
-					startDate: FIRST_DAY,
-					endDate,
-					metrics,
-					dimensions: 'video',
-					sort: '-subscribersGained',
-					maxResults: PAGE,
-					startIndex: (page - 1) * PAGE + 1
-				})
+				await report(config, account, { startDate: FIRST_DAY, endDate, metrics, dimensions: 'video', filters: `video==${ids.join(',')}` })
 			);
 			videos.push(...rows);
-			if (!morePages(rows, page)) break;
 		}
 
 		const now = Date.now();

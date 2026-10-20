@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ANALYTICS_SCOPE, canReadAnalytics, dailyCounts, dayEnd, lastDay, morePages, perVideo, reportRows } from './ytanalytics.mjs';
+import { ANALYTICS_SCOPE, batches, canReadAnalytics, dailyCounts, dayEnd, lastDay, perVideo, reportRows } from './ytanalytics.mjs';
 import { readState } from './followers.mjs';
 
 const report = (names, rows) => ({ columnHeaders: names.map((name) => ({ name })), rows });
@@ -48,12 +48,25 @@ test("the channel's days add up to counts, shifted to meet the first count flock
 	assert.equal(lastDay([]), '');
 });
 
-test('the top-videos report is paged only while a full page still ends in gains', () => {
-	const full = (last) => Array.from({ length: 200 }, (_, i) => ({ subscribersGained: i === 199 ? last : 5 }));
-	assert.equal(morePages(full(1), 1), true);
-	assert.equal(morePages(full(0), 1), false);
-	assert.equal(morePages(full(1), 5), false);
-	assert.equal(morePages([{ subscribersGained: 3 }], 1), false);
+test('the videos are asked about in runs of at most 200', () => {
+	const ids = Array.from({ length: 450 }, (_, i) => `v${i}`);
+	assert.deepEqual(batches(ids).map((b) => b.length), [200, 200, 50]);
+	assert.deepEqual(batches([]), []);
+});
+
+test('the empty days before the first subscriber are left out, bar the day before it', () => {
+	const days = reportRows(
+		report(['day', 'subscribersGained', 'subscribersLost'], [
+			['2005-02-14', 0, 0],
+			['2005-02-15', 0, 0],
+			['2026-10-15', 0, 0],
+			['2026-10-16', 2, 0],
+			['2026-10-17', 0, 0]
+		])
+	);
+	assert.deepEqual(dailyCounts(days).map(([iso]) => iso.slice(0, 10)), ['2026-10-16', '2026-10-17', '2026-10-18']);
+	assert.deepEqual(dailyCounts(days).map(([, n]) => n), [0, 2, 2]);
+	assert.deepEqual(dailyCounts(reportRows(report(['day', 'subscribersGained', 'subscribersLost'], [['2026-10-16', 0, 0]]))), []);
 });
 
 test("a follower row keeps YouTube's figures through the next read", () => {
