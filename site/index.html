@@ -71,7 +71,13 @@
       <div class="card">
         <h3>A release time per platform</h3>
         <p>Each platform gets its own day and hour on a calendar of the coming days. Drag a card to move it,
-        type an exact time, or pick a saved pattern such as "Fridays at 21:00".</p>
+        type an exact time, or pick a saved pattern such as "Fridays at 21:00". Later, the Calendar shows every
+        release, and a scheduled post can still be moved, released at once or deleted there.</p>
+      </div>
+      <div class="card">
+        <h3>Several brands</h3>
+        <p>A brand is a set of accounts, one per platform, with its own defaults, templates and release
+        patterns. Each upload is made for one brand and goes out only on that brand's accounts.</p>
       </div>
       <div class="card">
         <h3>Publishing from the NAS</h3>
@@ -97,9 +103,10 @@
         and keeps its progress until it is sent.</p>
       </div>
       <div class="card">
-        <h3>Analytics and a log</h3>
-        <p>Live counters for the newest videos on the YouTube channel, and a log of every change with the
-        machine that made it.</p>
+        <h3>Dashboard and a log</h3>
+        <p>Every video's views, likes and comments on YouTube, Instagram, TikTok and Facebook, the accounts'
+        follower counts, what is left to finish by hand or failed, and a log of every change with the machine
+        that made it.</p>
       </div>
     </div>
   </section>
@@ -165,8 +172,11 @@
           until TikTok reports the post published, and the notice says it may take a few minutes to appear.</li>
         </ul>
         <p>Permissions requested: <code>user.info.basic</code>, to show which account a post goes to, and
-        <code>video.publish</code>, to post it. Nothing else is read from the account. Each installation uses a
-        TikTok developer app of its own, so its client key and secret stay in its own configuration.</p>
+        <code>video.publish</code>, to post it. Only if the operator signs in for them, also
+        <code>video.list</code> and <code>user.info.stats</code>, so the Dashboard can show the account's own
+        public videos with their counts and its follower count; without them, nothing else is read from the
+        account. Each installation uses a TikTok developer app of its own, so its client key and secret stay in
+        its own configuration.</p>
       </div>
       <img src="img/tiktok-box.png" alt="The Post to TikTok box: account, audience, interactions, disclosure and declaration">
     </div>
@@ -201,7 +211,7 @@
       <li>
         <h3>Run the worker</h3>
         <p><code>pnpm worker</code> publishes each release at its slot, keeps the tokens fresh, lists the
-        watch and project folders and feeds the Analytics screen. It belongs on the machine that stays on;
+        watch and project folders and feeds the Dashboard. It belongs on the machine that stays on;
         a second, credential-free worker on your PC can look after the PC's own folders. Both also come as
         a single program that needs no Node.</p>
       </li>
@@ -214,7 +224,7 @@
 <footer class="bottom">
   <div class="wrap">
     <img src="icon.png" alt="">
-    <span>flock, version 0.11.9. Contact: contact@chrotesque.com</span>
+    <span>flock, version 0.16.57. Contact: contact@chrotesque.com</span>
     <nav>
       <a href="how-it-works.html">How it works</a>
       <a href="https://github.com/Chrotesque/flock">GitHub</a>
