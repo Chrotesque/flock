@@ -21,6 +21,7 @@
 	import { templates } from '$lib/stores/templates.svelte';
 	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
+	import TodoIcon from '$lib/components/TodoIcon.svelte';
 	import { VERSION } from '$lib/version';
 	import { DEVTEST_ICON, devtestActive, devtestDashboardSettings, devtestModules } from '$lib/devtest';
 	import type {
@@ -446,17 +447,16 @@
 								onchange={(next) => general.setShowTodo(next)}
 							/>
 							<p class="otherhint">
-								The box in the sidebar that says whether anything is left to finish: green when
-								nothing is, an exclamation mark when something needs doing by hand, red when a post
-								did not go out. A click on it opens the list: what needs attention, and the videos with
-								steps left to do by hand.
+								The box in the sidebar; the number under it counts what is on the list. Off, it is
+								hidden on every computer, and nothing on the list is lost.
 							</p>
-							<p class="otherhint">
-								Switch it off for a clean screen, while recording a demo for example. The list cannot
-								be opened then, but nothing on it is lost or marked done, and it comes back as it was
-								when switched on again. The worker's warning card for a post that did not go out still
-								shows on the PCs that have it. Applies to every computer using flock.
-							</p>
+							<!-- The sidebar box's states, drawn small (TodoIcon). -->
+							<ul class="todolegend">
+								<li><TodoIcon state="idle" /><span>Nothing left to finish.</span></li>
+								<li><TodoIcon state="due" /><span>Something to do by hand, like a step in Studio.</span></li>
+								<li><TodoIcon state="failed" /><span>A post did not go out. Pulses until retried or dismissed.</span></li>
+								<li><TodoIcon state="open" /><span>The list is open. Click the box again to close it.</span></li>
+							</ul>
 
 							<TimeZoneList />
 						</div>
@@ -850,6 +850,26 @@
 		margin-top: 22px;
 		padding-top: 18px;
 		border-top: 1px solid var(--border);
+	}
+
+	/* Settings → Other: the To finish box's states, an icon and a line each. */
+	.todolegend {
+		display: grid;
+		gap: 9px;
+		margin: 2px 0 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	/* Plain lines, not the section list's boxed rows (`li` below). */
+	.todolegend li {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 0;
+		border: 0;
+		border-radius: 0;
+		background: none;
 	}
 
 	.localtag {

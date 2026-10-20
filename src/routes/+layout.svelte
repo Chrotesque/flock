@@ -21,6 +21,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { DEVTEST_ICON, devtestActive, devtestPasteKeys, shownDevtestPages, startDevtest } from '$lib/devtest';
+	import { TODO_MARKS } from '$lib/todoicon';
 
 	/** flock's public website (source in site/), where the brand at the foot of the rail leads. */
 	const SITE_URL = 'https://flock-scheduler.netlify.app/';
@@ -296,7 +297,8 @@
 		     with the mark cut out, slowly pulsing, when a post did not go out,
 		     filled purple with a back arrow while open. The list itself opens
 		     over the content area (TodoPanel). Rules in attention.ts and
-		     videotodo.ts; Settings → Other can hide it. -->
+		     videotodo.ts; the marks in todoicon.ts, which TodoIcon draws small
+		     where Settings → Other explains them (and can hide it). -->
 		{#if general.value.showTodo}
 			<section class="todo" aria-label="To finish">
 				<button
@@ -331,21 +333,21 @@
 							{#if todoPanel.open}
 								<!-- Open: filled purple, the way back cut out of it. -->
 								<rect class="box open" x="4" y="4" width="40" height="40" rx="11" />
-								<path class="neg back" d="M27.5 14.5L18 24l9.5 9.5" stroke-linecap="round" stroke-linejoin="round" />
+								<path class="neg back" d={TODO_MARKS.back} stroke-linecap="round" stroke-linejoin="round" />
 							{:else if postFailed}
 								<!-- A post did not go out: filled red, the exclamation
 								     mark cut out of it. -->
 								<rect class="box failed" x="4" y="4" width="40" height="40" rx="11" />
-								<path class="neg bang" d="M24 13.5v12.5M24 33.6v0.01" stroke-linecap="round" />
+								<path class="neg bang" d={TODO_MARKS.bang} stroke-linecap="round" />
 							{:else if needsDoing}
 								<!-- Something to do: the colour on the border, a thick
 								     exclamation mark in the middle. -->
 								<rect class="box due" x="5.5" y="5.5" width="37" height="37" rx="10" stroke="url(#todo-due)" />
-								<path class="bangmark" d="M24 13.5v12.5M24 33.6v0.01" stroke="url(#todo-due)" stroke-linecap="round" />
+								<path class="bangmark" d={TODO_MARKS.bang} stroke="url(#todo-due)" stroke-linecap="round" />
 							{:else}
 								<!-- Nothing to do: muted green, the check cut out of it. -->
 								<rect class="box idle" x="4" y="4" width="40" height="40" rx="11" />
-								<path class="neg" d="M14 24.8l7 7L34.5 17.5" stroke-linecap="round" stroke-linejoin="round" />
+								<path class="neg" d={TODO_MARKS.check} stroke-linecap="round" stroke-linejoin="round" />
 							{/if}
 						</svg>
 						<!-- Where it opens, shown on hover; open, the box itself points back. -->
