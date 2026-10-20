@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { devtestPages } from '$lib/devtest';
+	import { devtestPages, shownDevtestPages } from '$lib/devtest';
 
 	/**
 	 * A page a local-devtest module brings (devtest.ts), picked by `?page=`;
-	 * with none named, or one this build does not have, the first. A build
-	 * without the folder has no link here and shows only the note below.
+	 * with none named, or one this build does not have or has switched off,
+	 * the first switched on. A build without the folder has no link here and
+	 * shows only the note below.
 	 */
-	let current = $derived(
-		devtestPages.find((p) => p.id === page.url.searchParams.get('page')) ?? devtestPages[0]
-	);
+	const pages = $derived(shownDevtestPages());
+	let current = $derived(pages.find((p) => p.id === page.url.searchParams.get('page')) ?? pages[0]);
 </script>
 
 {#if current}
@@ -18,10 +18,14 @@
 	<div class="page">
 		<header class="head">
 			<h1>DevTest</h1>
-			<p>
-				No local pages in this build. They come from the <code>src/local-devtest/</code> folder of
-				the machine that deployed flock, which is not part of flock's repository.
-			</p>
+			{#if devtestPages.length > 0}
+				<p>No local page is switched on right now; the module that brings it says when it shows.</p>
+			{:else}
+				<p>
+					No local pages in this build. They come from the <code>src/local-devtest/</code> folder of
+					the machine that deployed flock, which is not part of flock's repository.
+				</p>
+			{/if}
 		</header>
 	</div>
 {/if}

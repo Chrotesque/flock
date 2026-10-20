@@ -28,6 +28,8 @@ export interface DevTestPage {
 	icon?: string;
 	/** The page itself, rendered in the content area. */
 	Page: Component;
+	/** Whether its link and page are there now, read reactively; always when left out. */
+	shown?: () => boolean;
 }
 
 /** One set of accounts the dashboard shows: a brand's, as a local scope names it. */
@@ -123,6 +125,11 @@ export const devtestModules: DevTestModule[] = Object.keys(found)
 export const devtestPages: DevTestPage[] = devtestModules
 	.flatMap((mod) => mod.pages ?? [])
 	.filter((p, i, all) => Boolean(p?.id && p.label && p.Page) && all.findIndex((q) => q.id === p.id) === i);
+
+/** The pages switched on right now (`shown`), in the same order; reactive where it is read. */
+export function shownDevtestPages(): DevTestPage[] {
+	return devtestPages.filter((p) => p.shown?.() ?? true);
+}
 
 /** Starts every module; the returned function stops them again. */
 export function startDevtest(): () => void {

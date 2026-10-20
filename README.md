@@ -673,8 +673,10 @@ press Esc or go to another page to close it. For the brand in view it shows:
   older videos are marked in edit mode (the pencil at the top right) with a
   click per video.
 
-TikTok and Facebook views are not read yet. When each platform was last read,
-and today's YouTube quota, sit at the top right.
+TikTok's numbers are read once its accounts are signed in with
+`--with-stats`, and Facebook's views once its Pages grant `read_insights`.
+When each platform was last read, and today's YouTube quota, sit behind the
+ⓘ at the top right.
 
 **Calendar** shows every release on a grid of all 24 hours, starting two days
 before today: 14 days, or 7 to 14 from *Show N days*. Each upload is one small
@@ -744,7 +746,8 @@ how many things are listed. Click it to open the list over the page.
   was opened from here, a check after.
 - From confirm until YouTube has the video, the row shows a turning ring:
   the upload went through, and YouTube is still to answer.
-- With the **Jestr integration** on (Settings → *Other*), every video on a
+- With the **Jestr integration** on (off by default; its switch is not part
+  of the published app), every video on a
   connected channel is listed with a *Jestr* button; press it once the video is
   linked on [Jestr](https://jestr.gg). A scheduled video's button works once it
   is public.
@@ -764,8 +767,8 @@ how many things are listed. Click it to open the list over the page.
 - *Dashboard:* the columns of the Dashboard's list of videos. Drag them into
   order in the preview, or move them one place at a time below it, and untick
   any you do not want. The thumbnail and the title always lead.
-- *Other:* YouTube's official branding, the Jestr integration, whether
-  *To finish* shows, and extra time zones for the calendar.
+- *Other:* YouTube's official branding, whether *To finish* shows, and extra
+  time zones for the calendar.
 
 **The brand in view** has:
 

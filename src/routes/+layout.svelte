@@ -20,7 +20,7 @@
 	import { readFlockPaste } from '$lib/flockpaste';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { DEVTEST_ICON, devtestActive, devtestPages, devtestPasteKeys, startDevtest } from '$lib/devtest';
+	import { DEVTEST_ICON, devtestActive, devtestPasteKeys, shownDevtestPages, startDevtest } from '$lib/devtest';
 
 	/** flock's public website (source in site/), where the brand at the foot of the rail leads. */
 	const SITE_URL = 'https://flock-scheduler.netlify.app/';
@@ -173,11 +173,14 @@
 		dashboard.toggle(link.top + link.height / 2 - top);
 	}
 
+	// A local module's pages that are switched on (devtest.ts `shown`).
+	const localPages = $derived(shownDevtestPages());
+
 	/** A local page's link: its own id in the address, or the first with none. */
 	function isLocalActive(id: string): boolean {
 		if (!isActive('/devtest')) return false;
 		const wanted = page.url.searchParams.get('page');
-		return devtestPages.some((p) => p.id === wanted) ? wanted === id : devtestPages[0]?.id === id;
+		return localPages.some((p) => p.id === wanted) ? wanted === id : localPages[0]?.id === id;
 	}
 </script>
 
@@ -232,9 +235,9 @@
 
 		<!-- Pages a local-devtest module brings (devtest.ts): not in flock's
 		     repository, so a build without the folder has none of these. -->
-		{#if devtestPages.length > 0}
+		{#if localPages.length > 0}
 			<nav class="local" aria-label="Local pages">
-				{#each devtestPages as local (local.id)}
+				{#each localPages as local (local.id)}
 					<a
 						href="{base}/devtest?page={encodeURIComponent(local.id)}"
 						class="navlink"

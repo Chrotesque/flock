@@ -240,10 +240,9 @@
 								<span class="who">
 									<span class="name">Other</span>
 									<span class="sub">
-										{general.value.complianceBranding ? 'compliance on' : 'compliance off'}{general.value
-											.jestrIntegration
-											? ' · Jestr'
-											: ''}{general.value.showTodo ? '' : ' · To finish hidden'}
+										{general.value.complianceBranding ? 'compliance on' : 'compliance off'}{general.value.showTodo
+											? ''
+											: ' · To finish hidden'}
 									</span>
 								</span>
 							</button>
@@ -439,19 +438,6 @@
 								interface is being reviewed or screenshotted for an API audit —
 								<strong>on is the compliant state</strong>, and YouTube's guidelines expect
 								branding wherever its API has a presence.
-							</p>
-
-							<Checkbox
-								checked={general.value.jestrIntegration}
-								label="Jestr integration"
-								onchange={(next) => general.setJestrIntegration(next)}
-							/>
-							<p class="otherhint">
-								Adds every video that goes public on a connected YouTube channel — uploaded through
-								flock or not — to the sidebar's <em>To finish</em> list, with a <strong>Jestr</strong>
-								button beside its YouTube icon. Press it once the video is linked to its campaign on
-								jestr.gg. Jestr offers no API, so flock cannot see or make the link itself. A
-								scheduled video is listed straight away, its button usable once it is public.
 							</p>
 
 							<Checkbox
