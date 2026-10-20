@@ -30,6 +30,7 @@ import { facebookReady, pickAccount } from './accounts.mjs';
 import { GraphError, graph, transientGraphError } from './instagram.mjs';
 import { facebookVideoId } from './moves.mjs';
 import { captionWithTitle } from './retitle.mjs';
+import { COVER_MISSING, triedFor, withCoverRetries } from './coverretry.mjs';
 
 /**
  * Listing the Pages, reading them and taking their tokens, and publishing to
@@ -223,13 +224,16 @@ async function setReelCover(page, videoId, image, name) {
 	});
 }
 
-/** Why a cover was not set, in a line: a refused permission names the one Meta lists. */
-export function coverNote(err) {
+/**
+ * Why a cover was not set, in a line: a refused permission names the one Meta
+ * lists, and `tried` (withCoverRetries' answer) how long it was tried.
+ */
+export function coverNote(err, tried = { attempts: 1 }) {
 	const why =
 		err instanceof GraphError && (err.code === 10 || err.code === 200)
 			? 'the grant lacks a permission it needs (Meta’s reference names pages_manage_engagement, which flock does not ask for)'
 			: String(err?.message ?? err).split('\n')[0];
-	return `Cover not set: ${why}. Facebook shows a frame it picks.`;
+	return `${COVER_MISSING} ${why}${triedFor(tried)}. Facebook shows a frame it picks.`;
 }
 
 async function permalinkOf(page, videoId) {
@@ -428,14 +432,19 @@ export async function publishToFacebook({ target, job, pb, config, log, saveHand
 		throw new Error(`Facebook refused the upload (${res.status}): ${answer.error?.message || res.text.slice(0, 300)}`);
 	}
 
-	// The cover never holds the reel back: refused, it goes out with Facebook's frame and a note.
+	// A failed connection or a passing Graph error is tried again for up to
+	// five minutes (coverretry.mjs); after that, or refused, the reel goes out
+	// with Facebook's frame and a warning.
 	const notes = [];
 	if (job.facebook_cover) {
-		try {
-			await setReelCover(page, videoId, await pb.openFacebookCover(job), job.facebook_cover);
+		const got = await withCoverRetries(
+			async () => setReelCover(page, videoId, await pb.openFacebookCover(job), job.facebook_cover),
+			{ retryable: transientGraphError, log }
+		);
+		if (!('error' in got)) {
 			log(`cover: ${job.facebook_cover} set as the reel's cover`);
-		} catch (err) {
-			notes.push(coverNote(err));
+		} else {
+			notes.push(coverNote(got.error, got));
 			log(notes[0]);
 		}
 	}

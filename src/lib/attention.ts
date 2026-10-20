@@ -14,7 +14,14 @@ import type { WorkerDot } from './workerstatus';
  */
 
 /** `failed` and `unsent` are posts that did not go out — the sidebar box turns red for them. */
-export type AttentionKind = 'failed' | 'unsent' | 'stuck' | 'importing' | 'private' | 'system';
+export type AttentionKind = 'failed' | 'unsent' | 'stuck' | 'importing' | 'private' | 'cover' | 'system';
+
+/**
+ * How the worker's warning starts when a reel went out without its cover
+ * (worker/coverretry.mjs `COVER_MISSING`, after five minutes of tries): it
+ * is in the post's `error`, beside any other note. Keep the two in step.
+ */
+export const COVER_MISSING = 'Cover not set:';
 
 export interface Attention {
 	level: 'error' | 'warn';
@@ -51,7 +58,8 @@ const byLevel = (a: Attention, b: Attention) => (a.level === b.level ? 0 : a.lev
  * for over 90 min (the time after which a takeover gives up on it too); a
  * local video still not on the NAS; and a private YouTube post that was
  * given a slot — YouTube is handed no release time for it, so the slot does
- * nothing and it stays private.
+ * nothing and it stays private; and a reel that went out, or is held,
+ * without its cover (COVER_MISSING).
  *
  * A failure's key carries the row's `updated`, so a post retried and failing
  * again comes back after its first failure was dismissed. The grace before
@@ -114,6 +122,17 @@ export function targetProblems(targets: DashTarget[], now: Date, label: (p: Plat
 				key: `stuck:${t.id}`,
 				text: `${name} has been uploading for ${ago(sinceChange(Math.max(slot, time(t.jobCreated))))}`,
 				detail: 'Longer than an upload should take; the worker may have lost it.',
+				...post
+			});
+		}
+		const coverAt = t.status === 'published' || t.status === 'scheduled' ? (t.error ?? '').indexOf(COVER_MISSING) : -1;
+		if (coverAt >= 0 && slot > at - 7 * DAY) {
+			out.push({
+				level: 'warn',
+				kind: 'cover',
+				key: `cover:${t.id}`,
+				text: `${name} ${t.status === 'scheduled' ? 'is held' : 'went out'} without its cover`,
+				detail: (t.error ?? '').slice(coverAt + COVER_MISSING.length).trim(),
 				...post
 			});
 		}

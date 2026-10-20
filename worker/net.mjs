@@ -1,3 +1,5 @@
+import net from 'node:net';
+
 // Node's fetch reports every network failure as a bare "fetch failed" and
 // hides the reason in `cause`. That is what the worker printed when the NAS
 // was unreachable, and it answers none of the questions it raises. This names
@@ -8,6 +10,19 @@
 // (Node tries each A and AAAA record in turn) comes back as an AggregateError
 // whose message is empty, with the reasons in `errors`. An Instagram upload
 // failed that way on 20 Oct 2026 and the post's error read "".
+
+// Node gives each address of a host 250 ms before it moves to the next one
+// (its "happy eyeballs"), and reports the address it left as ETIMEDOUT. In
+// the NAS container, which has no IPv6, that turned any IPv4 handshake slower
+// than 250 ms — one lost packet — into a failed connection, "ETIMEDOUT <v4>,
+// ENETUNREACH <v6>": a dozen a week to Meta and Google, and on 20 Oct 2026 a
+// reel's cover. Reproduced the same day with an address that never answers:
+// 274 ms by default, 2.5 s with the attempt time raised. So each address
+// gets CONNECT_ATTEMPT_MS; Node's fetch reads the same default, and so does
+// node:https. Set when this module loads: index.mjs and authorize.mjs import
+// it, and the default is the whole process's.
+export const CONNECT_ATTEMPT_MS = 5000;
+net.setDefaultAutoSelectFamilyAttemptTimeout(CONNECT_ATTEMPT_MS);
 
 /**
  * Why a connection failed, in a few words: the code, or with several

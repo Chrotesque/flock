@@ -93,6 +93,40 @@ describe('targetProblems', () => {
 	});
 });
 
+describe('targetProblems: a missing cover', () => {
+	const note =
+		'Cover not set: could not put it on the Page (Cannot reach https://graph.facebook.com (ETIMEDOUT)) (gave up after 8 tries over 5 min). Instagram shows the frame at the cover time.';
+
+	it('warns of a reel that went out, or is held, without its cover', () => {
+		const problems = targetProblems(
+			[
+				target({ id: 'ig', platform: 'instagram', status: 'published', scheduled_at: iso(now - H), error: note }),
+				target({ id: 'fb', platform: 'facebook', status: 'scheduled', scheduled_at: iso(now + 5 * H), error: `Other note. ${note}` })
+			],
+			NOW,
+			label
+		);
+		expect(problems.map((p) => [p.kind, p.level, p.key, p.text])).toEqual([
+			['cover', 'warn', 'cover:fb', 'facebook: "Clip" is held without its cover'],
+			['cover', 'warn', 'cover:ig', 'instagram: "Clip" went out without its cover']
+		]);
+		expect(problems[1].detail).toBe(note.slice('Cover not set: '.length));
+	});
+
+	it('leaves a cover that worked, a failed post and a week-old one alone', () => {
+		const problems = targetProblems(
+			[
+				target({ id: 'ok', platform: 'instagram', status: 'published', scheduled_at: iso(now - H), error: '' }),
+				target({ id: 'old', platform: 'instagram', status: 'published', scheduled_at: iso(now - 8 * 24 * H), error: note })
+			],
+			NOW,
+			label
+		);
+		expect(problems).toEqual([]);
+		expect(hasFailure(targetProblems([target({ platform: 'instagram', status: 'published', error: note })], NOW, label))).toBe(false);
+	});
+});
+
 describe('targetProblems after a change', () => {
 	it('counts the grace from the last change, so a post just retried is not flagged at once', () => {
 		const retried = target({ id: 'r', status: 'pending', scheduled_at: iso(now - 3 * H), updated: iso(now - 60_000) });

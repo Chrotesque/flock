@@ -261,8 +261,9 @@ The worker keeps each Page's own token, which does not expire.
 - `pnpm worker:instagram` shows each account and how much of its daily
   allowance (100 posts) is used.
 - **Covers:** a cover image is placed on your Page as an *unpublished* photo
-  (it never appears there), handed to Instagram, then deleted. If that fails,
-  the reel uses its *Cover frame*.
+  (it never appears there), handed to Instagram, then deleted. A failed
+  connection is tried again for up to five minutes; after that the reel uses
+  its *Cover frame*, and *To finish* warns that it went out without its cover.
 - **Paid partnership:** Meta's API takes Instagram's label but does not show
   it, so flock does not send it. Add it in the Instagram app; *To finish* lists
   each reel for it.
@@ -300,9 +301,10 @@ Page's own token. Running it again adds or refreshes Pages and drops none.
 
 Then choose each brand's Page in Settings → *Brands*.
 
-- **Covers:** a cover image becomes the reel's cover on the Page. If Facebook
-  refuses it, the reel goes out with a frame Facebook picks, and the post's
-  entry in the Log says why.
+- **Covers:** a cover image becomes the reel's cover on the Page. A failed
+  connection is tried again for up to five minutes. If Facebook refuses it, or
+  the five minutes pass, the reel goes out with a frame Facebook picks, the
+  post's entry in the Log says why, and *To finish* warns of it.
 - **Reel numbers:** the worker reads each Page's newest 100 reels every 10
   minutes — every reel on the Page, including the ones Instagram shares there —
   with their likes and comments, for the Dashboard (`fbStatsPosts`,
@@ -734,7 +736,8 @@ how many things are listed. Click it to open the list over the page.
 
 - **Needs attention** comes first, for every brand: failed posts, posts never
   sent, uploads that hang, videos not yet copied to the NAS, a private YouTube
-  video given a slot, a stopped worker, a TikTok or Instagram account that
+  video given a slot, a reel that went out without its cover, a stopped
+  worker, a TikTok or Instagram account that
   cannot post while posts wait for it, and YouTube's stats or quota. Each post
   shows its platform and brand and links to the upload's overview in the Log;
   *Dismiss* takes it off the list once dealt with (the Log keeps it). The rest

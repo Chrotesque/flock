@@ -21,6 +21,7 @@
 import { fetchOrExplain, isNetworkError } from './net.mjs';
 import { streamRequest, videoMime, sleep, msUntil, MiB } from './upload.mjs';
 import { pickAccount, instagramReady } from './accounts.mjs';
+import { COVER_MISSING, triedFor, withCoverRetries } from './coverretry.mjs';
 
 const GRAPH = 'https://graph.facebook.com';
 const UPLOAD = 'https://rupload.facebook.com/ig-api-upload';
@@ -584,20 +585,28 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 
 	// A custom cover goes up to the Page as an unpublished photo for Instagram
 	// to fetch while it processes the container, and is deleted once that is
-	// over. If that fails the frame at the cover time stands in, and the log
-	// says so, because the reel still goes out.
+	// over. A failed connection or a passing Graph error is tried again for up
+	// to five minutes (coverretry.mjs); after that, or on any other refusal,
+	// the frame at the cover time stands in and the post carries a warning,
+	// because the reel still goes out.
+	const notes = [];
 	let hosted = null;
 	if (job.cover) {
-		try {
-			hosted = await hostCover(ig, await pb.openCover(job), job.cover);
+		const got = await withCoverRetries(async () => hostCover(ig, await pb.openCover(job), job.cover), {
+			retryable: transientGraphError,
+			log
+		});
+		if (!('error' in got)) {
+			hosted = got.value;
 			params.cover_url = hosted.url;
 			delete params.thumb_offset;
 			log(`cover: ${job.cover} put on the Page as unpublished photo ${hosted.id} for Instagram to fetch`);
-		} catch (err) {
-			log(
-				`cover skipped: could not put it on the Page (${explain(err).message.split('\n')[0]}), ` +
-					'so Instagram uses the frame at the cover time'
+		} else {
+			const why = explain(got.error).message.split('\n')[0];
+			notes.push(
+				`${COVER_MISSING} could not put it on the Page (${why})${triedFor(got)}. Instagram shows the frame at the cover time.`
 			);
+			log(notes[notes.length - 1]);
 		}
 	}
 	const dropCover = async () => {
@@ -617,7 +626,6 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 	// `nextUploadPause` allows. Only the container that took the bytes is ever
 	// published; a spent one is left unpublished, and Instagram drops those
 	// within a day.
-	const notes = [];
 	const createContainer = async () => {
 		try {
 			return await graph(ig, `/${ig.igUserId}/media`, { method: 'POST', params });
