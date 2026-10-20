@@ -6,15 +6,17 @@ import type { PlatformId } from './types';
  * showed its cover on the Page's Reels tab (14 Oct 2026). YouTube's
  * thumbnail was dropped in v0.11.7 (the user's call): `thumbnails.set` only
  * ever changed a Short's 16:9 thumbnail, never the cover the Shorts feed
- * shows (studio.ts). TikTok takes a cover *time* (`coverFrame`), never an
- * image — its Direct Post API has nothing but `video_cover_timestamp_ms`
- * (checked 11 Oct 2026). The image is checked against every platform it
- * would go to, and one it does not fit uses its frame instead — said beside
- * the picker, never decided silently at confirm.
+ * shows (studio.ts). TikTok's Direct Post API takes only a cover *time*
+ * (`video_cover_timestamp_ms`, checked 11 Oct 2026), so since v0.16.44 its
+ * image is put into the video itself — held 0.2 s at the end (the default)
+ * or the beginning, the cover time pointed at it (worker/tiktokcover.mjs).
+ * The image is checked against every platform it would go to, and one it
+ * does not fit uses its frame instead — said beside the picker, never
+ * decided silently at confirm.
  */
-export type ImagePlatform = 'instagram' | 'facebook';
+export type ImagePlatform = 'instagram' | 'facebook' | 'tiktok';
 
-export const IMAGE_PLATFORMS: readonly ImagePlatform[] = ['instagram', 'facebook'];
+export const IMAGE_PLATFORMS: readonly ImagePlatform[] = ['instagram', 'facebook', 'tiktok'];
 
 interface Limit {
 	bytes: number;
@@ -38,8 +40,32 @@ export const IMAGE_LIMITS: Record<ImagePlatform, Limit> = {
 		types: ['image/jpeg', 'image/png'],
 		formats: 'JPEG or PNG',
 		fallback: 'shows a frame it picks'
+	},
+	// Put into the video by the worker with ffmpeg; the cap is flock's own.
+	tiktok: {
+		bytes: 10 * 1024 * 1024,
+		types: ['image/jpeg', 'image/png'],
+		formats: 'JPEG or PNG',
+		fallback: 'uses the frame at the cover time'
 	}
 };
+
+/** The TikTok option saying where its cover image goes in the video. */
+export const COVER_AT_OPTION = 'coverImageAt';
+export type CoverAt = 'start' | 'end';
+
+/** Where TikTok's cover image goes: the end unless the upload chose the beginning. */
+export function coverAt(overrides: Partial<Record<PlatformId, Record<string, unknown>>>): CoverAt {
+	return overrides.tiktok?.[COVER_AT_OPTION] === 'start' ? 'start' : 'end';
+}
+
+/** The upload's options with TikTok's cover image placed at `at`. */
+export function withCoverAt<T extends Record<string, unknown>>(
+	overrides: Partial<Record<PlatformId, T>>,
+	at: CoverAt
+): Partial<Record<PlatformId, T>> {
+	return { ...overrides, tiktok: { ...(overrides.tiktok ?? {}), [COVER_AT_OPTION]: at } as unknown as T };
+}
 
 export function isImagePlatform(platform: PlatformId): platform is ImagePlatform {
 	return (IMAGE_PLATFORMS as readonly string[]).includes(platform);

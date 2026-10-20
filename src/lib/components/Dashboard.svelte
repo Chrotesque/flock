@@ -311,7 +311,12 @@
 	const spanned = $derived(releases.filter((r) => inSpan(r, filter.days, now)));
 	const groups = $derived(peerGroups(spanned));
 	const counts = $derived(filterCounts(spanned, filter));
-	const inViewList = $derived(spanned.filter((r) => inView(r, filter)));
+	// While editing, the videos hidden with the eye show too (faded), so one
+	// can be shown again without the filter's Hidden; the totals and the Jestr
+	// count still leave them out then (`onlyWhileEditing`), and the periods
+	// read the filter itself.
+	const inViewList = $derived(spanned.filter((r) => inView(r, editing ? { ...filter, hidden: true } : filter)));
+	const onlyWhileEditing = (r: Release) => Boolean(r.hidden) && !filter.hidden;
 	const combined = $derived(isCombined(filter));
 	const multi = $derived(filter.platforms.length > 1);
 
@@ -387,7 +392,12 @@
 	const campaigns = $derived(
 		new Set(inViewList.filter((r) => isCampaign(campaignPosts(r), jestrCampaigns.marks, flagged)).map((r) => r.key))
 	);
-	const campaignCount = $derived(rows.filter((row) => campaigns.has(row.release.key)).length);
+	// The list's count, without the videos shown only while editing.
+	const editOnly = $derived(rows.filter((row) => onlyWhileEditing(row.release)).length);
+	const counted = $derived(rows.length - editOnly);
+	const campaignCount = $derived(
+		rows.filter((row) => campaigns.has(row.release.key) && !onlyWhileEditing(row.release)).length
+	);
 
 	/* ---- the list's columns, as Settings → Dashboard arranges them (dashcolumns.ts) ---- */
 
@@ -554,6 +564,7 @@
 		// Followers stay unknown (—) until some video's are known.
 		const sum = { views: 0, likes: 0, comments: 0, followers: null as number | null, dViews: 0, dLikes: 0, dComments: 0, dFollowers: 0 };
 		for (const row of rows) {
+			if (onlyWhileEditing(row.release)) continue;
 			sum.views += row.views ?? 0;
 			sum.likes += row.likes ?? 0;
 			sum.comments += row.comments ?? 0;
@@ -570,7 +581,12 @@
 	// within 3 seconds: each reel's rate weighted by its views.
 	const pooledSkip = $derived(
 		filter.platforms.includes('instagram')
-			? pooledSkipRate(rows.map((row) => row.release.posts.instagram).filter((p): p is Post => Boolean(p)))
+			? pooledSkipRate(
+					rows
+						.filter((row) => !onlyWhileEditing(row.release))
+						.map((row) => row.release.posts.instagram)
+						.filter((p): p is Post => Boolean(p))
+				)
 			: null
 	);
 	const skipShown = (rate: number) => `${rate.toLocaleString('en-GB', { maximumFractionDigits: 1 })} %`;
@@ -941,7 +957,9 @@
 	{#if col === 'video'}
 		<span class="vid {cellOf(col)}">
 			<span class="vtitle">Total</span>
-			<span class="vmeta">{rows.length} {rows.length === 1 ? 'video' : 'videos'}</span>
+			<span class="vmeta"
+				>{counted} {counted === 1 ? 'video' : 'videos'}{#if editOnly}&nbsp;· {editOnly} hidden{/if}</span
+			>
 		</span>
 	{:else if col === 'jestr'}
 		<span class="jcell num cell {cellOf(col)}" title="Jestr campaign videos among them">{campaignCount}</span>
@@ -1277,11 +1295,11 @@
 		<p class="banner editing">
 			<strong>EDITING VIDEOS</strong> — Press the pencil beside a title to rename that video on every platform it
 			is on, or on some only; the worker renames it within seconds. The eye hides a video from the Dashboard —
-			the list, the totals, the periods and the usual; <em>Hidden</em> in the filter shows hidden ones without showing
-			them again for good.
+			the list, the totals, the periods and the usual; while editing, hidden ones stay in the list, faded, so the eye
+			can show one again. <em>Hidden</em> in the filter shows them outside Edit mode too.
 			{#if jestrOn}Click a video to mark it as a Jestr campaign, or to take the mark off.{/if}
 			Press <strong>■</strong> when finished.
-			{#if lastHidden && !filter.hidden}
+			{#if lastHidden}
 				<span class="undo">Hid “{lastHidden.title}” <button onclick={undoHide}>Undo</button></span>
 			{/if}
 			{#if jestrCampaigns.error}<span class="bad">Not saved: {jestrCampaigns.error}</span>{/if}
@@ -2415,8 +2433,8 @@
 		color: var(--warn);
 	}
 
-	/* A hidden video, shown by the filter: its picture and title fade. Never
-	   the platform marks — their brands forbid greying them. */
+	/* A hidden video, shown by the filter or while editing: its picture and
+	   title fade. Never the platform marks — their brands forbid greying them. */
 	.item.hiddenvideo img.thumb {
 		opacity: 0.4;
 	}

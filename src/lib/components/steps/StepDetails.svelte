@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { base } from '$app/paths';
 	import ThumbnailPicker from '../ThumbnailPicker.svelte';
-	import { imageFits, isImagePlatform } from '$lib/coverimage';
+	import { coverAt, imageFits, isImagePlatform, withCoverAt } from '$lib/coverimage';
 	import FoldBox from '../FoldBox.svelte';
 	import PlaylistPicker from '../PlaylistPicker.svelte';
 	import PlatformIcon from '../PlatformIcon.svelte';
@@ -99,9 +99,9 @@
 	let showPaidBox = $derived(composing === 'instagram' && draft.activePlatforms.includes('instagram'));
 	let paidTicked = $derived(paidPartnershipIn(draft.overrides));
 	let tiktokActive = $derived(draft.activePlatforms.includes('tiktok'));
-	// The image box is the reel cover of Instagram and Facebook
-	// (coverimage.ts): YouTube's thumbnail was dropped in v0.11.7, and TikTok
-	// takes a cover *time* (its `coverFrame` option), not an image.
+	// The image box is the cover of Instagram's and Facebook's reels and,
+	// since v0.16.44, TikTok's — put into its video at the start or end by the
+	// worker (coverimage.ts). YouTube's thumbnail was dropped in v0.11.7.
 	let imagePlatforms = $derived(draft.activePlatforms.filter(isImagePlatform));
 	let imageComposing = $derived(composing && isImagePlatform(composing) ? composing : null);
 	let showImageBox = $derived(imagePlatforms.length > 0 && imageComposing !== null);
@@ -111,9 +111,13 @@
 	let imageBoxPlatforms = $derived(
 		draft.imagesLinked || !imageComposing ? imagePlatforms : [imageComposing]
 	);
-	// Unlinked, Instagram's own picture is `cover` and Facebook's `thumbnail`
-	// (draft.imageFor).
-	let boxHoldsCover = $derived(!draft.imagesLinked && imageComposing === 'instagram');
+	// Unlinked, Instagram's own picture is `cover`, TikTok's `tiktokCover`
+	// and Facebook's `thumbnail` (draft.imageFor).
+	let boxSlot = $derived(
+		draft.imagesLinked ? 'thumbnail' : imageComposing === 'instagram' ? 'cover' : imageComposing === 'tiktok' ? 'tiktokCover' : 'thumbnail'
+	);
+	// Where TikTok's image goes in its video; the end unless chosen otherwise.
+	let placement = $derived(coverAt(draft.overrides));
 	let imageBoxLabel = $derived('Cover');
 	let imageBoxFile = $derived(imageComposing ? draft.imageFor(imageComposing) : null);
 	let imageBoxDone = $derived(
@@ -1219,13 +1223,41 @@
 					label={imageBoxLabel}
 					platforms={imageBoxPlatforms}
 					done={imageBoxDone}
-					summary={imageBoxFile?.name ?? ''}
+					summary={imageBoxFile
+						? `${imageBoxFile.name}${imageComposing === 'tiktok' ? ` · ${placement === 'start' ? 'beginning' : 'end'}` : ''}`
+						: ''}
 					action={showLinkSwitch ? linkSwitch : undefined}
 				>
-					{#if boxHoldsCover}
+					{#if boxSlot === 'cover'}
 						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.cover} />
+					{:else if boxSlot === 'tiktokCover'}
+						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.tiktokCover} />
 					{:else}
 						<ThumbnailPicker platforms={imageBoxPlatforms} bind:file={draft.thumbnail} />
+					{/if}
+					{#if imageComposing === 'tiktok'}
+						<!-- TikTok takes no picture, only a moment: the image is held 0.2 s in the video. -->
+						<div class="coverat" role="radiogroup" aria-label="Where TikTok's cover image goes">
+							<span class="coveratlabel">In the video</span>
+							{#each [['start', 'Beginning'], ['end', 'End']] as [value, label] (value)}
+								<button
+									class="coveratopt"
+									class:on={placement === value}
+									role="radio"
+									aria-checked={placement === value}
+									onclick={() => (draft.overrides = withCoverAt(draft.overrides, value as 'start' | 'end'))}
+								>
+									{label}
+								</button>
+							{/each}
+						</div>
+						<p class="boxnote">
+							TikTok takes no cover picture, so the image is held for 0.2 s at the {placement === 'start'
+								? 'beginning'
+								: 'end'} of the video and made its cover.{placement === 'start'
+								? ' At the beginning it is the first thing viewers see.'
+								: ' At the end it leaves the opening untouched; viewers who reach the end see it before the loop.'}
+						</p>
 					{/if}
 				</FoldBox>
 			{/key}
@@ -2135,6 +2167,43 @@
 	.ttnote {
 		margin: 0;
 		font-size: 11.5px;
+	}
+
+	.coverat {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-top: 10px;
+	}
+
+	.coveratlabel {
+		margin-right: 4px;
+		font-size: 11px;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.coveratopt {
+		padding: 4px 11px;
+		border: 1px solid var(--border-strong);
+		border-radius: 999px;
+		background: none;
+		color: var(--text-dim);
+		font: inherit;
+		font-size: 12px;
+		cursor: pointer;
+	}
+
+	.coveratopt:hover {
+		border-color: var(--pink);
+		color: var(--text);
+	}
+
+	.coveratopt.on {
+		border-color: transparent;
+		background: var(--accent-grad);
+		color: #fff;
 	}
 
 	.boxnote {

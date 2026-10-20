@@ -396,6 +396,17 @@ export function makeClient(baseUrl) {
 			};
 		},
 
+		/** TikTok's cover image as bytes (tiktokcover.mjs), capped at 10 MB by the schema. */
+		async openTikTokCover(job) {
+			const url = `${baseUrl}/api/files/upload_jobs/${job.id}/${encodeURIComponent(job.tiktok_cover)}`;
+			const res = await fetchOrExplain(url);
+			if (!res.ok) throw new Error(`Cannot read the stored TikTok cover (${res.status})`);
+			return {
+				bytes: Buffer.from(await res.arrayBuffer()),
+				mimeType: res.headers.get('content-type') || 'image/jpeg'
+			};
+		},
+
 		/** Facebook's reel cover as bytes, capped at Facebook's 10 MB by the schema. */
 		async openFacebookCover(job) {
 			const url = `${baseUrl}/api/files/upload_jobs/${job.id}/${encodeURIComponent(job.facebook_cover)}`;

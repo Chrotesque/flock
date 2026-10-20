@@ -182,8 +182,12 @@ Limits:
   (its app review, then its Content Posting API audit). Until then, posts are
   visible to the account alone.
 - **Videos:** MP4, MOV or WebM, under 4 GB.
-- **Cover:** a frame of the video, set as *Cover frame* in TikTok's options.
-  TikTok takes no cover image.
+- **Cover:** TikTok takes no cover image, only a moment in the video. Give the
+  upload a *Cover* image and the worker holds it for 0.2 s at the end of the
+  video (or the beginning) and makes that moment the cover; this needs ffmpeg
+  and ffprobe where the worker runs (on the PATH, beside the config, or named
+  by `ffmpegPath` / `FLOCK_FFMPEG`). Without an image, or without ffmpeg, the
+  cover is the *Cover frame* set in TikTok's options, and the post says why.
 
 ### Instagram
 
@@ -379,6 +383,9 @@ create a container from `node:24-alpine` with:
 - `--restart unless-stopped`, and on Unraid `--user 99:100` with `UMASK=000`
   so copied videos stay editable over SMB;
 - `FLOCK_RESTART_ON_UPDATE=1`, so it restarts itself on a new version;
+- for TikTok cover images, ffmpeg: either run
+  `sh -c "apk add --no-cache ffmpeg && exec node /config/flock-worker.cjs"`
+  instead, or put static `ffmpeg` and `ffprobe` binaries in `/config`;
 - for the Dashboard's player: port 8790 mapped, `FLOCK_PREVIEW_HOST=0.0.0.0`,
   an https address in front of that port (Tailscale Serve, for example — the
   page is https, so the browser will not play from plain http), and
@@ -468,9 +475,11 @@ are writing for.
 
 The boxes on the right follow the platform you are writing for:
 
-- **Instagram and Facebook:** an optional *Cover* image for the reel (JPEG or
-  PNG, up to 8 MB for Instagram and 10 MB for Facebook). One image serves both;
-  the switch in the box's corner gives each its own.
+- **Instagram, Facebook and TikTok:** an optional *Cover* image (JPEG or PNG,
+  up to 8 MB for Instagram and 10 MB for Facebook and TikTok). One image serves
+  all of them; the switch in the box's corner gives each its own. For TikTok
+  the box also asks where the image goes in the video, *Beginning* or *End*
+  (the default).
 - **Instagram:** *Branded content*, whose *Paid partnership label* tick makes
   Instagram show "Paid partnership" on the reel — for ads and branded content.
   If Instagram refuses the label, the reel still goes out, without it, and the
@@ -540,8 +549,8 @@ is for, suggesting the closest one.
   the channel has no playlist for is named in the note.
 - **`schedule`** is local time, or `"now"`. It fills the Schedule step, where
   you can still change it.
-- **`thumbnail`** is the reel cover for Instagram and Facebook, read by the
-  worker from its own disk (JPEG or PNG, up to 8 MB).
+- **`thumbnail`** is the cover image for Instagram, Facebook and TikTok, read
+  by the worker from its own disk (JPEG or PNG, up to 8 MB).
 - **Never filled:** TikTok's audience, interaction and disclosure choices.
   Those are picked by hand on every post.
 
@@ -631,8 +640,9 @@ press Esc or go to another page to close it. For the brand in view it shows:
   The eye hides the video's posts on the platforms in view: with all of them
   (*Combined*) that is the whole video, with one platform chosen only its post
   there — the way to take a test reel off a real Short it was paired with by
-  time. *Hidden* in the filter shows hidden videos, faded, without showing
-  them again; press their (shut) eye to bring one back for good.
+  time. In edit mode hidden videos stay in the list, faded and left out of the
+  totals, so you can press their (shut) eye to bring one back for good;
+  *Hidden* in the filter shows them outside edit mode too.
 - **Jestr campaigns**, with the Jestr integration on: a *Jestr* column ticks
   the videos that are campaign videos. An upload is marked with the *Jestr
   campaign* box on the Details step (shown for YouTube, Instagram and TikTok);

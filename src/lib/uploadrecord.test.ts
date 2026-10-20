@@ -26,6 +26,7 @@ const record: UploadRecord = {
 	destination: { label: 'Archive', path: '\\\\nas\\archive' },
 	cover: null,
 	facebookCover: { name: 'cover.jpg', size: 2048 },
+	tiktokCover: { name: 'cover.jpg', size: 2048 },
 	devtest: [],
 	targets: [
 		{
@@ -56,6 +57,11 @@ describe('readUploadRecord', () => {
 	it('reads a record from before Facebook covers as having none', () => {
 		const { facebookCover: _, ...older } = record;
 		expect(readUploadRecord(JSON.parse(JSON.stringify(older)))?.facebookCover).toBeNull();
+	});
+
+	it('reads a record from before TikTok covers as having none', () => {
+		const { tiktokCover: _, ...older } = record;
+		expect(readUploadRecord(JSON.parse(JSON.stringify(older)))?.tiktokCover).toBeNull();
 	});
 
 	it('is null for anything that is not a record', () => {

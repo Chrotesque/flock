@@ -10,7 +10,9 @@
 // interface rather than of TikTok's wire format.
 
 import { fetchOrExplain, isNetworkError } from './net.mjs';
-import { saveTikTokToken } from './config.mjs';
+import { CONFIG_PATH, saveTikTokToken } from './config.mjs';
+import { createReadStream } from 'node:fs';
+import { findTools, makeCoverVideo, placementOf } from './tiktokcover.mjs';
 import { pickAccount } from './accounts.mjs';
 import { planChunks, readChunks, videoMime, sleep, MiB } from './upload.mjs';
 
@@ -465,8 +467,54 @@ export async function publishToTikTok({ target, job, pb, config, log, saveHandle
 		);
 	}
 
-	const video = await pb.openVideo(job);
-	const mime = videoMime(video, job.video_name);
+	// A cover image goes into the video itself (tiktokcover.mjs); without
+	// ffmpeg, or on any failure, the original goes out with a note and the
+	// frame at the cover time, as before.
+	const notes = [];
+	const withCover = job.tiktok_cover ? await coverVideo({ job, pb, config, options, creator, log, notes }) : null;
+	if (withCover) postInfo.video_cover_timestamp_ms = withCover.coverMs;
+	try {
+		return await sendVideo({ target, job, pb, config, account, creator, level, postInfo, log, saveHandle, withCover, notes });
+	} finally {
+		await withCover?.cleanup();
+	}
+}
+
+/**
+ * The video with the cover image held at its start or end, or null with a
+ * note when it cannot be made — the post then goes out without it.
+ */
+async function coverVideo({ job, pb, config, options, creator, log, notes }) {
+	const at = placementOf(options);
+	const skip = (why) => {
+		notes.push(`TikTok cover image not added: ${why}. The cover is the frame at the cover time.`);
+		log(`  cover image skipped: ${why}`);
+		return null;
+	};
+	const tools = await findTools(config, CONFIG_PATH);
+	if (!tools) return skip('ffmpeg is not installed where the worker runs');
+	try {
+		const image = await pb.openTikTokCover(job);
+		const original = await pb.openVideo(job);
+		log(`  putting the cover image at the ${at === 'start' ? 'beginning' : 'end'} of the video`);
+		const made = await makeCoverVideo({ tools, video: original, image: image.bytes, imageType: image.mimeType, at });
+		if (creator.maxDurationSeconds > 0 && made.duration > creator.maxDurationSeconds) {
+			await made.cleanup();
+			return skip(`with it the video would run past the ${creator.maxDurationSeconds}s @${creator.username} may post`);
+		}
+		log(`  cover image in: ${(made.size / MiB).toFixed(1)} MB, cover at ${(made.coverMs / 1000).toFixed(2)}s`);
+		return made;
+	} catch (err) {
+		return skip(String(err?.message ?? err).split('\n')[0]);
+	}
+}
+
+/** The upload itself: init, the chunks, the wait for TikTok to publish. */
+async function sendVideo({ target, job, pb, config, account, creator, level, postInfo, log, saveHandle, withCover, notes }) {
+	const video = withCover
+		? { stream: createReadStream(withCover.path), size: withCover.size, mimeType: 'video/mp4' }
+		: await pb.openVideo(job);
+	const mime = withCover ? 'video/mp4' : videoMime(video, job.video_name);
 	if (!ACCEPTED_MIME.has(mime)) {
 		video.stream.destroy();
 		throw new Error(`TikTok takes MP4, MOV or WebM; ${job.video_name || job.video} is ${mime}.`);
@@ -545,7 +593,8 @@ export async function publishToTikTok({ target, job, pb, config, log, saveHandle
 		publishId: init.publish_id,
 		postId,
 		scheduled: false,
-		privacyStatus: privacyLabel(level).toLowerCase()
+		privacyStatus: privacyLabel(level).toLowerCase(),
+		...(notes.length > 0 ? { notes } : {})
 	};
 }
 

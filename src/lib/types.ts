@@ -161,6 +161,8 @@ export interface UploadJob {
 	cover?: string;
 	/** Optional custom cover for the Facebook reel, capped at Facebook's own 10 MB. */
 	facebook_cover?: string;
+	/** Optional cover image for TikTok, which the worker puts into the video (worker/tiktokcover.mjs). */
+	tiktok_cover?: string;
 	/**
 	 * Set instead of `video` when the file was picked out of the watch folder
 	 * rather than uploaded. The bytes stay where they are — PocketBase holds
@@ -367,6 +369,7 @@ export interface ProjectRow {
 	draft: unknown;
 	thumbnail: string;
 	cover: string;
+	tiktok_cover?: string;
 	done_at: string;
 	/**
 	 * Set by the worker once the project is sent: when it renamed the file

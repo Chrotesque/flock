@@ -135,6 +135,15 @@ const collections = [
 				maxSize: 10485760,
 				mimeTypes: ['image/jpeg', 'image/png']
 			},
+			// TikTok's cover image, which the worker puts into the video itself
+			// (worker/tiktokcover.mjs) — TikTok's API takes only a cover time.
+			{
+				type: 'file',
+				name: 'tiktok_cover',
+				maxSelect: 1,
+				maxSize: 10485760,
+				mimeTypes: ['image/jpeg', 'image/png']
+			},
 			// Set instead of `video` for a file picked out of the watch folder:
 			// the bytes are left on the NAS and only referenced, which is what
 			// makes a video larger than the file field's 5 GiB cap possible.
@@ -360,6 +369,14 @@ const collections = [
 				maxSelect: 1,
 				maxSize: 8388608,
 				mimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+			},
+			// TikTok's own picture while the images are unlinked.
+			{
+				type: 'file',
+				name: 'tiktok_cover',
+				maxSelect: 1,
+				maxSize: 10485760,
+				mimeTypes: ['image/jpeg', 'image/png']
 			},
 			{ type: 'date', name: 'done_at' },
 			{ type: 'json', name: 'jobs', maxSize: 20000 },

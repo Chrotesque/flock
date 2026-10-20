@@ -147,6 +147,9 @@ export function loadConfig() {
 		statsVideos: Number(process.env.FLOCK_STATS_VIDEOS ?? file.statsVideos ?? 50),
 		// Units the pass may spend in a day before it pauses until Google's reset.
 		statsBudget: Number(process.env.FLOCK_STATS_BUDGET ?? file.statsBudget ?? 6000),
+		// ffmpeg, for TikTok's cover image (tiktokcover.mjs); '' looks beside
+		// this config, then on the PATH.
+		ffmpegPath: process.env.FLOCK_FFMPEG || file.ffmpegPath || '',
 		// The Instagram stats pass (igstats.mjs): every account's newest posts with
 		// their views. Instagram's insights lag up to 48 hours, so there is no
 		// point reading them often. 0 turns the pass off.

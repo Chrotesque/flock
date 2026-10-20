@@ -460,6 +460,8 @@ export interface CreateJobInput {
 	cover: File | null;
 	/** Optional custom cover for Facebook's reel; the same picture as `cover` while linked. */
 	facebookCover?: File | null;
+	/** Optional cover image for TikTok, put into the video by the worker. */
+	tiktokCover?: File | null;
 	duration: number;
 	/** Where on the NAS this video should end up, snapshotted at confirm time. */
 	destination: { label: string; path: string } | null;
@@ -497,6 +499,7 @@ export async function createJob(
 	if (input.thumbnail) form.set('thumbnail', input.thumbnail);
 	if (input.cover) form.set('cover', input.cover);
 	if (input.facebookCover) form.set('facebook_cover', input.facebookCover);
+	if (input.tiktokCover) form.set('tiktok_cover', input.tiktokCover);
 
 	if (input.file) {
 		form.set('video', input.file);
@@ -1567,7 +1570,7 @@ export async function markProject(
 export async function saveProjectDraft(
 	id: string,
 	draft: unknown,
-	images: { thumbnail?: File | null; cover?: File | null }
+	images: { thumbnail?: File | null; cover?: File | null; tiktok_cover?: File | null }
 ): Promise<void> {
 	assertDeviceNamed();
 	const removed = Object.entries(images).filter(([, file]) => file === null);
@@ -1580,7 +1583,11 @@ export async function saveProjectDraft(
 }
 
 /** A stored project image, under the name it was picked with. */
-export async function loadProjectImage(row: ProjectRow, field: 'thumbnail' | 'cover', name: string): Promise<File | null> {
+export async function loadProjectImage(
+	row: ProjectRow,
+	field: 'thumbnail' | 'cover' | 'tiktok_cover',
+	name: string
+): Promise<File | null> {
 	const stored = row[field];
 	if (!stored) return null;
 	const res = await fetch(pb.files.getURL(row, stored));

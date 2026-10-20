@@ -139,7 +139,8 @@
 		group: Group,
 		everyGroup: Group[],
 		cover: File | null,
-		facebookCover: File | null
+		facebookCover: File | null,
+		tiktokCover: File | null
 	): UploadRecord {
 		const { file, nasFile, duration } = group.video;
 		const destination = general.defaultDestination;
@@ -197,6 +198,7 @@
 			destination: destination ? { label: destination.label, path: destination.path } : null,
 			cover: cover ? { name: cover.name, size: cover.size } : null,
 			facebookCover: facebookCover ? { name: facebookCover.name, size: facebookCover.size } : null,
+			tiktokCover: tiktokCover ? { name: tiktokCover.name, size: tiktokCover.size } : null,
 			devtest: devtestActive(),
 			targets,
 			timing: timingOfTargets(targets)
@@ -269,6 +271,7 @@
 						: null;
 				const cover = coverFor('instagram');
 				const facebookCover = coverFor('facebook');
+				const tiktokCover = coverFor('tiktok');
 				const job = await createJob(
 					{
 						title: label.title,
@@ -278,6 +281,7 @@
 						thumbnail: null,
 						cover,
 						facebookCover,
+						tiktokCover,
 						duration,
 						destination: general.defaultDestination,
 						brand: brands.current ?? null,
@@ -291,7 +295,7 @@
 							date: row.date,
 							time: row.time
 						})),
-						record: $state.snapshot(recordFor(group, everyGroup, cover, facebookCover)) as UploadRecord
+						record: $state.snapshot(recordFor(group, everyGroup, cover, facebookCover, tiktokCover)) as UploadRecord
 					},
 					(fraction) => (progress = total > 0 ? (sent + fraction * size) / total : fraction)
 				);
@@ -415,7 +419,7 @@
 		if (!id || phase === 'done') return;
 		const snapshot = draft.projectSnapshot();
 		JSON.stringify(snapshot);
-		const images = { thumbnail: draft.thumbnail, cover: draft.cover };
+		const images = { thumbnail: draft.thumbnail, cover: draft.cover, tiktokCover: draft.tiktokCover };
 		untrack(() => projects.queueSave(id, snapshot, images));
 	});
 

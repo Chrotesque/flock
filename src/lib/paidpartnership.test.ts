@@ -25,6 +25,8 @@ describe('the Paid partnership label', () => {
 			[CAMPAIGN_OPTION]: true
 		});
 		expect(keptOnReset({ shareToFeed: false })).toEqual({});
+		// TikTok's cover placement is the Cover box's too.
+		expect(keptOnReset({ coverFrame: 2, coverImageAt: 'start' })).toEqual({ coverImageAt: 'start' });
 		expect(keptOnReset(undefined)).toEqual({});
 	});
 });

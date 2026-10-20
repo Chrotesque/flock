@@ -20,7 +20,7 @@
 		YOUTUBE_EDIT_SETUP,
 		type Allowance
 	} from '$lib/accounts';
-	import { imageFits, isImagePlatform, type ImagePlatform } from '$lib/coverimage';
+	import { coverAt, imageFits, isImagePlatform, type ImagePlatform } from '$lib/coverimage';
 	import {
 		tiktokProblems,
 		readDisclosure,
@@ -600,6 +600,11 @@
 						{/if}
 						{#if row.platform === 'instagram' && row.options[PAID_PARTNERSHIP_OPTION] === true}
 							<span class="dot">·</span>Paid partnership label
+						{/if}
+						{#if row.platform === 'tiktok' && imageFits(draft.imageFor('tiktok'), 'tiktok')}
+							<span class="dot">·</span><span title="TikTok takes no cover picture: the worker holds the image 0.2 s in the video and makes it the cover"
+								>cover image at the {coverAt(draft.overrides) === 'start' ? 'beginning' : 'end'}</span
+							>
 						{/if}
 						{#if row.hits > 0}
 							<span class="dot">·</span><span class="adapted">{row.hits} adapted</span>

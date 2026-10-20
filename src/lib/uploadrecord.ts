@@ -30,6 +30,8 @@ export interface UploadRecord {
 	cover: { name: string; size: number } | null;
 	/** Facebook's cover image, as sent with this job (since 0.16.2; absent before). */
 	facebookCover?: { name: string; size: number } | null;
+	/** TikTok's cover image, put into the video at the start or the end (its options' coverImageAt). */
+	tiktokCover?: { name: string; size: number } | null;
 	/** local-devtest modules changing anything at the time (devtest.ts). */
 	devtest: string[];
 	targets: RecordTarget[];
@@ -150,6 +152,7 @@ export function readUploadRecord(raw: unknown): UploadRecord | null {
 	const destination = obj(r.destination);
 	const cover = obj(r.cover);
 	const facebookCover = obj(r.facebookCover);
+	const tiktokCover = obj(r.tiktokCover);
 	return {
 		v: r.v,
 		version: str(r.version),
@@ -172,6 +175,7 @@ export function readUploadRecord(raw: unknown): UploadRecord | null {
 		destination: r.destination ? { label: str(destination.label), path: str(destination.path) } : null,
 		cover: r.cover ? { name: str(cover.name), size: num(cover.size) } : null,
 		facebookCover: r.facebookCover ? { name: str(facebookCover.name), size: num(facebookCover.size) } : null,
+		tiktokCover: r.tiktokCover ? { name: str(tiktokCover.name), size: num(tiktokCover.size) } : null,
 		devtest: strings(r.devtest),
 		targets,
 		timing: readTiming(r.timing) ?? timingOfTargets(targets),
@@ -208,6 +212,7 @@ export function recordFromJob(job: UploadJob, targets: UploadTarget[]): UploadRe
 		destination: job.destination_path ? { label: job.destination_label, path: job.destination_path } : null,
 		cover: job.cover ? { name: job.cover, size: 0 } : null,
 		facebookCover: job.facebook_cover ? { name: job.facebook_cover, size: 0 } : null,
+		tiktokCover: job.tiktok_cover ? { name: job.tiktok_cover, size: 0 } : null,
 		devtest: [],
 		timing: sorted.map((t) => inferTiming(t.platform, t.scheduled_at, job.created)),
 		targets: sorted.map((t) => ({

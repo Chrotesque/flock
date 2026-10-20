@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptedTypes, imageFits, imageProblem, largestAccepted } from './coverimage';
+import { acceptedTypes, coverAt, imageFits, imageProblem, isImagePlatform, largestAccepted, withCoverAt } from './coverimage';
 
 const MB = 1024 * 1024;
 
@@ -41,5 +41,21 @@ describe('what the picker accepts', () => {
 	it('falls back to every image platform when none is active', () => {
 		expect(acceptedTypes([])).toEqual(['image/jpeg', 'image/png']);
 		expect(largestAccepted([])).toBe(10 * MB);
+	});
+});
+
+describe("TikTok's cover image", () => {
+	it('takes JPEG or PNG up to 10 MB, like Facebook', () => {
+		expect(imageProblem({ type: 'image/png', size: 9 * 1024 * 1024 }, 'tiktok')).toBe('');
+		expect(imageProblem({ type: 'image/webp', size: 1000 }, 'tiktok')).toBe('JPEG or PNG only');
+		expect(isImagePlatform('tiktok')).toBe(true);
+	});
+
+	it('goes at the end unless the upload chose the beginning', () => {
+		expect(coverAt({})).toBe('end');
+		const start = withCoverAt({ tiktok: { privacy: 'Public' } }, 'start');
+		expect(start.tiktok).toEqual({ privacy: 'Public', coverImageAt: 'start' });
+		expect(coverAt(start)).toBe('start');
+		expect(coverAt(withCoverAt(start, 'end'))).toBe('end');
 	});
 });

@@ -1,4 +1,5 @@
 import { CAMPAIGN_OPTION } from './jestrcampaign';
+import { COVER_AT_OPTION } from './coverimage';
 import type { PlatformId } from './types';
 
 /**
@@ -13,7 +14,7 @@ export const PAID_PARTNERSHIP_OPTION = 'paidPartnership';
 export const PAID_PARTNERSHIP_PLATFORMS: PlatformId[] = ['instagram'];
 
 /** Keys the Details step's own boxes write on a post's options — not option fields, so a reset of the options keeps them. */
-export const BOX_OPTIONS = [CAMPAIGN_OPTION, PAID_PARTNERSHIP_OPTION];
+export const BOX_OPTIONS = [CAMPAIGN_OPTION, PAID_PARTNERSHIP_OPTION, COVER_AT_OPTION];
 
 type Overrides<T> = Partial<Record<PlatformId, T>>;
 
@@ -34,9 +35,12 @@ export function withPaidPartnership<T extends Record<string, unknown>>(overrides
 	return out;
 }
 
-/** What survives a reset of a post's options: the Details boxes' ticks. */
-export function keptOnReset(options: Record<string, unknown> | undefined): Record<string, boolean> {
-	const out: Record<string, boolean> = {};
-	for (const key of BOX_OPTIONS) if (options?.[key] === true) out[key] = true;
+/** What survives a reset of a post's options: the Details boxes' choices. */
+export function keptOnReset(options: Record<string, unknown> | undefined): Record<string, boolean | string> {
+	const out: Record<string, boolean | string> = {};
+	for (const key of BOX_OPTIONS) {
+		const value = options?.[key];
+		if (value === true || (typeof value === 'string' && value !== '')) out[key] = value;
+	}
 	return out;
 }
