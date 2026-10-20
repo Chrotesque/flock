@@ -159,6 +159,11 @@ export function loadConfig() {
 		// their views, likes and comments, at Instagram's pace. 0 turns it off.
 		fbStatsSeconds: Number(process.env.FLOCK_FB_STATS_SECONDS ?? file.fbStatsSeconds ?? 600),
 		fbStatsPosts: Number(process.env.FLOCK_FB_STATS_POSTS ?? file.fbStatsPosts ?? 100),
+		// The TikTok stats pass (ttstats.mjs): every account's newest public
+		// videos with their counters, and its follower count — only for an
+		// account whose grant holds video.list / user.info.stats. 0 turns it off.
+		ttStatsSeconds: Number(process.env.FLOCK_TT_STATS_SECONDS ?? file.ttStatsSeconds ?? 600),
+		ttStatsPosts: Number(process.env.FLOCK_TT_STATS_POSTS ?? file.ttStatsPosts ?? 100),
 		// The warning card of the worker with a tray icon (alerts.mjs): where and
 		// how it shows, set in its settings window, and the warnings dismissed on
 		// this PC. Per machine, like everything in this file.

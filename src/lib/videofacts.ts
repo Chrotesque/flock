@@ -175,6 +175,7 @@ export function reelFacts(
 	ago: (iso: string | undefined) => string
 ): FactGroup[] {
 	const last = row.history?.[row.history.length - 1];
+	if (row.platform === 'tiktok') return tiktokFacts(row, ago);
 	const facebook = row.platform === 'facebook';
 	// Facebook's insights (fbstats.mjs), kept in `data` beside the columns.
 	const insights = (facebook ? (row.data?.insights ?? {}) : {}) as Record<string, unknown>;
@@ -210,6 +211,38 @@ export function reelFacts(
 				['Likes', count(row.likes)],
 				['Comments', count(row.comments)],
 				['Shares', count(social?.SHARE ?? null)],
+				['Samples kept', String(row.history?.length ?? 0)],
+				['Last movement', last ? ago(last[0]) : undefined]
+			])
+		}
+	].filter((g) => g.rows.length > 0);
+}
+
+/** A TikTok video as `post_stats` holds it (worker/ttstats.mjs): what video/list gives, counters and all. */
+function tiktokFacts(
+	row: ReelRow & { data?: Record<string, unknown> },
+	ago: (iso: string | undefined) => string
+): FactGroup[] {
+	const last = row.history?.[row.history.length - 1];
+	const num = (v: unknown) => (typeof v === 'number' ? v : null);
+	const title = typeof row.data?.title === 'string' ? row.data.title : '';
+	return [
+		{
+			title: 'Video',
+			rows: pairs([
+				['Posted', when(row.published_at)],
+				['Length', row.duration ? formatDuration(Math.round(row.duration)) : undefined],
+				['Title', title || undefined],
+				['Caption', row.caption]
+			])
+		},
+		{
+			title: 'Counters',
+			rows: pairs([
+				['Views', count(row.views)],
+				['Likes', count(row.likes)],
+				['Comments', count(row.comments)],
+				['Shares', count(num(row.data?.share_count))],
 				['Samples kept', String(row.history?.length ?? 0)],
 				['Last movement', last ? ago(last[0]) : undefined]
 			])

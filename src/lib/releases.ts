@@ -5,9 +5,9 @@ import type { PlatformId } from './types';
 
 /**
  * The dashboard's arithmetic: every video on the brand's channel, Instagram
- * account and Facebook Page, the numbers by period and what is coming, over
- * every platform flock reads counters for — together (the combined view) or
- * apart.
+ * account, TikTok account and Facebook Page, the numbers by period and what
+ * is coming, over every platform flock reads counters for — together (the
+ * combined view) or apart.
  *
  * A *release* is one video wherever it went out: a YouTube video and the
  * reels of the same flock upload are one release (matched by the upload's
@@ -24,17 +24,37 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
-/** The platforms flock reads counters for. TikTok is posted to but reports nothing back yet. */
-export type StatPlatform = 'youtube' | 'instagram' | 'facebook';
-export const STAT_PLATFORMS: StatPlatform[] = ['youtube', 'instagram', 'facebook'];
-/** The platforms whose posts are reels, read from `post_stats`. */
-export type ReelPlatform = 'instagram' | 'facebook';
-export const REEL_PLATFORMS: ReelPlatform[] = ['instagram', 'facebook'];
-/** Every platform, in display order; the ones not in STAT_PLATFORMS show as "not read yet". */
+/**
+ * The platforms flock reads counters for, in display order — every one it
+ * posts to. TikTok's are read only for an account whose sign-in allows it
+ * (worker/ttstats.mjs); without, it is simply a platform with no videos.
+ */
+export type StatPlatform = 'youtube' | 'instagram' | 'tiktok' | 'facebook';
+export const STAT_PLATFORMS: StatPlatform[] = ['youtube', 'instagram', 'tiktok', 'facebook'];
+/**
+ * The platforms whose posts are read from `post_stats` (Instagram's and
+ * Facebook's reels, TikTok's videos), in the order they are paired with the
+ * YouTube videos: Facebook's after Instagram's, TikTok's last, so each can
+ * join a release the ones before it made.
+ */
+export type ReelPlatform = 'instagram' | 'facebook' | 'tiktok';
+export const REEL_PLATFORMS: ReelPlatform[] = ['instagram', 'facebook', 'tiktok'];
+/** Every platform, in display order; one not in STAT_PLATFORMS would show as "not read yet". */
 export const ALL_PLATFORMS: PlatformId[] = ['youtube', 'instagram', 'tiktok', 'facebook'];
 
-/** Each platform's line and swatch, checked as a set on the dark surface (every pair, colour-blind included). */
-export const PLATFORM_COLOURS: Record<StatPlatform, string> = { youtube: '#e8484a', instagram: '#9b6cf0', facebook: '#22a2c0' };
+/**
+ * Each platform's line and swatch, checked as a set on the dark surface
+ * (every pair, colour-blind included). TikTok's is neither of its brand
+ * colours: its cyan sits on Facebook's teal and its red on YouTube's, so it
+ * is a blue that passes against all three (worst colour-blind ΔE 9.6, normal
+ * vision 17.5, 20 Oct 2026). Its mark itself stays white, as its brand asks.
+ */
+export const PLATFORM_COLOURS: Record<StatPlatform, string> = {
+	youtube: '#e8484a',
+	instagram: '#9b6cf0',
+	tiktok: '#2563c0',
+	facebook: '#22a2c0'
+};
 
 export function isStatPlatform(p: string): p is StatPlatform {
 	return (STAT_PLATFORMS as string[]).includes(p);
@@ -76,10 +96,16 @@ export interface YouTubeRow {
 	followers?: number | null;
 }
 
-/** A `post_stats` row for a reel (Instagram's or Facebook's), slim. */
+/** A `post_stats` row for a reel (Instagram's or Facebook's) or a TikTok video, slim. */
 export interface ReelRow {
 	id: string;
 	post_id: string;
+	/** The account's handle as the worker wrote it (TikTok's, matched when the open id differs — tiktokaccount.ts). */
+	handle?: string;
+	/** Seconds, where the platform gives a length with the listing (TikTok); 0 or absent when not. */
+	duration?: number;
+	/** A cover image to show for it (TikTok's, an address that lives a few hours); '' when none. */
+	thumb?: string;
 	published_at: string;
 	views: number | null;
 	likes: number | null;
@@ -109,7 +135,7 @@ export interface Post {
 	platform: StatPlatform;
 	/** The `video_stats` / `post_stats` record id. */
 	record: string;
-	/** YouTube's video id, Instagram's media id, Facebook's video id. */
+	/** YouTube's video id, Instagram's media id, Facebook's or TikTok's video id. */
 	id: string;
 	url: string;
 	at: number;
@@ -257,6 +283,25 @@ export interface Release {
 	hidden?: boolean;
 }
 
+/** The video id in a TikTok link; '' when it names none (a link to the profile only). */
+export function tiktokId(url: string | undefined): string {
+	return /\/video\/(\d+)/.exec(url ?? '')?.[1] ?? '';
+}
+
+/**
+ * How a post's link is compared with a read post's: a TikTok one by its video
+ * id — the handle in it may be spelled differently — the rest by the link
+ * itself. '' for a TikTok link to the profile only (flock's posts before the
+ * worker found their video), which matches nothing.
+ */
+export function linkKey(platform: PlatformId, url: string | undefined): string {
+	if (platform === 'tiktok') {
+		const id = tiktokId(url);
+		return id ? `tt:${id}` : '';
+	}
+	return sameLink(url);
+}
+
 /** The 11-character video id in a YouTube link; '' when there is none. */
 export function youtubeId(url: string | undefined): string {
 	return /(?:[?&]v=|\/shorts\/|youtu\.be\/)([\w-]{11})/.exec(url ?? '')?.[1] ?? '';
@@ -285,19 +330,27 @@ export function captionTitle(caption: string): string {
 }
 
 /**
- * Every release of a channel, an Instagram account and a Facebook Page. A
- * YouTube video and a reel are one release when the same flock upload made
- * both; failing that, a reel within two hours of a Short (or of a reel already
- * taken for one) joins it, closest first, one to one. Instagram's reels are
- * placed first, then Facebook's — on the Pages read so far mostly Instagram's
- * own, shared over — so a Facebook reel can join an Instagram one that had no
- * Short. A reel left over is a release of its own, kind Short.
+ * Every release of a channel, an Instagram account, a Facebook Page and a
+ * TikTok account. A YouTube video and a reel are one release when the same
+ * flock upload made both; failing that, a reel within two hours of a Short
+ * (or of a reel already taken for one) joins it, closest first, one to one.
+ * Instagram's reels are placed first, then Facebook's — on the Pages read so
+ * far mostly Instagram's own, shared over — so a Facebook reel can join an
+ * Instagram one that had no Short; TikTok's videos come last, the same way. A
+ * reel or TikTok video left over is a release of its own: a Short, or by its
+ * length when the platform gives one.
  */
-export function buildReleases(videos: YouTubeRow[], reels: ReelRow[], targets: TargetLink[], fbReels: ReelRow[] = []): Release[] {
+export function buildReleases(
+	videos: YouTubeRow[],
+	reels: ReelRow[],
+	targets: TargetLink[],
+	fbReels: ReelRow[] = [],
+	ttVideos: ReelRow[] = []
+): Release[] {
 	// What each flock upload made, by platform, and the way back from a post to its upload.
 	const jobs = new Map<string, { title: string; links: Partial<Record<PlatformId, string>> }>();
 	const jobOfVideo = new Map<string, string>();
-	const jobOfReel: Record<ReelPlatform, Map<string, string>> = { instagram: new Map(), facebook: new Map() };
+	const jobOfReel: Record<ReelPlatform, Map<string, string>> = { instagram: new Map(), facebook: new Map(), tiktok: new Map() };
 	for (const t of targets) {
 		if (!t.remote_url) continue;
 		const entry = jobs.get(t.job) ?? { title: t.jobTitle, links: {} };
@@ -306,8 +359,16 @@ export function buildReleases(videos: YouTubeRow[], reels: ReelRow[], targets: T
 		if (t.platform === 'youtube') {
 			const id = youtubeId(t.remote_url);
 			if (id) jobOfVideo.set(id, t.job);
-		} else if (t.platform === 'instagram' || t.platform === 'facebook') jobOfReel[t.platform].set(sameLink(t.remote_url), t.job);
+		} else if (t.platform === 'instagram' || t.platform === 'facebook' || t.platform === 'tiktok') {
+			const key = linkKey(t.platform, t.remote_url);
+			if (key) jobOfReel[t.platform].set(key, t.job);
+		}
 	}
+	/** Where the upload says its post on a platform is; '' when it says nothing usable (TikTok's profile link). */
+	const jobLink = (job: string, platform: ReelPlatform) => {
+		const link = job ? jobs.get(job)?.links[platform] : undefined;
+		return link && linkKey(platform, link) ? link : '';
+	};
 
 	const out: Release[] = videos.map((row) => {
 		const post = youtubePost(row);
@@ -327,15 +388,18 @@ export function buildReleases(videos: YouTubeRow[], reels: ReelRow[], targets: T
 		};
 	});
 
-	const rowsOf: Record<ReelPlatform, ReelRow[]> = { instagram: reels, facebook: fbReels };
+	const rowsOf: Record<ReelPlatform, ReelRow[]> = { instagram: reels, facebook: fbReels, tiktok: ttVideos };
 	for (const platform of REEL_PLATFORMS) {
 		const reelPosts = rowsOf[platform].map((row) => ({ row, post: reelPost(row, platform) }));
-		const reelByLink = new Map(reelPosts.map((r) => [sameLink(r.row.permalink), r]));
+		const reelByLink = new Map(reelPosts.map((r) => [linkKey(platform, r.row.permalink), r]));
 		const used = new Set<string>();
 		const take = (release: Release, reel: (typeof reelPosts)[number], how: 'job' | 'time') => {
 			release.posts[platform] = reel.post;
 			release.links[platform] = reel.post.url;
 			release.at = Math.min(release.at, reel.post.at);
+			// A release of reels alone has no picture or length; a TikTok video brings both.
+			if (!release.thumb && reel.row.thumb) release.thumb = reel.row.thumb;
+			if (!release.duration && reel.row.duration) release.duration = reel.row.duration;
 			// "Paired by time" as soon as any of its posts was.
 			release.matched = how === 'time' || release.matched === 'time' ? 'time' : 'job';
 			used.add(reel.row.post_id);
@@ -343,8 +407,8 @@ export function buildReleases(videos: YouTubeRow[], reels: ReelRow[], targets: T
 
 		// The same flock upload.
 		for (const release of out) {
-			const link = release.job ? jobs.get(release.job)?.links[platform] : undefined;
-			const reel = link ? reelByLink.get(sameLink(link)) : undefined;
+			const link = jobLink(release.job, platform);
+			const reel = link ? reelByLink.get(linkKey(platform, link)) : undefined;
 			if (reel && !used.has(reel.row.post_id)) take(release, reel, 'job');
 		}
 
@@ -353,14 +417,14 @@ export function buildReleases(videos: YouTubeRow[], reels: ReelRow[], targets: T
 		for (const release of out) {
 			if (release.posts[platform] || release.kind !== 'short') continue;
 			// The upload says where its reel is (or that it had none): no guessing past it.
-			if (release.job && jobs.get(release.job)?.links[platform]) continue;
+			if (jobLink(release.job, platform)) continue;
 			const times = STAT_PLATFORMS.map((p) => release.posts[p]?.at).filter((t): t is number => t !== undefined);
 			for (const reel of reelPosts) {
 				if (used.has(reel.row.post_id)) continue;
 				// Likewise a reel whose upload went out elsewhere too: it belongs to that
 				// upload's release. One made on its own (a platform given its own file is
 				// an upload of its own) may pair.
-				const reelJob = jobOfReel[platform].get(sameLink(reel.row.permalink));
+				const reelJob = jobOfReel[platform].get(linkKey(platform, reel.row.permalink));
 				if (reelJob && STAT_PLATFORMS.some((p) => p !== platform && jobs.get(reelJob)?.links[p])) continue;
 				const gap = Math.min(...times.map((t) => Math.abs(reel.post.at - t)));
 				if (gap <= PAIR_WINDOW_MS) candidates.push([gap, release, reel]);
@@ -374,15 +438,16 @@ export function buildReleases(videos: YouTubeRow[], reels: ReelRow[], targets: T
 
 		for (const { row, post } of reelPosts) {
 			if (used.has(row.post_id)) continue;
-			const job = jobOfReel[platform].get(sameLink(row.permalink)) ?? '';
+			const job = jobOfReel[platform].get(linkKey(platform, row.permalink)) ?? '';
 			out.push({
-				key: `${platform === 'instagram' ? 'ig' : 'fb'}:${row.post_id}`,
+				key: `${KEY_PREFIX[platform]}:${row.post_id}`,
 				title: jobs.get(job)?.title || captionTitle(row.caption) || '(no caption)',
 				at: post.at,
-				kind: 'short',
+				// A reel is a Short; a TikTok video by its length, as YouTube's are.
+				kind: row.duration ? kindOf({ duration: row.duration, live: false }) : 'short',
 				privacy: 'public',
-				duration: 0,
-				thumb: '',
+				duration: row.duration ?? 0,
+				thumb: row.thumb ?? '',
 				posts: { [platform]: post },
 				links: { ...(jobs.get(job)?.links ?? {}), [platform]: post.url },
 				job,
@@ -392,6 +457,8 @@ export function buildReleases(videos: YouTubeRow[], reels: ReelRow[], targets: T
 	}
 	return out.filter((r) => Number.isFinite(r.at));
 }
+
+const KEY_PREFIX: Record<ReelPlatform, string> = { instagram: 'ig', facebook: 'fb', tiktok: 'tt' };
 
 /* ---- what is looked at ---- */
 
@@ -501,7 +568,7 @@ export function filterCounts(releases: Release[], filter: DashFilter): FilterCou
 		unlisted: 0,
 		private: 0,
 		hidden: 0,
-		platforms: { youtube: 0, instagram: 0, facebook: 0 }
+		platforms: { youtube: 0, instagram: 0, tiktok: 0, facebook: 0 }
 	};
 	for (const r of releases) {
 		if (r.hidden) {
@@ -685,9 +752,9 @@ export function periodStarts(now: Date): [PeriodKey, string, Date][] {
 
 /**
  * The numbers of each period. `followers` are the follower records of the
- * accounts in view (followers.ts) — the channel, Instagram account and Page
- * whose videos are counted — and their counts' move over the period is the
- * followers gained.
+ * accounts in view (followers.ts) — the channel, Instagram account, TikTok
+ * account and Page whose videos are counted — and their counts' move over the
+ * period is the followers gained.
  */
 export function periodStats(releases: Release[], filter: DashFilter, now: Date, followers: FollowerState[] = []): PeriodStats[] {
 	const end = now.getTime();
@@ -705,6 +772,7 @@ export function periodStats(releases: Release[], filter: DashFilter, now: Date, 
 			byPlatform: {
 				youtube: { views: 0, gained: 0, followers: null },
 				instagram: { views: 0, gained: 0, followers: null },
+				tiktok: { views: 0, gained: 0, followers: null },
 				facebook: { views: 0, gained: 0, followers: null }
 			}
 		};

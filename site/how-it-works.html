@@ -99,7 +99,9 @@
     <dl class="calls">
       <dt>Login Kit</dt>
       <dd>The authorization code flow with PKCE, requesting <code>user.info.basic</code> and
-      <code>video.publish</code>. The refresh token is stored locally and rotated by the worker.</dd>
+      <code>video.publish</code>, and — only when the operator signs in with <code>--with-stats</code> —
+      <code>video.list</code> and <code>user.info.stats</code> for the Dashboard. The refresh token is stored
+      locally and rotated by the worker.</dd>
 
       <dt>Before every post, and whenever the TikTok box is shown: creator info</dt>
       <dd><code>/post/publish/creator_info/query/</code> returns the account's display name, the audiences it may
@@ -118,9 +120,27 @@
       <dd><code>/post/publish/status/fetch/</code> every ten seconds until TikTok reports the post complete or
       failed. The outcome, and TikTok's reason if it failed, is recorded on the release.</dd>
 
+      <dt>Every ten minutes, with the reading permissions: the account's videos</dt>
+      <dd><code>/video/list/</code> with the fields <code>id</code>, <code>create_time</code>,
+      <code>cover_image_url</code>, <code>share_url</code>, <code>video_description</code>, <code>title</code>,
+      <code>duration</code>, <code>view_count</code>, <code>like_count</code>, <code>comment_count</code> and
+      <code>share_count</code>, in pages of 20, for the account's newest public videos (100 by default). The
+      Dashboard lists them beside the same video's YouTube, Instagram and Facebook posts, with their views, likes,
+      comments and shares and a curve of views since release. A row is written only when a number changed. The same
+      list is how flock finds the video a post it made became — by its publish time and caption — and links the post
+      to it, since the status call above does not name the video.</dd>
+
+      <dt>Every ten minutes, with the reading permissions: the account's counts</dt>
+      <dd><code>/user/info/</code> with the fields <code>open_id</code>, <code>display_name</code>,
+      <code>follower_count</code>, <code>likes_count</code> and <code>video_count</code>. The Dashboard shows the
+      follower count, how far it moved over today, this week, month, quarter and year, and — since TikTok names no
+      video for a follow — flock's estimate of the followers each video brought: each rise is credited to the videos
+      gaining views at the time.</dd>
+
       <dt>Not used</dt>
       <dd><code>video.upload</code>, which sends a draft to the creator's inbox, is not requested by anything in
-      the app. Nothing reads the account's videos, followers, statistics or messages.</dd>
+      the app. Nothing reads who follows the account, the text of comments, private videos or messages; without the
+      reading permissions, nothing reads the account's videos or counts at all.</dd>
     </dl>
   </section>
 

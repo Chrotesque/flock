@@ -97,8 +97,8 @@ keeps running when no browser is open. It:
   the slot itself; TikTok and Instagram are held until their slot.
 - lists the watch and project folders, copies videos from your PC to the
   network, and files finished videos into their NAS folder.
-- reads YouTube's, Instagram's and Facebook's numbers for the Dashboard
-  (followers included), and
+- reads YouTube's, Instagram's, TikTok's and Facebook's numbers for the
+  Dashboard (followers included), and
   scores titles with vidIQ if you set that up.
 
 A platform you have not set up just leaves its releases waiting in the queue.
@@ -173,8 +173,31 @@ pnpm worker:auth --tiktok
   again.
 - If the browser lands on a page that does not load, paste that page's address
   into the terminal.
-- `pnpm worker:tiktok` shows who each account posts as and which audiences it
-  offers.
+- `pnpm worker:tiktok` shows who each account posts as, which audiences it
+  offers and whether the Dashboard reads its numbers.
+
+**TikTok on the Dashboard** (optional): add the **Display API** to the app and
+tick `video.list` and `user.info.stats` too — on a live app that is a
+portal revision TikTok reviews; a sandbox can grant them straight away. Then
+sign each account in again with them:
+
+```bash
+pnpm worker:auth --tiktok --with-stats
+```
+
+The worker then reads the account's newest public videos (views, likes,
+comments, shares) and its follower count every 10 minutes into PocketBase's
+`post_stats` (`ttStatsPosts`, `ttStatsSeconds`; 0 turns it off), and links
+each post flock made to its video. Without `--with-stats` the sign-in asks for
+posting only, and TikTok shows no videos on the Dashboard.
+
+To try it on a sandbox without touching your running worker's config:
+`pnpm tiktok:demo init` writes `worker/.worker-config.demo.json` (TikTok key,
+secret and redirect URI and the PocketBase address copied from your config —
+put the sandbox's key and secret there if yours is the live app's), `pnpm
+tiktok:demo sign-in` signs a sandbox target user in with the reading scopes,
+and `pnpm tiktok:demo read` reads its videos and followers once. A brand whose
+TikTok account has the same handle shows them.
 
 Limits:
 

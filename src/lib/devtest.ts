@@ -40,6 +40,8 @@ export interface DashboardGroup {
 	instagram: string;
 	/** The Facebook Page id its reels are on; '' or absent for none. */
 	facebook?: string;
+	/** The TikTok account (open id) its videos are on; '' or absent for none. */
+	tiktok?: string;
 	/** The brand id its posts belong to. */
 	brand: string;
 	/** A CSS colour its rows are tinted with, while several groups are in view. */

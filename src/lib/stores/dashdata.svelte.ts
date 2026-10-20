@@ -25,6 +25,26 @@ export interface FbStatsStatus {
 }
 
 /**
+ * The TikTok stats pass's heartbeat (worker/ttstats.mjs), by open id:
+ * `missing` names the scopes the account's sign-in lacks, `counts` what
+ * user/info said.
+ */
+export interface TtStatsStatus {
+	polledAt?: string;
+	accounts?: Record<
+		string,
+		{
+			username?: string;
+			polledAt?: string;
+			posts?: number;
+			error?: string;
+			missing?: string[];
+			counts?: { followers: number | null; likes: number | null; videos: number | null } | null;
+		}
+	>;
+}
+
+/**
  * What the dashboard reads, kept between openings: it opens on the last
  * numbers at once and reads fresh ones straight away (Dashboard.svelte, which
  * also keeps them current through realtime while open), so it never opens
@@ -37,6 +57,7 @@ class DashData {
 	status = $state<StatsStatus | null>(null);
 	igStatus = $state<IgStatsStatus | null>(null);
 	fbStatus = $state<FbStatsStatus | null>(null);
+	ttStatus = $state<TtStatsStatus | null>(null);
 	/** Every account's follower record (followers.ts). */
 	followers = $state<FollowerState[]>([]);
 	loaded = $state(false);
@@ -54,13 +75,14 @@ class DashData {
 	async #read() {
 		this.loading = true;
 		try {
-			const [videos, reels, targets, status, igStatus, fbStatus, followers] = await Promise.all([
+			const [videos, reels, targets, status, igStatus, fbStatus, ttStatus, followers] = await Promise.all([
 				loadDashboardVideos(),
 				loadDashboardReels(),
 				loadDashTargets(),
 				getStatsStatus().catch(() => null),
 				getSetting<IgStatsStatus | null>('instagram_stats_status', null).catch(() => null),
 				getSetting<FbStatsStatus | null>('facebook_stats_status', null).catch(() => null),
+				getSetting<TtStatsStatus | null>('tiktok_stats_status', null).catch(() => null),
 				loadFollowerStates()
 			]);
 			this.videos = videos;
@@ -69,6 +91,7 @@ class DashData {
 			this.status = status;
 			this.igStatus = igStatus;
 			this.fbStatus = fbStatus;
+			this.ttStatus = ttStatus;
 			this.followers = followers;
 			this.error = '';
 		} catch (err) {

@@ -11,6 +11,8 @@
   "statsBudget": 6000,
   "igStatsSeconds": 600,
   "igStatsPosts": 100,
+  "ttStatsSeconds": 600,
+  "ttStatsPosts": 100,
   "vidiqKey": "",
   "google": {
     "clientId": "PASTE-CLIENT-ID.apps.googleusercontent.com",

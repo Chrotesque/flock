@@ -50,6 +50,7 @@ describe('the marks', () => {
 		expect(readHidden({ youtube: { a: true, b: false, c: 'yes' }, instagram: 'x', tiktok: { t: true } })).toEqual({
 			youtube: { a: true },
 			instagram: {},
+			tiktok: { t: true },
 			facebook: {}
 		});
 	});
@@ -64,7 +65,7 @@ describe('the marks', () => {
 		expect(hiddenCount(hidden)).toBe(2);
 		expect(NONE_HIDDEN.instagram).toEqual({});
 		const back = setHidden(hidden, [posts[0]], false);
-		expect(back).toEqual({ youtube: {}, instagram: {}, facebook: { F1: true } });
+		expect(back).toEqual({ youtube: {}, instagram: {}, tiktok: {}, facebook: { F1: true } });
 	});
 });
 
@@ -106,6 +107,17 @@ describe('releases with hidden posts', () => {
 		expect(releases).toHaveLength(1);
 		expect(releases[0].hidden).toBe(true);
 		expect(Object.keys(releases[0].posts)).toEqual(['instagram', 'facebook']);
+	});
+
+	it('takes a hidden TikTok video off a Short it was paired with by time', () => {
+		const tt: ReelRow = { ...reel('TT1', T0 + 60_000), id: 'rec-tt-TT1', permalink: 'https://www.tiktok.com/@owls/video/TT1', reach: null };
+		const hidden = setHidden(NONE_HIDDEN, [{ platform: 'tiktok', id: 'TT1' }], true);
+		const releases = releasesWithHidden([video('PUBLICSHORT', T0)], [], [], [], hidden, [tt]);
+		expect(releases.find((r) => r.key === 'yt:PUBLICSHORT')!.posts.tiktok).toBeUndefined();
+		const away = releases.find((r) => r.key === 'tt:TT1')!;
+		expect(away.hidden).toBe(true);
+		// Shown, it pairs again.
+		expect(releasesWithHidden([video('PUBLICSHORT', T0)], [], [], [], NONE_HIDDEN, [tt])[0].posts.tiktok?.id).toBe('TT1');
 	});
 
 	it('keeps hidden ones out of the view, the counts and the usual until the filter shows them', () => {

@@ -3,9 +3,9 @@ import type { StatPlatform } from './releases';
 /**
  * Followers on the Dashboard, as the worker records them (worker/followers.mjs):
  * one `app_settings` row per account, `followers:<platform>:<account id>`,
- * with the account's follower count, its history and — for YouTube and
- * Instagram, which name no video for a follower — the followers credited to
- * each post: a rise in the count goes to the posts that gained views in that
+ * with the account's follower count, its history and — for YouTube,
+ * Instagram and TikTok, which name no video for a follower — the followers
+ * credited to each post: a rise in the count goes to the posts that gained views in that
  * stretch, by those views, or to the newest post when none did. Facebook
  * counts follows per reel itself (post_video_followers in a reel's insights);
  * its row only keeps the Page's count, for the follower gains of a period.
@@ -18,7 +18,7 @@ export const FOLLOWER_PREFIX = 'followers:';
 
 export interface FollowerState {
 	platform: StatPlatform;
-	/** The channel id, Instagram user id or Page id. */
+	/** The channel id, Instagram user id, TikTok open id or Page id. */
 	account: string;
 	name: string;
 	/** The count at the last read. */
@@ -37,7 +37,7 @@ export interface FollowerState {
 }
 
 const time = (iso: unknown) => Date.parse(String(iso ?? '').replace(' ', 'T'));
-const PLATFORMS: StatPlatform[] = ['youtube', 'instagram', 'facebook'];
+const PLATFORMS: StatPlatform[] = ['youtube', 'instagram', 'tiktok', 'facebook'];
 
 /** A row's value rebuilt field by field; null when it is no follower record. */
 export function readFollowerState(raw: unknown): FollowerState | null {
@@ -89,7 +89,7 @@ export function followerSource(state: FollowerState | undefined, at: number): 'a
 }
 
 /**
- * A YouTube video's or an Instagram post's followers: YouTube Analytics'
+ * A YouTube video's, an Instagram post's or a TikTok video's followers: YouTube Analytics'
  * gained less lost for a video it covers, else what flock credited. Null with
  * no record for its account, and for a post that came out before flock first
  * read the count and was credited nothing since — that is not known, not none.

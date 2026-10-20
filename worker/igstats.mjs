@@ -53,6 +53,10 @@ export function toPostRow(item, account) {
 const skipRate = (row) => row?.data?.insights?.reels_skip_rate ?? null;
 // Facebook's count of follows a reel brought (fbstats.mjs); Instagram gives none per post.
 const follows = (row) => row?.data?.insights?.post_video_followers ?? null;
+// TikTok's share count, and when its cover address was last taken — the
+// address lives a few hours, so it is renewed now and then (ttstats.mjs).
+const shares = (row) => row?.data?.share_count ?? null;
+const coverAt = (row) => row?.data?.cover_at ?? '';
 
 const COUNTERS = ['views', 'likes', 'comments'];
 const NUMBERS = ['views', 'reach', 'likes', 'comments'];
@@ -70,7 +74,9 @@ export function differs(prev, row) {
 		TEXTS.some((k) => (prev[k] ?? '') !== (row[k] ?? '')) ||
 		!sameDate(prev.published_at, row.published_at) ||
 		skipRate(prev) !== skipRate(row) ||
-		follows(prev) !== follows(row)
+		follows(prev) !== follows(row) ||
+		shares(prev) !== shares(row) ||
+		coverAt(prev) !== coverAt(row)
 	);
 }
 
@@ -83,7 +89,7 @@ export function counterMoved(prev, row) {
  * Writes a pass's rows: a new post is created with its first sample, a known
  * one patched only when something differs, with a sample only when a counter
  * moved. `byPost` is the stored rows by post id. Returns how many were new.
- * Shared with the Facebook pass (fbstats.mjs).
+ * Shared with the Facebook and TikTok passes (fbstats.mjs, ttstats.mjs).
  */
 export async function saveRows(pb, byPost, rows, now) {
 	let added = 0;

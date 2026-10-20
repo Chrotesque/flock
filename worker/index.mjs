@@ -53,7 +53,7 @@ import {
 	youtubeChannels,
 	youtubeRelease
 } from './youtube.mjs';
-import { publishToTikTok, probeTikTok, refreshTikTokCreators, creatorInfo, privacyLabel } from './tiktok.mjs';
+import { publishToTikTok, probeTikTok, refreshTikTokCreators, creatorInfo, privacyLabel, grantedTikTokScope } from './tiktok.mjs';
 import {
 	publishToInstagram,
 	probeInstagram,
@@ -78,6 +78,7 @@ import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
 import { statsPass, unitsToday } from './stats.mjs';
 import { instagramStatsPass } from './igstats.mjs';
 import { facebookStatsPass } from './fbstats.mjs';
+import { tiktokStatsPass, statsReach, videoIdOf } from './ttstats.mjs';
 import { msUntil } from './upload.mjs';
 import { startPreviewServer } from './preview.mjs';
 import { makeRemoteLog } from './remotelog.mjs';
@@ -195,6 +196,12 @@ function inWords(ms) {
 	const hours = Math.floor(minutes / 60);
 	return `in ${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
 }
+
+/**
+ * Asks the TikTok stats pass to run soon — set in main once its tick exists;
+ * nothing before that, or where the pass does not run.
+ */
+let tiktokLinkSoon = () => {};
 
 /** Targets already reported as waiting on an import, so that is said once. */
 const waitingImport = new Set();
@@ -374,6 +381,9 @@ async function recordResult(pb, platform, target, result, label) {
 
 	const how = result.scheduled ? `scheduled for ${target.scheduled_at}` : `live as ${result.privacyStatus}`;
 	log(`done ${label} — ${how}  ${result.url}`);
+	// TikTok named no video for it: the stats pass looks for it among the
+	// account's videos (ttstats.mjs), soon rather than at its next tick.
+	if (platform === 'tiktok' && !videoIdOf(result.url)) tiktokLinkSoon();
 	if (todo) log(`  ${todo}`);
 	const said = [todo, ...(result.notes ?? [])].filter(Boolean).join(' ');
 	pb.log(`Published to ${platform}`, `${target.title || '(no title)'} -> ${result.url} (${how})${said ? ` ${said}` : ''}`);
@@ -1774,6 +1784,13 @@ async function showAccounts(config) {
 					`  comments ${creator.commentDisabled ? 'off' : 'on'}, duet ${creator.duetDisabled ? 'off' : 'on'}, ` +
 						`stitch ${creator.stitchDisabled ? 'off' : 'on'}; videos up to ${creator.maxDurationSeconds || '?'}s`
 				);
+				const reach = statsReach(grantedTikTokScope(account));
+				log(
+					reach.videos && reach.counts
+						? '  Dashboard numbers: its public videos with their counters, and its follower count'
+						: `  Dashboard numbers: ${reach.videos ? 'videos only' : reach.counts ? 'follower count only' : 'none'} — ` +
+								'sign in again with  pnpm worker:auth --tiktok --with-stats  once the app lists video.list and user.info.stats'
+				);
 			} catch (err) {
 				log(`TikTok ${account.username ? `@${account.username}` : account.openId}: ${err.message.split('\n')[0]}`);
 			}
@@ -1833,7 +1850,8 @@ async function main() {
 		return;
 	}
 
-	const config = requireConfig({ needToken: !dry, needGoogle: !dry });
+	// A stats check reads whatever is set up, so it needs no YouTube either.
+	const config = requireConfig({ needToken: !dry && !statsOnly, needGoogle: !dry && !statsOnly });
 	const pb = makeClient(config.pocketbaseUrl);
 	const live = !(once || dry || statsOnly);
 	// One polling worker of a role per machine; a second leaves before it has
@@ -1942,9 +1960,12 @@ async function main() {
 	// Reads only, so it goes before the stale-row recovery: a stats check must
 	// not touch the publishing queue.
 	if (statsOnly) {
-		await statsPass({ pb, config, log, every: true });
+		// Only what is set up: a pass with nothing to read would write its
+		// "not connected" over the status the real worker keeps.
+		if (hasYouTube(config)) await statsPass({ pb, config, log, every: true });
 		if (hasInstagram(config)) await instagramStatsPass({ pb, config, log });
 		if (hasFacebook(config)) await facebookStatsPass({ pb, config, log });
+		if (hasTikTok(config)) await tiktokStatsPass({ pb, config, log });
 		log(`stats pass complete — ${unitsToday()} unit(s) spent`);
 		return;
 	}
@@ -2106,6 +2127,31 @@ async function main() {
 		};
 		void fbTick();
 		setInterval(() => void fbTick(), Math.max(60, config.fbStatsSeconds) * 1000);
+	}
+
+	// TikTok's videos and followers, likewise — for the accounts whose grant
+	// allows it (ttstats.mjs). It also finds the video of a post TikTok named
+	// none for, so a publish asks for it sooner (tiktokLinkSoon).
+	if (config.ttStatsSeconds > 0 && hasTikTok(config) && (ownsPublishing(config.role) || covers)) {
+		log(`tiktok stats: newest ${config.ttStatsPosts} videos of each account whose sign-in allows it, every ${config.ttStatsSeconds}s`);
+		let ttBusy = false;
+		const ttTick = async () => {
+			if (ttBusy || !hb.canPublish()) return;
+			ttBusy = true;
+			try {
+				await tiktokStatsPass({ pb, config, log });
+			} catch (err) {
+				log(`tiktok stats pass failed: ${err.message.split('\n')[0]}`);
+			} finally {
+				ttBusy = false;
+			}
+		};
+		void ttTick();
+		setInterval(() => void ttTick(), Math.max(60, config.ttStatsSeconds) * 1000);
+		tiktokLinkSoon = () => {
+			setTimeout(() => void ttTick(), 90_000);
+			setTimeout(() => void ttTick(), 5 * 60_000);
+		};
 	}
 
 	// Its own interval rather than a counter inside the main loop: an upload can

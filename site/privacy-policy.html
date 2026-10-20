@@ -69,15 +69,25 @@
 
   <h2>Use of TikTok's APIs</h2>
   <p>flock uses TikTok's Login Kit and Content Posting API to publish videos to
-  the TikTok account its operator connects. Content published this way is subject to
+  the TikTok account its operator connects, and the Display API to show its
+  operator how that account's own videos are doing. Content published this way is subject to
   <a href="https://www.tiktok.com/legal/page/eea/terms-of-service/en">TikTok's Terms of Service</a>
   and <a href="https://www.tiktok.com/community-guidelines/en/">Community Guidelines</a>.
   TikTok's own handling of data is described in
   <a href="https://www.tiktok.com/legal/page/eea/privacy-policy/en">TikTok's Privacy Policy</a>.</p>
-  <p>flock uses what it receives from TikTok for one purpose: posting the videos
-  its operator chooses, at the time its operator chooses. It does not read the
-  account's videos, followers, statistics or messages, and it presents no
-  TikTok content anywhere.</p>
+  <p>flock uses what it receives from TikTok for two purposes: posting the videos
+  its operator chooses, at the time its operator chooses, and showing its operator
+  how the connected account's own videos are doing. For the second it reads the
+  account's newest public videos — each one's identifier, link, caption, title,
+  length, cover image and publish time, and the view, like, comment and share
+  counts TikTok reports for it — and how many followers, likes and videos the
+  account has: the numbers alone, never who the followers are. It also uses that
+  list to find the video a post made through flock became, so flock can link to
+  it. It does not read who follows the account, the text of comments, private
+  videos or messages, and what it reads is shown to its operator only, inside
+  flock. Reading is optional: an account signed in without the two reading
+  permissions below is used for posting only, and flock then reads nothing about
+  its videos or followers.</p>
 
   <h2>What flock accesses</h2>
   <p>From Google, flock asks for:</p>
@@ -101,6 +111,8 @@
   <ul>
     <li><code>user.info.basic</code> — the account's identifier, display name and avatar, so flock can show which account a post will go to</li>
     <li><code>video.publish</code> — posting a video directly to that account</li>
+    <li><code>video.list</code> — only if the operator signs in for it: reading that account's own public videos with their view, like, comment and share counts, so flock can show its operator how they are doing and link a post made through flock to its video</li>
+    <li><code>user.info.stats</code> — only if the operator signs in for it: reading how many followers, likes and videos that account has (numbers only, never who the followers are)</li>
   </ul>
   <p>Before each post, and each time the TikTok posting box is shown, flock also
   reads what TikTok calls creator information: the account's display name, which
@@ -124,12 +136,14 @@
     <li>the Facebook Page access token for each connected Instagram account and Facebook Page, in the same configuration file</li>
     <li>TikTok's access and refresh tokens, in the same configuration file</li>
     <li>each connected account's identifier, username and display name, each Facebook Page's name, username and link, and Instagram's count of posts used today</li>
-    <li>the connected channel's own videos, the connected Instagram accounts' own posts and the connected Facebook Pages' own reels as those services report them — title or caption, link, release time — with their counters (views, likes, comments; on Instagram reach; on Facebook plays, average watch time, shares and follows) and a history of how views, likes and comments changed</li>
-    <li>the connected channel's subscriber count and the connected Instagram accounts' and Facebook Pages' follower counts — numbers only — with a history of how each changed, and how many of those followers each video brought, as YouTube Analytics reports it or as flock attributes it</li>
+    <li>the connected channel's own videos, the connected Instagram accounts' own posts, the connected Facebook Pages' own reels and the connected TikTok accounts' own public videos as those services report them — title or caption, link, release time; for TikTok also length and cover image — with their counters (views, likes, comments; on Instagram reach; on Facebook plays, average watch time, shares and follows; on TikTok shares) and a history of how views, likes and comments changed</li>
+    <li>the connected channel's subscriber count and the connected Instagram accounts', Facebook Pages' and TikTok accounts' follower counts — numbers only — with a history of how each changed, and how many of those followers each video brought, as YouTube Analytics reports it or as flock attributes it; for TikTok also the account's like and video counts</li>
     <li>the most recent creator information read from TikTok, as described above</li>
   </ul>
-  <p>Data leaves the operator's machines only to publish a video, to Google, Meta
-  or TikTok, and only while that is happening. Nothing is sent to the author.</p>
+  <p>Data leaves the operator's machines only in flock's requests to Google, Meta
+  or TikTok — to publish a video, or to read the connected accounts' own posts and
+  counts as described above — and only while that is happening. Nothing is sent to
+  the author.</p>
 
   <h2>How long it is kept</h2>
   <p>Everything flock stores stays until its operator deletes it. Nothing expires

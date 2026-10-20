@@ -48,7 +48,8 @@ describe('readFollowerState', () => {
 
 	it('refuses what is no follower record', () => {
 		expect(readFollowerState(null)).toBeNull();
-		expect(readFollowerState({ ...state, platform: 'tiktok' })).toBeNull();
+		expect(readFollowerState({ ...state, platform: 'myspace' })).toBeNull();
+		expect(readFollowerState({ ...state, platform: 'tiktok' })?.platform).toBe('tiktok');
 		expect(readFollowerState({ ...state, count: '712' })).toBeNull();
 	});
 

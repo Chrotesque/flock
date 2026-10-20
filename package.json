@@ -19,6 +19,7 @@
 		"worker:dry": "node worker/index.mjs --dry",
 		"worker:auth": "node worker/authorize.mjs",
 		"worker:auth:tiktok": "node worker/authorize.mjs --tiktok",
+		"worker:auth:tiktok:stats": "node worker/authorize.mjs --tiktok --with-stats",
 		"worker:auth:instagram": "node worker/authorize.mjs --instagram --token",
 		"worker:auth:facebook": "node worker/authorize.mjs --facebook --token",
 		"worker:vidiq": "node worker/index.mjs --vidiq",
@@ -29,7 +30,8 @@
 		"worker:facebook": "node worker/index.mjs --facebook",
 		"build:worker": "node scripts/build-worker.mjs",
 		"deploy:worker": "node scripts/deploy-worker.mjs",
-		"deploy:worker:dry": "node scripts/deploy-worker.mjs --dry"
+		"deploy:worker:dry": "node scripts/deploy-worker.mjs --dry",
+		"tiktok:demo": "node scripts/tiktok-demo.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.0",

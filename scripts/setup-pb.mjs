@@ -417,7 +417,7 @@ const collections = [
 		fields: [
 			{ type: 'text', name: 'platform', required: true, max: 20 },
 			{ type: 'text', name: 'post_id', required: true, max: 60 },
-			// The account it is on: the platform's own id (Instagram user id, Facebook Page id).
+			// The account it is on: the platform's own id (Instagram user id, Facebook Page id, TikTok open id).
 			{ type: 'text', name: 'account', max: 60 },
 			{ type: 'text', name: 'handle', max: 120 },
 			{ type: 'text', name: 'permalink', max: 500 },

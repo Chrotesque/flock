@@ -20,6 +20,7 @@
 	import { accountLabel, postAllowance } from '$lib/accounts';
 	import { LEVEL_WORDS, limitLevel, lineLevel, shortError, worstLevel, type StatusLevel } from '$lib/dashstatus';
 	import { creditedFollowers, followerSource, stateOf, type FollowerGain, type FollowerState } from '$lib/followers';
+	import { onTikTokAccount, tiktokReportOf, tiktokStateOf } from '$lib/tiktokaccount';
 	import { COLUMNS, gridTemplate, shownColumns, type ColumnId } from '$lib/dashcolumns';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import {
@@ -73,8 +74,8 @@
 	 * (platforms — all of them is the combined view — kinds and visibility);
 	 * the period numbers and the list of every video follow it. Each video
 	 * carries its curve from release and how it stands against the usual for
-	 * its kind. The brand in view picks the channel, the Instagram account and
-	 * the Facebook Page, one of each — never added up across channels
+	 * its kind. The brand in view picks the channel, the Instagram account, the
+	 * TikTok account and the Facebook Page, one of each — never added up across channels
 	 * (YouTube's rule). The
 	 * arithmetic is releases.ts; the data `dashData`, kept between openings.
 	 */
@@ -127,7 +128,7 @@
 	const followerStates = $derived(dashData.followers);
 	const postTime = (iso: string) => Date.parse(String(iso ?? '').replace(' ', 'T'));
 	// Each post with the followers it brought: credited by the worker for
-	// YouTube and Instagram, Facebook's own count for a reel (followers.ts).
+	// YouTube, Instagram and TikTok, Facebook's own count for a reel (followers.ts).
 	const videos = $derived(
 		dashData.videos.map((v) => ({
 			...v,
@@ -136,16 +137,18 @@
 	);
 	const reels = $derived(
 		dashData.reels.map((r) =>
-			r.platform === 'instagram'
-				? { ...r, followers: creditedFollowers(stateOf(followerStates, 'instagram', r.account), r.post_id, postTime(r.published_at)) }
+			r.platform === 'instagram' || r.platform === 'tiktok'
+				? { ...r, followers: creditedFollowers(stateOf(followerStates, r.platform, r.account), r.post_id, postTime(r.published_at)) }
 				: r
 		)
 	);
 	const igReels = $derived(reels.filter((r) => r.platform === 'instagram'));
 	const fbReels = $derived(reels.filter((r) => r.platform === 'facebook'));
+	const ttVideos = $derived(reels.filter((r) => r.platform === 'tiktok'));
 	const status = $derived(dashData.status);
 	const igStatus = $derived(dashData.igStatus);
 	const fbStatus = $derived(dashData.fbStatus);
+	const ttStatus = $derived(dashData.ttStatus);
 	const loaded = $derived(dashData.loaded);
 	const loading = $derived(dashData.loading);
 	const error = $derived(dashData.error);
@@ -231,31 +234,40 @@
 		};
 	});
 
-	/* ---- the brand in view: one channel, one Instagram account, one Facebook Page ---- */
+	/* ---- the brand in view: one channel, one Instagram account, one TikTok account, one Facebook Page ---- */
 
 	const channel = $derived(accounts.for('youtube'));
 	const igAccount = $derived(accounts.for('instagram'));
 	const fbPage = $derived(accounts.for('facebook'));
+	const ttAccount = $derived(accounts.for('tiktok'));
 	// One brand and at most one account: nothing to choose between, so all of it.
 	const loneYT = $derived(!channel && !brands.multiple && accounts.forPlatform('youtube').length <= 1);
 	const loneIG = $derived(!igAccount && !brands.multiple && accounts.forPlatform('instagram').length <= 1);
 	const loneFB = $derived(!fbPage && !brands.multiple && accounts.forPlatform('facebook').length <= 1);
+	const loneTT = $derived(!ttAccount && !brands.multiple && accounts.forPlatform('tiktok').length <= 1);
 	const myVideos = $derived(
 		channel ? videos.filter((v) => v.channelId === channel.account_id) : loneYT ? videos : []
 	);
 	const myReels = $derived(igAccount ? igReels.filter((r) => r.account === igAccount.account_id) : loneIG ? igReels : []);
 	const myFbReels = $derived(fbPage ? fbReels.filter((r) => r.account === fbPage.account_id) : loneFB ? fbReels : []);
+	// By open id, or by handle where the numbers were read under another app key's (tiktokaccount.ts).
+	const myTtVideos = $derived(
+		ttAccount ? ttVideos.filter((r) => onTikTokAccount(r, ttAccount)) : loneTT ? ttVideos : []
+	);
 	// The follower records of the brand's accounts, chosen as its videos are.
 	const myFollowers = $derived(
 		(
 			[
 				['youtube', channel, loneYT],
 				['instagram', igAccount, loneIG],
+				['tiktok', ttAccount, loneTT],
 				['facebook', fbPage, loneFB]
 			] as const
 		).flatMap(([p, account, lone]) =>
 			account
-				? [stateOf(followerStates, p, account.account_id)].filter((s): s is FollowerState => Boolean(s))
+				? [p === 'tiktok' ? tiktokStateOf(followerStates, account) : stateOf(followerStates, p, account.account_id)].filter(
+						(s): s is FollowerState => Boolean(s)
+					)
 				: lone
 					? followerStates.filter((s) => s.platform === p)
 					: []
@@ -274,10 +286,12 @@
 					videos: g.channel ? videos.filter((v) => v.channelId === g.channel) : [],
 					reels: g.instagram ? igReels.filter((r) => r.account === g.instagram) : [],
 					fbReels: g.facebook ? fbReels.filter((r) => r.account === g.facebook) : [],
+					ttVideos: g.tiktok ? ttVideos.filter((r) => r.account === g.tiktok) : [],
 					posts: dashData.targets.filter((t) => t.brand === g.brand),
 					followers: [
 						stateOf(followerStates, 'youtube', g.channel ?? ''),
 						stateOf(followerStates, 'instagram', g.instagram ?? ''),
+						stateOf(followerStates, 'tiktok', g.tiktok ?? ''),
 						stateOf(followerStates, 'facebook', g.facebook ?? '')
 					].filter((s): s is FollowerState => Boolean(s))
 				}))
@@ -288,6 +302,7 @@
 						videos: myVideos,
 						reels: myReels,
 						fbReels: myFbReels,
+						ttVideos: myTtVideos,
 						posts: myTargets,
 						followers: myFollowers
 					}
@@ -300,7 +315,7 @@
 	// ones (hiddenvideos.ts) only with each other.
 	const releases = $derived(
 		sets.flatMap((set) =>
-			releasesWithHidden(set.videos, set.reels, set.posts, set.fbReels, hiddenVideos.marks).map((r) =>
+			releasesWithHidden(set.videos, set.reels, set.posts, set.fbReels, hiddenVideos.marks, set.ttVideos).map((r) =>
 				sets.length > 1 ? { ...r, group: set.label, tint: set.colour } : r
 			)
 		)
@@ -418,6 +433,7 @@
 	const FOLLOWER_WORDS: Record<StatPlatform, [string, string]> = {
 		youtube: ['subscriber', 'subscribers'],
 		instagram: ['follower', 'followers'],
+		tiktok: ['follower', 'followers'],
 		facebook: ['follower', 'followers']
 	};
 	const followerWord = (p: StatPlatform, n: number) => FOLLOWER_WORDS[p][Math.abs(n) === 1 ? 0 : 1];
@@ -433,7 +449,7 @@
 	);
 	const followersAbout = $derived(
 		'Followers and subscribers each video brought. Facebook counts the follows from a reel itself, and YouTube Analytics the subscribers from a video (gained less lost, about two days late). ' +
-			"Instagram only says how many an account has, so flock credits each rise in that count to the videos gaining views at the moment — in proportion to those views, or to the newest video when none was — which is flock's estimate, not a platform figure; it also stands in for YouTube's newest days." +
+			"Instagram and TikTok only say how many an account has, so flock credits each rise in that count to the videos gaining views at the moment — in proportion to those views, or to the newest video when none was — which is flock's estimate, not a platform figure; it also stands in for YouTube's newest days." +
 			(followerCounts.length ? `\n\nNow: ${followerCounts.join(' · ')}` : '')
 	);
 
@@ -601,6 +617,13 @@
 
 	let openKey = $state<string | null>(null);
 
+	// A TikTok cover's address lives a few hours (worker/ttstats.mjs renews the
+	// newest ones), so one that no longer loads shows the platform's mark.
+	let deadThumbs = $state(new Set<string>());
+	function markDead(url: string) {
+		if (!deadThumbs.has(url)) deadThumbs = new Set([...deadThumbs, url]);
+	}
+
 	/** A brand's menu from the chosen scope, where it was right-clicked. */
 	let brandMenu = $state<{ brand: string; x: number; y: number } | null>(null);
 	let fullRows = $state<Record<string, VideoStats | 'loading' | 'failed'>>({});
@@ -672,6 +695,7 @@
 	const noteChannel = $derived(scope ? null : channel);
 	const noteInstagram = $derived(scope ? null : igAccount);
 	const noteFacebook = $derived(scope ? null : fbPage);
+	const noteTikTok = $derived(scope ? null : ttAccount);
 
 	const ytBeat = $derived.by(() => {
 		if (!status) return null;
@@ -685,6 +709,7 @@
 	});
 	const igBeat = $derived(noteInstagram ? igStatus?.accounts?.[noteInstagram.account_id] : undefined);
 	const fbBeat = $derived(noteFacebook ? fbStatus?.pages?.[noteFacebook.account_id] : undefined);
+	const ttBeat = $derived(noteTikTok ? tiktokReportOf(ttStatus?.accounts, noteTikTok) : undefined);
 	const allowance = $derived(postAllowance(noteInstagram));
 
 	interface StatusLine {
@@ -725,6 +750,33 @@
 				note: ''
 			});
 		}
+		if (noteTikTok) {
+			const missing = ttBeat?.missing ?? [];
+			const counts = ttBeat?.counts;
+			lines.push({
+				platform: 'tiktok',
+				level: lineLevel({ error: ttBeat?.error, partial: missing.length > 0 }),
+				read: ago(ttBeat?.polledAt),
+				error: shortError(ttBeat?.error),
+				detail: ttBeat?.error ?? '',
+				limit: null,
+				note: !ttBeat
+					? 'Not read yet: the worker reads TikTok once the account is signed in with --with-stats'
+					: missing.length === 2
+						? 'Not read: its sign-in lacks video.list and user.info.stats (pnpm worker:auth --tiktok --with-stats)'
+						: missing.length === 1
+							? `Partly read: its sign-in lacks ${missing[0]}`
+							: counts
+								? [
+										counts.followers != null ? `${whole.format(counts.followers)} followers` : '',
+										counts.likes != null ? `${big(counts.likes)} likes` : '',
+										counts.videos != null ? `${whole.format(counts.videos)} videos` : ''
+									]
+										.filter(Boolean)
+										.join(' · ')
+								: ''
+			});
+		}
 		if (noteFacebook) {
 			lines.push({
 				platform: 'facebook',
@@ -740,11 +792,11 @@
 	});
 	const statusLevel = $derived(worstLevel(statusLines.map((line) => line.level)));
 
-	/** The account a platform's numbers are read from, for the legend: YouTube by channel name, a Page by its name, Instagram by handle. */
+	/** The account a platform's numbers are read from, for the legend: YouTube by channel name, a Page by its name, Instagram and TikTok by handle. */
 	function accountOf(p: StatPlatform): string {
-		const account = p === 'youtube' ? noteChannel : p === 'facebook' ? noteFacebook : noteInstagram;
+		const account = p === 'youtube' ? noteChannel : p === 'facebook' ? noteFacebook : p === 'tiktok' ? noteTikTok : noteInstagram;
 		if (!account) return '';
-		return p === 'instagram' ? accountLabel(account) : account.name || accountLabel(account);
+		return p === 'instagram' || p === 'tiktok' ? accountLabel(account) : account.name || accountLabel(account);
 	}
 
 	/* ---- words and numbers ---- */
@@ -811,8 +863,8 @@
 	}
 
 	function linkTitle(p: PlatformId): string {
-		if (isStatPlatform(p)) return `Open on ${PLATFORMS[p].label}`;
-		return `Open on ${PLATFORMS[p].label} — flock posted it there but does not read its views yet`;
+		const label = PLATFORMS[p].label;
+		return isStatPlatform(p) ? `Open on ${label}` : `Open on ${label} — flock posted it there but does not read its views yet`;
 	}
 
 	function matchWords(release: Release): string {
@@ -987,11 +1039,14 @@
 {#snippet rowCell(col: ColumnId, row: Row)}
 	{@const r = row.release}
 	{#if col === 'thumb'}
-		{#if r.thumb}
-			<img class="thumb {cellOf(col)}" src={r.thumb} alt="" loading="lazy" />
+		{#if r.thumb && !deadThumbs.has(r.thumb)}
+			<img class="thumb {cellOf(col)}" src={r.thumb} alt="" loading="lazy" onerror={() => markDead(r.thumb)} />
 		{:else}
 			<span class="thumb blank {cellOf(col)}"
-				><PlatformIcon platform={r.posts.instagram ? 'instagram' : r.posts.facebook ? 'facebook' : 'youtube'} size={16} /></span
+				><PlatformIcon
+					platform={r.posts.youtube ? 'youtube' : r.posts.instagram ? 'instagram' : r.posts.tiktok ? 'tiktok' : r.posts.facebook ? 'facebook' : 'youtube'}
+					size={16}
+				/></span
 			>
 		{/if}
 	{:else if col === 'video'}
@@ -1518,9 +1573,9 @@
 		Views, likes and comments are each platform's own counters.
 		{combined || multi ? 'Sums across platforms, ' : ''}"usual", the verdicts and the curves are flock's arithmetic over them,
 		not figures any platform reports. A video's followers are Facebook's own count for a reel and YouTube Analytics' for a
-		video; for Instagram, which only reports how many an account has, and for YouTube's newest days they are flock's
-		estimate: each rise is credited to the videos gaining views at the time. One channel at a time; nothing is added up
-		across channels.
+		video; for Instagram and TikTok, which only report how many an account has, and for YouTube's newest days they are
+		flock's estimate: each rise is credited to the videos gaining views at the time. TikTok lists public videos only. One
+		channel at a time; nothing is added up across channels.
 	</p>
 </div>
 

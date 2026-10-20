@@ -17,6 +17,7 @@ import {
 	readFilter,
 	readSkipRate,
 	reelPost,
+	linkKey,
 	sameLink,
 	skipRateOf,
 	sortRows,
@@ -24,6 +25,7 @@ import {
 	storedFilter,
 	sumOf,
 	thin,
+	tiktokId,
 	verdictOf,
 	viewsAt,
 	visibilityOf,
@@ -77,6 +79,17 @@ function reel(id: string, at: number, extra: Partial<ReelRow> = {}): ReelRow {
 
 function fbReel(id: string, at: number, extra: Partial<ReelRow> = {}): ReelRow {
 	return reel(id, at, { id: `rec-fb-${id}`, permalink: `https://www.facebook.com/reel/${id}/`, reach: null, ...extra });
+}
+
+function ttVideo(id: string, at: number, extra: Partial<ReelRow> = {}): ReelRow {
+	return reel(id, at, {
+		id: `rec-tt-${id}`,
+		permalink: `https://www.tiktok.com/@owlsnest/video/${id}`,
+		reach: null,
+		duration: 30,
+		thumb: `https://p16.example/${id}.jpeg`,
+		...extra
+	});
 }
 
 function post(at: number, samples: [number, number][], views: number | null = null): Post {
@@ -284,6 +297,71 @@ describe('buildReleases with Facebook reels', () => {
 	});
 });
 
+describe('buildReleases with TikTok videos', () => {
+	it('compares TikTok links by video id, and a profile link not at all', () => {
+		expect(tiktokId('https://www.tiktok.com/@OwlsNest/video/7400000000000000001?lang=en')).toBe('7400000000000000001');
+		expect(tiktokId('https://www.tiktok.com/@owlsnest')).toBe('');
+		expect(linkKey('tiktok', 'https://www.tiktok.com/@OwlsNest/video/7')).toBe(linkKey('tiktok', 'https://tiktok.com/@owlsnest/video/7/'));
+		expect(linkKey('tiktok', 'https://www.tiktok.com/@owlsnest')).toBe('');
+		expect(linkKey('instagram', 'https://www.instagram.com/reel/R1/')).toBe(sameLink('https://www.instagram.com/reel/R1/'));
+	});
+
+	it('takes the video of the same flock upload by its id, whatever the gap and the spelling of the handle', () => {
+		const targets: TargetLink[] = [
+			{ job: 'j1', platform: 'youtube', remote_url: 'https://youtu.be/aaaaaaaaaaa', jobTitle: 'Job one' },
+			{ job: 'j1', platform: 'tiktok', remote_url: 'https://www.tiktok.com/@OwlsNest/video/71', jobTitle: 'Job one' }
+		];
+		const out = buildReleases([video('aaaaaaaaaaa', T0)], [], targets, [], [ttVideo('71', T0 + 6 * H), ttVideo('72', T0 + 60_000)]);
+		const a = out.find((r) => r.key === 'yt:aaaaaaaaaaa')!;
+		expect(a.posts.tiktok?.id).toBe('71');
+		expect(a.posts.tiktok?.platform).toBe('tiktok');
+		expect(a.links.tiktok).toBe('https://www.tiktok.com/@owlsnest/video/71');
+		expect(a.matched).toBe('job');
+		// 72 is close to it, but its upload named its own TikTok video.
+		expect(out.find((r) => r.key === 'tt:72')).toBeDefined();
+	});
+
+	it('pairs by time past an upload whose TikTok link names only the profile', () => {
+		const targets: TargetLink[] = [
+			{ job: 'j1', platform: 'youtube', remote_url: 'https://youtu.be/aaaaaaaaaaa', jobTitle: 'Job one' },
+			{ job: 'j1', platform: 'tiktok', remote_url: 'https://www.tiktok.com/@owlsnest', jobTitle: 'Job one' }
+		];
+		const [a, ...rest] = buildReleases([video('aaaaaaaaaaa', T0)], [], targets, [], [ttVideo('71', T0 + 10 * 60_000)]);
+		expect(a.posts.tiktok?.id).toBe('71');
+		expect(a.matched).toBe('time');
+		expect(rest).toHaveLength(0);
+	});
+
+	it('joins a Short, or reels without one, by time; one left over is a release of its own, kind by its length', () => {
+		const out = buildReleases(
+			[video('aaaaaaaaaaa', T0)],
+			[reel('R1', T0 + 3 * H)],
+			[],
+			[],
+			[ttVideo('71', T0 + 5 * 60_000), ttVideo('72', T0 + 3 * H + 60_000), ttVideo('73', T0 + 9 * H, { duration: 600, caption: 'A long one' })]
+		);
+		expect(out.find((r) => r.key === 'yt:aaaaaaaaaaa')!.posts.tiktok?.id).toBe('71');
+		// A release of a reel alone takes the TikTok video's picture and length.
+		const r1 = out.find((r) => r.key === 'ig:R1')!;
+		expect(r1.posts.tiktok?.id).toBe('72');
+		expect(r1.thumb).toBe('https://p16.example/72.jpeg');
+		expect(r1.duration).toBe(30);
+		const lone = out.find((r) => r.key === 'tt:73')!;
+		expect(lone.kind).toBe('long');
+		expect(lone.title).toBe('A long one');
+		expect(lone.thumb).toBe('https://p16.example/73.jpeg');
+		expect(out).toHaveLength(3);
+	});
+
+	it('adds TikTok up with the others, in the periods too', () => {
+		const [a] = buildReleases([video('aaaaaaaaaaa', T0)], [], [], [], [ttVideo('71', T0, { views: 9 })]);
+		expect(sumOf(a, ['youtube', 'tiktok'], 'views')).toBe(109);
+		const [today] = periodStats([a], DEFAULT_FILTER, new Date(T0 + H));
+		expect(today.byPlatform.tiktok.views).toBe(9);
+		expect(filterCounts([a], DEFAULT_FILTER).platforms.tiktok).toBe(1);
+	});
+});
+
 describe('the filter', () => {
 	const releases = buildReleases(
 		[
@@ -301,7 +379,7 @@ describe('the filter', () => {
 			...DEFAULT_FILTER,
 			kinds: ['short']
 		});
-		expect(readFilter({ platforms: ['instagram', 'tiktok'] }).platforms).toEqual(['instagram']);
+		expect(readFilter({ platforms: ['instagram', 'tiktok', 'bogus'] }).platforms).toEqual(['instagram', 'tiktok']);
 		// Stored before there was a Hidden choice, and after.
 		expect(readFilter({ unlisted: true }).hidden).toBe(false);
 		expect(readFilter({ hidden: true }).hidden).toBe(true);
@@ -327,7 +405,16 @@ describe('the filter', () => {
 
 	it('lets a platform read since the filter was saved join a combined view only', () => {
 		// Saved before Facebook was read: combined then, combined now.
-		expect(readFilter({ platforms: ['youtube', 'instagram'] }).platforms).toEqual(['youtube', 'instagram', 'facebook']);
+		expect(readFilter({ platforms: ['youtube', 'instagram'] }).platforms).toEqual(['youtube', 'instagram', 'tiktok', 'facebook']);
+		// Saved before TikTok's numbers, knowing the other three: combined, TikTok joins; a pick of some, it stays out.
+		const known = ['youtube', 'instagram', 'facebook'];
+		expect(readFilter({ platforms: ['youtube', 'instagram', 'facebook'], known }).platforms).toEqual([
+			'youtube',
+			'instagram',
+			'tiktok',
+			'facebook'
+		]);
+		expect(readFilter({ platforms: ['youtube', 'facebook'], known }).platforms).toEqual(['youtube', 'facebook']);
 		expect(readFilter({ platforms: ['youtube'] }).platforms).toEqual(['youtube']);
 		// Saved knowing Facebook and leaving it out: it stays out.
 		const saved = JSON.parse(JSON.stringify(storedFilter({ ...DEFAULT_FILTER, platforms: ['youtube', 'instagram'] })));
@@ -354,7 +441,7 @@ describe('the filter', () => {
 		expect(counts.kinds).toEqual({ short: 2, long: 0, live: 0, other: 0 });
 		expect(counts.unlisted).toBe(1);
 		expect(counts.private).toBe(1);
-		expect(counts.platforms).toEqual({ youtube: 1, instagram: 2, facebook: 0 });
+		expect(counts.platforms).toEqual({ youtube: 1, instagram: 2, tiktok: 0, facebook: 0 });
 	});
 
 	it('adds a counter up over the chosen platforms only', () => {

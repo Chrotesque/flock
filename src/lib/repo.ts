@@ -1265,7 +1265,7 @@ export async function loadDashTargets(since?: Date): Promise<(DashTarget & { bra
 
 /** A YouTube video for the dashboard, with the channel it is on. */
 export type DashboardVideo = YouTubeRow & { channelId: string };
-/** A reel for the dashboard: Instagram's or Facebook's, with the account (Page) it is on. */
+/** A reel for the dashboard — Instagram's or Facebook's — or a TikTok video, with the account (Page) it is on. */
 export type DashboardReel = ReelRow & { platform: ReelPlatform; account: string; data?: Record<string, unknown> };
 
 type VideoRecord = Partial<Omit<VideoStats, 'data'>> & {
@@ -1300,6 +1300,7 @@ export function toDashboardVideo(row: VideoRecord): DashboardVideo {
 export function toDashboardReel(row: Record<string, unknown>): DashboardReel {
 	const n = (v: unknown) => (typeof v === 'number' ? v : null);
 	const facebook = row.platform === 'facebook';
+	const tiktok = row.platform === 'tiktok';
 	const data = row.data && typeof row.data === 'object' ? (row.data as Record<string, unknown>) : undefined;
 	// PocketBase reads an empty number back as 0, so a Facebook reel whose
 	// views were never read (no read_insights) would say 0: its insights say.
@@ -1307,21 +1308,25 @@ export function toDashboardReel(row: Record<string, unknown>): DashboardReel {
 	const unread = facebook && typeof insights.fb_reels_total_plays !== 'number';
 	return {
 		id: String(row.id ?? ''),
-		platform: facebook ? 'facebook' : 'instagram',
+		platform: facebook ? 'facebook' : tiktok ? 'tiktok' : 'instagram',
 		post_id: String(row.post_id ?? ''),
 		account: String(row.account ?? ''),
+		handle: String(row.handle ?? ''),
+		// TikTok gives a video's length and cover with the listing (worker/ttstats.mjs).
+		duration: tiktok ? (n(data?.duration) ?? 0) : 0,
+		thumb: tiktok && typeof data?.cover_image_url === 'string' ? data.cover_image_url : '',
 		published_at: String(row.published_at ?? ''),
 		views: unread ? null : n(row.views),
 		likes: n(row.likes),
 		comments: n(row.comments),
-		// Facebook reports no reach for a reel; the column is only Instagram's.
-		reach: facebook ? null : n(row.reach),
+		// Facebook and TikTok report no reach; the column is only Instagram's.
+		reach: facebook || tiktok ? null : n(row.reach),
 		permalink: String(row.permalink ?? ''),
 		caption: String(row.caption ?? ''),
 		history: (Array.isArray(row.history) ? row.history : []) as Sample[],
-		// Instagram's own, kept in `data` (worker/igstats.mjs); Facebook gives none.
-		skipRate: facebook ? null : readSkipRate(insights.reels_skip_rate),
-		// Facebook counts a reel's follows itself; Instagram's are credited (followers.ts).
+		// Instagram's own, kept in `data` (worker/igstats.mjs); Facebook and TikTok give none.
+		skipRate: facebook || tiktok ? null : readSkipRate(insights.reels_skip_rate),
+		// Facebook counts a reel's follows itself; Instagram's and TikTok's are credited (followers.ts).
 		followers: facebook ? facebookFollows(insights) : null,
 		data
 	};
@@ -1345,10 +1350,12 @@ export async function loadVideoStat(id: string): Promise<VideoStats> {
 }
 
 // Instagram's reels among its posts, and every Facebook post read (all reels).
-const REELS = "(platform = 'instagram' && product_type = 'REELS') || platform = 'facebook'";
+const REELS = "(platform = 'instagram' && product_type = 'REELS') || platform = 'facebook' || platform = 'tiktok'";
 
 function isReel(record: Record<string, unknown>): boolean {
-	return (record.platform === 'instagram' && record.product_type === 'REELS') || record.platform === 'facebook';
+	return (
+		(record.platform === 'instagram' && record.product_type === 'REELS') || record.platform === 'facebook' || record.platform === 'tiktok'
+	);
 }
 
 /* ---- renames from the Dashboard (retitle.ts) ---- */
@@ -1425,12 +1432,14 @@ export function subscribeTitleRequests(onRow: (row: TitleRequest, action: string
 	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
 }
 
-/** The reels as the worker stores them (worker/igstats.mjs, fbstats.mjs); none when it never has. */
+/** The reels and TikTok videos as the worker stores them (worker/igstats.mjs, fbstats.mjs, ttstats.mjs); none when it never has. */
 export async function loadDashboardReels(): Promise<DashboardReel[]> {
 	try {
 		const rows = await pb.collection('post_stats').getFullList<Record<string, unknown>>({
 			filter: REELS,
-			fields: 'id,platform,post_id,account,published_at,views,likes,comments,reach,permalink,caption,history,data.length,data.insights'
+			fields:
+				'id,platform,post_id,account,handle,published_at,views,likes,comments,reach,permalink,caption,history,' +
+				'data.length,data.insights,data.duration,data.share_count,data.cover_image_url,data.title'
 		});
 		return rows.map(toDashboardReel);
 	} catch {

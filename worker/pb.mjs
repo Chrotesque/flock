@@ -298,6 +298,13 @@ export function makeClient(baseUrl) {
 			return request(`/api/collections/upload_targets/records/${id}`);
 		},
 
+		/** TikTok posts that went out since `since`, for linking them to their video (ttstats.mjs). */
+		async tiktokPostsSince(since) {
+			const filter = encodeURIComponent(`platform="tiktok" && status="published" && published_at >= "${pbDate(since)}"`);
+			const res = await request(`/api/collections/upload_targets/records?perPage=200&sort=published_at&filter=${filter}`);
+			return res.items ?? [];
+		},
+
 		async updateTarget(id, data) {
 			return request(`/api/collections/upload_targets/records/${id}`, {
 				method: 'PATCH',

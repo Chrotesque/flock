@@ -6,6 +6,11 @@
 //                                       account chooser
 //   pnpm worker:auth --tiktok           TikTok's Login Kit — each run adds the
 //                                       account signed in at TikTok
+//   pnpm worker:auth --tiktok --with-stats
+//                                       the same, asking for video.list and
+//                                       user.info.stats too (the Dashboard's
+//                                       TikTok numbers) — only once the app's
+//                                       TikTok registration lists them
 //   pnpm worker:auth --instagram --token
 //                                       Instagram, from a user token made in
 //                                       the Graph API Explorer and pasted at
@@ -47,7 +52,7 @@ import {
 	CONFIG_PATH
 } from './config.mjs';
 import { mergeAccounts, parseChoice } from './accounts.mjs';
-import { TIKTOK_SCOPES, creatorInfo, privacyLabel } from './tiktok.mjs';
+import { TIKTOK_STATS_SCOPES, creatorInfo, hasScope, privacyLabel, tiktokScopes } from './tiktok.mjs';
 import {
 	INSTAGRAM_PERMISSIONS,
 	INSTAGRAM_SCOPES,
@@ -369,6 +374,11 @@ async function tiktok(config) {
 		);
 	}
 
+	// The Dashboard's numbers are opt-in: an app whose registration does not
+	// list these scopes cannot grant them, so asking by default could fail
+	// every sign-in.
+	const withStats = has('--with-stats');
+	const scopes = tiktokScopes(withStats);
 	const state = randomBytes(16).toString('hex');
 	// PKCE, which TikTok requires of desktop apps and accepts from web ones.
 	// Their challenge is the SHA-256 of the verifier as hex, not base64url.
@@ -379,11 +389,16 @@ async function tiktok(config) {
 	const flow = await obtainCode({
 		redirectUri: t.redirectUri,
 		state,
-		intro: `\nRequesting TikTok scopes: ${TIKTOK_SCOPES.join(', ')}`,
+		intro:
+			`\nRequesting TikTok scopes: ${scopes.join(', ')}` +
+			(withStats
+				? "\n(video.list and user.info.stats read the account's public videos with their counters and its\n" +
+					'follower count, for the Dashboard. The app on developers.tiktok.com must list them.)'
+				: "\nAdd --with-stats to have the Dashboard read the account's TikTok videos and followers too."),
 		buildUrl: (redirectUri) => {
 			const auth = new URL(TIKTOK_AUTH);
 			auth.searchParams.set('client_key', t.clientKey);
-			auth.searchParams.set('scope', TIKTOK_SCOPES.join(','));
+			auth.searchParams.set('scope', scopes.join(','));
 			auth.searchParams.set('response_type', 'code');
 			auth.searchParams.set('redirect_uri', redirectUri);
 			auth.searchParams.set('state', state);
@@ -433,8 +448,18 @@ async function tiktok(config) {
 		refreshToken: body.refresh_token,
 		scope: body.scope ?? ''
 	};
-	if (!String(body.scope ?? '').includes('video.publish')) {
+	if (!hasScope(body.scope, 'video.publish')) {
 		console.log('\nWARNING: video.publish was not granted — posting will fail until it is.');
+	}
+	const missingStats = TIKTOK_STATS_SCOPES.filter((name) => !hasScope(body.scope, name));
+	if (withStats && missingStats.length > 0) {
+		console.log(
+			`\nWARNING: TikTok did not grant ${missingStats.join(' and ')}, so the Dashboard reads no TikTok ` +
+				`${missingStats.includes('video.list') ? 'videos' : 'followers'} for this account.\n` +
+				'The app on developers.tiktok.com has to list them first.'
+		);
+	} else if (missingStats.length === 0) {
+		console.log("\nThe Dashboard will read this account's public videos, their counters and its follower count.");
 	}
 	try {
 		const creator = await creatorInfo(config, added);

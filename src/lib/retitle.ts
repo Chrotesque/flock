@@ -24,7 +24,7 @@ export interface RenameChoice {
 	videoId: string;
 	/** The channel or Page it is on. */
 	account: string;
-	/** Its name there now, as the Dashboard reads it; '' when unknown (TikTok). */
+	/** Its name there now, as the Dashboard reads it; '' when flock has not read the post. */
 	current: string;
 	/** Why it cannot be renamed from here; '' when it can. */
 	refusal: string;
@@ -48,7 +48,7 @@ export function renameChoices(
 	reels: { id: string; caption: string; account: string }[]
 ): RenameChoice[] {
 	return ALL_PLATFORMS.filter((p) => release.links[p]).map((platform) => {
-		const post = platform === 'tiktok' ? undefined : release.posts[platform];
+		const post = release.posts[platform];
 		const video = platform === 'youtube' && post ? videos.find((v) => v.id === post.record) : undefined;
 		const reel = platform !== 'youtube' && post ? reels.find((r) => r.id === post.record) : undefined;
 		return {

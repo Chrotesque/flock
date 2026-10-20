@@ -13,7 +13,8 @@ import {
  * Videos hidden from the Dashboard — a test post, say — with the eye beside
  * a title in Edit mode, kept in `app_settings` / `dashboard_hidden` so every
  * browser hides the same. Marks are by post, under the platform's own id
- * (YouTube's video id, Instagram's media id, Facebook's video id), because a
+ * (YouTube's video id, Instagram's media id, Facebook's and TikTok's video
+ * id), because a
  * row's posts can be paired by time only: a test reel posted near a real
  * Short shares its row.
  *
@@ -25,7 +26,7 @@ import {
 
 export type HiddenPosts = Record<StatPlatform, Record<string, true>>;
 
-export const NONE_HIDDEN: HiddenPosts = { youtube: {}, instagram: {}, facebook: {} };
+export const NONE_HIDDEN: HiddenPosts = { youtube: {}, instagram: {}, tiktok: {}, facebook: {} };
 
 /** A post as a mark names it. */
 export type HiddenPost = Pick<Post, 'platform' | 'id'>;
@@ -33,7 +34,7 @@ export type HiddenPost = Pick<Post, 'platform' | 'id'>;
 /** A stored row, read field by field; anything but a `true` under an id is dropped. */
 export function readHidden(raw: unknown): HiddenPosts {
 	const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-	const out: HiddenPosts = { youtube: {}, instagram: {}, facebook: {} };
+	const out: HiddenPosts = { youtube: {}, instagram: {}, tiktok: {}, facebook: {} };
 	for (const p of STAT_PLATFORMS) {
 		const side = r[p];
 		if (!side || typeof side !== 'object') continue;
@@ -50,7 +51,12 @@ export function isHidden(hidden: HiddenPosts, post: HiddenPost): boolean {
 
 /** Hides these posts, or shows them again; showing drops the mark rather than storing false. */
 export function setHidden(hidden: HiddenPosts, posts: HiddenPost[], on: boolean): HiddenPosts {
-	const out: HiddenPosts = { youtube: { ...hidden.youtube }, instagram: { ...hidden.instagram }, facebook: { ...hidden.facebook } };
+	const out: HiddenPosts = {
+		youtube: { ...hidden.youtube },
+		instagram: { ...hidden.instagram },
+		tiktok: { ...hidden.tiktok },
+		facebook: { ...hidden.facebook }
+	};
 	for (const post of posts) {
 		if (on) out[post.platform][post.id] = true;
 		else delete out[post.platform][post.id];
@@ -73,21 +79,25 @@ export function releasesWithHidden(
 	reels: ReelRow[],
 	targets: TargetLink[],
 	fbReels: ReelRow[],
-	hidden: HiddenPosts
+	hidden: HiddenPosts,
+	ttVideos: ReelRow[] = []
 ): Release[] {
 	const yt = (row: YouTubeRow) => hidden.youtube[row.video_id] === true;
 	const ig = (row: ReelRow) => hidden.instagram[row.post_id] === true;
 	const fb = (row: ReelRow) => hidden.facebook[row.post_id] === true;
+	const tt = (row: ReelRow) => hidden.tiktok?.[row.post_id] === true;
 	const shown = buildReleases(
 		videos.filter((v) => !yt(v)),
 		reels.filter((r) => !ig(r)),
 		targets,
-		fbReels.filter((r) => !fb(r))
+		fbReels.filter((r) => !fb(r)),
+		ttVideos.filter((r) => !tt(r))
 	);
 	const hiddenVideos = videos.filter(yt);
 	const hiddenReels = reels.filter(ig);
 	const hiddenFb = fbReels.filter(fb);
-	if (hiddenVideos.length + hiddenReels.length + hiddenFb.length === 0) return shown;
-	const away = buildReleases(hiddenVideos, hiddenReels, targets, hiddenFb).map((r) => ({ ...r, hidden: true }));
+	const hiddenTt = ttVideos.filter(tt);
+	if (hiddenVideos.length + hiddenReels.length + hiddenFb.length + hiddenTt.length === 0) return shown;
+	const away = buildReleases(hiddenVideos, hiddenReels, targets, hiddenFb, hiddenTt).map((r) => ({ ...r, hidden: true }));
 	return [...shown, ...away];
 }

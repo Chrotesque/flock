@@ -24,6 +24,27 @@ const API = 'https://open.tiktokapis.com/v2';
 /** What the consent asks for: the login itself, and posting. Nothing that reads. */
 export const TIKTOK_SCOPES = ['user.info.basic', 'video.publish'];
 
+/**
+ * What the Dashboard's TikTok numbers need on top (ttstats.mjs): the
+ * account's public videos with their counters, and its follower count.
+ * Asked for only with `pnpm worker:auth --tiktok --with-stats`, since an app
+ * whose TikTok registration does not list them cannot grant them, and asking
+ * anyway could fail the sign-in.
+ */
+export const TIKTOK_STATS_SCOPES = ['video.list', 'user.info.stats'];
+
+/** The scopes a sign-in asks for. */
+export function tiktokScopes(withStats = false) {
+	return withStats ? [...TIKTOK_SCOPES, ...TIKTOK_STATS_SCOPES] : [...TIKTOK_SCOPES];
+}
+
+/** Whether a scope string (TikTok writes them comma-separated) holds a scope. */
+export function hasScope(scope, name) {
+	return String(scope ?? '')
+		.split(/[\s,]+/)
+		.includes(name);
+}
+
 // The registry's labels against TikTok's own levels. Followers exists only on
 // a private account; creator_info says which of these the account offers.
 const PRIVACY_LEVELS = {
@@ -63,6 +84,16 @@ const cache = new Map();
 const keyOf = (account) => account.openId || account.refreshToken;
 /** A refresh in flight per account, which every caller meanwhile shares. */
 const refreshing = new Map();
+/** The scopes each account's grant holds, as TikTok reported them on the last refresh here. */
+const scopes = new Map();
+
+/**
+ * The scopes an account's grant holds: what TikTok said on this process's
+ * last refresh, else what the sign-in recorded in the config.
+ */
+export function grantedTikTokScope(account) {
+	return scopes.get(keyOf(account)) ?? account.scope ?? '';
+}
 
 /**
  * Turns an account's stored refresh token into an access token.
@@ -124,6 +155,7 @@ async function refreshAccessToken(config, account) {
 	}
 
 	if (!account.openId && body.open_id) account.openId = body.open_id;
+	if (typeof body.scope === 'string' && body.scope) scopes.set(keyOf(account), body.scope);
 	cache.set(keyOf(account), {
 		token: body.access_token,
 		expiresAt: Date.now() + Math.max(0, (body.expires_in ?? 86400) - 60) * 1000
@@ -149,7 +181,7 @@ export function tiktokAccount(config, wanted = '') {
 	return pickAccount(config.tiktok.accounts, wanted, (account) => account.openId, 'TikTok', SETUP);
 }
 
-class TikTokError extends Error {
+export class TikTokError extends Error {
 	constructor(code, message, logId, status) {
 		super(`TikTok ${code}: ${message}${logId ? ` (log ${logId})` : ''}`);
 		this.code = code;
@@ -158,17 +190,18 @@ class TikTokError extends Error {
 }
 
 /**
- * One call to the posting API. Every endpoint is a POST, and most failures
- * come back as HTTP 200 with an error code in the body, so the body's code is
- * what decides. A rejected access token is retried once with a fresh one.
+ * One call to TikTok's API. The posting endpoints and video/list are POSTs,
+ * user/info a GET, and most failures come back as HTTP 200 with an error
+ * code in the body, so the body's code is what decides. A rejected access
+ * token is retried once with a fresh one.
  */
-async function api(config, account, path, body, retry = true) {
+async function api(config, account, path, body, { method = 'POST', retry = true } = {}) {
 	const token = await accessToken(config, account);
 	const res = await fetchOrExplain(`${API}${path}`, {
-		method: 'POST',
+		method,
 		headers: {
 			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json; charset=UTF-8'
+			...(method === 'POST' ? { 'Content-Type': 'application/json; charset=UTF-8' } : {})
 		},
 		body: body === undefined ? undefined : JSON.stringify(body)
 	});
@@ -182,12 +215,66 @@ async function api(config, account, path, body, retry = true) {
 	const code = json.error?.code ?? (res.ok ? 'ok' : `http_${res.status}`);
 	if (code === 'access_token_invalid' && retry) {
 		forgetToken(account);
-		return api(config, account, path, body, false);
+		return api(config, account, path, body, { method, retry: false });
 	}
 	if (code !== 'ok') {
 		throw new TikTokError(code, json.error?.message || text.slice(0, 300), json.error?.log_id, res.status);
 	}
 	return json.data ?? {};
+}
+
+/** What video/list is asked for of each video (video.list). */
+export const VIDEO_FIELDS = [
+	'id',
+	'create_time',
+	'cover_image_url',
+	'share_url',
+	'video_description',
+	'title',
+	'duration',
+	'view_count',
+	'like_count',
+	'comment_count',
+	'share_count'
+];
+/** TikTok's page size cap for video/list. */
+const VIDEO_PAGE = 20;
+
+/**
+ * The account's newest public videos, `limit` at most, newest first, with
+ * their counters (video.list). TikTok pages by a cursor of milliseconds.
+ */
+export async function listVideos(config, account, limit) {
+	const out = [];
+	let cursor;
+	while (out.length < limit) {
+		const data = await api(config, account, `/video/list/?fields=${VIDEO_FIELDS.join(',')}`, {
+			max_count: Math.min(VIDEO_PAGE, limit - out.length),
+			...(cursor === undefined ? {} : { cursor })
+		});
+		const videos = Array.isArray(data.videos) ? data.videos : [];
+		out.push(...videos);
+		if (!data.has_more || videos.length === 0 || data.cursor == null) break;
+		cursor = data.cursor;
+	}
+	return out.slice(0, limit);
+}
+
+/** What user/info is asked for: who it is (user.info.basic) and its counts (user.info.stats). */
+export const USER_STATS_FIELDS = ['open_id', 'display_name', 'follower_count', 'likes_count', 'video_count'];
+
+/** The account's follower, like and video counts (user.info.stats). */
+export async function userStats(config, account) {
+	const data = await api(config, account, `/user/info/?fields=${USER_STATS_FIELDS.join(',')}`, undefined, { method: 'GET' });
+	const user = data.user ?? {};
+	const n = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+	return {
+		openId: String(user.open_id ?? ''),
+		displayName: String(user.display_name ?? ''),
+		followers: n(user.follower_count),
+		likes: n(user.likes_count),
+		videos: n(user.video_count)
+	};
 }
 
 /**

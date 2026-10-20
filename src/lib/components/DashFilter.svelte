@@ -132,6 +132,7 @@
 				</h3>
 				<div class="chips">
 					{#each ALL_PLATFORMS as p (p)}
+						{@const label = PLATFORMS[p].label}
 						{#if isStatPlatform(p)}
 							<span class="chipwrap">
 								<button
@@ -154,7 +155,7 @@
 						{:else}
 							<span class="chip off" title="flock posts here but does not read its views yet">
 								<PlatformIcon platform={p} size={14} />
-								<span class="name">{PLATFORMS[p].label}</span>
+								<span class="name">{label}</span>
 								<span class="count">not read</span>
 							</span>
 						{/if}
