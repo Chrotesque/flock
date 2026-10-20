@@ -383,9 +383,9 @@ create a container from `node:24-alpine` with:
 - `--restart unless-stopped`, and on Unraid `--user 99:100` with `UMASK=000`
   so copied videos stay editable over SMB;
 - `FLOCK_RESTART_ON_UPDATE=1`, so it restarts itself on a new version;
-- for TikTok cover images, ffmpeg: either run
-  `sh -c "apk add --no-cache ffmpeg && exec node /config/flock-worker.cjs"`
-  instead, or put static `ffmpeg` and `ffprobe` binaries in `/config`;
+- for TikTok cover images, static Linux `ffmpeg` and `ffprobe` binaries in
+  the config folder, executable by the container's user (`chmod 755`). Not
+  `apk add`: it needs root, which `--user` takes away;
 - for the Dashboard's player: port 8790 mapped, `FLOCK_PREVIEW_HOST=0.0.0.0`,
   an https address in front of that port (Tailscale Serve, for example — the
   page is https, so the browser will not play from plain http), and
