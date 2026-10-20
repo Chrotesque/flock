@@ -117,9 +117,10 @@
 	let imageComposing = $derived(composing && isImagePlatform(composing) ? composing : null);
 	let showImageBox = $derived(imagePlatforms.length > 0 && imageComposing !== null);
 	let tiktokImageBox = $derived(imageComposing === 'tiktok');
-	// The picture the box in view picks and every platform it goes to:
-	// linked, all of them; unlinked, the platform in view's own, with TikTok
-	// riding on Instagram's (Facebook's without Instagram).
+	// The picture the box in view picks: linked, one for both; unlinked, the
+	// platform in view's own. TikTok takes one of them too (Instagram's, else
+	// Facebook's), but its box is its own, so the picker boxes leave it out
+	// (v0.16.46, the user's call).
 	let imageGroup = $derived(
 		imageGroups(draft.activePlatforms, draft.imagesLinked).find(
 			(g) => imageComposing !== null && g.platforms.includes(imageComposing)
@@ -127,11 +128,11 @@
 	);
 	let boxSlot = $derived(imageGroup?.slot ?? 'thumbnail');
 	let imageBoxPlatforms = $derived<ImagePlatform[]>(
-		tiktokImageBox ? ['tiktok'] : (imageGroup?.platforms ?? imagePlatforms)
+		tiktokImageBox ? ['tiktok'] : (imageGroup?.platforms ?? imagePlatforms).filter((p) => p !== 'tiktok')
 	);
 	// Where TikTok's image goes in its video; the end unless chosen otherwise.
 	let placement = $derived(coverAt(draft.overrides));
-	let imageBoxLabel = $derived('Cover');
+	let imageBoxLabel = $derived(tiktokImageBox ? 'Cover Time' : 'Cover');
 	let imageBoxFile = $derived(imageComposing ? draft.imageFor(imageComposing) : null);
 	let imageBoxDone = $derived(
 		imageBoxFile !== null && imageBoxPlatforms.every((p) => imageFits(imageBoxFile, p))

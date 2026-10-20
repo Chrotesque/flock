@@ -479,8 +479,8 @@ The boxes on the right follow the platform you are writing for:
 - **Instagram and Facebook:** an optional *Cover* image (JPEG or PNG, up to
   8 MB for Instagram and 10 MB for Facebook). One image serves both; the switch
   in the box's corner gives each its own. TikTok takes the same image
-  (Instagram's, when the two have their own); its *Cover* box only asks where
-  in the video it goes, *Beginning* or *End* (the default).
+  (Instagram's, when the two have their own); its *Cover Time* box only asks
+  where in the video it goes, *Beginning* or *End* (the default).
 - **Instagram:** *Branded content*, whose *Paid partnership label* tick makes
   Instagram show "Paid partnership" on the reel — for ads and branded content.
   If Instagram refuses the label, the reel still goes out, without it, and the
