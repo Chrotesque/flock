@@ -755,7 +755,10 @@
 			const counts = ttBeat?.counts;
 			lines.push({
 				platform: 'tiktok',
-				level: lineLevel({ error: ttBeat?.error, partial: missing.length > 0 }),
+				// A sign-in without either reading scope is a choice (the scopes are
+				// opt-in), not a fault, so it stays neutral; one of the two missing is
+				// half a read and shows as such.
+				level: lineLevel({ error: ttBeat?.error, partial: missing.length === 1 }),
 				read: ago(ttBeat?.polledAt),
 				error: shortError(ttBeat?.error),
 				detail: ttBeat?.error ?? '',
