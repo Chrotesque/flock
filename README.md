@@ -765,6 +765,10 @@ how many things are listed. Click it to open the list over the page.
   connected channel is listed with a *Jestr* button; press it once the video is
   linked on [Jestr](https://jestr.gg). A scheduled video's button works once it
   is public.
+- With several brands, the chips at the top (*Finishing steps for*) choose
+  whose finishing steps and Jestr buttons are listed; the brands left out show
+  only posts that failed or were never sent. The choice applies to every
+  computer using flock.
 - Settings → *Other* can hide it, for a clean screen recording, say.
   Nothing on it is lost.
 

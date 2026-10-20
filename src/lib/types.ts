@@ -286,6 +286,11 @@ export interface GeneralSettings {
 	 */
 	showTodo: boolean;
 	/**
+	 * The brands To finish follows for finishing steps and Jestr; null for
+	 * every brand. The others show only posts that did not go out (todobrands.ts).
+	 */
+	todoBrands: string[] | null;
+	/**
 	 * Extra zones for the calendar's second time column, beside the built-in
 	 * US West and US East. IANA names; one the runtime does not know is left
 	 * out of the dropdown rather than shown as a wrong clock.

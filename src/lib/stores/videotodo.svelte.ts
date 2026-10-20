@@ -2,6 +2,9 @@ import { getSetting, loadTodoReels, loadTodoStats, loadTodoUploads, setSetting, 
 import { logAction } from '../log';
 import { device } from './device.svelte';
 import { general } from './general.svelte';
+import { brands } from './brands.svelte';
+import { accounts } from './accounts.svelte';
+import { followedChannels, followedLines } from '../todobrands';
 import {
 	LEGACY_JESTR_KEY,
 	INSTAGRAM_STEP,
@@ -52,7 +55,11 @@ class VideoTodoStore {
 				...marking.filter((m) => m.startsWith('instagram:')).map((m) => m.slice(10))
 			]
 		};
-		return todoLines(this.#stats, this.#uploads, state, { jestr: general.value.jestrIntegration }, this.#reels);
+		const lines = todoLines(this.#stats, this.#uploads, state, { jestr: general.value.jestrIntegration }, this.#reels);
+		// Only the brands To finish follows (todobrands.ts) — once it is known
+		// which channel is whose, so nothing flickers away while that loads.
+		const ready = !brands.loading && accounts.loaded;
+		return ready ? followedLines(lines, followedChannels(brands.list, accounts.list, general.value.todoBrands)) : lines;
 	});
 
 	#lastRead = 0;
@@ -64,6 +71,7 @@ class VideoTodoStore {
 	 * once; the returned function stops it all.
 	 */
 	start(): () => void {
+		void brands.load();
 		void this.refresh();
 		const stopLive = subscribeTodoTargets(() => {
 			// A confirm writes several rows at once; one read covers them.

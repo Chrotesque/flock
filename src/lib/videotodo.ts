@@ -73,7 +73,11 @@ export interface StatsRow {
 	duration?: number;
 	privacy?: string;
 	data?: {
-		snippet?: { channelTitle?: string; thumbnails?: { medium?: { url?: string }; maxres?: { url?: string } } };
+		snippet?: {
+			channelId?: string;
+			channelTitle?: string;
+			thumbnails?: { medium?: { url?: string }; maxres?: { url?: string } };
+		};
 		status?: { publishAt?: string };
 		liveStreamingDetails?: Record<string, unknown>;
 		paidProductPlacementDetails?: { hasPaidProductPlacement?: boolean };
@@ -81,13 +85,15 @@ export interface StatsRow {
 }
 
 export const STATS_FIELDS =
-	'video_id,title,published_at,duration,privacy,data.snippet.channelTitle,data.status.publishAt,data.liveStreamingDetails,data.paidProductPlacementDetails.hasPaidProductPlacement,data.snippet.thumbnails.medium.url,data.snippet.thumbnails.maxres.url';
+	'video_id,title,published_at,duration,privacy,data.snippet.channelId,data.snippet.channelTitle,data.status.publishAt,data.liveStreamingDetails,data.paidProductPlacementDetails.hasPaidProductPlacement,data.snippet.thumbnails.medium.url,data.snippet.thumbnails.maxres.url';
 
 /** A flock YouTube upload (`upload_targets` row) with only what the list reads. */
 export interface UploadRow {
 	id: string;
 	/** The upload job, which its Instagram reel shares. */
 	job?: string;
+	/** The channel it goes out on; '' for the only one. */
+	account?: string;
 	title?: string;
 	remote_url?: string;
 	/** `pending` (queued) and `publishing` (uploading) are the waiting ones. */
@@ -95,7 +101,7 @@ export interface UploadRow {
 	created?: string;
 }
 
-export const UPLOAD_FIELDS = 'id,job,title,remote_url,status,created';
+export const UPLOAD_FIELDS = 'id,job,account,title,remote_url,status,created';
 
 /** A flock Instagram reel (`upload_targets` row) with only what the list reads. */
 export interface TodoReelRow {
@@ -139,6 +145,8 @@ export interface TodoLine {
 	id: string;
 	title: string;
 	channel: string;
+	/** The YouTube channel's id, which says whose brand the line is (todobrands.ts); '' while not known. */
+	channelId: string;
 	/** Where the title leads: a Short's own address, the watch page otherwise. */
 	watchUrl: string;
 	studioUrl: string;
@@ -282,7 +290,7 @@ export function todoLines(
 	for (const reel of reels) if (reel.job && !reelByJob.has(reel.job)) reelByJob.set(reel.job, reel);
 	const lines = new Map<string, TodoLine & { at: number }>();
 
-	const lineFor = (id: string, at: number, fallbackTitle?: string) => {
+	const lineFor = (id: string, at: number, fallbackTitle?: string, fallbackChannel?: string) => {
 		const known = lines.get(id);
 		if (known) return known;
 		const stat = statsById.get(id);
@@ -292,6 +300,7 @@ export function todoLines(
 			id,
 			title: stat?.title || fallbackTitle || id,
 			channel: stat?.data?.snippet?.channelTitle ?? '',
+			channelId: stat?.data?.snippet?.channelId || fallbackChannel || '',
 			watchUrl: videoUrl(id, stat?.duration, live),
 			studioUrl: studioUrl(id),
 			studio: [] as string[],
@@ -320,6 +329,7 @@ export function todoLines(
 				id: key,
 				title: upload.title || 'YouTube upload',
 				channel: '',
+				channelId: upload.account ?? '',
 				watchUrl: '',
 				studioUrl: '',
 				studio: [],
@@ -338,15 +348,15 @@ export function todoLines(
 		// On YouTube, but not read by the stats pass yet: Jestr's part cannot be
 		// known until it is, so the line waits rather than vanishing meanwhile.
 		if (options.jestr && !statsById.has(id) && !state.jestr.includes(id)) {
-			lineFor(id, created, upload.title).waiting = WAITING.listing;
+			lineFor(id, created, upload.title, upload.account).waiting = WAITING.listing;
 		}
 		const stat = statsById.get(id);
 		const at = Number.isFinite(instant(stat?.published_at)) ? instant(stat?.published_at) : created;
 		const reel = upload.job ? reelByJob.get(upload.job) : undefined;
 		const step = reel ? instagramStep(reel, state) : null;
-		if (step) lineFor(id, at, upload.title).instagram = step;
+		if (step) lineFor(id, at, upload.title, upload.account).instagram = step;
 		if (state.studio.includes(id)) continue;
-		lineFor(id, at, upload.title).studio = studioTasks(stat?.duration);
+		lineFor(id, at, upload.title, upload.account).studio = studioTasks(stat?.duration);
 	}
 
 	if (options.jestr) {
@@ -372,6 +382,7 @@ export function todoLines(
 			id: line.id,
 			title: line.title,
 			channel: line.channel,
+			channelId: line.channelId,
 			watchUrl: line.watchUrl,
 			studioUrl: line.studioUrl,
 			studio: line.studio,

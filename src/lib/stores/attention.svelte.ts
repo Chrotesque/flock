@@ -5,7 +5,9 @@ import { addDismissed, attentionItems, DISMISSED_KEY, hasFailure, readDismissed,
 import type { DashTarget } from '../dashboard';
 import type { StatsStatus } from '../types';
 import { accounts } from './accounts.svelte';
+import { general } from './general.svelte';
 import { workers } from './workers.svelte';
+import { followedItems } from '../todobrands';
 
 /** Failures are listed for a week; a day's margin covers the clock and the window's edge. */
 const WINDOW_MS = 8 * 24 * 3_600_000;
@@ -26,16 +28,20 @@ class AttentionStore {
 	#dismissing = $state<string[]>([]);
 	#now = $state(new Date());
 
+	// The brands To finish does not follow show only posts that did not go out (todobrands.ts).
 	items = $derived.by((): Attention[] =>
-		attentionItems({
-			targets: this.#targets,
-			dots: workers.view.dots,
-			accounts: accounts.list,
-			status: this.#status,
-			now: this.#now,
-			label: (p) => PLATFORMS[p].label,
-			dismissed: [...this.#dismissed, ...this.#dismissing]
-		})
+		followedItems(
+			attentionItems({
+				targets: this.#targets,
+				dots: workers.view.dots,
+				accounts: accounts.list,
+				status: this.#status,
+				now: this.#now,
+				label: (p) => PLATFORMS[p].label,
+				dismissed: [...this.#dismissed, ...this.#dismissing]
+			}),
+			general.value.todoBrands
+		)
 	);
 
 	/** A post did not go out. */

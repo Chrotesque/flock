@@ -11,6 +11,7 @@
 	import { brands } from '$lib/stores/brands.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { INSTAGRAM_STEP, WAITING, type InstagramStep, type TodoLine } from '$lib/videotodo';
+	import { follows, toggled } from '$lib/todobrands';
 	import type { Attention } from '$lib/attention';
 	import PlatformIcon from './PlatformIcon.svelte';
 	import RetryButton from './RetryButton.svelte';
@@ -139,6 +140,15 @@
 		unread: { label: 'Not read yet', title: 'Paid promotion not detected yet — the channel has not been read since the upload' }
 	};
 
+	/** The brands whose finishing steps are listed (todobrands.ts), one chip each. */
+	function toggleBrand(id: string) {
+		general.setTodoBrands(
+			toggled(brands.ordered, general.value.todoBrands, id),
+			Object.fromEntries(brands.ordered.map((b) => [b.id, b.name]))
+		);
+	}
+	let leftOut = $derived(brands.ordered.filter((b) => !follows(general.value.todoBrands, b.id)));
+
 	function paid(line: TodoLine) {
 		return line.paid ? PAID.on : line.paid === false ? PAID.off : PAID.unread;
 	}
@@ -208,6 +218,30 @@
 					phone; the website cannot). The $ is what YouTube reports about paid promotion, and for Instagram whether the label
 					was marked done here.{#if jestr}{' '}Jestr's button goes once the video is linked there.{/if}
 				</p>
+				{#if brands.multiple}
+					<!-- Whose finishing steps and Jestr are listed (the user's call,
+					     20 Oct 2026); the others show only posts that did not go out. -->
+					<div class="follow" role="group" aria-label="Brands whose finishing steps are listed">
+						<span class="followlabel">Finishing steps for</span>
+						{#each brands.ordered as brand (brand.id)}
+							{@const on = follows(general.value.todoBrands, brand.id)}
+							<button
+								class="followchip"
+								class:on
+								aria-pressed={on}
+								title={on
+									? `${brand.name}: finishing steps${jestr ? ', Jestr' : ''} and everything that needs attention`
+									: `${brand.name}: only posts that did not go out`}
+								onclick={() => toggleBrand(brand.id)}>{brand.name}</button
+							>
+						{/each}
+						{#if leftOut.length > 0}
+							<span class="followhint">
+								{leftOut.map((b) => b.name).join(', ')}: only posts that did not go out
+							</span>
+						{/if}
+					</div>
+				{/if}
 			</div>
 			<!-- What the marks and circles mean, top right (the user's request). -->
 			<aside class="legend" aria-label="What the marks mean">
@@ -548,6 +582,55 @@
 		font-size: 13px;
 		line-height: 1.5;
 		color: var(--text-dim);
+	}
+
+	.follow {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px 8px;
+		margin-top: 12px;
+	}
+
+	.followlabel {
+		margin-right: 2px;
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.followchip {
+		padding: 4px 12px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--surface-2);
+		color: var(--text-faint);
+		font: inherit;
+		font-size: 12px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: border-color 0.15s, color 0.15s, background 0.15s;
+	}
+
+	.followchip:hover,
+	.followchip:focus-visible {
+		border-color: var(--text-dim);
+		color: var(--text);
+		outline: none;
+	}
+
+	.followchip.on {
+		border-color: rgba(255, 77, 158, 0.55);
+		background: var(--accent-grad-soft);
+		color: var(--text);
+	}
+
+	.followhint {
+		margin-left: 4px;
+		font-size: 11.5px;
+		color: var(--text-faint);
 	}
 
 	.close {

@@ -5,6 +5,7 @@ import { settle, LOG_SETTLE_MS } from '../settle';
 import type { GeneralSettings, NasDestination, WatchFolder } from '../types';
 import type { TimeZoneChoice } from '../timezones';
 import { DEFAULT_COLUMNS, columnWords, readColumns, type DashColumn } from '../dashcolumns';
+import { readTodoBrands } from '../todobrands';
 import {
 	folderKind,
 	importFolder,
@@ -33,6 +34,7 @@ export const DEFAULT_GENERAL: GeneralSettings = {
 	complianceBranding: true,
 	jestrIntegration: false,
 	showTodo: true,
+	todoBrands: null,
 	timeZones: [],
 	dashboardColumns: DEFAULT_COLUMNS
 };
@@ -77,6 +79,7 @@ class GeneralStore {
 				complianceBranding: stored.complianceBranding ?? true,
 				jestrIntegration: stored.jestrIntegration === true,
 				showTodo: stored.showTodo !== false,
+				todoBrands: readTodoBrands(stored.todoBrands),
 				timeZones: Array.isArray(stored.timeZones) ? stored.timeZones : [],
 				dashboardColumns: readColumns(stored.dashboardColumns)
 			};
@@ -156,6 +159,16 @@ class GeneralStore {
 
 		if (before.showTodo !== after.showTodo) {
 			logAction('settings', `${after.showTodo ? 'Showed' : 'Hid'} the To finish indicator`);
+		}
+
+		const brandWords = (list: string[] | null) =>
+			list === null ? 'every brand' : list.map((id) => this.#brandNames[id] ?? id).join(', ') || 'no brand';
+		if (brandWords(before.todoBrands) !== brandWords(after.todoBrands)) {
+			logAction(
+				'settings',
+				'Changed which brands To finish follows',
+				`${brandWords(before.todoBrands)} → ${brandWords(after.todoBrands)}`
+			);
 		}
 
 		const columnsWere = columnWords(before.dashboardColumns);
@@ -290,6 +303,17 @@ class GeneralStore {
 
 	setShowTodo(on: boolean) {
 		this.value.showTodo = on;
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	/** Brand names for the log, as the caller knows them; this store reads no other. */
+	#brandNames: Record<string, string> = {};
+
+	/** The brands To finish follows (todobrands.ts), by id, and their names for the log. */
+	setTodoBrands(ids: string[], names: Record<string, string>) {
+		this.#brandNames = { ...this.#brandNames, ...names };
+		this.value.todoBrands = [...ids];
 		this.queueSave();
 		this.#queueLog();
 	}
