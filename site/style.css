@@ -90,6 +90,11 @@ section > p { color: var(--muted); }
 figure.shot { margin: 0 0 2rem; }
 figure.shot img { width: 100%; height: auto; display: block; border-radius: var(--radius); border: 1px solid var(--border-strong); }
 figure.shot figcaption { color: var(--muted); font-size: 0.92rem; margin-top: 0.6rem; }
+/* One shot per platform, side by side and all the same size. */
+.shots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; margin: 0 0 2rem; }
+.shots figure.shot { margin: 0; }
+.shots figure.shot a { display: block; cursor: zoom-in; }
+.shots-intro { color: var(--muted); margin: 0 0 1rem; }
 
 .split { display: grid; grid-template-columns: 1.3fr 1fr; gap: 2rem; align-items: start; }
 .split img { width: 100%; border-radius: var(--radius); border: 1px solid var(--border-strong); }
@@ -140,4 +145,5 @@ footer.bottom a:hover { color: var(--text); }
   .hero { grid-template-columns: 1fr; }
   .hero .icon { width: 120px; height: 120px; border-radius: 26px; }
   .split { grid-template-columns: 1fr; }
+  .shots { grid-template-columns: 1fr; }
 }
