@@ -60,16 +60,23 @@
 	let items = $derived(attention.items);
 	let cheers = $derived(celebrations.items);
 
-	// The gold rows read the Dashboard's numbers, only while the list is open.
+	// The gold rows are read in the background (for the sidebar's box); fresh ones on opening.
 	$effect(() => {
-		if (!todoPanel.open) return;
-		return celebrations.start();
+		if (todoPanel.open) void celebrations.refresh();
 	});
 
-	/** A gold row's second line: the brand once there are several, how it is doing and against what. */
+	/**
+	 * A gold row's second line: the brand once there are several, the
+	 * submission's views and each platform's, and the middle of the top 15 %
+	 * it beat.
+	 */
 	function cheerMeta(c: Celebration): string {
 		const brand = brands.multiple ? (brands.byId(c.brand)?.name ?? '') : '';
-		const words = `${c.views.toLocaleString()} views in ${ageWords(c.age)} · usual at this age ${Math.round(c.usual).toLocaleString()}`;
+		const each = (['youtube', 'instagram', 'tiktok'] as const)
+			.filter((p) => c.views[p] !== null)
+			.map((p) => `${PLATFORMS[p].label} ${(c.views[p] ?? 0).toLocaleString()}`)
+			.join(' · ');
+		const words = `${c.combined.toLocaleString()} views in ${ageWords(c.age)} (${each}) · top 15% usually ${Math.round(c.median).toLocaleString()}`;
 		return [brand, words].filter(Boolean).join(' · ');
 	}
 	let jestr = $derived(general.value.jestrIntegration);
@@ -342,25 +349,23 @@
 							</div>
 						</li>
 					{/each}
-					<!-- A post doing at least half as much again as usual (celebrate.ts):
-					     gold, no buttons; the plain checkmark takes it off the list. -->
+					<!-- A submission half as much again as the top 15 % usually does
+					     (celebrate.ts): gold, no buttons; the plain checkmark takes it off. -->
 					{#each cheers as cheer (cheer.key)}
 						<li class="gold" animate:flip={{ duration: 200 }} out:fly={{ x: 10, duration: 220 }}>
 							<span
-								class="preview"
-								class:upright={cheer.upright}
+								class="preview upright"
 								role="presentation"
-								onpointerenter={(event) => showBig(event, cheer.thumb, cheer.upright)}
+								onpointerenter={(event) => showBig(event, cheer.thumb, true)}
 								onpointerleave={() => (big = null)}
 							>
 								{#if cheer.thumb}
 									<img src={cheer.thumb} alt="" loading="lazy" referrerpolicy="no-referrer" />
 								{/if}
-								<span class="corner"><PlatformIcon platform={cheer.platform} size={11} /></span>
 							</span>
 							<div class="info">
-								<a class="title" href={cheer.url} target="_blank" rel="noopener" title="Open it on {PLATFORMS[cheer.platform].label}">
-									{PLATFORMS[cheer.platform].label}: "{cheer.title}"
+								<a class="title" href={cheer.url} target="_blank" rel="noopener" title="Open it on YouTube">
+									{cheer.title}
 								</a>
 								<p class="meta">{cheerMeta(cheer)}</p>
 							</div>
@@ -808,28 +813,6 @@
 				0 0 0 1px rgba(242, 193, 78, 0.25),
 				0 0 14px rgba(242, 193, 78, 0.3);
 		}
-	}
-
-	/* The platform's mark on the preview's corner, so the badge may overhang. */
-	.gold .preview {
-		position: relative;
-		overflow: visible;
-	}
-
-	.gold .preview img {
-		border-radius: 4px;
-	}
-
-	.corner {
-		position: absolute;
-		right: -7px;
-		bottom: -5px;
-		display: grid;
-		place-items: center;
-		width: 17px;
-		height: 17px;
-		border-radius: 50%;
-		background: var(--bg);
 	}
 
 	.cheer {

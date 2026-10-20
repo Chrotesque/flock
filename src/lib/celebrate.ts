@@ -1,79 +1,73 @@
 import { accountFor } from './accounts';
 import { releasesWithHidden, type HiddenPosts } from './hiddenvideos';
-import {
-	COMPARE_AT_MS,
-	DEFAULT_FILTER,
-	inSpan,
-	judge,
-	peerGroups,
-	STAT_PLATFORMS,
-	type ReelPlatform,
-	type ReelRow,
-	type Release,
-	type StatPlatform,
-	type TargetLink,
-	type YouTubeRow
-} from './releases';
+import { inSpan, median, type ReelPlatform, type ReelRow, type Release, type TargetLink, type YouTubeRow } from './releases';
 import { onTikTokAccount } from './tiktokaccount';
 import type { Account, Brand } from './types';
 
 /**
- * A post doing far better than usual, celebrated in To finish with a gold
- * row (v0.16.68, the user's design, 21 Oct 2026). "Usual" is the
- * Dashboard's: the middle of the same platform's other public videos of the
- * kind at the same age, among the brand's last 30 days (its default span),
- * judged by `judge` in releases.ts. Only the brands To finish follows
- * (todobrands.ts) are celebrated; that rule is the store's.
+ * A submission doing far better than the brand's best, celebrated in To
+ * finish with a gold row and on the sidebar's box with a gold medal
+ * (v0.16.68–0.16.69, the user's design and rule, 21 Oct 2026).
+ *
+ * A submission is a public Short on YouTube with its Instagram reel and
+ * TikTok video, their views added up — Jestr's sense, so Facebook is left
+ * out. Its bar is half as much again as the middle of the top 15 % of the
+ * brand's other submissions from the last 30 days: on that day 1.5 × 3,157,
+ * about 4,740, above every submission so far (the best had 3,882). The bar
+ * leaves the submission itself out, or one that cleared it would raise its
+ * own bar by joining the top and could fall back under it. Only the brands
+ * To finish follows (todobrands.ts) are celebrated; that rule is the store's.
  */
 
-const HOUR = 3_600_000;
+/** Whether To finish celebrates at all. */
+export const CELEBRATING = true;
 
-/**
- * Off until the moment it should trigger is settled (the user's call,
- * 21 Oct 2026): the per-post rule below lists ten of one brand's posts at
- * once, and a rule over the whole submission (YouTube, Instagram and TikTok
- * added up, against the brand's typical one) is being weighed instead.
- * While off, To finish neither reads the numbers nor shows a gold row.
- */
-export const CELEBRATING = false;
-
-/** Half as much again as usual, at least (the user's floor). */
+/** Half as much again, at least. */
 export const CELEBRATE_GAIN = 0.5;
 
-/**
- * Not in its first hours: a handful of views moves the ratio a long way
- * then, and a row that came and went again an hour later would read as a
- * mistake. By three hours a Short has about half of its first days' views.
- */
-export const CELEBRATE_FROM_MS = 3 * HOUR;
+/** The share of the best submissions the bar is the middle of. */
+export const TOP_SHARE = 0.15;
 
-/** The dismissal's key (kept with To finish's others, attention.ts). */
-export function celebrationKey(platform: StatPlatform, postId: string): string {
-	return `best:${platform}:${postId}`;
+/** The window the bar is drawn from, and that a submission is celebrated in. */
+export const BAR_DAYS = 30;
+
+/** Fewer other submissions than this in the window, and there is no bar: a new brand's first videos are not each a record. */
+export const MIN_SUBMISSIONS = 10;
+
+/** The platforms whose views a submission adds up. */
+export const SUBMISSION_PLATFORMS = ['youtube', 'instagram', 'tiktok'] as const;
+export type SubmissionPlatform = (typeof SUBMISSION_PLATFORMS)[number];
+
+/** The dismissal's key, by the submission's Short (kept with To finish's others, attention.ts). */
+export function celebrationKey(videoId: string): string {
+	return `best:youtube:${videoId}`;
 }
 
 export interface Celebration {
 	key: string;
-	platform: StatPlatform;
 	/** The brand's id. */
 	brand: string;
 	/** The flock upload, '' when it went out some other way. */
 	job: string;
 	title: string;
-	/** The post on its platform. */
+	/** The Short on YouTube. */
 	url: string;
-	views: number;
-	usual: number;
-	/** How much better than usual, in whole per cent, rounded down: 282 for 3.82 times. */
+	/** YouTube, Instagram and TikTok added up. */
+	combined: number;
+	/** Each platform's views; null where it has no post. */
+	views: Record<SubmissionPlatform, number | null>;
+	/** The middle of the top 15 % of the other submissions, and half as much again. */
+	median: number;
+	bar: number;
+	/** How much better than that middle, in whole per cent, rounded down: 52 for 1.52 times. */
 	percent: number;
 	/** Since it went out, ms. */
 	age: number;
-	/** The video's picture ('' when none is known) and whether it is shown upright. */
+	/** The video's picture ('' when none is known); a Short's, shown upright. */
 	thumb: string;
-	upright: boolean;
 }
 
-/** What a brand's posts are read from: the Dashboard's rows (dashdata.svelte.ts). */
+/** What a brand's posts are read from: the Dashboard's rows (repo.ts), counters only. */
 export interface PostRows {
 	videos: (YouTubeRow & { channelId: string })[];
 	reels: (ReelRow & { platform: ReelPlatform; account: string })[];
@@ -94,7 +88,7 @@ export function brandReleases(
 	hidden: HiddenPosts
 ): Release[] {
 	const count = brands.length;
-	const lone = (p: StatPlatform) => count <= 1 && accounts.filter((a) => a.platform === p).length <= 1;
+	const lone = (p: SubmissionPlatform | 'facebook') => count <= 1 && accounts.filter((a) => a.platform === p).length <= 1;
 	const yt = accountFor(brand, 'youtube', accounts, count);
 	const videos = yt ? rows.videos.filter((v) => v.channelId === yt.account_id) : lone('youtube') ? rows.videos : [];
 	const reelsOf = (p: ReelPlatform) => {
@@ -107,47 +101,61 @@ export function brandReleases(
 	return releasesWithHidden(videos, reelsOf('instagram'), targets, reelsOf('facebook'), hidden, reelsOf('tiktok'));
 }
 
-/**
- * The brand's posts at least `CELEBRATE_GAIN` better than usual: public, not
- * hidden, from three hours to a week old (the week "usual" compares over),
- * with enough peers for a usual at all. Best first.
- */
+/** A public Short on YouTube, not hidden: what counts as a submission. */
+export function isSubmission(release: Release): boolean {
+	return release.privacy === 'public' && !release.hidden && release.kind === 'short' && Boolean(release.posts.youtube);
+}
+
+/** Its YouTube, Instagram and TikTok views added up. */
+export function combinedViews(release: Release): number {
+	return SUBMISSION_PLATFORMS.reduce((sum, p) => sum + (release.posts[p]?.views ?? 0), 0);
+}
+
+/** The middle of the best `share` of the values: of the top 8 of 55 for 15 %, at least the best one. */
+export function topMedian(values: number[], share = TOP_SHARE): number | null {
+	if (values.length === 0) return null;
+	const best = [...values].sort((a, b) => b - a);
+	return median(best.slice(0, Math.max(1, Math.round(best.length * share))));
+}
+
+/** The brand's submissions from the last 30 days that cleared their bar, best first. */
 export function celebrationsOf(releases: Release[], brand: string, now: number): Celebration[] {
-	const peers = peerGroups(releases.filter((r) => inSpan(r, DEFAULT_FILTER.days, now)));
+	const pool = releases.filter((r) => isSubmission(r) && inSpan(r, BAR_DAYS, now));
 	const out: Celebration[] = [];
-	for (const release of releases) {
-		if (release.privacy !== 'public' || release.hidden) continue;
-		for (const platform of STAT_PLATFORMS) {
-			const post = release.posts[platform];
-			if (!post) continue;
-			const age = now - post.at;
-			if (age < CELEBRATE_FROM_MS || age > COMPARE_AT_MS) continue;
-			const { views, usual } = judge(post, peers.get(`${platform}:${release.kind}`) ?? [], now);
-			if (views === null || usual === null || usual <= 0) continue;
-			const gain = views / usual - 1;
-			if (gain < CELEBRATE_GAIN) continue;
-			out.push({
-				key: celebrationKey(platform, post.id),
-				platform,
-				brand,
-				job: release.job,
-				title: release.title,
-				url: post.url,
-				views,
-				usual,
-				percent: Math.floor(gain * 100 + 1e-9),
-				age,
-				thumb: release.thumb,
-				upright: release.kind === 'short' || !release.posts.youtube
-			});
-		}
+	for (const release of pool) {
+		const others = pool.filter((r) => r !== release);
+		if (others.length < MIN_SUBMISSIONS) continue;
+		const middle = topMedian(others.map(combinedViews));
+		if (middle === null || middle <= 0) continue;
+		const combined = combinedViews(release);
+		const bar = middle * (1 + CELEBRATE_GAIN);
+		if (combined < bar) continue;
+		const youtube = release.posts.youtube!;
+		out.push({
+			key: celebrationKey(youtube.id),
+			brand,
+			job: release.job,
+			title: release.title,
+			url: youtube.url,
+			combined,
+			views: {
+				youtube: youtube.views,
+				instagram: release.posts.instagram?.views ?? null,
+				tiktok: release.posts.tiktok?.views ?? null
+			},
+			median: middle,
+			bar,
+			percent: Math.floor((combined / middle - 1) * 100 + 1e-9),
+			age: now - release.at,
+			thumb: release.thumb
+		});
 	}
 	return out.sort((a, b) => b.percent - a.percent);
 }
 
 /** "5 h", "31 h", "2.5 days": how long it has been out. */
 export function ageWords(ms: number): string {
-	const hours = ms / HOUR;
+	const hours = ms / 3_600_000;
 	if (hours < 48) return `${Math.max(1, Math.floor(hours))} h`;
 	return `${(Math.floor((hours / 24) * 10) / 10).toLocaleString('en-US')} days`;
 }

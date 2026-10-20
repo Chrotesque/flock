@@ -7,6 +7,7 @@
 	import { general } from '$lib/stores/general.svelte';
 	import { videoTodo } from '$lib/stores/videotodo.svelte';
 	import { attention } from '$lib/stores/attention.svelte';
+	import { celebrations } from '$lib/stores/celebrations.svelte';
 	import PasteNotice from '$lib/components/PasteNotice.svelte';
 	import DashboardOverlay from '$lib/components/DashboardOverlay.svelte';
 	import TodoPanel from '$lib/components/TodoPanel.svelte';
@@ -21,7 +22,8 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { DEVTEST_ICON, devtestActive, devtestPasteKeys, shownDevtestPages, startDevtest } from '$lib/devtest';
-	import { TODO_MARKS } from '$lib/todoicon';
+	import { CELEBRATE_MARK, CELEBRATE_PLACE, TODO_MARKS } from '$lib/todoicon';
+	import { wobble } from '$lib/wobble';
 
 	/** flock's public website (source in site/), where the brand at the foot of the rail leads. */
 	const SITE_URL = 'https://flock-scheduler.netlify.app/';
@@ -32,11 +34,13 @@
 		const stopProjects = projects.start();
 		const stopTodo = videoTodo.start();
 		const stopAttention = attention.start();
+		const stopCelebrations = celebrations.start();
 		const stopDevtest = startDevtest();
 		return () => {
 			stopProjects();
 			stopTodo();
 			stopAttention();
+			stopCelebrations();
 			stopDevtest();
 		};
 	});
@@ -108,11 +112,20 @@
 			)
 	);
 	let postFailed = $derived(attention.failed);
-	let todoCount = $derived(attention.items.length + videoTodo.lines.length);
+	/**
+	 * A submission doing far better than usual (celebrate.ts): the box turns
+	 * gold with a wobbling medal. A post that did not go out still outranks
+	 * it; it outranks what needs doing, being rare and gone with a click on
+	 * its row, after which the box is what it was.
+	 */
+	let celebrating = $derived(celebrations.items.length > 0);
+	let gold = $derived(celebrating && !postFailed && !todoPanel.open);
+	let todoCount = $derived(attention.items.length + celebrations.items.length + videoTodo.lines.length);
 
 	let todoLabel = $derived.by(() => {
 		const parts: string[] = [];
 		if (attention.items.length) parts.push(`${attention.items.length} needing attention`);
+		if (celebrations.items.length) parts.push(`${celebrations.items.length} doing far better than usual`);
 		parts.push(`${videoTodo.lines.length} ${videoTodo.lines.length === 1 ? 'video' : 'videos'}`);
 		return `To finish, ${parts.join(', ')}`;
 	});
@@ -309,7 +322,8 @@
 					class="tile"
 					class:open={todoPanel.open}
 					class:failed={postFailed && !todoPanel.open}
-					class:due={needsDoing && !postFailed}
+					class:gold
+					class:due={needsDoing && !postFailed && !gold}
 					onclick={toggleTodo}
 					aria-expanded={todoPanel.open}
 					aria-controls="todo-panel"
@@ -318,41 +332,55 @@
 						? 'Close To finish (Esc)'
 						: postFailed
 							? 'To finish: a post did not go out'
-							: needsDoing
-								? 'To finish: something needs doing'
-								: 'To finish: nothing to do right now'}
+							: gold
+								? 'To finish: a video is doing far better than usual'
+								: needsDoing
+									? 'To finish: something needs doing'
+									: 'To finish: nothing to do right now'}
 				>
 					<span class="tileart">
-						<svg class="tileicon" viewBox="0 0 48 48" width="128" height="128" fill="none" aria-hidden="true">
-							<defs>
-								<!-- In the icon's own units: an exclamation mark is a
-								     line with no width, which a box-relative gradient
-								     would not paint at all. -->
-								<linearGradient id="todo-due" gradientUnits="userSpaceOnUse" x1="4" y1="44" x2="44" y2="4">
-									<stop offset="0" style="stop-color: var(--warn)" />
-									<stop offset="1" style="stop-color: var(--pink)" />
-								</linearGradient>
-							</defs>
-							{#if todoPanel.open}
-								<!-- Open: filled purple, the way back cut out of it. -->
-								<rect class="box open" x="4" y="4" width="40" height="40" rx="11" />
-								<path class="neg back" d={TODO_MARKS.back} stroke-linecap="round" stroke-linejoin="round" />
-							{:else if postFailed}
-								<!-- A post did not go out: filled red, the exclamation
-								     mark cut out of it. -->
-								<rect class="box failed" x="4" y="4" width="40" height="40" rx="11" />
-								<path class="neg bang" d={TODO_MARKS.bang} stroke-linecap="round" />
-							{:else if needsDoing}
-								<!-- Something to do: the colour on the border, a thick
-								     exclamation mark in the middle. -->
-								<rect class="box due" x="5.5" y="5.5" width="37" height="37" rx="10" stroke="url(#todo-due)" />
-								<path class="bangmark" d={TODO_MARKS.bang} stroke="url(#todo-due)" stroke-linecap="round" />
-							{:else}
-								<!-- Nothing to do: muted green, the check cut out of it. -->
-								<rect class="box idle" x="4" y="4" width="40" height="40" rx="11" />
-								<path class="neg" d={TODO_MARKS.check} stroke-linecap="round" stroke-linejoin="round" />
-							{/if}
-						</svg>
+						<!-- Gold, the whole box wobbles and throws sparks off its edges (wobble.ts). -->
+						<span class="tilebox" use:wobble={{ active: gold, strength: 0.35, sparks: 9, from: 58, to: 102, thick: 2.2, long: 9 }}>
+							<svg class="tileicon" viewBox="0 0 48 48" width="128" height="128" fill="none" aria-hidden="true">
+								<defs>
+									<!-- In the icon's own units: an exclamation mark is a
+									     line with no width, which a box-relative gradient
+									     would not paint at all. -->
+									<linearGradient id="todo-due" gradientUnits="userSpaceOnUse" x1="4" y1="44" x2="44" y2="4">
+										<stop offset="0" style="stop-color: var(--warn)" />
+										<stop offset="1" style="stop-color: var(--pink)" />
+									</linearGradient>
+								</defs>
+								{#if todoPanel.open}
+									<!-- Open: filled purple, the way back cut out of it. -->
+									<rect class="box open" x="4" y="4" width="40" height="40" rx="11" />
+									<path class="neg back" d={TODO_MARKS.back} stroke-linecap="round" stroke-linejoin="round" />
+								{:else if postFailed}
+									<!-- A post did not go out: filled red, the exclamation
+									     mark cut out of it. -->
+									<rect class="box failed" x="4" y="4" width="40" height="40" rx="11" />
+									<path class="neg bang" d={TODO_MARKS.bang} stroke-linecap="round" />
+								{:else if gold}
+									<!-- A submission doing far better than usual: filled gold,
+									     the medal cut out of it. -->
+									<rect class="box gold" x="4" y="4" width="40" height="40" rx="11" />
+									<g transform={CELEBRATE_PLACE}>
+										{#each CELEBRATE_MARK as d (d)}
+											<path class="neg medal" {d} stroke-linecap="round" stroke-linejoin="round" />
+										{/each}
+									</g>
+								{:else if needsDoing}
+									<!-- Something to do: the colour on the border, a thick
+									     exclamation mark in the middle. -->
+									<rect class="box due" x="5.5" y="5.5" width="37" height="37" rx="10" stroke="url(#todo-due)" />
+									<path class="bangmark" d={TODO_MARKS.bang} stroke="url(#todo-due)" stroke-linecap="round" />
+								{:else}
+									<!-- Nothing to do: muted green, the check cut out of it. -->
+									<rect class="box idle" x="4" y="4" width="40" height="40" rx="11" />
+									<path class="neg" d={TODO_MARKS.check} stroke-linecap="round" stroke-linejoin="round" />
+								{/if}
+							</svg>
+						</span>
 						<!-- Where it opens, shown on hover; open, the box itself points back. -->
 						<svg class="tilearrow" viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
 							<path d="M9 5.5l6.5 6.5L9 18.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
@@ -817,6 +845,47 @@
 		}
 	}
 
+	/* A submission doing far better than usual (celebrate.ts): filled gold
+	   with the medal cut out, its glow breathing on the red alarm's rhythm
+	   without the box fading, and the whole box wobbling with sparks off its
+	   edges (wobble.ts, on .tilebox). Before the hover rules, like the red. */
+	.tile.gold {
+		--glow: 242, 193, 78;
+		--glow-2: 255, 215, 106;
+		--arrow: var(--gold-soft);
+	}
+
+	.tilebox {
+		position: relative;
+		display: block;
+	}
+
+	.box.gold {
+		fill: var(--gold);
+	}
+
+	.neg.medal {
+		stroke-width: 8px;
+	}
+
+	.tile.gold .tileicon {
+		animation: goldbreath 2.8s ease-in-out infinite;
+	}
+
+	.tile.gold .tilecount {
+		color: var(--gold);
+	}
+
+	@keyframes goldbreath {
+		0%,
+		100% {
+			filter: drop-shadow(0 0 6px rgba(var(--glow), 0.6)) drop-shadow(0 0 18px rgba(var(--glow-2), 0.35));
+		}
+		50% {
+			filter: drop-shadow(0 0 3px rgba(var(--glow), 0.3)) drop-shadow(0 0 9px rgba(var(--glow-2), 0.18));
+		}
+	}
+
 	.tile:hover .tileicon,
 	.tile:focus-visible .tileicon {
 		filter: drop-shadow(0 0 7px rgba(var(--glow), 0.65)) drop-shadow(0 0 20px rgba(var(--glow-2), 0.45));
@@ -852,6 +921,11 @@
 	.tile:hover .box.failed,
 	.tile:focus-visible .box.failed {
 		fill: #ff4040;
+	}
+
+	.tile:hover .box.gold,
+	.tile:focus-visible .box.gold {
+		fill: var(--gold-soft);
 	}
 
 	/* The arrow: hidden until the pointer is on the box, then sliding in,
@@ -893,8 +967,9 @@
 		.tile:focus-visible .tileicon {
 			animation: none;
 		}
-		/* Still red, and glowing, just not breathing. */
-		.tile.failed .tileicon {
+		/* Still red or gold, and glowing, just not breathing. */
+		.tile.failed .tileicon,
+		.tile.gold .tileicon {
 			animation: none;
 			filter: drop-shadow(0 0 6px rgba(var(--glow), 0.6)) drop-shadow(0 0 18px rgba(var(--glow-2), 0.35));
 		}

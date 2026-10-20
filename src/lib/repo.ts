@@ -1349,11 +1349,12 @@ export function toDashboardReel(row: Record<string, unknown>): DashboardReel {
 }
 
 /** Every watched video, slim — the counters, samples and what the list shows, not the whole item. */
-export async function loadDashboardVideos(): Promise<DashboardVideo[]> {
+export async function loadDashboardVideos({ history = true } = {}): Promise<DashboardVideo[]> {
 	const rows = await pb.collection('video_stats').getFullList<VideoRecord>({
 		sort: '-published_at',
+		// Without the samples for what needs only the counters (celebrate.ts): a fraction of the bytes.
 		fields:
-			'id,video_id,title,published_at,privacy,views,likes,comments,duration,history,' +
+			`id,video_id,title,published_at,privacy,views,likes,comments,duration,${history ? 'history,' : ''}` +
 			'data.snippet.channelId,data.snippet.thumbnails.medium.url,data.snippet.thumbnails.default.url,' +
 			'data.liveStreamingDetails'
 	});
@@ -1449,12 +1450,12 @@ export function subscribeTitleRequests(onRow: (row: TitleRequest, action: string
 }
 
 /** The reels and TikTok videos as the worker stores them (worker/igstats.mjs, fbstats.mjs, ttstats.mjs); none when it never has. */
-export async function loadDashboardReels(): Promise<DashboardReel[]> {
+export async function loadDashboardReels({ history = true } = {}): Promise<DashboardReel[]> {
 	try {
 		const rows = await pb.collection('post_stats').getFullList<Record<string, unknown>>({
 			filter: REELS,
 			fields:
-				'id,platform,post_id,account,handle,published_at,views,likes,comments,reach,permalink,caption,history,' +
+				`id,platform,post_id,account,handle,published_at,views,likes,comments,reach,permalink,caption,${history ? 'history,' : ''}` +
 				'data.length,data.insights,data.duration,data.share_count,data.cover_image_url,data.title'
 		});
 		return rows.map(toDashboardReel);

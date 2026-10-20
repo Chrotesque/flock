@@ -731,8 +731,10 @@ times, each within two seconds. The worker does it within seconds:
 YouTube videos with something left to do by hand: green with a check when
 nothing needs doing now, a yellow-to-pink outline with an exclamation mark when
 something does, and **solid red, slowly pulsing, when a post did not go out**
-(it failed, or its slot passed and it was never sent). The number under it is
-how many things are listed. Click it to open the list over the page.
+(it failed, or its slot passed and it was never sent). It turns **gold, with a
+wobbling medal, when a video is doing far better than usual** (below); only red
+outranks that. The number under it is how many things are listed. Click it to
+open the list over the page.
 
 - **Needs attention** comes first, for every brand: failed posts, posts never
   sent, uploads that hang, videos not yet copied to the NAS, a private YouTube
@@ -746,6 +748,13 @@ how many things are listed. Click it to open the list over the page.
   twice within two seconds to send it again. It goes out at its slot if that is
   still ahead (the button shows the time), or at once if it has passed. A post
   the platform already has a link for is never retried.
+- A **gold row** celebrates a video doing far better than usual: its views on
+  YouTube, Instagram and TikTok added up (Facebook is not counted) are at least
+  half as much again as the middle of the brand's top 15% from the last 30 days.
+  It shows the views per platform and how much better it did; the gold
+  checkmark takes it off the list. Only the brands chosen under *Finishing steps
+  for* are celebrated, and a brand needs at least ten other videos in those 30
+  days before any is.
 - Each video row has the thumbnail (hover it to see it larger), the title (opens the
   video), whether YouTube reports paid promotion (green $ ticked, red not) and,
   beside it, whether the reel's Paid partnership label was marked done here
