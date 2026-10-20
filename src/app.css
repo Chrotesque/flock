@@ -29,6 +29,9 @@
 	--ok: #34d399;
 	--warn: #fbbf24;
 	--danger: #f87171;
+	/* A celebration: To finish's gold rows and their medal (celebrate.ts). */
+	--gold: #f2c14e;
+	--gold-soft: #ffd76a;
 
 	--radius: 12px;
 	--radius-sm: 8px;

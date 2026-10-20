@@ -114,18 +114,29 @@ class AttentionStore {
 	 * brings it back.
 	 */
 	async dismiss(item: Attention): Promise<void> {
-		if (!item.key || this.#dismissing.includes(item.key)) return;
-		this.#dismissing = [...this.#dismissing, item.key];
+		if (!item.key) return;
+		await this.dismissKey(item.key, item.text, item.detail, item.job);
+	}
+
+	/** The keys taken off the list, saved or being saved (a celebration's too — celebrate.ts). */
+	get dismissed(): string[] {
+		return [...this.#dismissed, ...this.#dismissing];
+	}
+
+	/** `dismiss` for anything To finish lists under a key of its own. */
+	async dismissKey(key: string, text: string, detail = '', job = ''): Promise<void> {
+		if (this.#dismissing.includes(key)) return;
+		this.#dismissing = [...this.#dismissing, key];
 		try {
 			const stored = readDismissed(await getSetting<unknown>(DISMISSED_KEY, null));
-			const next = addDismissed(stored, item.key);
+			const next = addDismissed(stored, key);
 			await setSetting(DISMISSED_KEY, { dismissed: next });
 			this.#dismissed = next;
-			logAction('upload', `Dismissed: ${item.text}`, item.detail, item.job ? { job: item.job } : {});
+			logAction('upload', `Dismissed: ${text}`, detail, job ? { job } : {});
 		} catch {
 			// Not saved: the item stays on the list.
 		} finally {
-			this.#dismissing = this.#dismissing.filter((k) => k !== item.key);
+			this.#dismissing = this.#dismissing.filter((k) => k !== key);
 		}
 	}
 }

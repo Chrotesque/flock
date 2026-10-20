@@ -1,20 +1,24 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { flip } from 'svelte/animate';
-	import { fade } from 'svelte/transition';
+	import { fade, fly } from 'svelte/transition';
 	import { cubicInOut } from 'svelte/easing';
 	import { afterNavigate } from '$app/navigation';
 	import { base } from '$app/paths';
 	import { todoPanel } from '$lib/stores/todopanel.svelte';
 	import { videoTodo } from '$lib/stores/videotodo.svelte';
 	import { attention } from '$lib/stores/attention.svelte';
+	import { celebrations } from '$lib/stores/celebrations.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { INSTAGRAM_STEP, WAITING, type InstagramStep, type TodoLine } from '$lib/videotodo';
 	import { follows, toggled } from '$lib/todobrands';
 	import type { Attention } from '$lib/attention';
+	import { ageWords, type Celebration } from '$lib/celebrate';
+	import { PLATFORMS } from '$lib/platforms';
 	import PlatformIcon from './PlatformIcon.svelte';
 	import RetryButton from './RetryButton.svelte';
+	import CelebrateMedal from './CelebrateMedal.svelte';
 
 	/**
 	 * The To finish list over the whole content area (v0.13.8, the user's
@@ -22,7 +26,8 @@
 	 * into it. First what needs attention (v0.14.7, moved here from the
 	 * dashboard): a row per post gone wrong or the system's trouble, linking
 	 * to the upload's overview, a post's with Dismiss, a failed one's with
-	 * Retry (v0.14.8). Then a row per video —
+	 * Retry (v0.14.8), and a gold row per post doing at least half as much
+	 * again as usual (v0.16.68, celebrate.ts). Then a row per video —
 	 * preview, title, what YouTube reports about paid promotion, the Studio
 	 * button and Jestr's. Rules in attention.ts and videotodo.ts, state in
 	 * their stores; nothing here decides what is listed.
@@ -41,19 +46,32 @@
 	const BIG_SHORT = 144;
 	let big = $state<{ src: string; upright: boolean; x: number; y: number } | null>(null);
 
-	function showBig(event: PointerEvent, line: TodoLine) {
-		if (!line.thumb) return;
-		const upright = line.short;
+	function showBig(event: PointerEvent, src: string, upright: boolean) {
+		if (!src) return;
 		const w = upright ? BIG_SHORT : BIG;
 		const h = upright ? BIG : BIG_SHORT;
 		const at = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		let x = at.right + 12;
 		if (x + w > innerWidth - 8) x = at.left - 12 - w;
 		const y = Math.min(Math.max(8, at.top + at.height / 2 - h / 2), innerHeight - h - 8);
-		big = { src: line.thumbLarge || line.thumb, upright, x, y };
+		big = { src, upright, x, y };
 	}
 	let lines = $derived(videoTodo.lines);
 	let items = $derived(attention.items);
+	let cheers = $derived(celebrations.items);
+
+	// The gold rows read the Dashboard's numbers, only while the list is open.
+	$effect(() => {
+		if (!todoPanel.open) return;
+		return celebrations.start();
+	});
+
+	/** A gold row's second line: the brand once there are several, how it is doing and against what. */
+	function cheerMeta(c: Celebration): string {
+		const brand = brands.multiple ? (brands.byId(c.brand)?.name ?? '') : '';
+		const words = `${c.views.toLocaleString()} views in ${ageWords(c.age)} · usual at this age ${Math.round(c.usual).toLocaleString()}`;
+		return [brand, words].filter(Boolean).join(' · ');
+	}
 	let jestr = $derived(general.value.jestrIntegration);
 
 	/** A post's brand, named once there are several. */
@@ -279,9 +297,9 @@
 			</button>
 		</header>
 
-		{#if items.length > 0}
+		{#if items.length > 0 || cheers.length > 0}
 			<section class="attn" aria-label="Needs attention">
-				<h2>Needs attention <span class="count">{items.length}</span></h2>
+				<h2>Needs attention <span class="count">{items.length + cheers.length}</span></h2>
 				<ul>
 					{#each items as item (item.key || item.text)}
 						<li class={item.level} class:alarm={isFailure(item)} animate:flip={{ duration: 200 }} out:fade={{ duration: 160 }}>
@@ -324,14 +342,54 @@
 							</div>
 						</li>
 					{/each}
+					<!-- A post doing at least half as much again as usual (celebrate.ts):
+					     gold, no buttons; the plain checkmark takes it off the list. -->
+					{#each cheers as cheer (cheer.key)}
+						<li class="gold" animate:flip={{ duration: 200 }} out:fly={{ x: 10, duration: 220 }}>
+							<span
+								class="preview"
+								class:upright={cheer.upright}
+								role="presentation"
+								onpointerenter={(event) => showBig(event, cheer.thumb, cheer.upright)}
+								onpointerleave={() => (big = null)}
+							>
+								{#if cheer.thumb}
+									<img src={cheer.thumb} alt="" loading="lazy" referrerpolicy="no-referrer" />
+								{/if}
+								<span class="corner"><PlatformIcon platform={cheer.platform} size={11} /></span>
+							</span>
+							<div class="info">
+								<a class="title" href={cheer.url} target="_blank" rel="noopener" title="Open it on {PLATFORMS[cheer.platform].label}">
+									{PLATFORMS[cheer.platform].label}: "{cheer.title}"
+								</a>
+								<p class="meta">{cheerMeta(cheer)}</p>
+							</div>
+							<div class="cheer">
+								<div class="cheerwords">
+									<span class="better"><span class="amt">{cheer.percent}%</span> better performance than usual</span>
+									<span class="congrats"><CelebrateMedal size={16} />Congratulations!</span>
+								</div>
+								<button
+									class="seen"
+									onclick={() => celebrations.dismiss(cheer)}
+									title="Seen, take it off the list"
+									aria-label="Seen, take it off the list"
+								>
+									<svg viewBox="0 0 24 24" width="36" height="36" fill="none" aria-hidden="true">
+										<path d="M5 12l5 5l10 -10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+									</svg>
+								</button>
+							</div>
+						</li>
+					{/each}
 				</ul>
 			</section>
 		{/if}
 
 		{#if lines.length === 0}
-			{#if items.length === 0}<p class="empty">Nothing left to finish.</p>{/if}
+			{#if items.length === 0 && cheers.length === 0}<p class="empty">Nothing left to finish.</p>{/if}
 		{:else}
-			{#if items.length > 0}<h2>Videos <span class="count">{lines.length}</span></h2>{/if}
+			{#if items.length + cheers.length > 0}<h2>Videos <span class="count">{lines.length}</span></h2>{/if}
 			<div class="table" class:nojestr={!jestr}>
 				<div class="thead" aria-hidden="true">
 					<span>Video</span>
@@ -356,7 +414,7 @@
 									rel="noopener"
 									tabindex="-1"
 									aria-hidden="true"
-									onpointerenter={(event) => showBig(event, line)}
+									onpointerenter={(event) => showBig(event, line.thumb ? line.thumbLarge || line.thumb : '', line.short)}
 									onpointerleave={() => (big = null)}
 								>
 									{#if line.thumb}
@@ -711,6 +769,122 @@
 	.attn li.alarm:hover {
 		border-color: rgba(255, 40, 40, 0.85);
 		border-left-color: #ff2828;
+	}
+
+	/* A post doing far better than usual (celebrate.ts): gold all round with a
+	   slow breathing glow on the sidebar's red alarm's rhythm, steady under
+	   reduced motion. No buttons: the words sit where they would be, and a
+	   plain gold checkmark takes the row off the list. */
+	.attn li.gold {
+		border-color: rgba(242, 193, 78, 0.7);
+		border-left-color: var(--gold);
+		background: rgba(242, 193, 78, 0.05);
+		animation: goldglow 2.8s ease-in-out infinite;
+	}
+
+	.attn li.gold:hover {
+		border-color: rgba(242, 193, 78, 0.9);
+		border-left-color: var(--gold);
+	}
+
+	@keyframes goldglow {
+		0%,
+		100% {
+			box-shadow:
+				0 0 0 1px rgba(242, 193, 78, 0.18),
+				0 0 10px rgba(242, 193, 78, 0.22);
+		}
+		50% {
+			box-shadow:
+				0 0 0 1px rgba(242, 193, 78, 0.35),
+				0 0 20px rgba(242, 193, 78, 0.45);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.attn li.gold {
+			animation: none;
+			box-shadow:
+				0 0 0 1px rgba(242, 193, 78, 0.25),
+				0 0 14px rgba(242, 193, 78, 0.3);
+		}
+	}
+
+	/* The platform's mark on the preview's corner, so the badge may overhang. */
+	.gold .preview {
+		position: relative;
+		overflow: visible;
+	}
+
+	.gold .preview img {
+		border-radius: 4px;
+	}
+
+	.corner {
+		position: absolute;
+		right: -7px;
+		bottom: -5px;
+		display: grid;
+		place-items: center;
+		width: 17px;
+		height: 17px;
+		border-radius: 50%;
+		background: var(--bg);
+	}
+
+	.cheer {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.cheerwords {
+		display: grid;
+		justify-items: end;
+		gap: 3px;
+		text-align: right;
+	}
+
+	.better {
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--gold);
+	}
+
+	.amt {
+		text-decoration: underline;
+		text-decoration-color: var(--gold);
+		text-decoration-thickness: 1.5px;
+		text-underline-offset: 3px;
+	}
+
+	.congrats {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 15px;
+		font-weight: 650;
+		color: var(--gold-soft);
+	}
+
+	.seen {
+		display: grid;
+		place-items: center;
+		width: 36px;
+		height: 36px;
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--gold);
+		cursor: pointer;
+		filter: drop-shadow(0 0 2px rgba(242, 193, 78, 0.45));
+		transition: filter 0.15s;
+	}
+
+	.seen:hover,
+	.seen:focus-visible {
+		outline: none;
+		filter: drop-shadow(0 0 3px rgba(242, 193, 78, 0.9)) drop-shadow(0 0 8px rgba(242, 193, 78, 0.45));
 	}
 
 	.attn .title {
