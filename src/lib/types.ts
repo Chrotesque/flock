@@ -280,8 +280,9 @@ export interface GeneralSettings {
 	 */
 	jestrIntegration: boolean;
 	/**
-	 * Whether the sidebar shows the To finish list. On by default; off hides
-	 * it everywhere (for a clean screen recording, say) without losing a mark.
+	 * Whether the sidebar shows the To finish indicator, the box that opens
+	 * the list. On by default; off hides it everywhere (for a clean screen
+	 * recording, say) without losing a mark.
 	 */
 	showTodo: boolean;
 	/**

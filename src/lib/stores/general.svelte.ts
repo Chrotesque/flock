@@ -155,7 +155,7 @@ class GeneralStore {
 		}
 
 		if (before.showTodo !== after.showTodo) {
-			logAction('settings', `${after.showTodo ? 'Showed' : 'Hid'} the To finish list`);
+			logAction('settings', `${after.showTodo ? 'Showed' : 'Hid'} the To finish indicator`);
 		}
 
 		const columnsWere = columnWords(before.dashboardColumns);

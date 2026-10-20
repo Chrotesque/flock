@@ -442,13 +442,20 @@
 
 							<Checkbox
 								checked={general.value.showTodo}
-								label="Show the To finish list"
+								label="Show the To finish Indicator"
 								onchange={(next) => general.setShowTodo(next)}
 							/>
 							<p class="otherhint">
-								The sidebar's list of videos with something left to do by hand. Switch it off for a
-								clean screen, while recording a demo for example; nothing on the list is lost, and it
-								comes back as it was when switched on again. Applies to every computer using flock.
+								The box in the sidebar that says whether anything is left to finish: green when
+								nothing is, an exclamation mark when something needs doing by hand, red when a post
+								did not go out. A click on it opens the list: what needs attention, and the videos with
+								steps left to do by hand.
+							</p>
+							<p class="otherhint">
+								Switch it off for a clean screen, while recording a demo for example. The list cannot
+								be opened then, but nothing on it is lost or marked done, and it comes back as it was
+								when switched on again. The worker's warning card for a post that did not go out still
+								shows on the PCs that have it. Applies to every computer using flock.
 							</p>
 
 							<TimeZoneList />
