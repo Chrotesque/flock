@@ -149,12 +149,38 @@
 	function paid(line: TodoLine) {
 		return line.paid ? PAID.on : line.paid === false ? PAID.off : PAID.unread;
 	}
+
+	/**
+	 * Instagram's entry beside YouTube's. Instagram reports no label (its API
+	 * has no such field, tested 20 Oct 2026), so this is flock's own record:
+	 * whether Open in Studio marked the label done.
+	 */
+	function igPaid(step: InstagramStep): { state: 'on' | 'off' | 'wait'; label: string; title: string } {
+		if (step.state === 'waiting') {
+			const when = goesPublic(step.at);
+			return { state: 'wait', label: 'Not out yet', title: `The reel goes out ${when || 'later'} — add its label after that` };
+		}
+		const own = "flock cannot read the label from Instagram; this is its own record, set by Open in Studio";
+		return step.state === 'done'
+			? { state: 'on', label: 'Marked done', title: `Instagram's ${INSTAGRAM_STEP} is marked done — ${own}` }
+			: { state: 'off', label: 'Not done', title: `Instagram's ${INSTAGRAM_STEP} is not marked done yet — ${own}` };
+	}
 </script>
 
 <svelte:window onkeydown={onKey} />
 
 <!-- The badge on a mark's corner: yellow while open, a green check once
      done, a grey ring while waiting. -->
+<!-- The paid-promotion circle: green ticked or done, red not, grey while
+     the reel is not out. -->
+{#snippet dollar(state: 'on' | 'off' | 'wait', size: number)}
+	<span class="paidmark {state}" style:--size="{size}px" aria-hidden="true">
+		<svg viewBox="0 0 10 10" width={Math.round(size * 0.54)} height={Math.round(size * 0.54)} fill="none">
+			<path d="M6.9 3.3C6.6 2.7 5.9 2.4 5 2.4c-1.1 0-1.9.6-1.9 1.4 0 .9.9 1.1 1.9 1.3s1.9.4 1.9 1.3c0 .8-.8 1.4-1.9 1.4-.9 0-1.6-.3-1.9-.9M5 1.3v7.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+		</svg>
+	</span>
+{/snippet}
+
 {#snippet badge(state: 'open' | 'done' | 'waiting')}
 	{#if state === 'open'}
 		<span class="badge open" aria-hidden="true"></span>
@@ -186,10 +212,39 @@
 					What needs attention comes first: click a post for its upload in the Log, retry a failed one, and
 					dismiss it once dealt with. Then what is left to do by hand on each video: the Studio button opens it in YouTube Studio and
 					counts it as done, together with the Paid partnership label of its Instagram reel, which the Instagram link beside it opens
-					(only the app can add the label); the $ is what YouTube reports about paid promotion.{#if jestr}{' '}Jestr's button goes
-						once the video is linked there.{/if}
+					(only the app can add the label). The $ is what YouTube reports about paid promotion, and for Instagram whether the label
+					was marked done here.{#if jestr}{' '}Jestr's button goes once the video is linked there.{/if}
 				</p>
 			</div>
+			<!-- What the marks and circles mean, top right (the user's request). -->
+			<aside class="legend" aria-label="What the marks mean">
+				<div class="lgroup">
+					<span class="lhead">Studio · Instagram</span>
+					<span class="lrow">
+						<span class="lsample"><span class="mark"><PlatformIcon platform="youtube" size={15} />{@render badge('open')}</span></span>
+						Left to do
+					</span>
+					<span class="lrow">
+						<span class="lsample"><span class="mark"><PlatformIcon platform="youtube" size={15} />{@render badge('done')}</span></span>
+						Done
+					</span>
+					<span class="lrow">
+						<span class="lsample"><span class="mark"><PlatformIcon platform="instagram" size={15} />{@render badge('waiting')}</span></span>
+						Reel not out yet
+					</span>
+					<span class="lrow">
+						<span class="lsample"><span class="spinner small"></span></span>
+						On its way to YouTube
+					</span>
+				</div>
+				<div class="lgroup">
+					<span class="lhead">Paid promotion</span>
+					<span class="lrow"><span class="lsample">{@render dollar('on', 18)}</span>Ticked · label marked done</span>
+					<span class="lrow"><span class="lsample">{@render dollar('off', 18)}</span>Not ticked, not read yet · not done</span>
+					<span class="lrow"><span class="lsample">{@render dollar('wait', 18)}</span>Reel not out yet</span>
+					<span class="lnote">YouTube reports its own; Instagram's is flock's record.</span>
+				</div>
+			</aside>
 			<button class="close" onclick={close} aria-label="Close To finish" title="Close (Esc)">
 				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
 					<path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
@@ -302,21 +357,27 @@
 								{/if}
 							</div>
 
-							<div class="cell">
+							<div class="cell paidcell">
 								{#if line.studioUrl}
-									<span class="paid" class:on={line.paid === true} title={p.title}>
-										<span class="paidmark" aria-hidden="true">
-											<svg viewBox="0 0 10 10" width="13" height="13" fill="none">
-												<path
-													d="M6.9 3.3C6.6 2.7 5.9 2.4 5 2.4c-1.1 0-1.9.6-1.9 1.4 0 .9.9 1.1 1.9 1.3s1.9.4 1.9 1.3c0 .8-.8 1.4-1.9 1.4-.9 0-1.6-.3-1.9-.9M5 1.3v7.4"
-													stroke="currentColor"
-													stroke-width="1.3"
-													stroke-linecap="round"
-												/>
-											</svg>
+									<!-- Each platform's entry under its mark: YouTube's as YouTube
+									     reports it, Instagram's as flock recorded it (igPaid). -->
+									<span class="paid" title={p.title}>
+										<span class="paidhead">
+											<PlatformIcon platform="youtube" size={13} />
+											{@render dollar(line.paid === true ? 'on' : 'off', 22)}
 										</span>
 										<span class="paidlabel">{p.label}</span>
 									</span>
+									{#if line.instagram}
+										{@const q = igPaid(line.instagram)}
+										<span class="paid" title={q.title}>
+											<span class="paidhead">
+												<PlatformIcon platform="instagram" size={13} />
+												{@render dollar(q.state, 22)}
+											</span>
+											<span class="paidlabel">{q.label}</span>
+										</span>
+									{/if}
 								{/if}
 							</div>
 
@@ -429,11 +490,59 @@
 		outline: none;
 	}
 
+	/* The words, the legend, the close button; the legend drops below the
+	   words where the panel is narrow. */
 	header {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto auto;
+		align-items: start;
 		gap: 20px;
+	}
+
+	.legend {
+		display: flex;
+		gap: 22px;
+		padding: 10px 16px 11px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background: var(--surface);
+		font-size: 11.5px;
+		color: var(--text-dim);
+	}
+
+	.lgroup {
+		display: grid;
+		align-content: start;
+		gap: 5px;
+	}
+
+	.lhead {
+		margin-bottom: 2px;
+		font-size: 10.5px;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.lrow {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		white-space: nowrap;
+	}
+
+	.lsample {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 22px;
+	}
+
+	.lnote {
+		margin-top: 2px;
+		font-size: 10.5px;
+		color: var(--text-faint);
 	}
 
 	h1 {
@@ -604,11 +713,11 @@
 	/* One grid for the head and every row, so the columns line up. */
 	/* The Studio cell holds YouTube's button and the reel's beside it. */
 	.table {
-		--cols: 44px minmax(0, 1fr) 120px 290px 100px;
+		--cols: 44px minmax(0, 1fr) 170px 290px 100px;
 	}
 
 	.table.nojestr {
-		--cols: 44px minmax(0, 1fr) 120px 290px;
+		--cols: 44px minmax(0, 1fr) 170px 290px;
 	}
 
 	.thead,
@@ -743,6 +852,13 @@
 	}
 
 	/* What YouTube reports: green when ticked, red when not (or not read). */
+	.cell.paidcell {
+		display: flex;
+		align-items: flex-start;
+		justify-content: center;
+		gap: 14px;
+	}
+
 	.paid {
 		display: grid;
 		justify-items: center;
@@ -750,18 +866,31 @@
 		cursor: help;
 	}
 
+	.paidhead {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+	}
+
 	.paidmark {
+		flex: none;
 		display: grid;
 		place-items: center;
-		width: 24px;
-		height: 24px;
+		width: var(--size, 24px);
+		height: var(--size, 24px);
 		border-radius: 50%;
 		background: var(--danger);
 		color: var(--bg);
 	}
 
-	.paid.on .paidmark {
+	.paidmark.on {
 		background: var(--ok);
+	}
+
+	/* The reel is not out yet: nothing to mark. */
+	.paidmark.wait {
+		background: var(--surface-3);
+		color: var(--text-faint);
 	}
 
 	.paidlabel {
@@ -921,11 +1050,34 @@
 	}
 
 	@media (max-width: 1100px) {
+		/* Narrow: the two platforms' entries stack, and the Instagram link
+		   wraps under the button, so the title keeps its room. */
 		.table {
-			--cols: 44px minmax(0, 1fr) 90px 270px 80px;
+			--cols: 44px minmax(0, 1fr) 96px 196px 80px;
 		}
 		.table.nojestr {
-			--cols: 44px minmax(0, 1fr) 90px 270px;
+			--cols: 44px minmax(0, 1fr) 96px 196px;
+		}
+		.thead,
+		li {
+			gap: 12px;
+		}
+		.cell.paidcell {
+			flex-direction: column;
+			align-items: center;
+			gap: 8px;
+		}
+		.cell.byhand {
+			flex-wrap: wrap;
+			row-gap: 6px;
+		}
+		header {
+			grid-template-columns: minmax(0, 1fr) auto;
+		}
+		.legend {
+			grid-column: 1 / -1;
+			grid-row: 2;
+			justify-self: start;
 		}
 	}
 </style>

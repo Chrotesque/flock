@@ -743,14 +743,17 @@ how many things are listed. Click it to open the list over the page.
   still ahead (the button shows the time), or at once if it has passed. A post
   the platform already has a link for is never retried.
 - Each video row has the thumbnail (hover it to see it larger), the title (opens the
-  video), whether YouTube reports paid promotion (green $ ticked, red not), and
+  video), whether YouTube reports paid promotion (green $ ticked, red not) and,
+  beside it, whether the reel's Paid partnership label was marked done here
+  (Instagram does not report it), and
   what is left by hand: the YouTube mark for Studio and, when the upload has
   an Instagram reel, the Instagram mark for its Paid partnership label (only
   the Instagram app can add it) — each a yellow dot while open, a check once
   done, a grey ring while the reel is not out yet. *Open in Studio* opens the
   video in YouTube Studio and counts both as done; the *Instagram* link beside
   it opens the reel (Instagram itself until the reel is out). Reels going out
-  from 20 Oct 2026 on are listed.
+  from 20 Oct 2026 on are listed. A legend in the list's top right says what
+  each mark and colour means.
 - From confirm until YouTube has the video, the row shows a turning ring:
   the upload went through, and YouTube is still to answer.
 - With the **Jestr integration** on (off by default; its switch is not part
