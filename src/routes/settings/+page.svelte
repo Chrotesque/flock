@@ -22,7 +22,7 @@
 	import { tagSets } from '$lib/stores/tagsets.svelte';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { VERSION } from '$lib/version';
-	import { DEVTEST_ICON, devtestActive, devtestModules } from '$lib/devtest';
+	import { DEVTEST_ICON, devtestActive, devtestDashboardSettings, devtestModules } from '$lib/devtest';
 	import type {
 		FilterRule,
 		OptionValues,
@@ -473,6 +473,14 @@
 						{:else}
 							<DashColumnsEditor />
 						{/if}
+						{#each devtestDashboardSettings as mod (mod.title)}
+							<section class="devtestmod dashlocal">
+								<h3>{mod.title} <span class="localtag">local only</span></h3>
+								{#if mod.DashboardSettings}
+									<mod.DashboardSettings />
+								{/if}
+							</section>
+						{/each}
 					{:else if active === 'devtest'}
 						<header class="panelhead">
 							<div class="ident">
@@ -731,9 +739,11 @@
 </div>
 
 <style>
+	/* Full width, as Upload: the layout's own 40px keeps it off the edges,
+	   and the panel gets all the room the window has. */
 	.page {
-		max-width: 1180px;
-		margin: 0 auto;
+		max-width: none;
+		margin: 0;
 	}
 
 	.head {
@@ -819,6 +829,31 @@
 		margin-top: 22px;
 		padding-top: 18px;
 		border-top: 1px solid var(--border);
+	}
+
+	/* A local module's part of the Dashboard section: set apart from flock's
+	   own by a dashed line in DevTest's purple, like the sidebar's local pages. */
+	.devtestmod.dashlocal {
+		margin-top: 26px;
+		padding-top: 20px;
+		border-top: 1px dashed rgba(168, 85, 247, 0.4);
+	}
+
+	.devtestmod.dashlocal + .devtestmod.dashlocal {
+		margin-top: 22px;
+		padding-top: 18px;
+		border-top: 1px solid var(--border);
+	}
+
+	.localtag {
+		margin-left: 6px;
+		padding: 1px 7px;
+		border: 1px dashed rgba(168, 85, 247, 0.5);
+		border-radius: 999px;
+		font-size: 10.5px;
+		font-weight: 500;
+		color: var(--purple);
+		vertical-align: middle;
 	}
 
 	.ident code {

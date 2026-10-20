@@ -8,7 +8,8 @@ import type { PlatformId } from './types';
  * started with the app, given a section under Settings → DevTest, named in
  * the sidebar while it is changing anything, given a sidebar link for each
  * page it brings (shown at `/devtest?page=<id>`), a button on the
- * dashboard for each scope it brings, and the keys of a flock block it reads
+ * dashboard for each scope it brings, settings of its own on Settings →
+ * Dashboard, and the keys of a flock block it reads
  * beyond what flock reads itself. With the folder empty
  * or absent there is no DevTest tab, no sidebar line or link and nothing
  * else — this file then does nothing at all.
@@ -94,6 +95,8 @@ export interface DevTestModule {
 	start?: () => void | (() => void);
 	/** Its settings, rendered under its heading. */
 	Settings?: Component;
+	/** Settings of its dashboard parts, shown under its title on Settings → Dashboard. */
+	DashboardSettings?: Component;
 	/** What it is changing right now, a short line each; read reactively. */
 	active?: () => string[];
 	/** Pages of its own, each a sidebar link under the main ones. */
@@ -143,6 +146,9 @@ export function startDevtest(): () => void {
 export function devtestActive(): string[] {
 	return devtestModules.flatMap((mod) => mod.active?.() ?? []);
 }
+
+/** The modules with settings on Settings → Dashboard, in module order. */
+export const devtestDashboardSettings: DevTestModule[] = devtestModules.filter((mod) => mod.DashboardSettings);
 
 /** Every module's dashboard scopes, in module order. */
 export const devtestDashboardScopes: DashboardScope[] = devtestModules.flatMap((mod) => mod.dashboardScopes ?? []);
