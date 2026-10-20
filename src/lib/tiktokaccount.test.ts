@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { onTikTokAccount, tiktokReportOf, tiktokStateOf } from './tiktokaccount';
+import { onTikTokAccount, tiktokRef, tiktokReportOf, tiktokStateOf } from './tiktokaccount';
 import type { FollowerState } from './followers';
 
 const chosen = { account_id: 'open-prod', handle: 'owlsnest' };
@@ -26,6 +26,27 @@ describe('onTikTokAccount', () => {
 
 	it('matches nothing by an empty handle', () => {
 		expect(onTikTokAccount({ account: 'x', handle: '' }, { account_id: 'y', handle: '' })).toBe(false);
+	});
+});
+
+describe('tiktokRef', () => {
+	const rows = [
+		{ platform: 'instagram', account_id: 'open-prod', handle: 'notthisone' },
+		{ platform: 'tiktok', account_id: 'open-prod', handle: 'owlsnest' }
+	];
+
+	it('takes the handle from the TikTok account row, so numbers under another key’s id still match', () => {
+		const ref = tiktokRef('open-prod', rows);
+		expect(ref).toEqual(chosen);
+		expect(onTikTokAccount({ account: 'open-sandbox', handle: 'owlsnest' }, ref)).toBe(true);
+		expect(tiktokStateOf([state('open-sandbox', '@owlsnest', '2026-10-20T12:00:00Z')], ref)?.account).toBe('open-sandbox');
+	});
+
+	it('matches by open id alone for an account not listed', () => {
+		const ref = tiktokRef('open-gone', rows);
+		expect(ref.handle).toBeUndefined();
+		expect(onTikTokAccount({ account: 'open-gone' }, ref)).toBe(true);
+		expect(onTikTokAccount({ account: 'open-sandbox', handle: 'owlsnest' }, ref)).toBe(false);
 	});
 });
 

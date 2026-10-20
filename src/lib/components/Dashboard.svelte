@@ -20,7 +20,7 @@
 	import { accountLabel, postAllowance } from '$lib/accounts';
 	import { LEVEL_WORDS, limitLevel, lineLevel, shortError, worstLevel, type StatusLevel } from '$lib/dashstatus';
 	import { creditedFollowers, followerSource, stateOf, type FollowerGain, type FollowerState } from '$lib/followers';
-	import { onTikTokAccount, tiktokReportOf, tiktokStateOf } from '$lib/tiktokaccount';
+	import { onTikTokAccount, tiktokRef, tiktokReportOf, tiktokStateOf } from '$lib/tiktokaccount';
 	import { COLUMNS, gridTemplate, shownColumns, type ColumnId } from '$lib/dashcolumns';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import {
@@ -280,21 +280,25 @@
 	const scope = $derived(devtestDashboardScopes.find((s) => s.active()));
 	const sets = $derived(
 		scope
-			? scope.groups().map((g) => ({
-					label: g.label,
-					colour: g.colour,
-					videos: g.channel ? videos.filter((v) => v.channelId === g.channel) : [],
-					reels: g.instagram ? igReels.filter((r) => r.account === g.instagram) : [],
-					fbReels: g.facebook ? fbReels.filter((r) => r.account === g.facebook) : [],
-					ttVideos: g.tiktok ? ttVideos.filter((r) => r.account === g.tiktok) : [],
-					posts: dashData.targets.filter((t) => t.brand === g.brand),
-					followers: [
-						stateOf(followerStates, 'youtube', g.channel ?? ''),
-						stateOf(followerStates, 'instagram', g.instagram ?? ''),
-						stateOf(followerStates, 'tiktok', g.tiktok ?? ''),
-						stateOf(followerStates, 'facebook', g.facebook ?? '')
-					].filter((s): s is FollowerState => Boolean(s))
-				}))
+			? scope.groups().map((g) => {
+					// By open id, or by handle, as for the brand in view (tiktokaccount.ts).
+					const tt = g.tiktok ? tiktokRef(g.tiktok, accounts.list) : null;
+					return {
+						label: g.label,
+						colour: g.colour,
+						videos: g.channel ? videos.filter((v) => v.channelId === g.channel) : [],
+						reels: g.instagram ? igReels.filter((r) => r.account === g.instagram) : [],
+						fbReels: g.facebook ? fbReels.filter((r) => r.account === g.facebook) : [],
+						ttVideos: tt ? ttVideos.filter((r) => onTikTokAccount(r, tt)) : [],
+						posts: dashData.targets.filter((t) => t.brand === g.brand),
+						followers: [
+							stateOf(followerStates, 'youtube', g.channel ?? ''),
+							stateOf(followerStates, 'instagram', g.instagram ?? ''),
+							tt ? tiktokStateOf(followerStates, tt) : undefined,
+							stateOf(followerStates, 'facebook', g.facebook ?? '')
+						].filter((s): s is FollowerState => Boolean(s))
+					};
+				})
 			: [
 					{
 						label: '',

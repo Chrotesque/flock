@@ -25,6 +25,19 @@ const bare = (handle: string | undefined) =>
 
 const time = (iso: string | undefined) => Date.parse(String(iso ?? '').replace(' ', 'T'));
 
+/**
+ * An account named only by its open id — a local scope's group
+ * (devtest.ts) — with its handle from the `accounts` rows, so it matches as
+ * the brand in view does. Without that, every number read under another app
+ * key's id went missing from Combined (20 Oct 2026: all of TikTok's).
+ */
+export function tiktokRef(
+	id: string,
+	rows: readonly { platform: string; account_id: string; handle?: string }[]
+): TikTokAccountRef {
+	return { account_id: id, handle: rows.find((a) => a.platform === 'tiktok' && a.account_id === id)?.handle };
+}
+
 /** Whether a read TikTok video (a `post_stats` row) is on the account. */
 export function onTikTokAccount(row: { account: string; handle?: string }, account: TikTokAccountRef): boolean {
 	if (row.account === account.account_id) return true;
