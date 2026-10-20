@@ -21,12 +21,31 @@ test('a file between 5 MB and the chunk size is one chunk of its own size', () =
 	assert.equal(plan.ranges[0].length, 10 * MiB);
 });
 
-test('the last chunk absorbs the remainder instead of becoming a short extra chunk', () => {
+test('one chunk is declared at the file size — TikTok refused a 36 MB chunk declared as 32 MB', () => {
 	const size = 50 * MiB + 123;
 	const plan = planChunks(size);
-	assert.equal(plan.chunkSize, 32 * MiB);
+	assert.equal(plan.chunkSize, size);
 	assert.equal(plan.count, 1);
 	assert.deepEqual(plan.ranges, [{ start: 0, end: size - 1, length: size }]);
+
+	const thirtySix = planChunks(36 * MiB);
+	assert.equal(thirtySix.chunkSize, 36 * MiB);
+	assert.equal(thirtySix.count, 1);
+});
+
+test('a file too big for one whole chunk that would come out as one is cut in two', () => {
+	const size = 100_000_000;
+	const plan = planChunks(size, 64 * MiB);
+	assert.equal(plan.count, 2);
+	assert.equal(plan.chunkSize, 50_000_000);
+	assert.deepEqual(plan.ranges[1], { start: 50_000_000, end: size - 1, length: 50_000_000 });
+	// Just over TikTok's 64 MB with the default chunk: two chunks, neither past it.
+	const edge = planChunks(65_000_000);
+	assert.equal(edge.count, 2);
+	assert.ok(edge.ranges.every((r) => r.length <= 64_000_000));
+});
+
+test('the last chunk absorbs the remainder instead of becoming a short extra chunk', () => {
 
 	const bigger = planChunks(70 * MiB);
 	assert.equal(bigger.count, 2);
@@ -54,6 +73,10 @@ test('ranges tile the file exactly, whatever the size', () => {
 		assert.equal(next, size);
 		// Never past TikTok's cap for the final chunk.
 		assert.ok(plan.ranges[plan.ranges.length - 1].length < 128 * MiB);
+		// One chunk is always the whole file, declared at its size.
+		if (plan.count === 1) assert.equal(plan.chunkSize, size);
+		// The declared count is the size over the chunk size, rounded down.
+		assert.equal(plan.count, Math.max(1, Math.floor(size / plan.chunkSize)));
 	}
 });
 

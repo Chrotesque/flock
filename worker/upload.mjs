@@ -46,6 +46,9 @@ export function videoMime(video, name) {
 
 export const MiB = 1024 * 1024;
 
+/** The largest file sent as one whole chunk: TikTok's 64 MB, read as decimal to be safe. */
+export const MAX_WHOLE = 64_000_000;
+
 /**
  * Cuts a file of `size` bytes into TikTok's chunks.
  *
@@ -53,12 +56,23 @@ export const MiB = 1024 * 1024;
  * divided by the chunk size rounded *down*, and the last chunk absorbs the
  * remainder (so it can run to twice the chunk size, under their 128 MB cap
  * for it). A file under 5 MB goes up as one chunk the exact size of the file.
+ * **One chunk is always declared at the file's own size**: a 36 MB file
+ * declared as a 32 MB chunk with a count of one was refused on 13 Oct 2026
+ * ("The chunk size is invalid"); a file too big for one whole chunk that
+ * would still come out as one is cut in two instead.
  * Every range is inclusive, ready for a Content-Range header.
  */
 export function planChunks(size, chunk = 32 * MiB, min = 5 * MiB) {
 	if (!Number.isInteger(size) || size <= 0) throw new Error(`Cannot chunk a file of ${size} bytes`);
-	const chunkSize = size < min ? size : Math.min(chunk, size);
-	const count = Math.max(1, Math.floor(size / chunkSize));
+	let chunkSize = size < min ? size : Math.min(chunk, size);
+	let count = Math.max(1, Math.floor(size / chunkSize));
+	if (count === 1 && chunkSize !== size) {
+		if (size <= MAX_WHOLE) chunkSize = size;
+		else {
+			chunkSize = Math.floor(size / 2);
+			count = 2;
+		}
+	}
 	const ranges = [];
 	for (let i = 0; i < count; i++) {
 		const start = i * chunkSize;
