@@ -771,9 +771,9 @@
 							? `Partly read: its sign-in lacks ${missing[0]}`
 							: counts
 								? [
-										counts.followers != null ? `${whole.format(counts.followers)} followers` : '',
-										counts.likes != null ? `${big(counts.likes)} likes` : '',
-										counts.videos != null ? `${whole.format(counts.videos)} videos` : ''
+										counts.followers != null ? `${whole.format(counts.followers)} ${followerWord('tiktok', counts.followers)}` : '',
+										counts.likes != null ? `${big(counts.likes)} ${counts.likes === 1 ? 'like' : 'likes'}` : '',
+										counts.videos != null ? `${whole.format(counts.videos)} ${counts.videos === 1 ? 'video' : 'videos'}` : ''
 									]
 										.filter(Boolean)
 										.join(' · ')

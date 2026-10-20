@@ -42,16 +42,23 @@ export function tiktokStateOf(states: FollowerState[], account: TikTokAccountRef
 	return own.filter((s) => bare(s.name) === handle).sort((a, b) => time(b.at) - time(a.at))[0];
 }
 
-/** The stats pass's line for the account (`tiktok_stats_status`): under its open id, else the newest under its handle. */
-export function tiktokReportOf<T extends { username?: string; polledAt?: string }>(
+/**
+ * The stats pass's line for the account (`tiktok_stats_status`), from the
+ * lines under its open id and under its handle: the newest that read
+ * something — a sign-in under another app key may read what the posting one
+ * may not (a sandbox demo while the live app waits for review) — else the
+ * one under its open id, else the newest.
+ */
+export function tiktokReportOf<T extends { username?: string; polledAt?: string; missing?: string[] }>(
 	reports: Record<string, T> | undefined,
 	account: TikTokAccountRef
 ): T | undefined {
 	if (!reports) return undefined;
-	if (reports[account.account_id]) return reports[account.account_id];
 	const handle = bare(account.handle);
-	if (!handle) return undefined;
-	return Object.values(reports)
-		.filter((r) => bare(r.username) === handle)
-		.sort((a, b) => time(b.polledAt) - time(a.polledAt))[0];
+	const own = Object.entries(reports)
+		.filter(([id, r]) => id === account.account_id || (handle !== '' && bare(r.username) === handle))
+		.map(([, r]) => r)
+		.sort((a, b) => time(b.polledAt) - time(a.polledAt));
+	const read = (r: T) => (r.missing ?? []).length < 2;
+	return own.find(read) ?? reports[account.account_id] ?? own[0];
 }

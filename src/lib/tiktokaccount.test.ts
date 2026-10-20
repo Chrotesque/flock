@@ -53,7 +53,21 @@ describe('tiktokReportOf', () => {
 			'open-moon': { username: 'papermoon', polledAt: '2026-10-20T12:00:00Z', posts: 1 }
 		};
 		expect(tiktokReportOf(reports, chosen)?.posts).toBe(3);
-		expect(tiktokReportOf({ ...reports, 'open-prod': { username: 'owlsnest', polledAt: '2026-10-19T00:00:00Z', posts: 9 } }, chosen)?.posts).toBe(9);
 		expect(tiktokReportOf(undefined, chosen)).toBeUndefined();
+	});
+
+	it('prefers a line that read something over the posting sign-in’s, which lacks the scopes', () => {
+		const none = ['video.list', 'user.info.stats'];
+		const reports = {
+			'open-prod': { username: 'owlsnest', polledAt: '2026-10-20T14:28:00Z', posts: 0, missing: none },
+			'open-sandbox': { username: 'owlsnest', polledAt: '2026-10-20T14:20:00Z', posts: 4, missing: [] }
+		};
+		expect(tiktokReportOf(reports, chosen)?.posts).toBe(4);
+		// Both read: the newest. Neither: the open id's.
+		expect(tiktokReportOf({ ...reports, 'open-prod': { ...reports['open-prod'], posts: 9, missing: [] } }, chosen)?.posts).toBe(9);
+		expect(
+			tiktokReportOf({ ...reports, 'open-sandbox': { ...reports['open-sandbox'], polledAt: '2026-10-20T15:00:00Z', missing: none } }, chosen)
+				?.polledAt
+		).toBe('2026-10-20T14:28:00Z');
 	});
 });

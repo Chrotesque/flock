@@ -225,7 +225,9 @@ function tiktokFacts(
 ): FactGroup[] {
 	const last = row.history?.[row.history.length - 1];
 	const num = (v: unknown) => (typeof v === 'number' ? v : null);
-	const title = typeof row.data?.title === 'string' ? row.data.title : '';
+	// TikTok gives some videos their whole caption as the title too: shown once.
+	const given = typeof row.data?.title === 'string' ? row.data.title.trim() : '';
+	const title = given && given !== row.caption.trim() ? given : '';
 	return [
 		{
 			title: 'Video',
