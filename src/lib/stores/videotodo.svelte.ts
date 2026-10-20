@@ -141,53 +141,55 @@ class VideoTodoStore {
 	}
 
 	/**
-	 * Marks one part of a line done for good, merged with the stored state
-	 * just before writing so a mark made in another browser meanwhile
-	 * survives. A failed write (no device name, PocketBase unreachable) puts
-	 * it back.
+	 * Marks parts of a line done for good, in one write, merged with the
+	 * stored state just before writing so a mark made in another browser
+	 * meanwhile survives. A failed write (no device name, PocketBase
+	 * unreachable) puts them back.
 	 */
-	async #mark(kind: TodoKind, id: string, action: string, detail: string): Promise<void> {
-		if (!this.#state) return;
-		const key = `${kind}:${id}`;
-		this.#marking = [...this.#marking, key];
+	async #mark(marks: [TodoKind, string][], action: string, detail: string): Promise<void> {
+		if (!this.#state || marks.length === 0) return;
+		const keys = marks.map(([kind, id]) => `${kind}:${id}`);
+		this.#marking = [...this.#marking, ...keys];
 		try {
 			const read = await this.#readState();
-			const next = markDone(mergeStates(read.state, this.#state), kind, id);
+			const next = marks.reduce((state, [kind, id]) => markDone(state, kind, id), mergeStates(read.state, this.#state));
 			await setSetting(TODO_KEY, next);
 			this.#state = next;
 			logAction('upload', action, detail);
 		} catch {
-			// Not saved: the line keeps this part.
+			// Not saved: the line keeps these parts.
 		} finally {
-			this.#marking = this.#marking.filter((m) => m !== key);
+			this.#marking = this.#marking.filter((m) => !keys.includes(m));
 		}
 	}
 
 	/** The Jestr button: the video is linked on Jestr. */
 	markJestr(line: TodoLine): Promise<void> {
 		return this.#mark(
-			'jestr',
-			line.id,
+			[['jestr', line.id]],
 			`Linked on Jestr: "${line.title}"`,
 			`${line.channel ? `${line.channel} · ` : ''}${line.watchUrl}`
 		);
 	}
 
-	/** The YouTube icon, when it carries Studio steps: opening Studio counts as doing them. */
-	markStudio(line: TodoLine): Promise<void> {
-		return this.#mark('studio', line.id, `Opened in Studio: "${line.title}"`, `to set ${line.studio.join(' and ')} · ${line.studioUrl}`);
-	}
-
-	/** The Instagram icon, once the reel is out: opening it counts as adding its label. */
-	markInstagram(line: TodoLine): Promise<void> {
-		const reel = line.instagram;
-		if (reel?.state !== 'open') return Promise.resolve();
-		return this.#mark(
-			'instagram',
-			reel.target,
-			`Opened on Instagram: "${line.title}"`,
-			`to add the ${INSTAGRAM_STEP} · ${reel.url}`
-		);
+	/**
+	 * The Studio button: opening the video in Studio counts its Studio steps
+	 * as done, and its reel's label too once the reel is out — the user's
+	 * call, since she does the two one after the other.
+	 */
+	markOpened(line: TodoLine): Promise<void> {
+		const reel = line.instagram?.state === 'open' ? line.instagram : null;
+		const marks: [TodoKind, string][] = [];
+		const what: string[] = [];
+		if (line.studio.length > 0) {
+			marks.push(['studio', line.id]);
+			what.push(`to set ${line.studio.join(' and ')}`);
+		}
+		if (reel) {
+			marks.push(['instagram', reel.target]);
+			what.push(`Instagram's ${INSTAGRAM_STEP} (${reel.url})`);
+		}
+		return this.#mark(marks, `Opened in Studio: "${line.title}"`, `${what.join('; ')} · ${line.studioUrl}`);
 	}
 }
 

@@ -109,21 +109,35 @@
 		return [line.channel, when].filter(Boolean).join(' · ');
 	}
 
+	/** The one button's tooltip: what opening Studio through it counts as done. */
 	function studioTitle(line: TodoLine): string {
-		return line.studio.length
-			? `Open in YouTube Studio to set ${line.studio.join(' and ')} — counts as done`
+		const label = line.instagram?.state === 'open';
+		if (line.studio.length > 0) {
+			return `Open in YouTube Studio to set ${line.studio.join(' and ')} — counts as done${
+				label ? `, and so does Instagram's ${INSTAGRAM_STEP}` : ''
+			}`;
+		}
+		return label
+			? `Open in YouTube Studio — counts Instagram's ${INSTAGRAM_STEP} as done`
 			: 'Open in YouTube Studio — nothing left to set there';
 	}
 
-	/** The Instagram button's tooltip: the label is added in the app, which flock cannot check. */
-	function instagramTitle(step: InstagramStep): string {
+	const INSTAGRAM_HOME = 'https://www.instagram.com/';
+
+	/** The Instagram mark's tooltip. */
+	function instagramMarkTitle(step: InstagramStep): string {
 		if (step.state === 'waiting') {
 			const when = goesPublic(step.at);
-			return `${when ? `Goes out ${when}` : 'Not out yet'} — add its ${INSTAGRAM_STEP} after that`;
+			return `${when ? `Goes out ${when}` : 'Not out yet'} — its ${INSTAGRAM_STEP} after that`;
 		}
-		return step.state === 'open'
-			? `Open the reel on Instagram and add the ${INSTAGRAM_STEP} in the app — counts as done`
-			: 'Open the reel on Instagram — its label was added';
+		return step.state === 'open' ? `Left on Instagram: ${INSTAGRAM_STEP}` : `Instagram: ${INSTAGRAM_STEP} done`;
+	}
+
+	/** The Instagram link's tooltip: the reel, or Instagram itself until the reel is out. */
+	function instagramLinkTitle(step: InstagramStep): string {
+		return step.url
+			? `Open the reel on Instagram — the ${INSTAGRAM_STEP} is added in the app`
+			: 'The reel is not out yet — opens Instagram';
 	}
 
 	const PAID = {
@@ -138,6 +152,22 @@
 </script>
 
 <svelte:window onkeydown={onKey} />
+
+<!-- The badge on a mark's corner: yellow while open, a green check once
+     done, a grey ring while waiting. -->
+{#snippet badge(state: 'open' | 'done' | 'waiting')}
+	{#if state === 'open'}
+		<span class="badge open" aria-hidden="true"></span>
+	{:else if state === 'done'}
+		<span class="badge done" aria-hidden="true">
+			<svg viewBox="0 0 10 10" width="8" height="8" fill="none">
+				<path d="M2.3 5.3 4.3 7.2 7.8 3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+			</svg>
+		</span>
+	{:else}
+		<span class="badge wait" aria-hidden="true"></span>
+	{/if}
+{/snippet}
 
 {#if todoPanel.open}
 	<section
@@ -155,8 +185,8 @@
 				<p class="sub">
 					What needs attention comes first: click a post for its upload in the Log, retry a failed one, and
 					dismiss it once dealt with. Then what is left to do by hand on each video: the Studio button opens it in YouTube Studio and
-					counts as done, and the Instagram one opens its reel, for the Paid partnership label only the app can add; the $ is what
-					YouTube reports about paid promotion.{#if jestr}{' '}Jestr's button goes
+					counts it as done, together with the Paid partnership label of its Instagram reel, which the Instagram link beside it opens
+					(only the app can add the label); the $ is what YouTube reports about paid promotion.{#if jestr}{' '}Jestr's button goes
 						once the video is linked there.{/if}
 				</p>
 			</div>
@@ -292,85 +322,56 @@
 
 							<div class="cell byhand">
 								{#if line.studioUrl}
-									<!-- The logo is never altered (YouTube's branding rules): a
-									     badge on its corner says the state, yellow until Studio
-									     was opened through here, then a green check. -->
+									{@const ig = line.instagram}
+									{@const open = line.studio.length > 0 || ig?.state === 'open'}
+									<!-- What is left, as the platforms' own marks with a badge on
+									     the corner (a logo is never altered — YouTube's branding
+									     rules): yellow while open, a green check once done, a grey
+									     ring while the reel is not out yet. Not buttons. -->
+									<span class="marks">
+										<span class="mark" title={line.studio.length > 0 ? `Left in Studio: ${line.studio.join(', ')}` : 'Studio done'}>
+											<PlatformIcon platform="youtube" size={18} />
+											{@render badge(line.studio.length > 0 ? 'open' : 'done')}
+										</span>
+										{#if ig}
+											<span class="mark" title={instagramMarkTitle(ig)}>
+												<PlatformIcon platform="instagram" size={18} />
+												{@render badge(ig.state)}
+											</span>
+										{/if}
+									</span>
+									<!-- One button for both (the user's call, 20 Oct 2026): it opens
+									     the video in Studio, and the Studio steps and the reel's
+									     label count as done. -->
 									<a
 										class="studio"
-										class:done={line.studio.length === 0}
+										class:done={!open}
 										href={line.studioUrl}
 										target="_blank"
 										rel="noopener"
 										title={studioTitle(line)}
 										onclick={() => {
-											if (line.studio.length) void videoTodo.markStudio(line);
+											if (open) void videoTodo.markOpened(line);
 										}}
 									>
-										<span class="yt">
-											<PlatformIcon platform="youtube" size={18} />
-											{#if line.studio.length > 0}
-												<span class="badge open" aria-hidden="true"></span>
-											{:else}
-												<span class="badge done" aria-hidden="true">
-													<svg viewBox="0 0 10 10" width="8" height="8" fill="none">
-														<path
-															d="M2.3 5.3 4.3 7.2 7.8 3.2"
-															stroke="currentColor"
-															stroke-width="1.7"
-															stroke-linecap="round"
-															stroke-linejoin="round"
-														/>
-													</svg>
-												</span>
-											{/if}
-										</span>
-										{line.studio.length > 0 ? 'Open in Studio' : 'Studio done'}
+										{open ? 'Open in Studio' : 'Studio done'}
 									</a>
-								{:else}
-									<span class="spinner" role="status" title={line.waiting ?? ''} aria-label={line.waiting ?? ''}></span>
-								{/if}
-								{#if line.instagram}
-									{@const ig = line.instagram}
-									<!-- The same upload's reel, for the label only the app adds
-									     (videotodo.ts): opening it through here is the record. -->
-									{#if ig.state === 'waiting'}
-										<span class="studio waiting" title={instagramTitle(ig)}>
-											<span class="yt"><PlatformIcon platform="instagram" size={18} /></span>
-											Add label
-										</span>
-									{:else}
-										<a
-											class="studio"
-											class:done={ig.state === 'done'}
-											href={ig.url}
-											target="_blank"
-											rel="noopener"
-											title={instagramTitle(ig)}
-											onclick={() => {
-												if (ig.state === 'open') void videoTodo.markInstagram(line);
-											}}
-										>
-											<span class="yt">
-												<PlatformIcon platform="instagram" size={18} />
-												{#if ig.state === 'open'}
-													<span class="badge open" aria-hidden="true"></span>
-												{:else}
-													<span class="badge done" aria-hidden="true">
-														<svg viewBox="0 0 10 10" width="8" height="8" fill="none">
-															<path
-																d="M2.3 5.3 4.3 7.2 7.8 3.2"
-																stroke="currentColor"
-																stroke-width="1.7"
-																stroke-linecap="round"
-																stroke-linejoin="round"
-															/>
-														</svg>
-													</span>
-												{/if}
-											</span>
-											{ig.state === 'open' ? 'Add label' : 'Label done'}
+									{#if ig}
+										<a class="iglink" href={ig.url || INSTAGRAM_HOME} target="_blank" rel="noopener" title={instagramLinkTitle(ig)}>
+											Instagram
+											<svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true">
+												<path
+													d="M4.5 2.5h5v5M9.3 2.7 3 9"
+													stroke="currentColor"
+													stroke-width="1.4"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+												/>
+											</svg>
 										</a>
 									{/if}
+								{:else}
+									<span class="spinner" role="status" title={line.waiting ?? ''} aria-label={line.waiting ?? ''}></span>
 								{/if}
 							</div>
 
@@ -772,7 +773,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 9px;
-		padding: 7px 14px 7px 10px;
+		padding: 7px 14px;
 		border-radius: 999px;
 		border: 1px solid rgba(251, 191, 36, 0.45);
 		background: rgba(251, 191, 36, 0.08);
@@ -802,22 +803,37 @@
 
 	.cell.byhand {
 		display: flex;
+		align-items: center;
 		justify-content: center;
-		gap: 8px;
+		gap: 12px;
 	}
 
-	/* A reel not out yet: nothing to label until it is. */
-	.studio.waiting {
-		border-color: var(--border);
-		background: none;
-		color: var(--text-faint);
-		cursor: default;
-		opacity: 0.6;
+	.marks {
+		display: inline-flex;
+		align-items: center;
+		gap: 13px;
 	}
 
-	.yt {
+	.mark {
 		position: relative;
 		display: grid;
+	}
+
+	/* The reel's own page, beside the button: no record, just the way there. */
+	.iglink {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--text-dim);
+		text-decoration: none;
+		white-space: nowrap;
+	}
+
+	.iglink:hover {
+		color: var(--text);
+		text-decoration: underline;
 	}
 
 	.badge {
@@ -841,6 +857,14 @@
 		height: 11px;
 		background: var(--ok);
 		color: var(--bg);
+	}
+
+	/* The reel is not out yet. */
+	.badge.wait {
+		width: 8px;
+		height: 8px;
+		background: var(--surface);
+		border: 1.5px solid var(--text-faint);
 	}
 
 	.jbtn {
