@@ -122,22 +122,15 @@
 			: 'Open in YouTube Studio — nothing left to set there';
 	}
 
-	const INSTAGRAM_HOME = 'https://www.instagram.com/';
-
-	/** The Instagram mark's tooltip. */
+	/** The Instagram mark's tooltip. The label is added on a phone: Instagram's app, not its website. */
 	function instagramMarkTitle(step: InstagramStep): string {
 		if (step.state === 'waiting') {
 			const when = goesPublic(step.at);
 			return `${when ? `Goes out ${when}` : 'Not out yet'} — its ${INSTAGRAM_STEP} after that`;
 		}
-		return step.state === 'open' ? `Left on Instagram: ${INSTAGRAM_STEP}` : `Instagram: ${INSTAGRAM_STEP} done`;
-	}
-
-	/** The Instagram link's tooltip: the reel, or Instagram itself until the reel is out. */
-	function instagramLinkTitle(step: InstagramStep): string {
-		return step.url
-			? `Open the reel on Instagram — the ${INSTAGRAM_STEP} is added in the app`
-			: 'The reel is not out yet — opens Instagram';
+		return step.state === 'open'
+			? `Left on Instagram: ${INSTAGRAM_STEP} — added in the Instagram app on a phone`
+			: `Instagram: ${INSTAGRAM_STEP} done`;
 	}
 
 	const PAID = {
@@ -211,8 +204,8 @@
 				<p class="sub">
 					What needs attention comes first: click a post for its upload in the Log, retry a failed one, and
 					dismiss it once dealt with. Then what is left to do by hand on each video: the Studio button opens it in YouTube Studio and
-					counts it as done, together with the Paid partnership label of its Instagram reel, which the Instagram link beside it opens
-					(only the app can add the label). The $ is what YouTube reports about paid promotion, and for Instagram whether the label
+					counts it as done, together with the Paid partnership label of its Instagram reel (added in the Instagram app on a
+					phone; the website cannot). The $ is what YouTube reports about paid promotion, and for Instagram whether the label
 					was marked done here.{#if jestr}{' '}Jestr's button goes once the video is linked there.{/if}
 				</p>
 			</div>
@@ -417,20 +410,6 @@
 									>
 										{open ? 'Open in Studio' : 'Studio done'}
 									</a>
-									{#if ig}
-										<a class="iglink" href={ig.url || INSTAGRAM_HOME} target="_blank" rel="noopener" title={instagramLinkTitle(ig)}>
-											Instagram
-											<svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true">
-												<path
-													d="M4.5 2.5h5v5M9.3 2.7 3 9"
-													stroke="currentColor"
-													stroke-width="1.4"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-												/>
-											</svg>
-										</a>
-									{/if}
 								{:else}
 									<span class="spinner" role="status" title={line.waiting ?? ''} aria-label={line.waiting ?? ''}></span>
 								{/if}
@@ -713,11 +692,11 @@
 	/* One grid for the head and every row, so the columns line up. */
 	/* The Studio cell holds YouTube's button and the reel's beside it. */
 	.table {
-		--cols: 44px minmax(0, 1fr) 170px 290px 100px;
+		--cols: 44px minmax(0, 1fr) 170px 210px 100px;
 	}
 
 	.table.nojestr {
-		--cols: 44px minmax(0, 1fr) 170px 290px;
+		--cols: 44px minmax(0, 1fr) 170px 210px;
 	}
 
 	.thead,
@@ -948,23 +927,6 @@
 		display: grid;
 	}
 
-	/* The reel's own page, beside the button: no record, just the way there. */
-	.iglink {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		font-size: 12px;
-		font-weight: 600;
-		color: var(--text-dim);
-		text-decoration: none;
-		white-space: nowrap;
-	}
-
-	.iglink:hover {
-		color: var(--text);
-		text-decoration: underline;
-	}
-
 	.badge {
 		position: absolute;
 		top: -3px;
@@ -1050,13 +1012,13 @@
 	}
 
 	@media (max-width: 1100px) {
-		/* Narrow: the two platforms' entries stack, and the Instagram link
-		   wraps under the button, so the title keeps its room. */
+		/* Narrow: the two platforms' entries stack, and the button wraps
+		   under the marks if it must, so the title keeps its room. */
 		.table {
-			--cols: 44px minmax(0, 1fr) 96px 196px 80px;
+			--cols: 44px minmax(0, 1fr) 96px 180px 80px;
 		}
 		.table.nojestr {
-			--cols: 44px minmax(0, 1fr) 96px 196px;
+			--cols: 44px minmax(0, 1fr) 96px 180px;
 		}
 		.thead,
 		li {

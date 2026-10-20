@@ -140,8 +140,9 @@ Good to know:
   A channel connected before flock asked for Analytics (0.16.40) keeps flock's
   own estimate until it is connected again.
 - **Thumbnails and paid promotion are set in YouTube Studio**, not by flock,
-  and **Instagram's Paid partnership label in the Instagram app**. *To finish*
-  in the sidebar links each video's Studio page and its reel.
+  and **Instagram's Paid partnership label in the Instagram app** on a phone.
+  *To finish* in the sidebar links each video's Studio page and reminds of the
+  label.
 - **Stats cost API quota.** The Dashboard's YouTube numbers come from the
   newest 50 videos, read every 30 seconds, and each channel's subscriber count,
   read every 10 minutes: under half the daily quota that uploads also use. `statsSeconds`, `statsVideos` and `statsBudget` in the
@@ -750,9 +751,9 @@ how many things are listed. Click it to open the list over the page.
   an Instagram reel, the Instagram mark for its Paid partnership label (only
   the Instagram app can add it) — each a yellow dot while open, a check once
   done, a grey ring while the reel is not out yet. *Open in Studio* opens the
-  video in YouTube Studio and counts both as done; the *Instagram* link beside
-  it opens the reel (Instagram itself until the reel is out). Reels going out
-  from 20 Oct 2026 on are listed. A legend in the list's top right says what
+  video in YouTube Studio and counts both as done; the label itself is added
+  in the Instagram app on a phone (the website cannot). Reels going out from
+  20 Oct 2026 on are listed. A legend in the list's top right says what
   each mark and colour means.
 - From confirm until YouTube has the video, the row shows a turning ring:
   the upload went through, and YouTube is still to answer.
