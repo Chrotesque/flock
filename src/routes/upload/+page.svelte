@@ -846,6 +846,10 @@
 		color: var(--danger);
 	}
 
+	.banner a {
+		color: var(--pink-soft);
+	}
+
 	.notes {
 		display: flex;
 		align-items: center;

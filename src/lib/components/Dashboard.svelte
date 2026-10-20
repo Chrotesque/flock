@@ -1904,6 +1904,10 @@
 		border-color: rgba(248, 113, 113, 0.4);
 	}
 
+	.banner a {
+		color: var(--pink-soft);
+	}
+
 	.legend span,
 	.split span,
 	.parts span,
