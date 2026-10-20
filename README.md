@@ -578,7 +578,7 @@ press Esc or go to another page to close it. For the brand in view it shows:
 
 - **One filter for all of it:** the timeframe (the last 30 days by default,
   up to 180), which platforms (all of them is *Combined*), which kinds (Shorts,
-  long form, live) and whether unlisted and private videos are shown. Every
+  long form, live) and whether unlisted, private and hidden videos are shown. Every
   number on the page counts only the videos out in the timeframe. Click it to
   change it; the choice is kept per browser.
 - **Today, this week, this month, this quarter and this year:** videos out,
@@ -625,6 +625,14 @@ press Esc or go to another page to close it. For the brand in view it shows:
   (51 units of the day's quota); on Facebook the caption's first line is the
   name and the rest of the caption stays. Instagram and TikTok are listed but
   cannot be ticked: neither lets an app change a post once it is out.
+- **Hiding a video**, a test post say: in edit mode, press the eye in front of
+  its title. It leaves the list, the totals, the periods and what counts as
+  usual, for every browser; *Undo* in the pink banner brings the last one back.
+  The eye hides the video's posts on the platforms in view: with all of them
+  (*Combined*) that is the whole video, with one platform chosen only its post
+  there — the way to take a test reel off a real Short it was paired with by
+  time. *Hidden* in the filter shows hidden videos, faded, without showing
+  them again; press their (shut) eye to bring one back for good.
 - **Jestr campaigns**, with the Jestr integration on: a *Jestr* column ticks
   the videos that are campaign videos. An upload is marked with the *Jestr
   campaign* box on the Details step (shown for YouTube, Instagram and TikTok);

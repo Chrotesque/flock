@@ -33,13 +33,15 @@
 		allKinds ? 'All kinds' : filter.kinds.length === 0 ? 'No kinds' : filter.kinds.map((k) => KIND_LABELS[k]).join(', ')
 	);
 	const visibilityWords = $derived(
-		filter.unlisted && filter.private
+		(filter.unlisted && filter.private
 			? 'Any visibility'
 			: filter.unlisted
 				? 'Public + unlisted'
 				: filter.private
 					? 'Public + private'
-					: 'Public only'
+					: filter.hidden
+						? 'Public'
+						: 'Public only') + (filter.hidden ? ' + hidden' : '')
 	);
 
 	function togglePlatform(p: StatPlatform) {
@@ -196,6 +198,16 @@
 						<span class="name">Private</span>
 						<span class="count">{counts.private}</span>
 					</button>
+					<button
+						class="chip"
+						class:on={filter.hidden}
+						aria-pressed={filter.hidden}
+						onclick={() => (filter = { ...filter, hidden: !filter.hidden })}
+						title="Videos hidden with the eye in Edit mode — shown here without showing them again for good"
+					>
+						<span class="name">Hidden</span>
+						<span class="count">{counts.hidden}</span>
+					</button>
 				</div>
 			</section>
 
@@ -203,7 +215,8 @@
 				<p>
 					The timeframe counts videos by when they went out, scheduled ones still to come included; every number on the
 					page, "usual" too, is over those. Shorts are under three minutes, long form over and not live. A reel with no
-					YouTube video beside it counts as a Short. Visibility is YouTube's; reels are public.
+					YouTube video beside it counts as a Short. Visibility is YouTube's; reels are public. Hidden videos are those
+					hidden in Edit mode; shown, they count like the rest, but never towards "usual".
 				</p>
 				{#if changed}
 					<button class="link" onclick={reset}>Reset</button>

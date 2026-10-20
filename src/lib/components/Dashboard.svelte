@@ -12,8 +12,10 @@
 	import { devtestDashboardScopes } from '$lib/devtest';
 	import { general } from '$lib/stores/general.svelte';
 	import { jestrCampaigns } from '$lib/stores/jestrcampaigns.svelte';
+	import { hiddenVideos } from '$lib/stores/hiddenvideos.svelte';
 	import { titleRequests } from '$lib/stores/titlerequests.svelte';
 	import { flaggedPosts, isCampaign, type CampaignPosts } from '$lib/jestrcampaign';
+	import { releasesWithHidden } from '$lib/hiddenvideos';
 	import { newestByPost, renameChoices, renameNotes, type RenameChoice } from '$lib/retitle';
 	import { accountLabel, postAllowance } from '$lib/accounts';
 	import { LEVEL_WORDS, limitLevel, lineLevel, shortError, worstLevel, type StatusLevel } from '$lib/dashstatus';
@@ -37,7 +39,6 @@
 	import {
 		ALL_PLATFORMS,
 		PLATFORM_COLOURS,
-		buildReleases,
 		curve,
 		filterCounts,
 		inView,
@@ -203,6 +204,8 @@
 		});
 		void jestrCampaigns.load().catch(() => {});
 		const stopMarks = jestrCampaigns.subscribe();
+		void hiddenVideos.load().catch(() => {});
+		const stopHidden = hiddenVideos.subscribe();
 		void titleRequests.load();
 		const stopRenames = titleRequests.subscribe();
 		const stopReels = subscribeReels((reel, action) => {
@@ -221,6 +224,7 @@
 			window.removeEventListener('focus', onFocus);
 			stopStats();
 			stopMarks();
+			stopHidden();
 			stopRenames();
 			stopReels();
 			stopTargets();
@@ -292,10 +296,11 @@
 	const followersInView = $derived(sets.flatMap((set) => set.followers));
 	const noChannel = $derived(!scope && accounts.loaded && !channel && !loneYT);
 
-	// Each set's videos and reels pair only among themselves.
+	// Each set's videos and reels pair only among themselves, and the hidden
+	// ones (hiddenvideos.ts) only with each other.
 	const releases = $derived(
 		sets.flatMap((set) =>
-			buildReleases(set.videos, set.reels, set.posts, set.fbReels).map((r) =>
+			releasesWithHidden(set.videos, set.reels, set.posts, set.fbReels, hiddenVideos.marks).map((r) =>
 				sets.length > 1 ? { ...r, group: set.label, tint: set.colour } : r
 			)
 		)
@@ -474,6 +479,7 @@
 		if (editing) {
 			editing = false;
 			renaming = null;
+			lastHidden = null;
 			disarmEdit();
 			return;
 		}
@@ -508,6 +514,40 @@
 	function toggleCampaign(r: Release) {
 		if (!markable(r)) return;
 		void jestrCampaigns.set(campaignPosts(r), !campaigns.has(r.key), r.title);
+	}
+
+	/*
+	 * Hiding (hiddenvideos.ts): the eye hides a row's posts on the platforms
+	 * in view — every post in the combined view, so the whole video; with
+	 * one platform chosen only that platform's, which is how a test reel
+	 * paired by time with a real Short comes off it. The row goes unless the
+	 * filter shows hidden ones, so the last hide can be undone from the
+	 * banner.
+	 */
+	let lastHidden = $state<{ posts: Post[]; title: string } | null>(null);
+
+	async function toggleHidden(row: Row) {
+		const { posts, release } = row;
+		const hide = !release.hidden;
+		lastHidden = null;
+		// Offered only once it is saved: a refused hide puts the row back by itself.
+		if ((await hiddenVideos.set(posts, hide, release.title)) && hide) lastHidden = { posts, title: release.title };
+	}
+
+	function undoHide() {
+		if (!lastHidden) return;
+		void hiddenVideos.set(lastHidden.posts, false, lastHidden.title);
+		lastHidden = null;
+	}
+
+	function eyeTitle(row: Row): string {
+		const r = row.release;
+		const all = Object.keys(r.posts).length;
+		const where = row.posts.map((p) => PLATFORMS[p.platform].label).join(' and ');
+		if (r.hidden) return `Hidden — show it on the Dashboard again${row.posts.length < all ? ` (on ${where}, the platforms in view)` : ''}`;
+		return row.posts.length < all
+			? `Hide its ${where} post from the Dashboard — only the platforms in view; the rest stays`
+			: 'Hide this video from the Dashboard: from the list, the totals, the periods and the usual';
 	}
 
 	const totals = $derived.by(() => {
@@ -959,6 +999,9 @@
 				{#if visibility !== 'public'}
 					<span class="dot">·</span><span class="priv {visibility}">{visibility}</span>
 				{/if}
+				{#if r.hidden}
+					<span class="dot">·</span><span class="hid" title="Hidden in Edit mode: shown only while the filter's Hidden is on, and never part of the usual">hidden</span>
+				{/if}
 				<span class="dot">·</span>
 				<span class="marks" title={matchWords(r)}>
 					{#each ALL_PLATFORMS.filter((p) => r.links[p]) as p (p)}
@@ -1120,7 +1163,7 @@
 					? 'Stop editing'
 					: editArmed
 						? 'Press again to edit'
-						: `Rename videos${jestrOn ? ' and mark Jestr campaigns' : ''} (press twice)`}
+						: `Rename or hide videos${jestrOn ? ', mark Jestr campaigns' : ''} (press twice)`}
 			>
 				{#if editing}
 					<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect class="fill" x="3.5" y="3.5" width="9" height="9" rx="1.5" /></svg>
@@ -1233,10 +1276,16 @@
 	{#if editing}
 		<p class="banner editing">
 			<strong>EDITING VIDEOS</strong> — Press the pencil beside a title to rename that video on every platform it
-			is on, or on some only; the worker renames it within seconds.
+			is on, or on some only; the worker renames it within seconds. The eye hides a video from the Dashboard —
+			the list, the totals, the periods and the usual; <em>Hidden</em> in the filter shows hidden ones without showing
+			them again for good.
 			{#if jestrOn}Click a video to mark it as a Jestr campaign, or to take the mark off.{/if}
 			Press <strong>■</strong> when finished.
+			{#if lastHidden && !filter.hidden}
+				<span class="undo">Hid “{lastHidden.title}” <button onclick={undoHide}>Undo</button></span>
+			{/if}
 			{#if jestrCampaigns.error}<span class="bad">Not saved: {jestrCampaigns.error}</span>{/if}
+			{#if hiddenVideos.error}<span class="bad">Not saved: {hiddenVideos.error}</span>{/if}
 		</p>
 	{/if}
 
@@ -1262,8 +1311,8 @@
 			{@const r = row.release}
 			{@const campaign = campaigns.has(r.key)}
 			{@const marking = editing && jestrOn}
-			<div class="item" class:open={openKey === r.key} class:tinted={Boolean(r.tint)} style:--tint={r.tint}>
-				<!-- The pencil sits over the row, not in it: a button cannot hold another. -->
+			<div class="item" class:open={openKey === r.key} class:tinted={Boolean(r.tint)} class:hiddenvideo={r.hidden} style:--tint={r.tint}>
+				<!-- The pencil and the eye sit over the row, not in it: a button cannot hold another. -->
 				<div class="line">
 					<button
 						class="row"
@@ -1278,6 +1327,22 @@
 						<button class="rename" onclick={() => openRename(r)} title="Rename this video" aria-label="Rename “{r.title}”">
 							<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
 								<path d="M10.6 2.6 13.4 5.4 5.6 13.2H2.8V10.4zM9.1 4.1 11.9 6.9" />
+							</svg>
+						</button>
+						<button
+							class="eye"
+							class:shut={r.hidden}
+							onclick={() => toggleHidden(row)}
+							title={eyeTitle(row)}
+							aria-label={r.hidden ? `Show “${r.title}” again` : `Hide “${r.title}”`}
+						>
+							<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+								{#if r.hidden}
+									<path d="M2 6.6s2.2 3.4 6 3.4 6-3.4 6-3.4M4.1 9.3 3 10.9M8 10v1.9M11.9 9.3l1.1 1.6" />
+								{:else}
+									<path d="M1.6 8S4 3.8 8 3.8 14.4 8 14.4 8 12 12.2 8 12.2 1.6 8 1.6 8z" />
+									<circle cx="8" cy="8" r="2.1" />
+								{/if}
 							</svg>
 						</button>
 					{/if}
@@ -2098,8 +2163,9 @@
 		position: relative;
 	}
 
+	/* Room for the pencil and the eye before the title. */
 	.editing .line .vid {
-		padding-left: 32px;
+		padding-left: 60px;
 	}
 
 	.rename {
@@ -2140,6 +2206,66 @@
 		stroke-width: 1.5;
 		stroke-linecap: round;
 		stroke-linejoin: round;
+	}
+
+	/* The eye, right before the title: open while the video is shown, shut once hidden. */
+	.eye {
+		position: absolute;
+		top: 50%;
+		left: calc(16px + var(--thumbcol) + 12px + 28px);
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		transform: translateY(-50%);
+		border: 1px solid var(--border-strong);
+		border-radius: 7px;
+		background: var(--surface);
+		color: var(--text-dim);
+		transition:
+			border-color 0.14s,
+			background 0.14s,
+			color 0.14s;
+	}
+
+	.nothumb .eye {
+		left: calc(16px + 28px);
+	}
+
+	.eye:hover {
+		border-color: var(--pink);
+		color: var(--text);
+	}
+
+	.eye.shut {
+		border-color: var(--warn);
+		background: color-mix(in srgb, var(--warn) 16%, transparent);
+		color: var(--warn);
+	}
+
+	.eye svg path,
+	.eye svg circle {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.4;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.banner.editing .undo {
+		margin-left: 8px;
+		padding: 1px 4px 1px 8px;
+		border-radius: 6px;
+		background: var(--bg);
+		color: var(--text);
+	}
+
+	.banner.editing .undo button {
+		margin-left: 4px;
+		padding: 0 4px;
+		font: inherit;
+		font-weight: 700;
+		color: var(--pink-soft);
 	}
 
 	.rnote {
@@ -2282,6 +2408,21 @@
 
 	.priv.private {
 		color: var(--danger);
+	}
+
+	.hid {
+		font-weight: 650;
+		color: var(--warn);
+	}
+
+	/* A hidden video, shown by the filter: its picture and title fade. Never
+	   the platform marks — their brands forbid greying them. */
+	.item.hiddenvideo img.thumb {
+		opacity: 0.4;
+	}
+
+	.item.hiddenvideo .vtitle {
+		color: var(--text-faint);
 	}
 
 	.cell {

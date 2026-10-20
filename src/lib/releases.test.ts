@@ -302,6 +302,9 @@ describe('the filter', () => {
 			kinds: ['short']
 		});
 		expect(readFilter({ platforms: ['instagram', 'tiktok'] }).platforms).toEqual(['instagram']);
+		// Stored before there was a Hidden choice, and after.
+		expect(readFilter({ unlisted: true }).hidden).toBe(false);
+		expect(readFilter({ hidden: true }).hidden).toBe(true);
 	});
 
 	it('keeps a timeframe from the list, 30 days otherwise', () => {

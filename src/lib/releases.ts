@@ -253,6 +253,8 @@ export interface Release {
 	group?: string;
 	/** That group's colour, if it has one. */
 	tint?: string;
+	/** Hidden from the Dashboard (hiddenvideos.ts): shown only with the filter's Hidden. */
+	hidden?: boolean;
 }
 
 /** The 11-character video id in a YouTube link; '' when there is none. */
@@ -401,6 +403,8 @@ export interface DashFilter {
 	unlisted: boolean;
 	/** Show private ones — a scheduled upload is private until its slot. */
 	private: boolean;
+	/** Show the videos hidden in Edit mode (hiddenvideos.ts), without showing them again for good. */
+	hidden: boolean;
 	/** How far back the page looks, in days (DASH_SPANS): every number on it counts only releases since. */
 	days: number;
 }
@@ -413,6 +417,7 @@ export const DEFAULT_FILTER: DashFilter = {
 	kinds: [...KIND_ORDER],
 	unlisted: false,
 	private: false,
+	hidden: false,
 	days: 30
 };
 
@@ -441,6 +446,7 @@ export function readFilter(raw: unknown): DashFilter {
 		kinds: kinds ?? [...DEFAULT_FILTER.kinds],
 		unlisted: typeof r.unlisted === 'boolean' ? r.unlisted : DEFAULT_FILTER.unlisted,
 		private: typeof r.private === 'boolean' ? r.private : DEFAULT_FILTER.private,
+		hidden: typeof r.hidden === 'boolean' ? r.hidden : DEFAULT_FILTER.hidden,
 		days: DASH_SPANS.includes(Number(r.days)) ? Number(r.days) : DEFAULT_FILTER.days
 	};
 }
@@ -472,13 +478,19 @@ function visible(release: Release, filter: DashFilter): boolean {
 }
 
 export function inView(release: Release, filter: DashFilter): boolean {
-	return onPlatforms(release, filter.platforms) && filter.kinds.includes(release.kind) && visible(release, filter);
+	return (
+		onPlatforms(release, filter.platforms) &&
+		filter.kinds.includes(release.kind) &&
+		visible(release, filter) &&
+		(!release.hidden || filter.hidden)
+	);
 }
 
 export interface FilterCounts {
 	kinds: Record<VideoKind, number>;
 	unlisted: number;
 	private: number;
+	hidden: number;
 	platforms: Record<StatPlatform, number>;
 }
 
@@ -488,9 +500,15 @@ export function filterCounts(releases: Release[], filter: DashFilter): FilterCou
 		kinds: { short: 0, long: 0, live: 0, other: 0 },
 		unlisted: 0,
 		private: 0,
+		hidden: 0,
 		platforms: { youtube: 0, instagram: 0, facebook: 0 }
 	};
 	for (const r of releases) {
+		if (r.hidden) {
+			if (onPlatforms(r, filter.platforms) && filter.kinds.includes(r.kind) && visible(r, filter)) out.hidden += 1;
+			// Counted nowhere else until the filter shows them.
+			if (!filter.hidden) continue;
+		}
 		if (onPlatforms(r, filter.platforms) && visible(r, filter)) out.kinds[r.kind] += 1;
 		if (onPlatforms(r, filter.platforms) && filter.kinds.includes(r.kind)) {
 			const v = visibilityOf(r, filter.platforms);
@@ -535,11 +553,14 @@ export interface Judgement {
 	verdict: Verdict | null;
 }
 
-/** Peers by platform and kind: public posts only, so a private test never sets the bar. */
+/**
+ * Peers by platform and kind: public posts only, and none hidden, so a
+ * private or hidden test never sets the bar — whatever the filter shows.
+ */
 export function peerGroups(releases: Release[]): Map<string, Post[]> {
 	const out = new Map<string, Post[]>();
 	for (const r of releases) {
-		if (r.privacy !== 'public') continue;
+		if (r.privacy !== 'public' || r.hidden) continue;
 		for (const p of STAT_PLATFORMS) {
 			const post = r.posts[p];
 			if (!post) continue;
