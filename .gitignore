@@ -20,6 +20,8 @@ scripts/.pb-creds.json
 worker/.worker-config.json
 # The TikTok demo's own config (scripts/tiktok-demo.mjs): sandbox key, secret and tokens
 worker/.worker-config.demo.json
+# A machine's scheduled demo read: its launcher and last run's output
+worker/.tiktok-demo-read.*
 
 # The zipped site folder made for uploading to the static host
 site/*.zip
