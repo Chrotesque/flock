@@ -1,4 +1,5 @@
 import type { Component } from 'svelte';
+import type { PlatformId } from './types';
 
 /**
  * local-devtest: test extensions that live only on the machine that builds
@@ -6,8 +7,9 @@ import type { Component } from 'svelte';
  * with the repository) whose default export is a `DevTestModule` is built in:
  * started with the app, given a section under Settings → DevTest, named in
  * the sidebar while it is changing anything, given a sidebar link for each
- * page it brings (shown at `/devtest?page=<id>`) and a button on the
- * dashboard for each scope it brings. With the folder empty
+ * page it brings (shown at `/devtest?page=<id>`), a button on the
+ * dashboard for each scope it brings, and the keys of a flock block it reads
+ * beyond what flock reads itself. With the folder empty
  * or absent there is no DevTest tab, no sidebar line or link and nothing
  * else — this file then does nothing at all.
  */
@@ -64,6 +66,23 @@ export interface DashboardScope {
 	BrandMenu?: Component<{ brand: string; x: number; y: number; close: () => void }>;
 }
 
+/** The values of a module's keys, per platform entry of a flock block. */
+export type PasteValues = Partial<Record<PlatformId, Record<string, unknown>>>;
+
+/**
+ * More of a flock block (flockpaste.ts) than flock reads: keys a module reads
+ * in a platform's entry. flock does not call them ignored, and hands their
+ * values to `apply` right after the block filled the draft — pasted, or a
+ * project opened or filled again — or, with `resumed`, after a project's
+ * saved draft was put back (it keeps only what flock keeps).
+ */
+export interface PasteReader {
+	/** The keys it reads, per platform entry. */
+	keys: Partial<Record<PlatformId, readonly string[]>>;
+	/** Fills the draft from the block's values of its keys; notes for the paste notice. */
+	apply: (values: PasteValues, how: { resumed: boolean }) => string[] | void;
+}
+
 export interface DevTestModule {
 	/** Its heading under Settings → DevTest. */
 	title: string;
@@ -77,6 +96,8 @@ export interface DevTestModule {
 	pages?: DevTestPage[];
 	/** Buttons beside the dashboard's brands (see DashboardScope). */
 	dashboardScopes?: DashboardScope[];
+	/** Keys of a flock block it reads (see PasteReader). */
+	pasteReader?: PasteReader;
 }
 
 // Whole modules rather than `import: 'default'`, so a helper file with no
@@ -116,3 +137,27 @@ export function devtestActive(): string[] {
 
 /** Every module's dashboard scopes, in module order. */
 export const devtestDashboardScopes: DashboardScope[] = devtestModules.flatMap((mod) => mod.dashboardScopes ?? []);
+
+/** The keys local modules read in a flock block's entry for `platform`. */
+export function devtestPasteKeys(platform: PlatformId): string[] {
+	return devtestModules.flatMap((mod) => [...(mod.pasteReader?.keys[platform] ?? [])]);
+}
+
+/** Hands each module the block's values of its own keys; their notes. */
+export function devtestApplyPaste(values: PasteValues, how: { resumed: boolean }): string[] {
+	const notes: string[] = [];
+	for (const mod of devtestModules) {
+		const reader = mod.pasteReader;
+		if (!reader) continue;
+		const own: PasteValues = {};
+		for (const [platform, keys] of Object.entries(reader.keys) as [PlatformId, readonly string[]][]) {
+			const entry = values[platform];
+			if (!entry) continue;
+			const picked = Object.fromEntries(Object.entries(entry).filter(([key]) => keys.includes(key)));
+			if (Object.keys(picked).length > 0) own[platform] = picked;
+		}
+		if (Object.keys(own).length === 0) continue;
+		notes.push(...(reader.apply(own, how) ?? []));
+	}
+	return notes;
+}

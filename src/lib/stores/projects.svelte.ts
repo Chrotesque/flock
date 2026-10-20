@@ -13,6 +13,7 @@ import {
 	subscribeProjects
 } from '../repo';
 import { readFlockPaste } from '../flockpaste';
+import { devtestApplyPaste, devtestPasteKeys } from '../devtest';
 import { logAction } from '../log';
 import { listedProjects, readSavedDraft, readVideos, type SavedDraft } from '../projects';
 import type { ProjectRow } from '../types';
@@ -122,6 +123,10 @@ class ProjectsStore {
 		if (saved.brand && brands.byId(saved.brand)) brands.select(saved.brand);
 		draft.followBrand(brands.currentId);
 		draft.restoreSaved(saved);
+		// A local module reading more of the project file than flock keeps
+		// gets its keys again (devtest.ts).
+		const file = row.manifest ? readFlockPaste(row.manifest, Date.now(), devtestPasteKeys) : null;
+		const localNotes = file?.ok && file.paste.claimed ? devtestApplyPaste(file.paste.claimed, { resumed: true }) : [];
 
 		const [thumbnail, cover] = await Promise.all([
 			loadProjectImage(row, 'thumbnail', saved.thumbnailName).catch(() => null),
@@ -131,7 +136,7 @@ class ProjectsStore {
 		draft.thumbnail = thumbnail;
 		draft.cover = cover;
 
-		const notes: string[] = [];
+		const notes: string[] = [...localNotes];
 		if (saved.repick) {
 			notes.push(
 				"TikTok's audience, comments, Duet and Stitch, and paid promotion, are chosen again: they are picked by hand on every post, so they are not kept."
@@ -160,7 +165,7 @@ class ProjectsStore {
 		void markProject(row.id, { status: 'started' }).catch(() => {});
 
 		const title = `Opened ${row.name}`;
-		const result = readFlockPaste(row.manifest);
+		const result = readFlockPaste(row.manifest, Date.now(), devtestPasteKeys);
 		if (!result) {
 			paste.show({ title, error: `${row.manifest_name || 'The project file'} has no "flock" key at its top, so nothing was filled.` });
 		} else if (!result.ok) {
@@ -181,7 +186,7 @@ class ProjectsStore {
 		if (!id) return;
 		const row = await getProject(id).catch(() => this.byId(id));
 		if (!row || draft.project !== id) return;
-		const result = readFlockPaste(row.manifest);
+		const result = readFlockPaste(row.manifest, Date.now(), devtestPasteKeys);
 		if (!result?.ok) {
 			paste.show({ title: `${row.manifest_name || 'The project file'} not read`, error: result?.ok === false ? result.error : 'It has no "flock" key at its top.' });
 			return;

@@ -57,6 +57,8 @@ export interface FlockPaste {
 	platforms: Partial<Record<PlatformId, PastedPlatform>>;
 	/** What was ignored or looks wrong, in words for the person who pasted. */
 	notes: string[];
+	/** The values of keys a local module reads (`keysFor`; devtest.ts), per platform; absent with none. */
+	claimed?: Partial<Record<PlatformId, Record<string, unknown>>>;
 }
 
 export type PasteResult = { ok: true; paste: FlockPaste } | { ok: false; error: string };
@@ -69,7 +71,11 @@ const VERSION_ONE = /"flock"\s*:\s*"?1"?\s*[,}]/;
  * top — so the caller lets the paste through; an error when it is one that
  * cannot be used, so the person learns why nothing filled.
  */
-export function readFlockPaste(text: string, now = Date.now()): PasteResult | null {
+export function readFlockPaste(
+	text: string,
+	now = Date.now(),
+	keysFor: (platform: PlatformId) => readonly string[] = () => []
+): PasteResult | null {
 	if (!text || !MARK.test(text)) return null;
 	const body = extractBlock(text);
 	if (!body) return null;
@@ -93,7 +99,7 @@ export function readFlockPaste(text: string, now = Date.now()): PasteResult | nu
 			error: `The pasted block is flock format ${String(data.flock)}; this flock reads format ${PASTE_VERSION}.`
 		};
 	}
-	return { ok: true, paste: normalise(data, now) };
+	return { ok: true, paste: normalise(data, now, keysFor) };
 }
 
 /**
@@ -213,9 +219,14 @@ function text(value: unknown): string | undefined {
 	return undefined;
 }
 
-function normalise(data: Record<string, unknown>, now: number): FlockPaste {
+function normalise(
+	data: Record<string, unknown>,
+	now: number,
+	keysFor: (platform: PlatformId) => readonly string[]
+): FlockPaste {
 	const notes: string[] = [];
 	const platforms: FlockPaste['platforms'] = {};
+	const claimed: NonNullable<FlockPaste['claimed']> = {};
 
 	const brand = text(data.brand) ?? '';
 	const thumbnail = text(data.thumbnail) ?? '';
@@ -231,21 +242,29 @@ function normalise(data: Record<string, unknown>, now: number): FlockPaste {
 			notes.push(`Ignored "${rawKey}": expected an object with its text.`);
 			continue;
 		}
-		platforms[key] = readPlatform(key, value, notes, now);
+		platforms[key] = readPlatform(key, value, notes, now, keysFor(key));
+		const own = Object.entries(value).filter(([k]) => !PLATFORM_KEYS.has(k) && keysFor(key).includes(k));
+		if (own.length > 0) claimed[key] = Object.fromEntries(own);
 	}
 
 	if (Object.keys(platforms).length === 0 && !thumbnail) {
 		notes.push('The block names no platform, so there was nothing to fill.');
 	}
-	return { brand, thumbnail, platforms, notes };
+	return Object.keys(claimed).length > 0 ? { brand, thumbnail, platforms, notes, claimed } : { brand, thumbnail, platforms, notes };
 }
 
-function readPlatform(id: PlatformId, value: Record<string, unknown>, notes: string[], now: number): PastedPlatform {
+function readPlatform(
+	id: PlatformId,
+	value: Record<string, unknown>,
+	notes: string[],
+	now: number,
+	claimed: readonly string[]
+): PastedPlatform {
 	const def = PLATFORMS[id];
 	const out: PastedPlatform = {};
 
 	for (const key of Object.keys(value)) {
-		if (!PLATFORM_KEYS.has(key)) notes.push(`${def.label}: ignored "${key}".`);
+		if (!PLATFORM_KEYS.has(key) && !claimed.includes(key)) notes.push(`${def.label}: ignored "${key}".`);
 	}
 
 	const title = text(value.title);

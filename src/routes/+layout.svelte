@@ -20,7 +20,7 @@
 	import { readFlockPaste } from '$lib/flockpaste';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { DEVTEST_ICON, devtestActive, devtestPages, startDevtest } from '$lib/devtest';
+	import { DEVTEST_ICON, devtestActive, devtestPages, devtestPasteKeys, startDevtest } from '$lib/devtest';
 
 	/** flock's public website (source in site/), where the brand at the foot of the rail leads. */
 	const SITE_URL = 'https://flock-scheduler.netlify.app/';
@@ -72,7 +72,7 @@
 	 * from script would raise. The upload page takes the block from there.
 	 */
 	function onPaste(event: ClipboardEvent) {
-		const result = readFlockPaste(event.clipboardData?.getData('text/plain') ?? '');
+		const result = readFlockPaste(event.clipboardData?.getData('text/plain') ?? '', Date.now(), devtestPasteKeys);
 		if (!result) return;
 		event.preventDefault();
 		paste.offer(result);

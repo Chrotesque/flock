@@ -3,6 +3,7 @@ import { accounts } from './accounts.svelte';
 import { draft } from './draft.svelte';
 import { loadPlaylists, requestLocalImage } from '../repo';
 import { closestBrand, filledSummary, matchBrand, type FlockPaste, type PasteResult } from '../flockpaste';
+import { devtestApplyPaste } from '../devtest';
 import { IMAGE_LIMITS, IMAGE_PLATFORMS, acceptedTypes, largestAccepted } from '../coverimage';
 import { formatBytes } from '../format';
 import { matchPlaylists, withPlaylists } from '../playlists';
@@ -145,6 +146,9 @@ class PasteStore {
 		}
 		draft.followBrand(brands.currentId);
 		draft.applyPaste(paste.platforms);
+		// Keys a local module reads (devtest.ts), straight after, before its
+		// own effects can fill the same choices from elsewhere.
+		if (paste.claimed) notes.push(...devtestApplyPaste(paste.claimed, { resumed: false }));
 
 		const youtube = paste.platforms.youtube;
 		if (youtube?.playlists?.length) {

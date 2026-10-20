@@ -281,3 +281,23 @@ describe('readFlockPaste: schedule', () => {
 		expect(filledSummary('tiktok', { schedule: 'now' })).toBe('out on pickup');
 	});
 });
+
+describe('keys a local module reads', () => {
+	const block = JSON.stringify({ flock: 1, tiktok: { caption: 'Hi', extra: 'x', other: 2 }, youtube: { title: 'T', extra: 1 } });
+
+	it('are ignored, and noted, when no module reads them', () => {
+		const result = readFlockPaste(block);
+		const paste = result?.ok ? result.paste : null;
+		expect(paste?.claimed).toBeUndefined();
+		expect(paste?.notes).toEqual(['TikTok: ignored "extra".', 'TikTok: ignored "other".', 'YouTube: ignored "extra".']);
+	});
+
+	it('travel on as they were for the module that reads them, per platform', () => {
+		const result = readFlockPaste(block, Date.now(), (p) => (p === 'tiktok' ? ['extra'] : []));
+		const paste = result?.ok ? result.paste : null;
+		expect(paste?.claimed).toEqual({ tiktok: { extra: 'x' } });
+		expect(paste?.notes).toEqual(['TikTok: ignored "other".', 'YouTube: ignored "extra".']);
+		expect(paste?.platforms.tiktok).toEqual({ description: 'Hi' });
+	});
+});
+
