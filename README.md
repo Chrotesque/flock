@@ -136,9 +136,11 @@ Good to know:
 - **Playlists need a broader permission.** Connect with
   `pnpm worker:auth --with-playlists` to have videos added to playlists.
   Without it they are skipped, and the Review step says so.
-- **Subscribers per video** come from YouTube Analytics, about two days late.
-  A channel connected before flock asked for Analytics (0.16.40) keeps flock's
-  own estimate until it is connected again.
+- **Subscribers per video** and the Dashboard's YouTube **skip rate** (plays
+  that never became an engaged view) come from YouTube Analytics, about two
+  days late. A channel connected before flock asked for Analytics (0.16.40)
+  keeps flock's own subscriber estimate and shows no YouTube skip rate until it
+  is connected again.
 - **Thumbnails and paid promotion are set in YouTube Studio**, not by flock,
   and **Instagram's Paid partnership label in the Instagram app** on a phone.
   *To finish* in the sidebar links each video's Studio page and reminds of the

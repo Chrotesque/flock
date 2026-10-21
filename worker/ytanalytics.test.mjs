@@ -1,6 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ANALYTICS_SCOPE, batches, canReadAnalytics, dailyCounts, dayEnd, lastDay, perVideo, reportRows } from './ytanalytics.mjs';
+import {
+	ANALYTICS_SCOPE,
+	batches,
+	canReadAnalytics,
+	dailyCounts,
+	dayEnd,
+	lastDay,
+	perVideo,
+	perVideoEngaged,
+	reportRows
+} from './ytanalytics.mjs';
 import { readState } from './followers.mjs';
 
 const report = (names, rows) => ({ columnHeaders: names.map((name) => ({ name })), rows });
@@ -22,6 +32,19 @@ test('report rows read by column name, per video as [gained, lost]', () => {
 	assert.deepEqual(rows[0], { video: 'vidA', subscribersGained: 12, subscribersLost: 1 });
 	assert.deepEqual(perVideo(rows), { vidA: [12, 1], vidB: [0, 2] });
 	assert.deepEqual(reportRows({}), []);
+});
+
+test('per video as [views, engagedViews] from the same report, videos with no view left out', () => {
+	// A Short's numbers as YouTube Analytics gives them.
+	const rows = reportRows(
+		report(['video', 'subscribersGained', 'subscribersLost', 'views', 'engagedViews'], [
+			['vidShort', 1, 0, 1331, 198],
+			['vidB', 0, 0, 2, 0],
+			['vidC', 0, 0, 0, 0]
+		])
+	);
+	assert.deepEqual(perVideoEngaged(rows), { vidShort: [1331, 198], vidB: [2, 0] });
+	assert.deepEqual(perVideo(rows), { vidShort: [1, 0] });
 });
 
 test("the channel's days add up to counts, shifted to meet the first count flock recorded", () => {
@@ -77,9 +100,12 @@ test("a follower row keeps YouTube's figures through the next read", () => {
 		at: '2026-10-20T22:47:00Z',
 		history: [['2026-10-20T22:47:00Z', 709]],
 		analytics: { vidA: [12, 1], junk: 'x' },
+		engaged: { vidA: [1331, 198], junk: [1] },
 		analyticsThrough: '2026-10-18'
 	});
 	assert.deepEqual(state.analytics, { vidA: [12, 1] });
+	assert.deepEqual(state.engaged, { vidA: [1331, 198] });
 	assert.equal(state.analyticsThrough, '2026-10-18');
 	assert.equal(readState({ count: 1, at: '2026-10-20T22:47:00Z' }).analytics, null);
+	assert.equal(readState({ count: 1, at: '2026-10-20T22:47:00Z' }).engaged, null);
 });

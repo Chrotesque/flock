@@ -19,7 +19,15 @@
 	import { newestByPost, renameChoices, renameNotes, type RenameChoice } from '$lib/retitle';
 	import { accountLabel, postAllowance } from '$lib/accounts';
 	import { LEVEL_WORDS, limitLevel, lineLevel, shortError, worstLevel, type StatusLevel } from '$lib/dashstatus';
-	import { creditedFollowers, followerSource, stateOf, type FollowerGain, type FollowerState } from '$lib/followers';
+	import {
+		creditedFollowers,
+		engagedOf,
+		followerSource,
+		stateOf,
+		youtubeSkipRate,
+		type FollowerGain,
+		type FollowerState
+	} from '$lib/followers';
 	import { onTikTokAccount, tiktokRef, tiktokReportOf, tiktokStateOf } from '$lib/tiktokaccount';
 	import { COLUMNS, gridTemplate, shownColumns, type ColumnId } from '$lib/dashcolumns';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
@@ -63,6 +71,8 @@
 		type SortKey,
 		inSpan,
 		pooledSkipRate,
+		SKIP_PLATFORMS,
+		skipPosts,
 		skipRateOf,
 		sortWords,
 		type StatPlatform
@@ -129,10 +139,12 @@
 	const postTime = (iso: string) => Date.parse(String(iso ?? '').replace(' ', 'T'));
 	// Each post with the followers it brought: credited by the worker for
 	// YouTube, Instagram and TikTok, Facebook's own count for a reel (followers.ts).
+	// A YouTube video also gets its skip rate from YouTube Analytics' engaged views.
 	const videos = $derived(
 		dashData.videos.map((v) => ({
 			...v,
-			followers: creditedFollowers(stateOf(followerStates, 'youtube', v.channelId), v.video_id, postTime(v.published_at))
+			followers: creditedFollowers(stateOf(followerStates, 'youtube', v.channelId), v.video_id, postTime(v.published_at)),
+			skipRate: youtubeSkipRate(engagedOf(followerStates, v.video_id), v.views)
 		}))
 	);
 	const reels = $derived(
@@ -426,10 +438,10 @@
 		mid: gridTemplate(columns, 'mid'),
 		narrow: gridTemplate(columns, 'narrow')
 	});
-	/** A cell's classes: its column, and whether the narrower lists leave it out. */
+	/** A cell's classes: its column, whether it is sized to its content, and whether the narrower lists leave it out. */
 	function cellOf(col: ColumnId): string {
 		const def = COLUMNS[col];
-		return `c-${col}${def.mid === null ? ' midoff' : ''}${def.narrow === null ? ' narrowoff' : ''}`;
+		return `c-${col}${def.width === 'content' ? ' fit' : ''}${def.mid === null ? ' midoff' : ''}${def.narrow === null ? ' narrowoff' : ''}`;
 	}
 
 	/* ---- followers (followers.ts) ---- */
@@ -597,26 +609,39 @@
 		return sum;
 	});
 
-	// Of every Instagram view on the reels in the list, the share skipped
-	// within 3 seconds: each reel's rate weighted by its views.
+	// Of every view on the videos in the list on a platform that gives a skip
+	// rate (SKIP_PLATFORMS), the share skipped: each rate weighted by its views.
+	const skipInView = $derived(SKIP_PLATFORMS.filter((p) => filter.platforms.includes(p)));
 	const pooledSkip = $derived(
-		filter.platforms.includes('instagram')
-			? pooledSkipRate(
-					rows
-						.filter((row) => !onlyWhileEditing(row.release))
-						.map((row) => row.release.posts.instagram)
-						.filter((p): p is Post => Boolean(p))
-				)
-			: null
+		pooledSkipRate(rows.filter((row) => !onlyWhileEditing(row.release)).flatMap((row) => skipPosts(row.release, filter.platforms)))
 	);
 	const skipShown = (rate: number) => `${rate.toLocaleString('en-GB', { maximumFractionDigits: 1 })} %`;
+	const SKIP_WORDS: Partial<Record<StatPlatform, string>> = {
+		instagram: 'of its views skipped within the first 3 seconds (Instagram’s estimate)',
+		youtube: 'of its plays never became an engaged view (YouTube Analytics)'
+	};
+	const SKIP_UNKNOWN: Partial<Record<StatPlatform, string>> = {
+		instagram: 'not given yet',
+		youtube: 'not known yet — YouTube Analytics runs about two days behind'
+	};
+	const skipAbout =
+		'The share of views dropped at the start. Instagram: skipped within the first 3 seconds, its own estimate. ' +
+		'YouTube: plays that never became an engaged view (YouTube Analytics, about two days behind; YouTube does not say where that line is, so it is not quite the same 3 seconds). ' +
+		'Facebook and TikTok give none.';
 
 	function skipTitle(r: Release): string {
-		const reel = r.posts.instagram;
-		if (!filter.platforms.includes('instagram')) return 'Instagram is not in view';
-		if (!reel) return 'No Instagram reel';
-		if (reel.skipRate == null) return 'Instagram has not given a skip rate for this reel yet';
-		return `${skipShown(reel.skipRate)} of its Instagram views were skipped within the first 3 seconds (Instagram's estimate)`;
+		if (skipInView.length === 0) return 'Neither YouTube nor Instagram is in view';
+		const posts = skipPosts(r, filter.platforms);
+		if (posts.length === 0) return `No ${skipInView.map((p) => PLATFORMS[p].label).join(' or ')} post`;
+		const lines = posts.map(
+			(p) =>
+				`${PLATFORMS[p.platform].label}: ${p.skipRate == null ? SKIP_UNKNOWN[p.platform] : `${skipShown(p.skipRate)} ${SKIP_WORDS[p.platform]}`}`
+		);
+		const pooled = skipRateOf(r, filter.platforms);
+		if (posts.filter((p) => p.skipRate != null).length > 1 && pooled != null) {
+			lines.push(`Together: ${skipShown(pooled)}, each weighted by its views`);
+		}
+		return lines.join('\n');
 	}
 
 	let openKey = $state<string | null>(null);
@@ -641,7 +666,7 @@
 	function factsFor(post: Post): FactGroup[] | null {
 		if (post.platform === 'youtube') {
 			const full = fullRow(post);
-			return full ? youtubeFacts(full, ago) : null;
+			return full ? youtubeFacts(full, ago, engagedOf(followerStates, post.id)) : null;
 		}
 		const reel = reels.find((x) => x.id === post.record);
 		return reel ? reelFacts(reel, ago) : null;
@@ -813,8 +838,11 @@
 	const num = (n: number | null | undefined) => (n == null ? '—' : whole.format(n));
 	/** Big, but readable: 12,345 up to five digits, 123.4K past them. */
 	const big = (n: number) => (n >= 100_000 ? compact.format(n) : whole.format(n));
-	/** The period boxes' numbers: 999, then 1k, 1.1k, 80.6k (shortCount); the popups have them exact. */
+	/** The period boxes' numbers: 999, then 1k, 1.2k, 85.8k, 102k (shortCount); the popups have them exact. */
 	const short = (n: number) => shortCount(n);
+	/** The list's counts, shortened the same way; `exact` puts the whole figure on hover. */
+	const count = (n: number | null | undefined) => (n == null ? '—' : shortCount(n));
+	const exact = (n: number | null | undefined) => (n != null && Math.abs(n) >= 1000 ? whole.format(n) : undefined);
 
 	function ago(iso: string | undefined | null): string {
 		const t = Date.parse(String(iso ?? '').replace(' ', 'T'));
@@ -947,8 +975,8 @@
 </script>
 
 {#snippet counter(value: number | null, change: number, cls: string)}
-	<span class="num cell {cls}" class:up={change > 0} class:down={change < 0}>
-		{num(value)}{#if change}<span class="delta">{change > 0 ? '+' : ''}{whole.format(change)}</span>{/if}
+	<span class="num cell {cls}" class:up={change > 0} class:down={change < 0} title={exact(value)}>
+		{count(value)}{#if change}<span class="delta">{change > 0 ? '+' : ''}{count(change)}</span>{/if}
 	</span>
 {/snippet}
 
@@ -956,11 +984,13 @@
 {#snippet stacked(row: Row, key: Counter, cls: string, main = false, title = '')}
 	{@const change = row.delta[key]}
 	<span class="num cell stack {cls}" class:main class:up={change > 0} class:down={change < 0} title={title || undefined}>
-		<span>{num(row[key])}{#if change}<span class="delta">{change > 0 ? '+' : ''}{whole.format(change)}</span>{/if}</span>
+		<span title={exact(row[key])}>{count(row[key])}{#if change}<span class="delta">{change > 0 ? '+' : ''}{count(change)}</span>{/if}</span>
 		{#if multi && row.posts.length > 1}
 			<span class="parts">
 				{#each row.posts as post (post.platform)}
-					<span title={PLATFORMS[post.platform].label}><i style:background={PLATFORM_COLOURS[post.platform]}></i>{num(post[key])}</span>
+					<span title={post[key] == null ? PLATFORMS[post.platform].label : `${PLATFORMS[post.platform].label}: ${whole.format(post[key])}`}
+						><i style:background={PLATFORM_COLOURS[post.platform]}></i>{count(post[key])}</span
+					>
 				{/each}
 			</span>
 		{:else if main && multi && row.posts.length === 1}
@@ -997,14 +1027,7 @@
 	{:else if col === 'comments'}
 		{@render sortHead('comments', 'Comments', cellOf(col))}
 	{:else if col === 'skip'}
-		<button
-			class="colhead skiphead {cellOf(col)}"
-			class:on={sort === 'skip'}
-			onclick={() => sortBy('skip')}
-			title="Instagram: the share of a reel's views skipped within the first 3 seconds, as Instagram estimates it. {sortTitle('skip', 'Skipped')}"
-		>
-			<PlatformIcon platform="instagram" size={11} />Skipped{#if sort === 'skip'}<span class="arrow" aria-hidden="true">{reversed ? '↑' : '↓'}</span>{/if}
-		</button>
+		{@render sortHead('skip', 'Skipped', cellOf(col), skipAbout)}
 	{:else if col === 'curve'}
 		<span class="colhead {cellOf(col)}" title="Views from release, up to its first week; dashed: the usual for its kind">From release</span>
 	{:else if col === 'usual'}
@@ -1034,9 +1057,11 @@
 		<span
 			class="num cell skip {cellOf(col)}"
 			title={pooledSkip === null
-				? 'No skip rate among the reels in view'
-				: `Of all the Instagram views on these reels, ${skipShown(pooledSkip)} were skipped within the first 3 seconds (each reel's rate weighted by its views)`}
-			>{pooledSkip === null ? '—' : skipShown(pooledSkip)}</span
+				? 'No skip rate among the videos in view'
+				: `Of all the ${skipInView.map((p) => PLATFORMS[p].label).join(' and ')} views on these videos, ${skipShown(pooledSkip)} were skipped at the start (each video's rate weighted by its views)`}
+			>{#if skipInView.length === 1}<i style:background={PLATFORM_COLOURS[skipInView[0]]}></i>{/if}{pooledSkip === null
+				? '—'
+				: skipShown(pooledSkip)}</span
 		>
 	{:else}
 		<span class={cellOf(col)}></span>
@@ -1116,9 +1141,24 @@
 	{:else if col === 'comments'}
 		{@render stacked(row, 'comments', cellOf(col))}
 	{:else if col === 'skip'}
-		<span class="num cell skip {cellOf(col)}" class:none={row.skip === null} title={skipTitle(r)}
-			>{row.skip === null ? '—' : skipShown(row.skip)}</span
-		>
+		<!-- One platform: its rate behind its dot; two: the rate over both, each under it as the counters have. -->
+		{@const posts = skipPosts(r, filter.platforms)}
+		<span class="num cell stack skip {cellOf(col)}" class:none={row.skip === null} title={skipTitle(r)}>
+			{#if posts.length > 1}
+				<span>{row.skip === null ? '—' : skipShown(row.skip)}</span>
+				<span class="parts">
+					{#each posts as post (post.platform)}
+						<span><i style:background={PLATFORM_COLOURS[post.platform]}></i>{post.skipRate == null ? '—' : skipShown(post.skipRate)}</span>
+					{/each}
+				</span>
+			{:else}
+				<span class="one"
+					>{#if posts.length === 1}<i style:background={PLATFORM_COLOURS[posts[0].platform]}></i>{/if}{row.skip === null
+						? '—'
+						: skipShown(row.skip)}</span
+				>
+			{/if}
+		</span>
 	{:else if col === 'curve'}
 		<span class="spark {cellOf(col)}"><ViewsCurve curves={row.curves} /></span>
 	{:else if col === 'usual'}
@@ -2146,20 +2186,31 @@
 
 	/* ---- the list ---- */
 
+	/* One grid for the whole list, which every row takes up as a subgrid, so a
+	   column sized to its content is as wide as its widest cell in any row. */
 	.list {
 		/* The thumbnail's column, which the pencil in Edit mode sits beside. */
 		--thumbcol: 64px;
-		overflow: hidden;
-		padding: 0;
-	}
-
-	.row {
 		display: grid;
 		/* Built from the layout (dashcolumns.ts): "vs usual" holds four platforms' marks. */
 		grid-template-columns: var(--cols);
+		column-gap: 12px;
+		overflow: hidden;
+		padding: 0 16px;
+	}
+
+	.item,
+	.line,
+	.row {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: subgrid;
+	}
+
+	/* A row reaches the card's edges; its padding puts the cells back on the list's grid. */
+	.row {
 		align-items: center;
-		gap: 12px;
-		width: 100%;
+		margin-inline: -16px;
 		padding: 7px 16px;
 		border: 0;
 		border-top: 1px solid var(--border);
@@ -2255,7 +2306,7 @@
 	.rename {
 		position: absolute;
 		top: 50%;
-		left: calc(16px + var(--thumbcol) + 12px);
+		left: calc(var(--thumbcol) + 12px);
 		display: grid;
 		place-items: center;
 		width: 24px;
@@ -2272,7 +2323,7 @@
 
 	/* With the thumbnail hidden, the title starts at the row's edge. */
 	.nothumb .rename {
-		left: 16px;
+		left: 0;
 	}
 
 	.nothumb .details {
@@ -2296,7 +2347,7 @@
 	.eye {
 		position: absolute;
 		top: 50%;
-		left: calc(16px + var(--thumbcol) + 12px + 28px);
+		left: calc(var(--thumbcol) + 12px + 28px);
 		display: grid;
 		place-items: center;
 		width: 24px;
@@ -2313,7 +2364,7 @@
 	}
 
 	.nothumb .eye {
-		left: calc(16px + 28px);
+		left: 28px;
 	}
 
 	.eye:hover {
@@ -2520,12 +2571,24 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	/* Instagram's skip rate: the header carries the mark, the cells the number. */
-	.skiphead {
+	/* A column as wide as its widest cell keeps some room before it, so its
+	   numbers never run on from the column to its left. */
+	.row > .fit {
+		padding-left: 12px;
+	}
+
+	/* The skip rate: a lone platform's behind its dot, as the counters have under their sums. */
+	.row.total .skip,
+	.skip .one {
 		display: inline-flex;
 		align-items: center;
 		justify-content: flex-end;
 		gap: 5px;
+	}
+
+	.skip i {
+		width: 6px;
+		height: 6px;
 	}
 
 	.skip.none {
@@ -2567,9 +2630,12 @@
 		font-weight: 600;
 	}
 
+	/* Wraps only where a column has a fixed width too narrow for it (below 1200 px). */
 	.parts {
 		display: inline-flex;
-		gap: 7px;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 1px 7px;
 		font-size: 10.5px;
 		font-weight: 500;
 		color: var(--text-faint);
@@ -2626,7 +2692,8 @@
 	}
 
 	.empty {
-		margin: 0;
+		grid-column: 1 / -1;
+		margin: 0 -16px;
 		padding: 16px;
 		border-top: 1px solid var(--border);
 		font-size: 12.5px;
@@ -2636,9 +2703,11 @@
 	/* ---- an opened row ---- */
 
 	.details {
+		grid-column: 1 / -1;
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
 		gap: 12px 28px;
+		margin-inline: -16px;
 		padding: 10px 16px 18px 92px;
 		border-top: 1px dashed var(--border);
 		background: var(--surface-2);
@@ -2915,9 +2984,11 @@
 	@media (max-width: 1200px) {
 		.list {
 			--thumbcol: 56px;
-		}
-		.row {
 			grid-template-columns: var(--cols-mid);
+		}
+		/* Fixed widths here (dashcolumns.ts): each platform's numbers wrap instead. */
+		.row > .fit {
+			padding-left: 0;
 		}
 		/* Likes, comments and the skip rate go; an opened row still lists them. */
 		.row > .midoff {
@@ -2955,14 +3026,12 @@
 			left: auto;
 			right: 0;
 		}
-		.row {
-			grid-template-columns: var(--cols-narrow);
-		}
 		.row > .narrowoff {
 			display: none;
 		}
 		.list {
 			--thumbcol: 48px;
+			grid-template-columns: var(--cols-narrow);
 		}
 		.thumb {
 			width: 48px;

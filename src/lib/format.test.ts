@@ -149,15 +149,25 @@ describe('shortCount', () => {
 
 	it('shortens from 1,000 up to one decimal, dropping a .0', () => {
 		expect(shortCount(1000, 'en-US')).toBe('1k');
+		expect(shortCount(1024, 'en-US')).toBe('1k');
 		expect(shortCount(1100, 'en-US')).toBe('1.1k');
+		expect(shortCount(1234, 'en-US')).toBe('1.2k');
 		expect(shortCount(80_638, 'en-US')).toBe('80.6k');
-		expect(shortCount(165_700, 'en-US')).toBe('165.7k');
+		expect(shortCount(85_821, 'en-US')).toBe('85.8k');
 		expect(shortCount(1_234_567, 'en-US')).toBe('1.2m');
+	});
+
+	it('drops the decimal from 100 of the unit up', () => {
+		expect(shortCount(99_999, 'en-US')).toBe('99.9k');
+		expect(shortCount(100_000, 'en-US')).toBe('100k');
+		expect(shortCount(102_481, 'en-US')).toBe('102k');
+		expect(shortCount(165_700, 'en-US')).toBe('165k');
+		expect(shortCount(123_456_789, 'en-US')).toBe('123m');
 	});
 
 	it('cuts rather than rounds, so it never says more than there is', () => {
 		expect(shortCount(1999, 'en-US')).toBe('1.9k');
-		expect(shortCount(999_999, 'en-US')).toBe('999.9k');
+		expect(shortCount(999_999, 'en-US')).toBe('999k');
 		expect(shortCount(1_000_000, 'en-US')).toBe('1m');
 		for (let n = 1000; n < 20_000; n += 100) expect(shortCount(n, 'en-US')).toBe(`${n / 1000}k`);
 	});

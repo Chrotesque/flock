@@ -19,6 +19,7 @@ import {
 	reelPost,
 	linkKey,
 	sameLink,
+	skipPosts,
 	skipRateOf,
 	sortRows,
 	sortWords,
@@ -608,6 +609,7 @@ describe('periodStats', () => {
 			history,
 			credits: {},
 			analytics: null,
+			engaged: null,
 			analyticsThrough: ''
 		});
 		const followers = [
@@ -711,6 +713,21 @@ describe('skip rate', () => {
 		const [release] = buildReleases([], [reel('R1', T0, { skipRate: 41.2 })], []);
 		expect(skipRateOf(release, ['youtube', 'instagram'])).toBe(41.2);
 		expect(skipRateOf(release, ['youtube', 'facebook'])).toBeNull();
+	});
+
+	it("pools a Short's rate with its reel's over the platforms in view, never Facebook's", () => {
+		const [release] = buildReleases(
+			[video('S1', T0, { duration: 30, views: 1000, skipRate: 80 })],
+			[reel('R1', T0 + 60_000, { views: 500, skipRate: 40 })],
+			[],
+			[fbReel('F1', T0 + 60_000, { views: 300 })]
+		);
+		expect(release.posts.youtube?.skipRate).toBe(80);
+		expect(skipRateOf(release, ['youtube', 'instagram', 'facebook'])).toBeCloseTo(((800 + 200) / 1500) * 100);
+		expect(skipRateOf(release, ['instagram'])).toBe(40);
+		expect(skipRateOf(release, ['youtube'])).toBe(80);
+		expect(skipRateOf(release, ['facebook'])).toBeNull();
+		expect(skipPosts(release, ['facebook', 'instagram', 'youtube']).map((p) => p.platform)).toEqual(['youtube', 'instagram']);
 	});
 
 	it('pools rates by views, leaving out reels without both', () => {

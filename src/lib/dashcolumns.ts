@@ -28,8 +28,12 @@ export interface ColumnDef {
 	label: string;
 	/** What it shows, for Settings. */
 	about: string;
-	/** Its width in the list, in px ('fr' for the title, which takes what is left), wide and from 1200 / 760 px down; null hides it there. */
-	width: number | 'fr';
+	/**
+	 * Its width in the list, in px ('fr' for the title, which takes what is left;
+	 * 'content' for as wide as its widest cell), wide and from 1200 / 760 px
+	 * down; null hides it there.
+	 */
+	width: number | 'fr' | 'content';
 	mid: number | 'fr' | null;
 	narrow: number | 'fr' | null;
 	/** Always where it is: the thumbnail and the title lead the row. */
@@ -50,11 +54,18 @@ export const COLUMNS: Record<ColumnId, ColumnDef> = {
 		required: true
 	},
 	jestr: { label: 'Jestr', about: 'A tick on Jestr campaign videos (with the Jestr integration on)', width: 48, mid: 44, narrow: 40 },
-	followers: { label: 'Followers', about: 'Followers and subscribers each video brought, every platform added up', width: 96, mid: 84, narrow: null },
-	views: { label: 'Views', about: 'Views, every platform added up, each one below', width: 130, mid: 104, narrow: 96 },
-	likes: { label: 'Likes', about: 'Likes, every platform added up', width: 106, mid: null, narrow: null },
-	comments: { label: 'Comments', about: 'Comments, every platform added up', width: 106, mid: null, narrow: null },
-	skip: { label: 'Skipped', about: "Instagram's share of a reel's views skipped within 3 seconds", width: 84, mid: null, narrow: null },
+	// The counters hold each platform's number under the sum, as wide as the widest row needs.
+	followers: { label: 'Followers', about: 'Followers and subscribers each video brought, every platform added up', width: 'content', mid: 84, narrow: null },
+	views: { label: 'Views', about: 'Views, every platform added up, each one below', width: 'content', mid: 104, narrow: 96 },
+	likes: { label: 'Likes', about: 'Likes, every platform added up', width: 'content', mid: null, narrow: null },
+	comments: { label: 'Comments', about: 'Comments, every platform added up', width: 'content', mid: null, narrow: null },
+	skip: {
+		label: 'Skipped',
+		about: "The share of views dropped at the start: Instagram's skips within 3 seconds, YouTube's plays that never became an engaged view",
+		width: 'content',
+		mid: null,
+		narrow: null
+	},
 	curve: { label: 'From release', about: 'Views from release, the usual for its kind dashed', width: 156, mid: 132, narrow: null },
 	usual: { label: 'vs usual', about: 'Ahead of, about or behind the usual, per platform', width: 164, mid: 164, narrow: 76 }
 };
@@ -133,17 +144,21 @@ export function columnsAt(ids: ColumnId[], size: ListSize): ColumnId[] {
 	return ids.filter((id) => widthOf(id, size) !== null);
 }
 
-function widthOf(id: ColumnId, size: ListSize): number | 'fr' | null {
+function widthOf(id: ColumnId, size: ListSize): number | 'fr' | 'content' | null {
 	const def = COLUMNS[id];
 	return size === 'wide' ? def.width : size === 'mid' ? def.mid : def.narrow;
 }
 
-/** The list's grid at a size; the thumbnail's width is the list's `--thumbcol`. */
+/**
+ * The list's grid at a size; the thumbnail's width is the list's `--thumbcol`.
+ * Every row shares it (a subgrid), so a 'content' column is as wide as its
+ * widest cell in any row.
+ */
 export function gridTemplate(ids: ColumnId[], size: ListSize): string {
 	return columnsAt(ids, size)
 		.map((id) => {
 			const w = widthOf(id, size);
-			return id === 'thumb' ? 'var(--thumbcol)' : w === 'fr' ? 'minmax(0, 1fr)' : `${w}px`;
+			return id === 'thumb' ? 'var(--thumbcol)' : w === 'fr' ? 'minmax(0, 1fr)' : w === 'content' ? 'max-content' : `${w}px`;
 		})
 		.join(' ');
 }

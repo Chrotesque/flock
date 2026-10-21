@@ -32,6 +32,8 @@ export interface FollowerState {
 	credits: Record<string, number>;
 	/** YouTube Analytics' subscribers per video, [gained, lost]; null until read. */
 	analytics: Record<string, [number, number]> | null;
+	/** YouTube Analytics' plays and engaged views per video, [views, engagedViews]; null until read. */
+	engaged: Record<string, [number, number]> | null;
 	/** The last day those cover, 'YYYY-MM-DD' (YouTube's, Pacific); '' until read. */
 	analyticsThrough: string;
 }
@@ -52,13 +54,6 @@ export function readFollowerState(raw: unknown): FollowerState | null {
 	const credits: Record<string, number> = {};
 	const stored = r.credits && typeof r.credits === 'object' ? (r.credits as Record<string, unknown>) : {};
 	for (const [id, n] of Object.entries(stored)) if (typeof n === 'number' && n > 0) credits[id] = n;
-	let analytics: Record<string, [number, number]> | null = null;
-	if (r.analytics && typeof r.analytics === 'object') {
-		analytics = {};
-		for (const [id, pair] of Object.entries(r.analytics as Record<string, unknown>)) {
-			if (Array.isArray(pair) && typeof pair[0] === 'number' && typeof pair[1] === 'number') analytics[id] = [pair[0], pair[1]];
-		}
-	}
 	return {
 		platform,
 		account: String(r.account ?? ''),
@@ -68,9 +63,47 @@ export function readFollowerState(raw: unknown): FollowerState | null {
 		since: Number.isFinite(time(r.since)) ? String(r.since) : String(r.at),
 		history,
 		credits,
-		analytics,
+		analytics: readPairs(r.analytics),
+		engaged: readPairs(r.engaged),
 		analyticsThrough: typeof r.analyticsThrough === 'string' ? r.analyticsThrough : ''
 	};
+}
+
+/** Per-video pairs of numbers, read back; null when there are none stored. */
+function readPairs(raw: unknown): Record<string, [number, number]> | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const out: Record<string, [number, number]> = {};
+	for (const [id, pair] of Object.entries(raw as Record<string, unknown>)) {
+		if (Array.isArray(pair) && typeof pair[0] === 'number' && typeof pair[1] === 'number') out[id] = [pair[0], pair[1]];
+	}
+	return out;
+}
+
+/**
+ * Analytics must have counted at least this share of a video's public views
+ * before its skip rate shows: a Short a day or two out has only its first
+ * hours in YouTube Analytics (2 of 1,322 views, seen 21 Oct 2026), which says
+ * nothing yet.
+ */
+export const ENGAGED_COVERAGE = 0.5;
+
+/** A video's [views, engagedViews] as YouTube Analytics last gave them, from whichever channel's row has it. */
+export function engagedOf(states: FollowerState[], videoId: string): [number, number] | null {
+	for (const state of states) if (state.platform === 'youtube' && state.engaged?.[videoId]) return state.engaged[videoId];
+	return null;
+}
+
+/**
+ * YouTube's skip rate, %: the share of a video's plays that never became an
+ * engaged view (YouTube's view before 31 Mar 2025, counted past a threshold
+ * it does not name, so not quite Instagram's 3 seconds). Null until
+ * Analytics has caught up with the video (ENGAGED_COVERAGE).
+ */
+export function youtubeSkipRate(pair: [number, number] | null, publicViews: number | null): number | null {
+	if (!pair) return null;
+	const [views, engaged] = pair;
+	if (views <= 0 || (publicViews != null && views < publicViews * ENGAGED_COVERAGE)) return null;
+	return Math.min(100, Math.max(0, (1 - engaged / views) * 100));
 }
 
 /** The record of one account, if flock has one. */

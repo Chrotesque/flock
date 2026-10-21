@@ -84,19 +84,20 @@ export function formatBytes(bytes: number): string {
 }
 
 /**
- * A count shortened from 1,000 up: 1k, 1.1k, 80.6k, 1.2m — one decimal at
- * most, cut rather than rounded so it never claims more than there is
- * (1,999 is 1.9k), the decimal mark the browser's. Under 1,000 the number
- * itself. A negative count keeps its sign.
+ * A count shortened from 1,000 up: 1k, 1.2k, 85.8k, 102k, 1.2m — one decimal
+ * below 100 of the unit and none from there, cut rather than rounded so it
+ * never claims more than there is (1,999 is 1.9k), the decimal mark the
+ * browser's. Under 1,000 the number itself. A negative count keeps its sign.
  */
 export function shortCount(n: number, locale?: string): string {
 	const abs = Math.abs(n);
 	const sign = n < 0 ? '-' : '';
 	if (abs < 1000) return sign + new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(Math.trunc(abs));
 	// Whole tenths first (an exact division of the count), so 4,600 cannot come out 4.5k.
-	const k = Math.floor(abs / 100) / 10;
+	const k = abs < 100_000 ? Math.floor(abs / 100) / 10 : Math.floor(abs / 1000);
 	if (k < 1000) return `${sign}${new Intl.NumberFormat(locale, { maximumFractionDigits: 1, useGrouping: false }).format(k)}k`;
-	return `${sign}${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(Math.floor(abs / 100_000) / 10)}m`;
+	const m = abs < 100_000_000 ? Math.floor(abs / 100_000) / 10 : Math.floor(abs / 1_000_000);
+	return `${sign}${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(m)}m`;
 }
 
 export function formatDuration(seconds: number): string {

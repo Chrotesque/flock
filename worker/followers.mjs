@@ -47,15 +47,17 @@ export function readState(raw) {
 		credits,
 		// When the platform's own past counts were filled in (mergeBackfill); '' before.
 		backfilled: typeof raw.backfilled === 'string' ? raw.backfilled : '',
-		// YouTube Analytics' subscribers per video, [gained, lost], and the last day it covers (ytanalytics.mjs).
-		analytics: readAnalytics(raw.analytics),
+		// YouTube Analytics' subscribers per video, [gained, lost], its plays and
+		// engaged views, [views, engagedViews], and the last day it covers (ytanalytics.mjs).
+		analytics: readPairs(raw.analytics),
+		engaged: readPairs(raw.engaged),
 		analyticsThrough: typeof raw.analyticsThrough === 'string' ? raw.analyticsThrough : '',
 		analyticsAt: typeof raw.analyticsAt === 'string' ? raw.analyticsAt : ''
 	};
 }
 
-/** Per-video [gained, lost] pairs, read back; null when there are none stored. */
-function readAnalytics(raw) {
+/** Per-video pairs of numbers, read back; null when there are none stored. */
+function readPairs(raw) {
 	if (!raw || typeof raw !== 'object') return null;
 	const out = {};
 	for (const [id, pair] of Object.entries(raw)) {

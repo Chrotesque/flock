@@ -94,6 +94,8 @@ export interface YouTubeRow {
 	thumb: string;
 	/** Followers credited to it (followers.ts); null when not known. */
 	followers?: number | null;
+	/** Its plays that never became an engaged view, % (followers.ts youtubeSkipRate); null when not known. */
+	skipRate?: number | null;
 }
 
 /** A `post_stats` row for a reel (Instagram's or Facebook's) or a TikTok video, slim. */
@@ -146,7 +148,11 @@ export interface Post {
 	followers: number | null;
 	/** [ms, views], oldest first, nulls left out. */
 	samples: [number, number][];
-	/** Instagram only: the share of its views skipped within the first 3 seconds, %; null until Instagram gives one. */
+	/**
+	 * The share of its plays dropped at the start, %: Instagram's own (skipped
+	 * within the first 3 seconds), YouTube's worked out from engaged views;
+	 * null until given, and always for Facebook and TikTok (SKIP_PLATFORMS).
+	 */
 	skipRate?: number | null;
 }
 
@@ -177,7 +183,8 @@ export function youtubePost(row: YouTubeRow): Post {
 		likes: row.likes,
 		comments: row.comments,
 		followers: row.followers ?? null,
-		samples: toSamples(row.history)
+		samples: toSamples(row.history),
+		skipRate: row.skipRate ?? null
 	};
 }
 
@@ -207,15 +214,31 @@ export function readSkipRate(value: unknown): number | null {
 	return typeof value === 'number' && value > 0 && value <= 100 ? value : null;
 }
 
-/** A release's skip rate while Instagram is in view; null without its reel, or a rate. */
+/**
+ * The platforms that give a skip rate: Instagram its own, YouTube through
+ * engaged views (followers.ts). Facebook's reel insights have no 3-second
+ * count (its retention curve starts at 3 s, checked 21 Oct 2026) and TikTok's
+ * API no watch figures at all.
+ */
+export const SKIP_PLATFORMS: StatPlatform[] = ['youtube', 'instagram'];
+
+/** A release's posts in view that can have a skip rate, in SKIP_PLATFORMS' order. */
+export function skipPosts(release: Release, platforms: StatPlatform[]): Post[] {
+	return SKIP_PLATFORMS.filter((p) => platforms.includes(p)).flatMap((p) => {
+		const post = release.posts[p];
+		return post ? [post] : [];
+	});
+}
+
+/** A release's skip rate over the platforms in view that give one, weighted by their views; null with none. */
 export function skipRateOf(release: Release, platforms: StatPlatform[]): number | null {
-	return platforms.includes('instagram') ? (release.posts.instagram?.skipRate ?? null) : null;
+	return pooledSkipRate(skipPosts(release, platforms));
 }
 
 /**
- * The share of all these reels' views skipped within 3 seconds: each rate
- * weighted by its reel's views, so a reel seen ten times as often counts ten
- * times as much. Null with no reel that has both.
+ * The share of all these posts' views skipped at the start: each rate
+ * weighted by its post's views, so a post seen ten times as often counts ten
+ * times as much. Null with no post that has both.
  */
 export function pooledSkipRate(posts: Pick<Post, 'views' | 'skipRate'>[]): number | null {
 	let skipped = 0;

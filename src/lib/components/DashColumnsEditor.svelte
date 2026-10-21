@@ -1,6 +1,5 @@
 <script lang="ts">
 	import Checkbox from './Checkbox.svelte';
-	import PlatformIcon from './PlatformIcon.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import {
 		COLUMNS,
@@ -126,7 +125,6 @@
 						{#if id === 'thumb'}
 							<span class="thumbmock" aria-hidden="true"></span>
 						{:else}
-							{#if id === 'skip'}<PlatformIcon platform="instagram" size={10} />{/if}
 							<span class="clabel">{def.label}</span>
 						{/if}
 					</button>

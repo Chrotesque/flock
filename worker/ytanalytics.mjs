@@ -8,8 +8,12 @@
 //
 // Written into the channel's follower row (`followers:youtube:<id>`):
 // `analytics` = { videoId: [gained, lost] } over each video's life,
-// `analyticsThrough` = the last day YouTube has, and, once, the channel's
-// daily counts in front of what flock recorded (mergeBackfill).
+// `engaged` = { videoId: [views, engagedViews] } from the same report — a
+// Short's views count every play since 31 Mar 2025, its engaged views only
+// those past YouTube's old view threshold, so the share that never got there
+// is the Dashboard's skip rate for YouTube — `analyticsThrough` = the last
+// day YouTube has, and, once, the channel's daily counts in front of what
+// flock recorded (mergeBackfill).
 
 import { forgetToken, grantedScope } from './google.mjs';
 import { youtubeToken } from './youtube.mjs';
@@ -52,6 +56,17 @@ export function perVideo(rows) {
 		const gained = Number(row.subscribersGained) || 0;
 		const lost = Number(row.subscribersLost) || 0;
 		if (row.video && (gained || lost)) out[String(row.video)] = [gained, lost];
+	}
+	return out;
+}
+
+/** Per video, [views, engagedViews] over its life; videos with no view are left out. */
+export function perVideoEngaged(rows) {
+	const out = {};
+	for (const row of rows) {
+		const views = Number(row.views) || 0;
+		const engaged = Number(row.engagedViews) || 0;
+		if (row.video && views > 0) out[String(row.video)] = [views, engaged];
 	}
 	return out;
 }
@@ -162,20 +177,34 @@ export async function analyticsPass({ pb, config, log, account }) {
 		const videos = [];
 		for (const ids of batches(await pb.listChannelVideoIds(account.channelId))) {
 			const rows = reportRows(
-				await report(config, account, { startDate: FIRST_DAY, endDate, metrics, dimensions: 'video', filters: `video==${ids.join(',')}` })
+				await report(config, account, {
+					startDate: FIRST_DAY,
+					endDate,
+					metrics: `${metrics},views,engagedViews`,
+					dimensions: 'video',
+					filters: `video==${ids.join(',')}`
+				})
 			);
 			videos.push(...rows);
 		}
 
 		const now = Date.now();
-		let next = { ...state, analytics: perVideo(videos), analyticsThrough: lastDay(days), analyticsAt: new Date(now).toISOString() };
+		let next = {
+			...state,
+			analytics: perVideo(videos),
+			engaged: perVideoEngaged(videos),
+			analyticsThrough: lastDay(days),
+			analyticsAt: new Date(now).toISOString()
+		};
 		if (!state.backfilled && days.length > 0) {
 			const first = state.history[0];
 			next = mergeBackfill(next, dailyCounts(days, first ? { at: Date.parse(first[0]), count: first[1] } : null), now);
 			log(`analytics ${account.title}: filled in ${days.length} days of past subscribers from YouTube (since ${next.since.slice(0, 10)})`);
 		}
 		await pb.setSetting(key, next);
-		say(`analytics ${account.title}: ${Object.keys(next.analytics).length} videos with subscribers, through ${next.analyticsThrough || 'no day yet'}`);
+		say(
+			`analytics ${account.title}: ${Object.keys(next.analytics).length} videos with subscribers, ${Object.keys(next.engaged).length} with engaged views, through ${next.analyticsThrough || 'no day yet'}`
+		);
 	} catch (err) {
 		say(`analytics ${account.title} failed: ${String(err instanceof Error ? err.message : err).split('\n')[0]}`);
 	}

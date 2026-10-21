@@ -52,7 +52,12 @@ function count(n: number | string | null | undefined, missing?: string): string 
 	return n == null || n === '' ? missing : Number(n).toLocaleString();
 }
 
-export function youtubeFacts(row: VideoStats, ago: (iso: string | undefined) => string): FactGroup[] {
+/** `engaged`: YouTube Analytics' [views, engagedViews] for the video (followers.ts engagedOf), when read. */
+export function youtubeFacts(
+	row: VideoStats,
+	ago: (iso: string | undefined) => string,
+	engaged: [number, number] | null = null
+): FactGroup[] {
 	const d = row.data ?? ({} as YouTubeVideo);
 	const s = d.snippet ?? {};
 	const st = d.status ?? {};
@@ -96,6 +101,13 @@ export function youtubeFacts(row: VideoStats, ago: (iso: string | undefined) => 
 			title: 'Counters',
 			rows: pairs([
 				['Views', count(stats.viewCount)],
+				// YouTube Analytics' own count of the plays, about two days behind (worker/ytanalytics.mjs).
+				[
+					'Engaged views',
+					engaged && engaged[0] > 0
+						? `${count(engaged[1])} of ${count(engaged[0])} plays (${((engaged[1] / engaged[0]) * 100).toLocaleString('en-GB', { maximumFractionDigits: 1 })} %, YouTube Analytics)`
+						: undefined
+				],
 				['Likes', count(stats.likeCount, 'hidden')],
 				['Comments', count(stats.commentCount, 'off')],
 				['Favourites', stats.favoriteCount],

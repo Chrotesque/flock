@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
 	countAt,
 	creditedFollowers,
+	engagedOf,
 	facebookFollows,
 	followerSource,
 	gainedBetween,
 	readFollowerState,
 	stateOf,
 	sumGains,
+	youtubeSkipRate,
 	type FollowerState
 } from './followers';
 
@@ -29,6 +31,7 @@ const state: FollowerState = {
 	],
 	credits: { a: 7, b: 3 },
 	analytics: null,
+	engaged: null,
 	analyticsThrough: ''
 };
 
@@ -124,9 +127,34 @@ describe("YouTube Analytics' figures", () => {
 	});
 
 	it('are read back field by field', () => {
-		const read = readFollowerState({ ...covered, analytics: { a: [12, 2], junk: 'x' } });
+		const read = readFollowerState({ ...covered, analytics: { a: [12, 2], junk: 'x' }, engaged: { a: [1331, 198], junk: [1] } });
 		expect(read?.analytics).toEqual({ a: [12, 2] });
+		expect(read?.engaged).toEqual({ a: [1331, 198] });
 		expect(read?.analyticsThrough).toBe('2026-10-18');
 		expect(readFollowerState(state)?.analytics).toBeNull();
+		expect(readFollowerState(state)?.engaged).toBeNull();
+	});
+});
+
+describe("YouTube's skip rate", () => {
+	// A Short's numbers as YouTube Analytics gives them, and one it has barely begun to count.
+	const states: FollowerState[] = [{ ...state, engaged: { vidShort: [1331, 198], vidFresh: [145, 21] } }];
+
+	it('is the share of plays that never became an engaged view', () => {
+		expect(youtubeSkipRate(engagedOf(states, 'vidShort'), 1339)).toBeCloseTo(85.12, 2);
+		expect(youtubeSkipRate([10, 10], 10)).toBe(0);
+	});
+
+	it('waits until Analytics has counted half the public views', () => {
+		expect(youtubeSkipRate(engagedOf(states, 'vidFresh'), 953)).toBeNull();
+		expect(youtubeSkipRate([500, 100], 1000)).toBe(80);
+		expect(youtubeSkipRate([499, 100], 1000)).toBeNull();
+	});
+
+	it('is not known without a pair, or with no plays', () => {
+		expect(engagedOf(states, 'other')).toBeNull();
+		expect(youtubeSkipRate(null, 10)).toBeNull();
+		expect(youtubeSkipRate([0, 0], 0)).toBeNull();
+		expect(engagedOf([{ ...state, platform: 'instagram', engaged: { x: [1, 1] } }], 'x')).toBeNull();
 	});
 });
