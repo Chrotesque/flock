@@ -56,7 +56,7 @@
 		judge,
 		peerGroups,
 		periodStats,
-		ratioOf,
+		overallOf,
 		readFilter,
 		sortRows,
 		storedFilter,
@@ -66,6 +66,7 @@
 		type Curve,
 		type DashFilter as Filter,
 		type Judgement,
+		type Overall,
 		type Post,
 		type Release,
 		type SortKey,
@@ -361,9 +362,11 @@
 		comments: number | null;
 		delta: Record<Counter, number>;
 		judgements: Judgement[];
+		/** Every platform in view against usual at once (overallOf); `ratio` is its views over usual. */
+		overall: Overall;
 		ratio: number | null;
 		curves: Curve[];
-		/** Instagram's skip rate for its reel, while Instagram is in view. */
+		/** The skip rate over the platforms in view that give one (skipRateOf). */
 		skip: number | null;
 		followers: number | null;
 	}
@@ -383,6 +386,7 @@
 			const posts = filter.platforms.map((p) => release.posts[p]).filter((p): p is Post => Boolean(p));
 			const peersOf = (post: Post) => groups.get(`${post.platform}:${release.kind}`) ?? [];
 			const judgements = posts.map((post) => judge(post, peersOf(post), now));
+			const overall = overallOf(judgements);
 			return {
 				release,
 				posts,
@@ -397,7 +401,8 @@
 					followers: deltaOf(posts, 'followers')
 				},
 				judgements,
-				ratio: ratioOf(judgements),
+				overall,
+				ratio: overall.ratio,
 				curves: posts.map((post) => curve(post, peersOf(post), now)),
 				skip: skipRateOf(release, filter.platforms)
 			};
@@ -897,6 +902,27 @@
 		return `${label}: ${num(j.views)} views ${ageWords(j.age)}. The ${plural} on ${label} usually had ${num(Math.round(j.usual))} by then (the middle of ${j.peers}).`;
 	}
 
+	/** Views over usual as a difference: +34 %, −12 %, ±0 %. */
+	function againstUsual(ratio: number): string {
+		const d = Math.round((ratio - 1) * 100);
+		return d > 0 ? `+${whole.format(d)} %` : d < 0 ? `−${whole.format(-d)} %` : '±0 %';
+	}
+
+	const VERDICT_WORDS = { ahead: 'Ahead of usual', usual: 'About usual', behind: 'Behind usual' };
+
+	function overallTitle(row: Row): string {
+		const o = row.overall;
+		const names = (list: StatPlatform[]) => list.map((p) => PLATFORMS[p].label).join(', ');
+		if (row.judgements.length === 0) return 'Nothing in view to compare';
+		if (o.ratio === null || o.verdict === null) return `Nothing to compare yet: ${names(o.left)} — no usual, or no views at that age`;
+		const lines = [
+			`${VERDICT_WORDS[o.verdict]}, every platform together: ${num(o.views)} views where the usual adds up to ${num(Math.round(o.usual))} (${againstUsual(o.ratio)}) — ${names(o.counted)}`
+		];
+		if (o.left.length > 0) lines.push(`Left out, with nothing to compare: ${names(o.left)}`);
+		lines.push("Each platform at the video's own age, up to its first week; within a fifth either way is about usual.");
+		return lines.join('\n');
+	}
+
 	function linkTitle(p: PlatformId): string {
 		const label = PLATFORMS[p].label;
 		return isStatPlatform(p) ? `Open on ${label}` : `Open on ${label} — flock posted it there but does not read its views yet`;
@@ -1031,7 +1057,12 @@
 	{:else if col === 'curve'}
 		<span class="colhead {cellOf(col)}" title="Views from release, up to its first week; dashed: the usual for its kind">From release</span>
 	{:else if col === 'usual'}
-		{@render sortHead('usual', 'vs usual', cellOf(col))}
+		{@render sortHead(
+			'usual',
+			'vs usual',
+			cellOf(col),
+			"Views against the usual for the kind at the same age. On top every platform in view together — their views added up against their usuals added up — and under it each platform's own. Within a fifth either way is about usual."
+		)}
 	{/if}
 {/snippet}
 
@@ -1162,15 +1193,27 @@
 	{:else if col === 'curve'}
 		<span class="spark {cellOf(col)}"><ViewsCurve curves={row.curves} /></span>
 	{:else if col === 'usual'}
-		<span class="verdicts {cellOf(col)}">
-			{#each row.judgements as j (j.platform)}
-				<span class="judged {j.verdict ?? 'none'}" title={judgementTitle(j, r)}>
-					<PlatformIcon platform={j.platform} size={13} />
-					<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-						<path d={TREND[j.verdict ?? 'none']} />
-					</svg>
+		<!-- Every platform together on top, each one under it behind its square, as the counters have. -->
+		{@const overall = row.overall}
+		<span class="num cell stack verdicts {cellOf(col)}">
+			<span class="judged overall {overall.verdict ?? 'none'}" title={overallTitle(row)}>
+				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+					<path d={TREND[overall.verdict ?? 'none']} />
+				</svg>
+				{#if overall.ratio !== null}<span class="against">{againstUsual(overall.ratio)}</span>{/if}
+			</span>
+			{#if row.judgements.length > 1}
+				<span class="parts">
+					{#each row.judgements as j (j.platform)}
+						<span class="judged {j.verdict ?? 'none'}" title={judgementTitle(j, r)}>
+							<i style:background={PLATFORM_COLOURS[j.platform]}></i>
+							<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+								<path d={TREND[j.verdict ?? 'none']} />
+							</svg>
+						</span>
+					{/each}
 				</span>
-			{/each}
+			{/if}
 		</span>
 	{/if}
 {/snippet}
@@ -2654,20 +2697,22 @@
 		min-width: 0;
 	}
 
-	.verdicts {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: flex-end;
-		gap: 4px 10px;
-	}
-
-	/* A platform's mark and, after it, how the video stands there against usual. */
+	/* A platform's square and, after it, how the video stands there against usual;
+	   on top, every platform together, its arrow and by how much. */
 	.judged {
 		display: inline-flex;
 		align-items: center;
 		gap: 3px;
 		color: var(--text-dim);
+	}
+
+	.judged.overall {
+		gap: 5px;
+		font-weight: 600;
+	}
+
+	.parts .judged {
+		gap: 4px;
 	}
 
 	.judged svg {

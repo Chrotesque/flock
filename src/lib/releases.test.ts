@@ -13,6 +13,7 @@ import {
 	peerGroups,
 	periodStats,
 	pooledSkipRate,
+	overallOf,
 	ratioOf,
 	readFilter,
 	readSkipRate,
@@ -35,6 +36,7 @@ import {
 	type ReelRow,
 	type Release,
 	type Sample,
+	type StatPlatform,
 	type TargetLink,
 	type YouTubeRow
 } from './releases';
@@ -516,6 +518,21 @@ describe('judging against usual', () => {
 		});
 		expect(ratioOf([j(150, 100), j(50, 100)])).toBe(1);
 		expect(ratioOf([j(null, 100)])).toBeNull();
+	});
+
+	it('gives one verdict over every platform, each weighing as much as its views', () => {
+		const j = (platform: StatPlatform, views: number | null, usual: number | null) => ({ platform, age: H, views, usual, peers: 3, verdict: null });
+		// A Short far ahead on YouTube outweighs a reel a little behind.
+		const ahead = overallOf([j('youtube', 3000, 1000), j('instagram', 150, 200), j('tiktok', 80, null)]);
+		expect(ahead.ratio).toBeCloseTo(3150 / 1200);
+		expect(ahead.verdict).toBe('ahead');
+		expect(ahead.counted).toEqual(['youtube', 'instagram']);
+		expect(ahead.left).toEqual(['tiktok']);
+		// Within a fifth either way is usual, as for one platform.
+		expect(overallOf([j('youtube', 1100, 1000), j('instagram', 100, 100)]).verdict).toBe('usual');
+		expect(overallOf([j('youtube', 700, 1000), j('instagram', 50, 100)]).verdict).toBe('behind');
+		expect(overallOf([j('youtube', null, 1000)])).toMatchObject({ ratio: null, verdict: null, counted: [], left: ['youtube'] });
+		expect(overallOf([]).verdict).toBeNull();
 	});
 });
 

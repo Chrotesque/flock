@@ -88,9 +88,9 @@ describe('the grid', () => {
 	it('gives each size its widths, leaving out what a narrow list drops', () => {
 		const shown = shownColumns(DEFAULT_COLUMNS, { jestr: false });
 		expect(gridTemplate(shown, 'wide')).toBe(
-			'var(--thumbcol) minmax(0, 1fr) max-content max-content max-content max-content max-content 156px 164px'
+			'var(--thumbcol) minmax(0, 1fr) max-content max-content max-content max-content max-content 156px max-content'
 		);
-		expect(gridTemplate(shown, 'mid')).toBe('var(--thumbcol) minmax(0, 1fr) 84px 104px 132px 164px');
+		expect(gridTemplate(shown, 'mid')).toBe('var(--thumbcol) minmax(0, 1fr) 84px 104px 132px 112px');
 		expect(columnsAt(shown, 'mid')).toEqual(['thumb', 'video', 'followers', 'views', 'curve', 'usual']);
 		expect(gridTemplate(shown, 'narrow')).toBe('var(--thumbcol) minmax(0, 1fr) 96px 76px');
 	});

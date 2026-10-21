@@ -835,16 +835,45 @@ export function periodStats(releases: Release[], filter: DashFilter, now: Date, 
 
 export type SortKey = 'date' | 'views' | 'likes' | 'comments' | 'followers' | 'usual' | 'skip';
 
-/** Views over usual, over the platforms judged on both; null with none. */
-export function ratioOf(judgements: Judgement[]): number | null {
+/** How a video stands on every platform in view at once. */
+export interface Overall {
+	/** Its views, and the usual, added up over the platforms judged on both. */
+	views: number;
+	usual: number;
+	/** Views over usual; null when no platform has both. */
+	ratio: number | null;
+	/** The same ±VERDICT_MARGIN as one platform's; null with no ratio. */
+	verdict: Verdict | null;
+	/** The platforms it is over, and those left out for want of views or a usual. */
+	counted: StatPlatform[];
+	left: StatPlatform[];
+}
+
+/**
+ * The overall verdict: each platform's views at its age added up against
+ * their usuals added up, so a platform weighs as much as its views do.
+ */
+export function overallOf(judgements: Judgement[]): Overall {
 	let views = 0;
 	let usual = 0;
+	const counted: StatPlatform[] = [];
+	const left: StatPlatform[] = [];
 	for (const j of judgements) {
-		if (j.views === null || j.usual === null || j.usual <= 0) continue;
+		if (j.views === null || j.usual === null || j.usual <= 0) {
+			left.push(j.platform);
+			continue;
+		}
 		views += j.views;
 		usual += j.usual;
+		counted.push(j.platform);
 	}
-	return usual > 0 ? views / usual : null;
+	const ratio = usual > 0 ? views / usual : null;
+	return { views, usual, ratio, verdict: ratio === null ? null : verdictOf(ratio, 1), counted, left };
+}
+
+/** Views over usual, over the platforms judged on both; null with none. */
+export function ratioOf(judgements: Judgement[]): number | null {
+	return overallOf(judgements).ratio;
 }
 
 /**

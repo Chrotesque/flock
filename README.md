@@ -635,12 +635,16 @@ press Esc or go to another page to close it. For the brand in view it shows:
   itself. YouTube and Instagram only say how many an account has, so each rise
   in that count is credited to the videos gaining views at the time, in
   proportion (the newest video when none was). Hover a number to see where it
-  came from. Videos out before the worker first read an account show —. A line
-  shows its views from release, with what is usual for its kind dashed, and
-  an arrow per platform says whether it is ahead (green), about usual (grey)
-  or behind (yellow). *Skipped* is Instagram's estimate of the share of a
-  reel's views skipped within its first 3 seconds (the total row weighs each
-  reel by its views); a fresh reel shows — until Instagram has one. Sort by
+  came from. Videos out before the worker first read an account show —. Counts
+  from 1,000 up are shortened (1.2k, 85.8k, 102k); hover one for the exact
+  figure. A line shows its views from release, with what is usual for its kind
+  dashed. *vs usual* gives one arrow for every platform together, with how far
+  off the usual it is, and each platform's arrow below it: ahead (green), about
+  usual (grey) or behind (yellow). *Skipped* is the share of views dropped at
+  the start: Instagram's estimate of those skipped within the first 3 seconds,
+  and YouTube's plays that never became an engaged view, together on top and
+  each below (weighed by views). A fresh reel shows — until Instagram has a
+  figure, a Short until YouTube Analytics has caught up, about two days. Sort by
   any column — best first, click it again for the other way round; click a video for everything YouTube
   and Instagram report about it, and to play it. It plays the copy flock filed
   in the upload's NAS folder, streamed by the NAS worker; a video sent from the

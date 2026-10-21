@@ -67,7 +67,13 @@ export const COLUMNS: Record<ColumnId, ColumnDef> = {
 		narrow: null
 	},
 	curve: { label: 'From release', about: 'Views from release, the usual for its kind dashed', width: 156, mid: 132, narrow: null },
-	usual: { label: 'vs usual', about: 'Ahead of, about or behind the usual, per platform', width: 164, mid: 164, narrow: 76 }
+	usual: {
+		label: 'vs usual',
+		about: 'Ahead of, about or behind the usual: every platform together, each one below',
+		width: 'content',
+		mid: 112,
+		narrow: 76
+	}
 };
 
 export const COLUMN_ORDER: ColumnId[] = ['thumb', 'video', 'jestr', 'followers', 'views', 'likes', 'comments', 'skip', 'curve', 'usual'];
