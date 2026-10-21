@@ -26,7 +26,7 @@
 
 <main class="wrap doc">
   <h1>Privacy Policy</h1>
-  <p class="updated">flock — last updated 20-10-2026</p>
+  <p class="updated">flock — last updated 21-10-2026</p>
 
   <h2>What flock is</h2>
   <p>flock is open-source software, published under the MIT license, that you
@@ -61,12 +61,13 @@
   moving a Facebook reel's release time, renaming it, or deleting one flock posted —
   and showing its operator how the connected account's and Pages' own posts are doing. For the second it reads the
   Instagram account's newest posts — each one's link, caption and publish time, its like
-  and comment counts, and the views and reach Instagram reports for it — and the
+  and comment counts, and the views, reach and skip rate Instagram reports for it — and the
   Facebook Page's newest reels — each one's link, caption, length and publish time,
   its like and comment counts, and the views, plays, average watch time, shares and
   follows Facebook reports for it — and keeps them on the operator's own equipment.
-  It also reads how many people follow the Instagram account and the Page: the
-  number alone, never who they are. Beyond that, of a Facebook Page it reads only
+  It also reads the Instagram account's total views, likes and comments per day, to
+  show how the account is doing month by month, and how many people follow the
+  Instagram account and the Page: the number alone, never who they are. Beyond that, of a Facebook Page it reads only
   the Page's name, username and link, to show which Page a reel goes to. It does not
   read who follows the account or the Page, the text of comments, or messages, and
   what it reads is shown to its operator only, inside flock.</p>
@@ -98,7 +99,7 @@
   <ul>
     <li><code>youtube.upload</code> — uploading videos to the connected channel</li>
     <li><code>youtube.readonly</code> — reading that channel's own videos, their public counters, the channel's playlists and its subscriber count (the number, not who the subscribers are)</li>
-    <li><code>yt-analytics.readonly</code> — reading that channel's YouTube Analytics: how many subscribers each of its videos brought, and the channel's subscribers gained and lost per day (numbers only, never who they are)</li>
+    <li><code>yt-analytics.readonly</code> — reading that channel's YouTube Analytics: how many subscribers each of its videos brought, and how many of each video's views YouTube counts as engaged views (so flock can show how often a video is skipped); and the channel's subscribers gained and lost, views, likes and comments per day (so flock can show how the channel is doing month by month). Numbers only, never who the viewers or subscribers are</li>
     <li><code>youtube</code> — only if the operator enables it, and used only when the operator asks: adding a video to playlists, renaming a video on the channel, moving or bringing forward the release of a video flock scheduled, and deleting a video flock uploaded</li>
   </ul>
   <p>From Meta, through Facebook Login, flock asks for:</p>
@@ -106,7 +107,7 @@
     <li><code>pages_show_list</code> and <code>business_management</code> — listing the Facebook Pages the operator manages, including one held in a business portfolio, to find the linked Instagram account and the Pages reels go to</li>
     <li><code>instagram_basic</code> — the Instagram account's identifier and username, so flock can show which account a reel will go to, and its follower count</li>
     <li><code>instagram_content_publish</code> — publishing a reel to that account, and reading how many of its daily posts are used</li>
-    <li><code>instagram_manage_insights</code> — reading the views and reach of that account's own posts, so flock can show its operator how they are doing</li>
+    <li><code>instagram_manage_insights</code> — reading the views, reach and skip rate of that account's own posts, and the account's total views, likes and comments per day, so flock can show its operator how they are doing</li>
     <li><code>read_insights</code> — reading the views, plays, average watch time, shares and follows of the connected Page's own reels, and the Page's follower count day by day, so flock can show its operator how they are doing</li>
     <li><code>pages_read_engagement</code> — reading the Page's name, username, link and follower count, its own reels with their like and comment counts, and the access details that publishing goes through</li>
     <li><code>pages_manage_posts</code> — publishing reels to the Facebook Page the operator chooses, at the time the operator chooses, with the cover image the operator chooses for one; when the operator asks, moving a reel's release time, renaming it (the first line of its caption), or deleting a reel flock posted; and for a custom Instagram reel cover, placing the image on the Page as an <em>unpublished</em> photo, which never appears on the Page, so Instagram can fetch it, and deleting it as soon as Instagram has it</li>
@@ -140,7 +141,8 @@
     <li>the Facebook Page access token for each connected Instagram account and Facebook Page, in the same configuration file</li>
     <li>TikTok's access and refresh tokens, in the same configuration file</li>
     <li>each connected account's identifier, username and display name, each Facebook Page's name, username and link, each YouTube channel's playlist names, and Instagram's count of posts used today</li>
-    <li>the connected channel's own videos, the connected Instagram accounts' own posts, the connected Facebook Pages' own reels and the connected TikTok accounts' own public videos as those services report them — title or caption, link, release time; for TikTok also length and cover image — with their counters (views, likes, comments; on Instagram reach; on Facebook plays, average watch time, shares and follows; on TikTok shares) and a history of how views, likes and comments changed</li>
+    <li>the connected channel's own videos, the connected Instagram accounts' own posts, the connected Facebook Pages' own reels and the connected TikTok accounts' own public videos as those services report them — title or caption, link, release time; for TikTok also length and cover image — with their counters (views, likes, comments; on YouTube engaged views; on Instagram reach and skip rate; on Facebook plays, average watch time, shares and follows; on TikTok shares) and a history of how views, likes and comments changed</li>
+    <li>the connected channel's and Instagram accounts' views, likes and comments per calendar month, as YouTube Analytics and Instagram report them, for the last year</li>
     <li>the connected channel's subscriber count and the connected Instagram accounts', Facebook Pages' and TikTok accounts' follower counts — numbers only — with a history of how each changed, and how many of those followers each video brought, as YouTube Analytics reports it or as flock attributes it; for TikTok also the account's like and video counts</li>
     <li>the most recent creator information read from TikTok, as described above</li>
   </ul>
@@ -195,7 +197,7 @@
 <footer class="bottom">
   <div class="wrap">
     <img src="icon.png" alt="">
-    <span>flock, version 0.16.57. Contact: contact@chrotesque.com</span>
+    <span>flock, version 0.16.72. Contact: contact@chrotesque.com</span>
     <nav>
       <a href="index.html">Overview</a>
       <a href="how-it-works.html">How it works</a>
