@@ -12,13 +12,15 @@
 // Short's views count every play since 31 Mar 2025, its engaged views only
 // those past YouTube's old view threshold, so the share that never got there
 // is the Dashboard's skip rate for YouTube — `analyticsThrough` = the last
-// day YouTube has, and, once, the channel's daily counts in front of what
-// flock recorded (mergeBackfill).
+// day YouTube has, `monthly` = the channel's views, likes and comments per
+// whole month (monthly.mjs, from the same day report), and, once, the
+// channel's daily counts in front of what flock recorded (mergeBackfill).
 
 import { forgetToken, grantedScope } from './google.mjs';
 import { youtubeToken } from './youtube.mjs';
 import { fetchOrExplain } from './net.mjs';
 import { mergeBackfill, readState, settingKey } from './followers.mjs';
+import { youtubeMonthly } from './monthly.mjs';
 
 const API = 'https://youtubeanalytics.googleapis.com/v2/reports';
 export const ANALYTICS_SCOPE = 'https://www.googleapis.com/auth/yt-analytics.readonly';
@@ -172,7 +174,10 @@ export async function analyticsPass({ pb, config, log, account }) {
 
 		const endDate = new Date().toISOString().slice(0, 10);
 		const metrics = 'subscribersGained,subscribersLost';
-		const days = reportRows(await report(config, account, { startDate: FIRST_DAY, endDate, metrics, dimensions: 'day', sort: 'day' }));
+		// The channel's views, likes and comments per day ride along, for its whole months (monthly.mjs).
+		const days = reportRows(
+			await report(config, account, { startDate: FIRST_DAY, endDate, metrics: `${metrics},views,likes,comments`, dimensions: 'day', sort: 'day' })
+		);
 		// The videos the Dashboard can show: those flock has a row for.
 		const videos = [];
 		for (const ids of batches(await pb.listChannelVideoIds(account.channelId))) {
@@ -194,7 +199,9 @@ export async function analyticsPass({ pb, config, log, account }) {
 			analytics: perVideo(videos),
 			engaged: perVideoEngaged(videos),
 			analyticsThrough: lastDay(days),
-			analyticsAt: new Date(now).toISOString()
+			analyticsAt: new Date(now).toISOString(),
+			monthly: youtubeMonthly(days, lastDay(days)),
+			monthlyAt: new Date(now).toISOString()
 		};
 		if (!state.backfilled && days.length > 0) {
 			const first = state.history[0];

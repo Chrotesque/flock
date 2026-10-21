@@ -614,7 +614,12 @@ Settings, local or on the network, like watch folders.
 
 **Dashboard**, at the top of the sidebar, opens over whatever page you are on,
 and flock opens on it; its arrow points back while it is open. Click it again,
-press Esc or go to another page to close it. For the brand in view it shows:
+press Esc or go to another page to close it. For the brand in view it shows
+what follows. Right-click a brand's button for its **month over month**:
+views, likes and comments in each whole month of the last year against the
+month before, all platforms together and each below — YouTube's from YouTube
+Analytics, Instagram's from its account insights, Facebook's and TikTok's only
+for months flock read all of.
 
 - **One filter for all of it:** the timeframe (the last 30 days by default,
   up to 180), which platforms (all of them is *Combined*), which kinds (Shorts,

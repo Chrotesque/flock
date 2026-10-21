@@ -15,6 +15,7 @@ const state = (account: string, name: string, at: string, count = 10): FollowerS
 	credits: {},
 	analytics: null,
 	engaged: null,
+	monthly: null,
 	analyticsThrough: ''
 });
 

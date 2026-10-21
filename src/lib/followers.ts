@@ -34,6 +34,8 @@ export interface FollowerState {
 	analytics: Record<string, [number, number]> | null;
 	/** YouTube Analytics' plays and engaged views per video, [views, engagedViews]; null until read. */
 	engaged: Record<string, [number, number]> | null;
+	/** The account's own [views, likes, comments] per whole month, 'YYYY-MM' (worker/monthly.mjs); null until read. */
+	monthly: Record<string, [number, number, number]> | null;
 	/** The last day those cover, 'YYYY-MM-DD' (YouTube's, Pacific); '' until read. */
 	analyticsThrough: string;
 }
@@ -65,8 +67,21 @@ export function readFollowerState(raw: unknown): FollowerState | null {
 		credits,
 		analytics: readPairs(r.analytics),
 		engaged: readPairs(r.engaged),
+		monthly: readMonthly(r.monthly),
 		analyticsThrough: typeof r.analyticsThrough === 'string' ? r.analyticsThrough : ''
 	};
+}
+
+/** { 'YYYY-MM': [views, likes, comments] }, read back; null when none are stored. */
+function readMonthly(raw: unknown): Record<string, [number, number, number]> | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const out: Record<string, [number, number, number]> = {};
+	for (const [month, counts] of Object.entries(raw as Record<string, unknown>)) {
+		if (/^\d{4}-\d{2}$/.test(month) && Array.isArray(counts) && counts.length === 3 && counts.every((n) => typeof n === 'number')) {
+			out[month] = [counts[0], counts[1], counts[2]];
+		}
+	}
+	return out;
 }
 
 /** Per-video pairs of numbers, read back; null when there are none stored. */

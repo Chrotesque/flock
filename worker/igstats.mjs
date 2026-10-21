@@ -12,6 +12,7 @@
 import { explain, graph, listMedia } from './instagram.mjs';
 import { instagramReady } from './accounts.mjs';
 import { creditWords, followerStep } from './followers.mjs';
+import { instagramMonthly } from './monthly.mjs';
 
 const HISTORY_CAP = 1000;
 
@@ -185,6 +186,7 @@ export async function instagramStatsPass({ pb, config, log }) {
 			const rows = items.map((item) => toPostRow(item, ig));
 			const added = await saveRows(pb, byPost, rows, now);
 			await readFollowers(pb, ig, rows, byPost, log);
+			await instagramMonthly({ pb, ig, log });
 			if (added) log(`instagram stats @${ig.username}: ${added} new post${added === 1 ? '' : 's'}`);
 			if (before) log(`instagram stats @${ig.username}: recovered`);
 			said.delete(ig.igUserId);

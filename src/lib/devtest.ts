@@ -67,8 +67,11 @@ export interface DashboardScope {
 	/** Called when a brand is chosen instead. */
 	release: () => void;
 	groups: () => DashboardGroup[];
-	/** Shown when a brand button is right-clicked while this scope is chosen, at the pointer. */
-	BrandMenu?: Component<{ brand: string; x: number; y: number; close: () => void }>;
+	/**
+	 * Shown when a brand button is right-clicked while this scope is chosen, at
+	 * the pointer, in place of the brand's month over month — which `open` opens.
+	 */
+	BrandMenu?: Component<{ brand: string; x: number; y: number; close: () => void; open?: () => void }>;
 }
 
 /** The values of a module's keys, per platform entry of a flock block. */

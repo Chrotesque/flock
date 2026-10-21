@@ -32,6 +32,7 @@ const state: FollowerState = {
 	credits: { a: 7, b: 3 },
 	analytics: null,
 	engaged: null,
+	monthly: null,
 	analyticsThrough: ''
 };
 

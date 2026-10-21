@@ -5,6 +5,7 @@
 	import DashFilter from './DashFilter.svelte';
 	import ViewsCurve from './ViewsCurve.svelte';
 	import RenameDialog from './RenameDialog.svelte';
+	import BrandMonths from './BrandMonths.svelte';
 	import NasPlayer from './NasPlayer.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
@@ -43,6 +44,7 @@
 	} from '$lib/repo';
 	import { formatBytes, formatDuration, shortCount } from '$lib/format';
 	import { KIND_LABELS } from '$lib/videokind';
+	import { TREND, changeWords } from '$lib/trend';
 	import { reelFacts, youtubeFacts, type FactGroup } from '$lib/videofacts';
 	import type { PlatformId, UploadJob, UploadTarget, VideoStats } from '$lib/types';
 	import {
@@ -660,6 +662,8 @@
 
 	/** A brand's menu from the chosen scope, where it was right-clicked. */
 	let brandMenu = $state<{ brand: string; x: number; y: number } | null>(null);
+	/** The brand whose month over month is open (BrandMonths), from its button's right-click. */
+	let brandPanel = $state<string | null>(null);
 	let fullRows = $state<Record<string, VideoStats | 'loading' | 'failed'>>({});
 
 	function fullRow(post: Post): VideoStats | null {
@@ -880,14 +884,6 @@
 	}
 
 	const KIND_ONE: Record<string, string> = { short: 'Short', long: 'Long form', live: 'Live stream', other: 'Other' };
-	/** The performance marks: rising, level, falling — and a dash where there is nothing to compare with. */
-	const TREND = {
-		ahead: 'M2.5 11.5l4-4 2.5 2.5 4.5-4.5M9.5 5.5h4v4',
-		usual: 'M2 8h11.5M10.5 5l3 3-3 3',
-		behind: 'M2.5 4.5l4 4 2.5-2.5 4.5 4.5M9.5 10.5h4v-4',
-		none: 'M5 8h6'
-	};
-
 	function judgementTitle(j: Judgement, release: Release): string {
 		const kind = release.kind;
 		const label = PLATFORMS[j.platform].label;
@@ -903,10 +899,7 @@
 	}
 
 	/** Views over usual as a difference: +34 %, −12 %, ±0 %. */
-	function againstUsual(ratio: number): string {
-		const d = Math.round((ratio - 1) * 100);
-		return d > 0 ? `+${whole.format(d)} %` : d < 0 ? `−${whole.format(-d)} %` : '±0 %';
-	}
+	const againstUsual = (ratio: number) => changeWords(ratio);
 
 	const VERDICT_WORDS = { ahead: 'Ahead of usual', usual: 'About usual', behind: 'Behind usual' };
 
@@ -1246,20 +1239,35 @@
 						aria-checked={!scope && brand.id === brands.currentId}
 						style:--chip={scope ? sets.find((set) => set.label === brand.name)?.colour : undefined}
 						class:tinted={Boolean(scope && sets.find((set) => set.label === brand.name)?.colour)}
+						title="Right-click for {brand.name}'s month over month"
 						onclick={() => {
 							for (const s of devtestDashboardScopes) s.release();
 							brands.select(brand.id);
 						}}
 						oncontextmenu={(e) => {
-							if (!scope?.BrandMenu) return;
 							e.preventDefault();
-							brandMenu = { brand: brand.id, x: e.clientX, y: e.clientY };
+							// A local scope's own menu, while it is chosen, offers the panel in turn.
+							if (scope?.BrandMenu) brandMenu = { brand: brand.id, x: e.clientX, y: e.clientY };
+							else brandPanel = brand.id;
 						}}>{brand.name}</button
 					>
 				{/each}
 			</div>
 			{#if scope?.BrandMenu && brandMenu}
-				<scope.BrandMenu brand={brandMenu.brand} x={brandMenu.x} y={brandMenu.y} close={() => (brandMenu = null)} />
+				{@const id = brandMenu.brand}
+				<scope.BrandMenu
+					brand={id}
+					x={brandMenu.x}
+					y={brandMenu.y}
+					close={() => (brandMenu = null)}
+					open={() => {
+						brandMenu = null;
+						brandPanel = id;
+					}}
+				/>
+			{/if}
+			{#if brandPanel}
+				<BrandMonths brand={brandPanel} onclose={() => (brandPanel = null)} />
 			{/if}
 		{/if}
 		<span class="legend">

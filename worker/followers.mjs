@@ -52,8 +52,24 @@ export function readState(raw) {
 		analytics: readPairs(raw.analytics),
 		engaged: readPairs(raw.engaged),
 		analyticsThrough: typeof raw.analyticsThrough === 'string' ? raw.analyticsThrough : '',
-		analyticsAt: typeof raw.analyticsAt === 'string' ? raw.analyticsAt : ''
+		analyticsAt: typeof raw.analyticsAt === 'string' ? raw.analyticsAt : '',
+		// The account's views, likes and comments per whole month, the platform's
+		// own figures (monthly.mjs), and when they were last read.
+		monthly: readMonthly(raw.monthly),
+		monthlyAt: typeof raw.monthlyAt === 'string' ? raw.monthlyAt : ''
 	};
+}
+
+/** { 'YYYY-MM': [views, likes, comments] }, read back; null when none are stored. */
+export function readMonthly(raw) {
+	if (!raw || typeof raw !== 'object') return null;
+	const out = {};
+	for (const [month, counts] of Object.entries(raw)) {
+		if (/^\d{4}-\d{2}$/.test(month) && Array.isArray(counts) && counts.length === 3 && counts.every((n) => typeof n === 'number')) {
+			out[month] = [counts[0], counts[1], counts[2]];
+		}
+	}
+	return out;
 }
 
 /** Per-video pairs of numbers, read back; null when there are none stored. */
