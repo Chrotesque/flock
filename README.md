@@ -540,6 +540,9 @@ the exact date and time underneath.
   pick one to fill in its next day and time.
 - *Release immediately* takes a platform off the hours: it shows under today's
   date instead.
+- Striped hours are taken: another video of the same brand goes out in them
+  (hover one to see which), so nothing of this upload can land there. Continue
+  waits while a slot sits in one. Other brands' videos do not count.
 - The dropdown above the hours adds a second time zone's clock.
 
 **4. Review.** The video plays beside exactly what each platform gets and when,

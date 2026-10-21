@@ -7,6 +7,9 @@
 	import { PLATFORMS } from '$lib/platforms';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { draft } from '$lib/stores/draft.svelte';
+	import { brands } from '$lib/stores/brands.svelte';
+	import { takenHours } from '$lib/stores/takenhours.svelte';
+	import { hourKey, takenWhy } from '$lib/takenhours';
 	import { DaysShown } from '$lib/stores/daysshown.svelte';
 	import { buildPlan, type PlanRow } from '$lib/plan';
 	import { addDays, dayStart, isoDate, minuteOf, makeTime } from '$lib/format';
@@ -30,6 +33,17 @@
 	let headRows = $derived(
 		all.map((row) => (row.immediate ? { ...row, date: isoDate(new Date()) } : row))
 	);
+
+	// An hour another video of this brand goes out in is closed to this one
+	// (takenhours.ts): striped, and a drop there is refused. Followed live,
+	// so a confirm on another machine closes its hour here too.
+	$effect(() => takenHours.follow());
+	let taken = $derived(takenHours.for(brands.currentId, draft.queuedJobs));
+
+	function blocked(date: string, hour: number): string {
+		const posts = taken.get(hourKey(date, hour));
+		return posts ? takenWhy(posts) : '';
+	}
 
 	let weekDays = $derived(new Set(Array.from({ length: shownDays }, (_, i) => isoDate(addDays(weekStart, i)))));
 	let offWeek = $derived(rows.filter((row) => !weekDays.has(row.date)));
@@ -64,6 +78,7 @@
 		dayCount={shownDays}
 		rolling
 		candrag={() => true}
+		{blocked}
 		dense
 		quarters
 		ondropitem={onDropItem}
@@ -198,7 +213,10 @@
 {/snippet}
 
 {#snippet tip()}
-	<p class="tip">Drag an icon to another day or hour, then pick the minutes. Hover one to read it.</p>
+	<p class="tip">
+		Drag an icon to another day or hour, then pick the minutes. Hover one to read it. Striped hours are
+		taken by another video of {brands.current?.name ?? 'this brand'}.
+	</p>
 	<DaysSelect {days} />
 {/snippet}
 

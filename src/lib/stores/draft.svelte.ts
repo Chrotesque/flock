@@ -1,12 +1,14 @@
 import { PLATFORMS, PLATFORM_IDS } from '../platforms';
-import { isoDate, nextDayMatching } from '../format';
+import { isoDate, makeTime, nextDayMatching } from '../format';
 import { tiktokProblems } from '../tiktok';
 import { PASTE_TAG_BOX, type FlockPaste, type PastedPlatform } from '../flockpaste';
 import { withPlaylists } from '../playlists';
 import { SAVED_VERSION, withoutHandPicked, type SavedDraft } from '../projects';
 import { imageSlot, type ImagePlatform } from '../coverimage';
+import { clashing } from '../takenhours';
 import { settings } from './settings.svelte';
 import { accounts } from './accounts.svelte';
+import { takenHours } from './takenhours.svelte';
 import { DEFAULT_SCHEDULING } from '../types';
 import type {
 	OptionValues,
@@ -99,6 +101,12 @@ class DraftStore {
 	 * after a restart does not either.
 	 */
 	queued = $state<VideoSlot[]>([]);
+
+	/**
+	 * The jobs those slots became, so their hour does not count as taken
+	 * by another video of the brand (takenhours.ts). Memory only.
+	 */
+	queuedJobs = $state<string[]>([]);
 
 	/**
 	 * Text composed per platform. There is no shared title/description pair:
@@ -410,6 +418,20 @@ class DraftStore {
 	}
 
 	/**
+	 * Platforms whose slot falls in an hour another video of the brand goes
+	 * out in (takenhours.ts). One released on pickup goes out this hour.
+	 */
+	get takenPlatforms(): PlatformId[] {
+		const now = new Date();
+		const slots = this.activePlatforms.map((platform) =>
+			this.isImmediate(platform)
+				? { platform, date: isoDate(now), time: makeTime(now.getHours(), now.getMinutes()) }
+				: { platform, ...this.scheduleFor(platform) }
+		);
+		return clashing(slots, takenHours.for(this.#brand, this.queuedJobs));
+	}
+
+	/**
 	 * True once every selected platform resolves to a date and a time.
 	 *
 	 * Reads through `scheduleFor`, not the `schedule` map: an untouched platform
@@ -560,7 +582,8 @@ class DraftStore {
 	reachable(wanted: Step): Step {
 		if (wanted >= 1 && !this.canLeaveUpload) return 0;
 		if (wanted >= 2 && !(this.canLeaveDetails && this.hasVideo)) return 1;
-		if (wanted >= 3 && !(this.scheduleComplete && this.pastPlatforms.length === 0)) return 2;
+		if (wanted >= 3 && !(this.scheduleComplete && this.pastPlatforms.length === 0 && this.takenPlatforms.length === 0))
+			return 2;
 		return wanted;
 	}
 
@@ -587,6 +610,7 @@ class DraftStore {
 		this.project = null;
 		this.projectBase = '';
 		this.queued = [];
+		this.queuedJobs = [];
 		this.texts = {};
 		this.composing = null;
 		// The split is the arrangement, not this video: the remembered one

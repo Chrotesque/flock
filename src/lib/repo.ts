@@ -25,6 +25,7 @@ import { readSkipRate } from './releases';
 import { FOLLOWER_PREFIX, facebookFollows, readFollowerState, type FollowerState } from './followers';
 import { cleanName, readTitleRequest, type TitleRequest } from './retitle';
 import type { PlayerJob } from './storedcopy';
+import type { SlotPost } from './takenhours';
 import type {
 	Account,
 	Brand,
@@ -1184,6 +1185,21 @@ export async function listTargets(jobId?: string): Promise<UploadTarget[]> {
 		const { expand: _expand, ...rest } = row;
 		return { ...rest, brand: job.brand ?? '', brand_name: job.brand_name ?? '' };
 	}) as unknown as UploadTarget[];
+}
+
+/**
+ * Every post with a slot from `since` on, with its job's brand: what the
+ * schedule step greys out as taken (takenhours.ts). Cancelled ones are left
+ * out here already.
+ */
+export async function loadTakenPosts(since: Date): Promise<SlotPost[]> {
+	type Row = Omit<SlotPost, 'brand'> & { expand?: { job?: { brand?: string } } };
+	const rows = await pb.collection('upload_targets').getFullList<Row>({
+		filter: pb.filter("scheduled_at >= {:since} && status != 'cancelled'", { since }),
+		expand: 'job',
+		fields: 'id,job,platform,status,scheduled_at,title,description,expand.job.brand'
+	});
+	return rows.map(({ expand, ...row }) => ({ ...row, brand: expand?.job?.brand ?? '' }));
 }
 
 /* ------------------------------------------------------------------ */

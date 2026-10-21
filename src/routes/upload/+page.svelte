@@ -24,10 +24,12 @@
 	import { imageFits, type ImagePlatform } from '$lib/coverimage';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { PLATFORMS } from '$lib/platforms';
+	import type { PlatformId } from '$lib/types';
 	import { paste } from '$lib/stores/paste.svelte';
 	import { projects } from '$lib/stores/projects.svelte';
 	import { uploadedName } from '$lib/projects';
 	import { videoTodo } from '$lib/stores/videotodo.svelte';
+	import { takenHours } from '$lib/stores/takenhours.svelte';
 	import { onDestroy } from 'svelte';
 
 	settings.load();
@@ -91,6 +93,13 @@
 		disarm();
 	});
 
+	/** Which platforms sit in a taken hour, in words. */
+	function takenWords(ids: PlatformId[]): string {
+		const names = ids.map((id) => PLATFORMS[id].label).join(', ');
+		const brand = brands.current?.name ?? 'this brand';
+		return `${names} ${ids.length === 1 ? 'falls' : 'fall'} in an hour another ${brand} video goes out in.`;
+	}
+
 	/** Platforms ticked since the upload step whose video slot is still empty. */
 	let missingVideo = $derived(
 		draft.slots.filter((entry) => !draft.slotHasVideo(entry.slot)).flatMap((entry) => entry.platforms)
@@ -115,7 +124,7 @@
 			: draft.step === 1
 				? draft.canLeaveDetails && draft.hasVideo
 				: draft.step === 2
-					? draft.scheduleComplete && draft.pastPlatforms.length === 0
+					? draft.scheduleComplete && draft.pastPlatforms.length === 0 && draft.takenPlatforms.length === 0
 					: true
 	);
 
@@ -246,6 +255,17 @@
 			}))
 			.filter((group) => group.rows.length > 0);
 		const groups = everyGroup.filter((group) => !draft.queued.includes(group.slot));
+
+		// The hours read afresh: another machine may have taken one since the
+		// schedule step was left.
+		await takenHours.refresh();
+		const taken = draft.takenPlatforms.filter((id) => groups.some((group) => group.platforms.includes(id)));
+		if (taken.length > 0) {
+			failure = `${takenWords(taken)} Not sent — move ${taken.length === 1 ? 'it' : 'them'} on the Schedule step.`;
+			phase = 'error';
+			return;
+		}
+
 		// Progress is by bytes actually transferred; a watch-folder pick sends none.
 		const total = groups.reduce((sum, g) => sum + (g.video.file?.size ?? 0), 0);
 		let sent = 0;
@@ -302,6 +322,7 @@
 				sent += size;
 				jobs.push(job.id);
 				draft.queued = [...draft.queued, group.slot];
+				draft.queuedJobs = [...draft.queuedJobs, job.id];
 				// So the file lists stop offering it; see loadUsedSources.
 				rememberUsedSources([
 					file
@@ -605,7 +626,7 @@
 				</nav>
 			</header>
 
-			{#if phase === 'error' || (draft.step === 2 && draft.pastPlatforms.length > 0) || (draft.step === 1 && missingVideo.length > 0) || (confirmHold && phase !== 'uploading')}
+			{#if phase === 'error' || (draft.step === 2 && (draft.pastPlatforms.length > 0 || draft.takenPlatforms.length > 0)) || (draft.step === 1 && missingVideo.length > 0) || (confirmHold && phase !== 'uploading')}
 				<div class="notes">
 					{#if confirmHold && phase !== 'uploading'}
 						<span class="blocked">{confirmHold}</span>
@@ -625,6 +646,9 @@
 							{draft.pastPlatforms.map((id) => PLATFORMS[id].label).join(', ')}
 							{draft.pastPlatforms.length === 1 ? 'is' : 'are'} scheduled in the past.
 						</span>
+					{/if}
+					{#if draft.step === 2 && draft.takenPlatforms.length > 0}
+						<span class="blocked">{takenWords(draft.takenPlatforms)} Hover a striped hour to see which.</span>
 					{/if}
 				</div>
 			{/if}

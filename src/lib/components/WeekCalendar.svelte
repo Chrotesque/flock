@@ -50,6 +50,7 @@
 		candrag,
 		lockedWhy,
 		landWhy,
+		blocked,
 		ondropitem,
 		ondropgroup,
 		oncontext
@@ -121,6 +122,11 @@
 		lockedWhy?: (item: T) => string;
 		/** Why an item may not land at a day and time; '' when it may. Shown while it is held, and a drop there is refused. */
 		landWhy?: (item: T, date: string, time: string) => string;
+		/**
+		 * Why nothing may land in an hour; '' when it is free. The cell is
+		 * greyed and striped, says why on hover, and a drop there is refused.
+		 */
+		blocked?: (date: string, hour: number) => string;
 		/**
 		 * Fires with the dragged item's id and the cell it was dropped on, and
 		 * again with a `minute` once one is picked from the quarters. A reason
@@ -298,6 +304,8 @@
 
 	/** Why any of these may not land in that cell, each at its own minutes; '' when all may. */
 	function landRefusal(ids: string[], iso: string, hour: number): string {
+		const closed = blocked?.(iso, hour);
+		if (closed) return closed;
 		if (!landWhy) return '';
 		for (const id of ids) {
 			const item = items.find((entry) => entry.id === id);
@@ -986,8 +994,11 @@
 					</div>
 
 					{#each days as day (day.iso)}
+						{@const closed = blocked?.(day.iso, hour) ?? ''}
 						<div
 							class="cell"
+							class:blocked={Boolean(closed)}
+							title={closed || undefined}
 							class:dense
 							class:today={day.iso === today}
 							class:offhours={offHours(hour)}
@@ -1458,6 +1469,13 @@
 		background: rgba(255, 77, 158, 0.035);
 	}
 
+	/* Today's working day a shade darker than its night and evening, as on
+	   the other days. `:where` keeps it at two classes, so the current
+	   hour's tint below still wins. */
+	.cell.today:where(:not(.offhours)) {
+		background: #1a1220;
+	}
+
 	/* The hour we are in, strong enough to find at a glance: its label
 	   filled, its row tinted, today's cell outlined — above it is done,
 	   below it is still to come. */
@@ -1481,6 +1499,19 @@
 	.cell.over {
 		background: var(--accent-grad-soft);
 		box-shadow: inset 0 0 0 1px var(--pink);
+	}
+
+	/* Taken: nothing may land here. Bordeaux stripes, and between them the
+	   hour's own colour — only the image is set, so whichever tint the hour
+	   has stays underneath. While a card is held over it, an amber edge
+	   instead of the pink one. */
+	.cell.blocked {
+		background-image: repeating-linear-gradient(-45deg, #431a33 0 5px, transparent 5px 10px);
+		cursor: not-allowed;
+	}
+
+	.cell.blocked.over {
+		box-shadow: inset 0 0 0 1px var(--warn);
 	}
 
 	.grab {
