@@ -86,3 +86,53 @@ export function decide({ handle, probe, alive, now, slotAt, seen }) {
 			return { action: 'leave', reason: `unknown platform state ${probe.state}` };
 	}
 }
+
+// A post whose publish threw, by this run or one before.
+//
+// An error after the platform took the post — a read that came back wrong, a
+// connection lost on the last call — can hide a post that went out, or is
+// still going out: on 22 Oct 2026 Facebook answered "does not exist" five
+// seconds after a reel was told to publish, and published it anyway, while
+// flock called it failed and offered a Retry that would have
+// posted it twice. So a post is called failed only once its platform says it
+// has no post from it; To finish offers Retry on nothing else.
+
+/** How long a platform still at work on a post, or one that cannot be asked, is waited for. */
+export const CONFIRM_MS = 30 * 60_000;
+
+/** How long a reel Facebook was told to publish may read as missing before that is believed. */
+export const GONE_GRACE_MS = 5 * 60_000;
+
+/**
+ * What to do with a post whose publish threw, from what the platform says
+ * now (`probe`: null when nothing had been sent to it, `{ state: 'unknown' }`
+ * when it could not be asked) and when the error came (`failedAt`).
+ *
+ * Returns `{ action, reason? }`: `finish` (it has the post after all —
+ * record it), `wait` (the row stays `publishing` and is asked about again on
+ * the next tick) or `fail`, with a reason when the failure is not confirmed
+ * but has been waited on long enough.
+ */
+export function afterFailure({ handle, probe, failedAt, now }) {
+	if (!handle?.kind || !probe) return { action: 'fail' };
+	const waited = now - failedAt;
+	switch (probe.state) {
+		case 'done':
+			return { action: 'finish' };
+		case 'processing':
+			return waited < CONFIRM_MS
+				? { action: 'wait', reason: 'the platform is still processing it' }
+				: { action: 'fail', reason: `the platform was still processing it ${Math.round(CONFIRM_MS / 60_000)} minutes later` };
+		case 'unknown':
+			return waited < CONFIRM_MS
+				? { action: 'wait', reason: `the platform could not be asked (${probe.reason ?? 'no answer'})` }
+				: { action: 'fail', reason: `the platform could not be asked for ${Math.round(CONFIRM_MS / 60_000)} minutes, so not confirmed` };
+		case 'gone':
+			return handle.finished && waited < GONE_GRACE_MS
+				? { action: 'wait', reason: 'Facebook does not show the reel yet, minutes after it was told to publish it' }
+				: { action: 'fail' };
+		default:
+			// Uploading, incomplete, or processed and never published: nothing went out.
+			return { action: 'fail' };
+	}
+}

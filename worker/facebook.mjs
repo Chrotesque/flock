@@ -79,6 +79,10 @@ export const LEAD_SECONDS = 28 * 24 * 3600;
 const STATUS_EVERY_MS = 10_000;
 const STATUS_TIMEOUT_MS = 30 * 60_000;
 const MAX_STATUS_MISSES = 12;
+// Right after the finish call Facebook can answer that the reel does not
+// exist (100/33) and publish it seconds later, as it did on 22 Oct 2026; for
+// this long such an answer is a missed poll.
+const UNSEEN_MS = 2 * 60_000;
 const ACCOUNT_TTL_MS = 30 * 60_000;
 
 const SETUP = 'pnpm worker:auth --facebook';
@@ -178,7 +182,8 @@ async function waitForReel(page, videoId, log) {
 			status = await readStatus(page, videoId);
 			misses = 0;
 		} catch (err) {
-			if (!transientGraphError(err)) throw err;
+			const unseen = err instanceof GraphError && err.code === 100 && Date.now() - started < UNSEEN_MS;
+			if (!transientGraphError(err) && !unseen) throw err;
 			misses += 1;
 			if (misses > MAX_STATUS_MISSES) throw new Error(`Lost Facebook while it was processing reel ${videoId}: ${err.message.split('\n')[0]}`);
 			log(`status poll failed (${err.message.split('\n')[0]}) — retrying`);

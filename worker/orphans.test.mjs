@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decide, mayBeAlive, STALL_MS, INCOMPLETE_MS, READY_GRACE_MS } from './orphans.mjs';
+import { decide, mayBeAlive, afterFailure, STALL_MS, INCOMPLETE_MS, READY_GRACE_MS, CONFIRM_MS, GONE_GRACE_MS } from './orphans.mjs';
 
 const now = Date.parse('2026-10-04T12:00:00Z');
 const iso = (ms) => new Date(now + ms).toISOString();
@@ -68,4 +68,41 @@ test('a processed reel is published at its slot, with grace for a worker that ma
 test('an expired or failed upload is requeued with the reason', () => {
 	const result = decide({ handle: handle('youtube-session'), probe: { state: 'gone', reason: 'expired' }, alive: true, now });
 	assert.deepEqual(result, { action: 'requeue', reason: 'expired' });
+});
+
+test('a failed publish is failed at once when nothing reached the platform', () => {
+	assert.equal(afterFailure({ handle: { run: 'r' }, probe: null, failedAt: now, now }).action, 'fail');
+	assert.equal(afterFailure({ handle: null, probe: null, failedAt: now, now }).action, 'fail');
+});
+
+test('a failed publish the platform has after all is recorded', () => {
+	const probe = { state: 'done', result: { url: 'https://example.com/reel/1/' } };
+	assert.equal(afterFailure({ handle: handle('facebook-reel'), probe, failedAt: now, now }).action, 'finish');
+	assert.equal(afterFailure({ handle: handle('youtube'), probe, failedAt: now - CONFIRM_MS * 2, now }).action, 'finish');
+});
+
+test('a failed publish the platform is still working on, or cannot be asked about, is waited on', () => {
+	const processing = { state: 'processing' };
+	const unknown = { state: 'unknown', reason: 'ETIMEDOUT' };
+	assert.equal(afterFailure({ handle: handle('tiktok'), probe: processing, failedAt: now - 60_000, now }).action, 'wait');
+	assert.equal(afterFailure({ handle: handle('tiktok'), probe: unknown, failedAt: now - 60_000, now }).action, 'wait');
+	const late = afterFailure({ handle: handle('tiktok'), probe: unknown, failedAt: now - CONFIRM_MS, now });
+	assert.equal(late.action, 'fail');
+	assert.match(late.reason, /not confirmed/);
+	assert.equal(afterFailure({ handle: handle('tiktok'), probe: processing, failedAt: now - CONFIRM_MS, now }).action, 'fail');
+});
+
+test("a reel Facebook was told to publish is not believed gone at once", () => {
+	const gone = { state: 'gone', reason: 'Facebook no longer has the video' };
+	const told = handle('facebook-reel', { finished: true });
+	assert.equal(afterFailure({ handle: told, probe: gone, failedAt: now - 60_000, now }).action, 'wait');
+	assert.equal(afterFailure({ handle: told, probe: gone, failedAt: now - GONE_GRACE_MS, now }).action, 'fail');
+	assert.equal(afterFailure({ handle: handle('facebook-reel'), probe: gone, failedAt: now, now }).action, 'fail');
+	assert.equal(afterFailure({ handle: handle('instagram'), probe: gone, failedAt: now, now }).action, 'fail');
+});
+
+test('a failed publish that never went out is failed', () => {
+	for (const state of ['uploading', 'incomplete', 'ready']) {
+		assert.equal(afterFailure({ handle: handle('instagram'), probe: { state }, failedAt: now, now }).action, 'fail');
+	}
 });

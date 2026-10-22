@@ -92,7 +92,7 @@ import { askToStop, holdInstance } from './instance.mjs';
 import { sayOnScreen, startTray, wantsTray } from './tray.mjs';
 import { exeLogPath } from './filelog.mjs';
 import { WORKER_VERSION } from './version.mjs';
-import { decide, mayBeAlive } from './orphans.mjs';
+import { afterFailure, decide, mayBeAlive } from './orphans.mjs';
 import { moveStep, requeuePatch } from './moves.mjs';
 import { SYNC_PLATFORMS, movedHandle, refusedHandle, rescheduleStep } from './reschedule.mjs';
 import { requestStep } from './requests.mjs';
@@ -356,9 +356,52 @@ async function publishOne(pb, config, platform, target, job, label, claim) {
 		log(`${label} was not posted: it was moved to another account while it was held`);
 		return;
 	}
-	await pb.updateTarget(target.id, { status: 'failed', error: failure.slice(0, 1900) });
-	log(`FAILED ${label}: ${failure}`);
-	pb.log(`Failed to publish to ${platform}`, `${target.title || '(no title)'}: ${failure}`);
+	await settleFailure(pb, config, platform, now ?? target, failure, label);
+}
+
+/** Failures already said to be waiting on the platform, so each reason is said once. */
+const failureSaid = new Map();
+
+/**
+ * A post whose publish threw is called failed only once its platform says it
+ * has no post from it (orphans.mjs `afterFailure`). Until then the row stays
+ * `publishing` with the error in its handle, and the orphan pass asks again
+ * each tick — so To finish, which offers Retry only on a failed post, never
+ * offers one for a post that went out or is still going out.
+ */
+async function settleFailure(pb, config, platform, row, failure, label) {
+	const adapter = ADAPTERS[platform];
+	const handle = row.handle && typeof row.handle === 'object' ? row.handle : null;
+	const failedAt = Date.parse(handle?.failure?.at ?? '') || Date.now();
+	const firstLine = (text) => text.split('\n')[0];
+	const probe =
+		handle?.kind && adapter.probe
+			? await adapter.probe(config, handle).catch((err) => ({ state: 'unknown', reason: firstLine(errorText(err)) }))
+			: null;
+	const verdict = afterFailure({ handle, probe, failedAt, now: Date.now() });
+
+	if (verdict.action === 'finish') {
+		failureSaid.delete(row.id);
+		log(`${label} went out on ${NAMES[platform] ?? platform} after all, despite: ${firstLine(failure)}`);
+		await recordResult(pb, platform, row, probe.result, label);
+		return;
+	}
+	if (verdict.action === 'wait') {
+		await pb.updateTarget(row.id, {
+			status: 'publishing',
+			handle: { ...handle, failure: { error: failure.slice(0, 1900), at: new Date(failedAt).toISOString() } }
+		});
+		if (failureSaid.get(row.id) !== verdict.reason) {
+			failureSaid.set(row.id, verdict.reason);
+			log(`not calling ${label} failed yet: ${verdict.reason} — asking again on the next tick (${firstLine(failure)})`);
+		}
+		return;
+	}
+	failureSaid.delete(row.id);
+	const error = verdict.reason ? `${failure} (${verdict.reason})` : failure;
+	await pb.updateTarget(row.id, { status: 'failed', error: error.slice(0, 1900) });
+	log(`FAILED ${label}: ${error}`);
+	pb.log(`Failed to publish to ${platform}`, `${row.title || '(no title)'}: ${error}`);
 }
 
 async function recordResult(pb, platform, target, result, label) {
@@ -1189,6 +1232,17 @@ async function settleOrphan(pb, config, platform, row) {
 	const adapter = ADAPTERS[platform];
 	const label = `${platform} "${row.title || row.description?.slice(0, 40) || row.id}"`;
 	const handle = row.handle ?? null;
+	// Its publish threw and the platform has not settled it yet: asked again
+	// here, it is recorded, waited on or failed — never uploaded again.
+	if (handle?.failure) {
+		inHand.add(row.id);
+		try {
+			await settleFailure(pb, config, platform, row, String(handle.failure.error ?? ''), label);
+		} finally {
+			inHand.delete(row.id);
+		}
+		return;
+	}
 	const probe = handle?.kind ? await adapter.probe(config, handle) : null;
 	const alive = mayBeAlive(handle, config.role);
 	let verdict = decide({
