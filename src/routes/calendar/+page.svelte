@@ -130,19 +130,23 @@
 		}, 2000);
 	}
 
-	/* ---- the right-click menu: release at once, or delete ---- */
+	/* ---- the right-click menu: release at once, or delete ----
+	 *
+	 * Always the whole upload, wherever it was clicked — an icon or the box
+	 * — and every post of it, in whichever hour each sits; the menu offers
+	 * all of it or the platforms ticked.
+	 */
 
-	let menu = $state<{ ids: string[]; x: number; y: number } | null>(null);
-	const menuPosts = $derived(menu ? entries.filter((entry) => menu!.ids.includes(entry.id)) : []);
+	let menu = $state<{ job: string; x: number; y: number } | null>(null);
+	const menuPosts = $derived(menu ? entries.filter((entry) => entry.job === menu!.job) : []);
 
 	function openMenu(items: Entry[], x: number, y: number) {
-		menu = { ids: items.map((item) => item.id), x, y };
+		if (items.length > 0) menu = { job: items[0].job, x, y };
 	}
 
 	/** Throws for the menu to show; it closes itself once this succeeds. */
-	async function act(action: PostAction) {
-		if (!menu) return;
-		await actOnPosts(action, menu.ids);
+	async function act(action: PostAction, ids: string[]) {
+		await actOnPosts(action, ids);
 		void load();
 	}
 
@@ -362,8 +366,7 @@
 		posts={menuPosts}
 		x={menu.x}
 		y={menu.y}
-		onrelease={() => act('release')}
-		ondelete={() => act('delete')}
+		onact={act}
 		close={() => (menu = null)}
 	/>
 {/if}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actionPlan, groupRefusal, readRequest, type ActionPost } from './postactions';
+import { actionPlan, actionSplit, groupRefusal, platformList, readRequest, type ActionPost } from './postactions';
 
 const now = Date.parse('2026-10-15T08:00:00Z');
 const minutes = (n: number) => new Date(now + n * 60_000).toISOString();
@@ -51,5 +51,34 @@ describe('groupRefusal and readRequest', () => {
 		expect(readRequest({ kind: 'release', requestedAt: 'x', by: 'PC' })).toEqual({ kind: 'release', requestedAt: 'x', by: 'PC' });
 		expect(readRequest({ kind: 'nope' })).toBeNull();
 		expect(readRequest(null)).toBeNull();
+	});
+});
+
+describe('actionSplit', () => {
+	it('leaves out what is out already, with why, and keeps the rest', () => {
+		const posts = [
+			post({ platform: 'youtube', status: 'published' }),
+			post({ platform: 'instagram' }),
+			post({ platform: 'facebook', status: 'scheduled' })
+		];
+		const { ready, left } = actionSplit('release', posts, now);
+		expect(ready.map((p) => p.platform)).toEqual(['instagram', 'facebook']);
+		expect(left).toEqual([{ post: posts[0], why: 'It is out on YouTube already.' }]);
+	});
+
+	it('takes everything when every post may', () => {
+		const posts = [post(), post({ platform: 'tiktok' })];
+		expect(actionSplit('delete', posts, now)).toEqual({ ready: posts, left: [] });
+	});
+});
+
+describe('platformList', () => {
+	it('names the platforms in words', () => {
+		expect(platformList([])).toBe('');
+		expect(platformList([post({ platform: 'youtube' })])).toBe('YouTube');
+		expect(platformList([post({ platform: 'youtube' }), post({ platform: 'tiktok' })])).toBe('YouTube and TikTok');
+		expect(platformList([post({ platform: 'youtube' }), post(), post({ platform: 'tiktok' })])).toBe(
+			'YouTube, Instagram and TikTok'
+		);
 	});
 });

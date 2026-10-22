@@ -706,10 +706,12 @@ It opens read-only: press *Edit* twice within two seconds, then drag an icon
 to move that platform's post, or a box's grip (its left edge) to move the
 whole upload, to another day or hour at least 15 minutes ahead. A YouTube
 video or Facebook reel already uploaded moves there too: the worker gives the
-platform the new time within seconds. Right-click a post or a box to release
-it at once or delete it, each after three presses within two seconds apiece; a
-YouTube video or Facebook reel waiting on the platform is put out or deleted
-there by the worker. A post that can no longer move, because it is out or
+platform the new time within seconds. Right-click any post of an upload to
+release all of it at once or delete it, or tick the platforms to release or
+delete just those; each button takes three presses within two seconds apiece,
+and a post already out is left out and says why on hover. A YouTube video or
+Facebook reel waiting on the platform is put out or deleted there by the
+worker. A post that can no longer move, because it is out or
 about to go out, shakes and says why. With several brands, buttons on top show
 one brand or all.
 

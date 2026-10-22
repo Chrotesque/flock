@@ -80,3 +80,29 @@ export function groupRefusal(action: PostAction, posts: ActionPost[], now = Date
 	}
 	return '';
 }
+
+/**
+ * Which of an upload's posts the action can take now, and why each of the
+ * others cannot. The menu's "all" acts on `ready` alone — an upload whose
+ * YouTube video is out already still releases the rest — and names `left`.
+ */
+export function actionSplit<T extends ActionPost>(
+	action: PostAction,
+	posts: T[],
+	now = Date.now()
+): { ready: T[]; left: { post: T; why: string }[] } {
+	const ready: T[] = [];
+	const left: { post: T; why: string }[] = [];
+	for (const post of posts) {
+		const plan = actionPlan(action, post, now);
+		if ('refused' in plan) left.push({ post, why: plan.refused });
+		else ready.push(post);
+	}
+	return { ready, left };
+}
+
+/** "YouTube", "YouTube and TikTok", "YouTube, Instagram and TikTok". */
+export function platformList(posts: Pick<ActionPost, 'platform'>[]): string {
+	const names = posts.map((post) => PLATFORMS[post.platform]?.label ?? post.platform);
+	return names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
