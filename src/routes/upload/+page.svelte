@@ -20,7 +20,7 @@
 	import { facebookProblems } from '$lib/facebook';
 	import { devtestActive } from '$lib/devtest';
 	import { VERSION } from '$lib/version';
-	import { formatBytes } from '$lib/format';
+	import { formatBytes, isoDate } from '$lib/format';
 	import { imageFits, type ImagePlatform } from '$lib/coverimage';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { PLATFORMS } from '$lib/platforms';
@@ -30,6 +30,7 @@
 	import { uploadedName } from '$lib/projects';
 	import { videoTodo } from '$lib/stores/videotodo.svelte';
 	import { takenHours } from '$lib/stores/takenhours.svelte';
+	import { hourKey, takenWhy } from '$lib/takenhours';
 	import { onDestroy } from 'svelte';
 
 	settings.load();
@@ -124,7 +125,7 @@
 			: draft.step === 1
 				? draft.canLeaveDetails && draft.hasVideo
 				: draft.step === 2
-					? draft.scheduleComplete && draft.pastPlatforms.length === 0 && draft.takenPlatforms.length === 0
+					? draft.scheduleComplete && draft.pastPlatforms.length === 0 && draft.takenHold.length === 0
 					: true
 	);
 
@@ -228,6 +229,13 @@
 		const due = row.immediate ? Date.now() : Date.parse(toInstant(row.date, row.time));
 		const allowance = allowanceWarning(postAllowance(accounts.for(row.platform)), due);
 		if (allowance) out.push(allowance);
+		if (draft.overrideTaken && draft.takenPlatforms.includes(row.platform)) {
+			const at = new Date(due);
+			const posts = takenHours
+				.for(brands.currentId, draft.queuedJobs)
+				.get(hourKey(isoDate(at), at.getHours()));
+			if (posts) out.push(`Put in a taken hour with Override. ${takenWhy(posts)}`);
+		}
 		return out;
 	}
 
@@ -259,7 +267,7 @@
 		// The hours read afresh: another machine may have taken one since the
 		// schedule step was left.
 		await takenHours.refresh();
-		const taken = draft.takenPlatforms.filter((id) => groups.some((group) => group.platforms.includes(id)));
+		const taken = draft.takenHold.filter((id) => groups.some((group) => group.platforms.includes(id)));
 		if (taken.length > 0) {
 			failure = `${takenWords(taken)} Not sent — move ${taken.length === 1 ? 'it' : 'them'} on the Schedule step.`;
 			phase = 'error';
@@ -626,7 +634,7 @@
 				</nav>
 			</header>
 
-			{#if phase === 'error' || (draft.step === 2 && (draft.pastPlatforms.length > 0 || draft.takenPlatforms.length > 0)) || (draft.step === 1 && missingVideo.length > 0) || (confirmHold && phase !== 'uploading')}
+			{#if phase === 'error' || (draft.step === 2 && (draft.pastPlatforms.length > 0 || draft.takenHold.length > 0)) || (draft.step === 1 && missingVideo.length > 0) || (confirmHold && phase !== 'uploading')}
 				<div class="notes">
 					{#if confirmHold && phase !== 'uploading'}
 						<span class="blocked">{confirmHold}</span>
@@ -647,8 +655,10 @@
 							{draft.pastPlatforms.length === 1 ? 'is' : 'are'} scheduled in the past.
 						</span>
 					{/if}
-					{#if draft.step === 2 && draft.takenPlatforms.length > 0}
-						<span class="blocked">{takenWords(draft.takenPlatforms)} Hover a striped hour to see which.</span>
+					{#if draft.step === 2 && draft.takenHold.length > 0}
+						<span class="blocked">
+							{takenWords(draft.takenHold)} Hover a striped hour to see which, or tick Override.
+						</span>
 					{/if}
 				</div>
 			{/if}

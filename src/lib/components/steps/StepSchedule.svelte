@@ -79,6 +79,7 @@
 		rolling
 		candrag={() => true}
 		{blocked}
+		overridden={draft.overrideTaken}
 		dense
 		quarters
 		ondropitem={onDropItem}
@@ -86,6 +87,7 @@
 		marker={dayMarker}
 		offscreen={jumpTo_}
 		toolbar={tip}
+		start={override}
 	/>
 
 	{#if offWeek.length > 0}
@@ -212,6 +214,16 @@
 	</button>
 {/snippet}
 
+{#snippet override()}
+	<span class="override" title="Lets this upload go out in hours another video of the brand already takes">
+		<Checkbox
+			checked={draft.overrideTaken}
+			label="Override"
+			onchange={(next) => (draft.overrideTaken = next)}
+		/>
+	</span>
+{/snippet}
+
 {#snippet tip()}
 	<p class="tip">
 		Drag an icon to another day or hour, then pick the minutes. Hover one to read it. Striped hours are
@@ -224,6 +236,10 @@
 	.stage {
 		display: grid;
 		gap: 14px;
+	}
+
+	.override {
+		font-size: 12px;
 	}
 
 	.tip {

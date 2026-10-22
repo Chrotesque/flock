@@ -35,6 +35,7 @@
 		card,
 		toolbar,
 		center,
+		start,
 		marker,
 		offscreen,
 		dense = false,
@@ -51,6 +52,7 @@
 		lockedWhy,
 		landWhy,
 		blocked,
+		overridden = false,
 		ondropitem,
 		ondropgroup,
 		oncontext
@@ -87,6 +89,8 @@
 		toolbar?: Snippet;
 		/** The bar's middle, centred between the week's arrows and the toolbar. */
 		center?: Snippet;
+		/** Beside the Today button, at the bar's left. */
+		start?: Snippet;
 		/** Rendered in a day's column header, once per item scheduled that day. */
 		marker?: Snippet<[T]>;
 		/**
@@ -127,6 +131,8 @@
 		 * greyed and striped, says why on hover, and a drop there is refused.
 		 */
 		blocked?: (date: string, hour: number) => string;
+		/** With `blocked`: the hours stay striped, at half strength, and a drop there goes through. */
+		overridden?: boolean;
 		/**
 		 * Fires with the dragged item's id and the cell it was dropped on, and
 		 * again with a `minute` once one is picked from the quarters. A reason
@@ -304,7 +310,7 @@
 
 	/** Why any of these may not land in that cell, each at its own minutes; '' when all may. */
 	function landRefusal(ids: string[], iso: string, hour: number): string {
-		const closed = blocked?.(iso, hour);
+		const closed = overridden ? '' : blocked?.(iso, hour);
 		if (closed) return closed;
 		if (!landWhy) return '';
 		for (const id of ids) {
@@ -828,6 +834,7 @@
 		<button class="btn sm" onclick={() => (weekStart = firstDay())} disabled={isCurrentWeek}>
 			{rolling ? 'Today' : 'This week'}
 		</button>
+		{@render start?.()}
 	</div>
 
 	{#if center}
@@ -998,6 +1005,7 @@
 						<div
 							class="cell"
 							class:blocked={Boolean(closed)}
+							class:overridden={Boolean(closed) && overridden}
 							title={closed || undefined}
 							class:dense
 							class:today={day.iso === today}
@@ -1510,8 +1518,28 @@
 		cursor: not-allowed;
 	}
 
+	/* Overridden: still marked, at half strength, and open to a drop. */
+	.cell.blocked.overridden {
+		background-image: repeating-linear-gradient(-45deg, rgba(67, 26, 51, 0.5) 0 5px, transparent 5px 10px);
+		cursor: auto;
+	}
+
+	/* The current hour's pink is close to the bordeaux itself: brighter
+	   stripes there, or they vanish into it. */
+	.cell.blocked.now {
+		background-image: repeating-linear-gradient(-45deg, #6a2850 0 5px, transparent 5px 10px);
+	}
+
+	.cell.blocked.overridden.now {
+		background-image: repeating-linear-gradient(-45deg, rgba(106, 40, 80, 0.5) 0 5px, transparent 5px 10px);
+	}
+
 	.cell.blocked.over {
 		box-shadow: inset 0 0 0 1px var(--warn);
+	}
+
+	.cell.blocked.overridden.over {
+		box-shadow: inset 0 0 0 1px var(--pink);
 	}
 
 	.grab {

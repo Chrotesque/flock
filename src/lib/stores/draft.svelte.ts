@@ -109,6 +109,12 @@ class DraftStore {
 	queuedJobs = $state<string[]>([]);
 
 	/**
+	 * The Schedule step's *Override*: taken hours are allowed for this
+	 * upload after all. Per upload, so the block is back for the next one.
+	 */
+	overrideTaken = $state(false);
+
+	/**
 	 * Text composed per platform. There is no shared title/description pair:
 	 * every platform is written for on its own, and the adaptation rules run
 	 * over whatever was typed for it.
@@ -431,6 +437,11 @@ class DraftStore {
 		return clashing(slots, takenHours.for(this.#brand, this.queuedJobs));
 	}
 
+	/** The platforms a taken hour holds back: none once *Override* is ticked. */
+	get takenHold(): PlatformId[] {
+		return this.overrideTaken ? [] : this.takenPlatforms;
+	}
+
 	/**
 	 * True once every selected platform resolves to a date and a time.
 	 *
@@ -582,7 +593,7 @@ class DraftStore {
 	reachable(wanted: Step): Step {
 		if (wanted >= 1 && !this.canLeaveUpload) return 0;
 		if (wanted >= 2 && !(this.canLeaveDetails && this.hasVideo)) return 1;
-		if (wanted >= 3 && !(this.scheduleComplete && this.pastPlatforms.length === 0 && this.takenPlatforms.length === 0))
+		if (wanted >= 3 && !(this.scheduleComplete && this.pastPlatforms.length === 0 && this.takenHold.length === 0))
 			return 2;
 		return wanted;
 	}
@@ -601,6 +612,7 @@ class DraftStore {
 			this.schedule = {};
 			this.immediate = {};
 			this.profile = {};
+			this.overrideTaken = false;
 		}
 		if (brandId) this.#brand = brandId;
 	}
@@ -611,6 +623,7 @@ class DraftStore {
 		this.projectBase = '';
 		this.queued = [];
 		this.queuedJobs = [];
+		this.overrideTaken = false;
 		this.texts = {};
 		this.composing = null;
 		// The split is the arrangement, not this video: the remembered one
