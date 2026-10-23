@@ -22,7 +22,17 @@ import { youtubeChannels, youtubeToken } from './youtube.mjs';
 import { fetchOrExplain } from './net.mjs';
 import { creditWords, followerStep } from './followers.mjs';
 import { analyticsPass } from './ytanalytics.mjs';
-import { charge, pacificDay, quotaToday, restoreQuota, statsMayRead, unitsToday } from './quota.mjs';
+import {
+	charge,
+	mergeHistory,
+	pacificDay,
+	quotaToday,
+	restoreQuota,
+	returnFinishedDays,
+	statsMayRead,
+	takeFinishedDays,
+	unitsToday
+} from './quota.mjs';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 
@@ -76,6 +86,67 @@ const perChannel = new Map();
 // What the pass last said about a failure of its own (no channel at all), so
 // it is said once rather than every tick.
 let passError = '';
+
+// How often a channel is read can be set on the page (Settings → DevTest →
+// YouTube, `app_settings` / `stats_pace` = { seconds }); without it the
+// config's `statsSeconds` holds. Re-read once a minute, so a change takes
+// hold within one. The budget stops still stand whatever it says.
+const PACE_KEY = 'stats_pace';
+const PACE_TTL_MS = 60_000;
+/** The fastest and slowest pace the page may set: seconds between two reads. */
+export const PACE_MIN_SECONDS = 5;
+export const PACE_MAX_SECONDS = 3600;
+let pace = { seconds: 0, at: 0 };
+
+// Finished days of the spend, kept for the page's history of what the units
+// went on (quota.mjs `mergeHistory`).
+const HISTORY_KEY = 'youtube_quota_history';
+
+/** The pace a `stats_pace` row sets: whole seconds within the limits, or 0 when it sets none. */
+export function readPace(value) {
+	const seconds = Math.round(Number(value?.seconds));
+	if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+	return Math.min(PACE_MAX_SECONDS, Math.max(PACE_MIN_SECONDS, seconds));
+}
+
+/** Seconds between two reads (each of one channel, in turn): the page's setting, else the config's. */
+export function paceSeconds(config) {
+	return pace.seconds || config.statsSeconds;
+}
+
+/** Reads the page's setting again once a minute; a change is said in the log. */
+export async function refreshPace(pb, config, log) {
+	if (Date.now() - pace.at < PACE_TTL_MS) return;
+	pace.at = Date.now();
+	let seconds = 0;
+	try {
+		seconds = readPace((await pb.getSetting(PACE_KEY))?.value);
+	} catch {
+		return; // PocketBase away: keep what holds
+	}
+	if (seconds === pace.seconds) return;
+	const was = paceSeconds(config);
+	pace.seconds = seconds;
+	const now = paceSeconds(config);
+	if (now !== was) {
+		log(
+			`stats: reading a channel every ${now} s now (was ${was} s)` +
+				(seconds ? ' — set on the page' : " — the page's setting is gone, the config's holds")
+		);
+	}
+}
+
+/** Writes the days that ended into the history; kept for the next try when that fails. */
+async function saveFinishedDays(pb) {
+	const days = takeFinishedDays();
+	if (days.length === 0) return;
+	try {
+		const stored = await pb.getSetting(HISTORY_KEY);
+		await pb.setSetting(HISTORY_KEY, mergeHistory(stored?.value, days));
+	} catch {
+		returnFinishedDays(days);
+	}
+}
 
 /** A channel's own state: its uploads playlist, the ids last listed, what it may read, what was said. */
 function stateOf(channelId) {
@@ -136,7 +207,7 @@ function noteRun(config, count) {
 	const now = new Date().toISOString();
 	const last = runs[runs.length - 1];
 	const gap = last ? Date.parse(now) - Date.parse(last.to) : Infinity;
-	if (last && gap <= 3 * Math.max(5, config.statsSeconds) * Math.max(1, count) * 1000) last.to = now;
+	if (last && gap <= 3 * Math.max(5, paceSeconds(config)) * Math.max(1, count) * 1000) last.to = now;
 	else runs.push({ from: now, to: now });
 	if (runs.length > 100) runs.splice(0, runs.length - 100);
 }
@@ -340,7 +411,8 @@ function toRow(item) {
  * watch index, the same small abuse for the same reason — the SPA already has
  * a way to read that collection and no way to talk to the worker.
  * `intervalSeconds` is how often each channel is read: the tick times the
- * number of channels taking turns.
+ * number of channels taking turns; `paceSeconds` the tick itself and
+ * `paceFrom` whether the page set it. A day that ended goes into the history.
  */
 async function report(pb, config, count, extra) {
 	const quota = quotaToday();
@@ -352,7 +424,9 @@ async function report(pb, config, count, extra) {
 		budget: config.statsBudget,
 		ceiling: config.statsCeiling,
 		stopped,
-		intervalSeconds: config.statsSeconds * Math.max(1, count),
+		intervalSeconds: paceSeconds(config) * Math.max(1, count),
+		paceSeconds: paceSeconds(config),
+		paceFrom: pace.seconds ? 'setting' : 'config',
 		videos: 0,
 		error: '',
 		runs: runs ?? [],
@@ -360,6 +434,7 @@ async function report(pb, config, count, extra) {
 		...extra
 	});
 	reported = `${quota.day}|${quota.units}|${quota.uploads}|${stopped}`;
+	await saveFinishedDays(pb);
 }
 
 /**

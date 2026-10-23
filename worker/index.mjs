@@ -75,7 +75,7 @@ import { resolveFolder } from './paths.mjs';
 import { pickFolder } from './folderpick.mjs';
 import { readLocalImage } from './localfile.mjs';
 import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
-import { statsPass } from './stats.mjs';
+import { PACE_MIN_SECONDS, paceSeconds, refreshPace, statsPass } from './stats.mjs';
 import { unitsToday } from './quota.mjs';
 import { instagramStatsPass } from './igstats.mjs';
 import { facebookStatsPass } from './fbstats.mjs';
@@ -2165,8 +2165,8 @@ async function main() {
 		log(
 			`stats: newest ${config.statsVideos} videos ` +
 				(count > 1
-					? `of each of ${count} channels, one every ${config.statsSeconds}s in turn, `
-					: `every ${config.statsSeconds}s, `) +
+					? `of each of ${count} channels, one every ${config.statsSeconds}s in turn (unless the page sets another pace), `
+					: `every ${config.statsSeconds}s (unless the page sets another pace), `) +
 				`stopping at ${config.statsBudget} of the day's units (a Refresh reads until ${config.statsCeiling})`
 		);
 		let statsBusy = false;
@@ -2181,8 +2181,18 @@ async function main() {
 				statsBusy = false;
 			}
 		};
-		void tick();
-		setInterval(() => void tick(), Math.max(5, config.statsSeconds) * 1000);
+		// The pace can be changed from the page (stats.mjs refreshPace), so
+		// rather than a fixed interval, a read is due one pace after the last
+		// one started — looked at every 5 s.
+		let nextAt = 0;
+		const due = async () => {
+			await refreshPace(pb, config, log);
+			if (statsBusy || Date.now() < nextAt) return;
+			nextAt = Date.now() + Math.max(PACE_MIN_SECONDS, paceSeconds(config)) * 1000;
+			await tick();
+		};
+		void due();
+		setInterval(() => void due(), 5000);
 	}
 
 	// Instagram's views, on their own slower tick and by the same workers.

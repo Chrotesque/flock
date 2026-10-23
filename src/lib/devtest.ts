@@ -94,6 +94,11 @@ export interface PasteReader {
 export interface DevTestModule {
 	/** Its heading under Settings → DevTest. */
 	title: string;
+	/**
+	 * The tab under Settings → DevTest its settings sit on; its title when left
+	 * out. Modules naming the same tab share it, each under its heading.
+	 */
+	tab?: string;
 	/** Run once when the app starts; may hand back a stop function. */
 	start?: () => void | (() => void);
 	/** Its settings, rendered under its heading. */
@@ -149,6 +154,17 @@ export function startDevtest(): () => void {
 export function devtestActive(): string[] {
 	return devtestModules.flatMap((mod) => mod.active?.() ?? []);
 }
+
+/** Settings → DevTest's tabs: each with the modules whose settings sit on it, in module order. */
+export const devtestTabs: { label: string; modules: DevTestModule[] }[] = devtestModules
+	.filter((mod) => mod.Settings)
+	.reduce<{ label: string; modules: DevTestModule[] }[]>((tabs, mod) => {
+		const label = mod.tab || mod.title;
+		const known = tabs.find((t) => t.label === label);
+		if (known) known.modules.push(mod);
+		else tabs.push({ label, modules: [mod] });
+		return tabs;
+	}, []);
 
 /** The modules with settings on Settings → Dashboard, in module order. */
 export const devtestDashboardSettings: DevTestModule[] = devtestModules.filter((mod) => mod.DashboardSettings);

@@ -50,3 +50,14 @@ test('past the budget the pass stops, says so once and keeps the heartbeat curre
 	assert.equal(writes[1].value.stopped, 'ceiling');
 	assert.equal(lines.length, 2);
 });
+
+test('the page sets the pace in whole seconds, within its limits; anything else sets none', async () => {
+	const { readPace, PACE_MIN_SECONDS, PACE_MAX_SECONDS } = await import('./stats.mjs');
+	assert.equal(readPace({ seconds: 20 }), 20);
+	assert.equal(readPace({ seconds: 19.6 }), 20);
+	assert.equal(readPace({ seconds: 1 }), PACE_MIN_SECONDS);
+	assert.equal(readPace({ seconds: 99999 }), PACE_MAX_SECONDS);
+	assert.equal(readPace({ seconds: 0 }), 0);
+	assert.equal(readPace({ seconds: 'fast' }), 0);
+	assert.equal(readPace(null), 0);
+});

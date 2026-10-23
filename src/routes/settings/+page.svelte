@@ -23,7 +23,7 @@
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import TodoIcon from '$lib/components/TodoIcon.svelte';
 	import { VERSION } from '$lib/version';
-	import { DEVTEST_ICON, devtestActive, devtestDashboardSettings, devtestModules } from '$lib/devtest';
+	import { DEVTEST_ICON, devtestActive, devtestDashboardSettings, devtestModules, devtestTabs } from '$lib/devtest';
 	import type {
 		FilterRule,
 		OptionValues,
@@ -48,6 +48,30 @@
 	// The DevTest section lists only while a local-devtest module has settings;
 	// one bringing just a page (a sidebar link) has nothing to show here.
 	const devtestSettings = devtestModules.filter((mod) => mod.Settings);
+
+	// DevTest is tabs of its own, one per module's `tab` (devtest.ts), the one
+	// last open remembered per browser; `?section=devtest&tab=<label>` opens one.
+	const DEVTEST_TAB_KEY = 'flock.settings.devtestTab';
+	const knownTab = (label: string | null) => (label && devtestTabs.some((t) => t.label === label) ? label : '');
+	let devtestTab = $state(
+		(() => {
+			try {
+				return knownTab(localStorage.getItem(DEVTEST_TAB_KEY));
+			} catch {
+				return '';
+			}
+		})()
+	);
+	const shownDevtestTab = $derived(devtestTabs.find((t) => t.label === devtestTab) ?? devtestTabs[0]);
+
+	function pickDevtestTab(label: string) {
+		devtestTab = label;
+		try {
+			localStorage.setItem(DEVTEST_TAB_KEY, label);
+		} catch {
+			// a private window: remembered for this visit only
+		}
+	}
 
 	let active = $state<Section>('general');
 	let tab = $state<'defaults' | 'tags' | 'filters' | 'profiles'>('defaults');
@@ -122,6 +146,7 @@
 				(section === 'devtest' && devtestSettings.length > 0)
 			) {
 				active = section;
+				if (section === 'devtest' && knownTab(wantTab)) devtestTab = knownTab(wantTab);
 				return;
 			}
 			if (wantPlatform && isPlatformId(wantPlatform)) {
@@ -512,10 +537,24 @@
 							</div>
 						</header>
 
+						{#if devtestTabs.length > 1}
+							<div class="tabs" role="tablist" aria-label="DevTest">
+								{#each devtestTabs as t (t.label)}
+									<button
+										role="tab"
+										aria-selected={shownDevtestTab?.label === t.label}
+										class:active={shownDevtestTab?.label === t.label}
+										onclick={() => pickDevtestTab(t.label)}>{t.label}</button
+									>
+								{/each}
+							</div>
+						{/if}
+
 						<div class="otherbody">
-							{#each devtestSettings as mod (mod.title)}
+							{#each shownDevtestTab?.modules ?? [] as mod (mod.title)}
 								<section class="devtestmod">
-									<h3>{mod.title}</h3>
+									<!-- A tab of one module needs no heading: the tab names it. -->
+									{#if (shownDevtestTab?.modules.length ?? 0) > 1}<h3>{mod.title}</h3>{/if}
 									{#if mod.Settings}
 										<mod.Settings />
 									{/if}

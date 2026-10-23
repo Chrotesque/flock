@@ -677,6 +677,8 @@ export interface YouTubeQuota {
 	units: number;
 	kinds: Record<string, number>;
 	uploads: number;
+	/** The edits one by one — [when, kind, units] — absent from a heartbeat from before 0.16.79. */
+	events?: [string, string, number][];
 }
 
 /**
@@ -696,6 +698,9 @@ export interface StatsStatus {
 	stopped?: '' | 'auto' | 'ceiling' | 'exhausted';
 	quota?: YouTubeQuota;
 	intervalSeconds: number;
+	/** Seconds between two reads, and whether the page set them (`stats_pace`) or the worker's config did. */
+	paceSeconds?: number;
+	paceFrom?: 'setting' | 'config';
 	videos: number;
 	error: string;
 	runs?: PollRun[];
