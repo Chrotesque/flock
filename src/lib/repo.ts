@@ -833,6 +833,27 @@ export async function requestTikTokCheck(giveUpMs = 20_000): Promise<'done' | 'f
 	}
 }
 
+/**
+ * Asks the worker that reads the stats to read every YouTube channel now
+ * (worker/index.mjs, `statsRefreshPass`) and waits for it: the Dashboard's
+ * Refresh, once the day's units have stopped the automatic reads. 'done'
+ * once read, 'failed' when the worker would not (past the ceiling, say),
+ * 'timeout' when nobody answered.
+ */
+export async function requestStatsRefresh(giveUpMs = 45_000): Promise<'done' | 'failed' | 'timeout'> {
+	assertDeviceNamed();
+	const id = newId();
+	await setSetting('stats_refresh', { id, status: 'pending', requestedAt: new Date().toISOString() });
+	const started = Date.now();
+	for (;;) {
+		await new Promise((resolve) => setTimeout(resolve, 800));
+		const answer = await getSetting<{ id?: string; status?: string } | null>('stats_refresh', null);
+		if (answer?.id === id && answer.status === 'done') return 'done';
+		if (answer?.id === id && (answer.status === 'failed' || answer.status === 'expired')) return 'failed';
+		if (Date.now() - started > giveUpMs) return 'timeout';
+	}
+}
+
 /** By extension, for a download PocketBase did not type. */
 const IMAGE_TYPE_BY_EXT: Record<string, string> = {
 	jpg: 'image/jpeg',

@@ -3,6 +3,7 @@ import { ago, type DashTarget } from './dashboard';
 import { firstLine } from './format';
 import type { Account, PlatformId, StatsStatus } from './types';
 import type { WorkerDot } from './workerstatus';
+import { quotaToday } from './youtubequota';
 
 /**
  * What needs looking at, shown at the top of the To finish panel (it was the
@@ -220,12 +221,18 @@ export function systemProblems({ dots, accounts, targets, status, now }: SystemI
 			channel.title || accounts.find((a) => a.platform === 'youtube' && a.account_id === channelId)?.name || channelId;
 		out.push(system('warn', `YouTube stats are not being read for ${name}`, channel.error));
 	}
-	if (status && status.budget > 0 && status.unitsToday >= status.budget * 0.9) {
+	// Against the ceiling the Dashboard shows (9,000): the automatic reads have
+	// stopped by then, and what is left is for playlist adds and edits.
+	const quota = quotaToday(status, now.getTime());
+	if (quota && quota.ceiling > 0 && quota.units >= quota.ceiling * 0.9) {
 		out.push(
 			system(
 				'warn',
 				'YouTube quota nearly used up',
-				`${status.unitsToday.toLocaleString()} of ${status.budget.toLocaleString()} units today; the stats pause at the budget.`
+				`${quota.units.toLocaleString()} of ${quota.ceiling.toLocaleString()} units today, all brands together; ` +
+					(quota.budget > 0 && quota.budget < quota.ceiling
+						? `the stats' automatic reads stop at ${quota.budget.toLocaleString()} and a Refresh reads until ${quota.ceiling.toLocaleString()}.`
+						: 'the stats pause there.')
 			)
 		);
 	}

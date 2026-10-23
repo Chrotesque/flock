@@ -75,7 +75,8 @@ import { resolveFolder } from './paths.mjs';
 import { pickFolder } from './folderpick.mjs';
 import { readLocalImage } from './localfile.mjs';
 import { scoreTitle, generateTitles, listTools } from './vidiq.mjs';
-import { statsPass, unitsToday } from './stats.mjs';
+import { statsPass } from './stats.mjs';
+import { unitsToday } from './quota.mjs';
 import { instagramStatsPass } from './igstats.mjs';
 import { facebookStatsPass } from './fbstats.mjs';
 import { tiktokStatsPass, statsReach, videoIdOf } from './ttstats.mjs';
@@ -976,6 +977,42 @@ async function creatorCheckPass(pb, config) {
 		await answerIfCurrent(pb, 'tiktok_check', ask, { status: 'failed', error: message.slice(0, 1000) });
 	} finally {
 		checkingCreators = false;
+	}
+}
+
+/**
+ * Reads every YouTube channel now when the Dashboard's Refresh asks for it
+ * (`app_settings` / `stats_refresh`): once the day's units reach the stats
+ * budget the automatic reads stop, and this is how the numbers still move,
+ * up to the ceiling (stats.mjs). Only the worker that reads the stats
+ * answers; on the scoring tick, since somebody is waiting for it. An ask
+ * older than a minute has been given up on.
+ */
+let refreshingStats = false;
+const STATS_REFRESH_MAX_AGE_MS = 60_000;
+
+async function statsRefreshPass(pb, config) {
+	if (refreshingStats || dry || config.statsSeconds <= 0 || !hb.canPublish() || !hasYouTube(config)) return;
+	const ask = (await pb.getSetting('stats_refresh'))?.value;
+	if (!ask || ask.status !== 'pending' || !ask.id) return;
+	if (Date.now() - Date.parse(ask.requestedAt) > STATS_REFRESH_MAX_AGE_MS) {
+		await answerIfCurrent(pb, 'stats_refresh', ask, { status: 'expired' });
+		return;
+	}
+	refreshingStats = true;
+	try {
+		await answerIfCurrent(pb, 'stats_refresh', ask, { status: 'running' });
+		const outcome = await statsPass({ pb, config, log, every: true, manual: true });
+		await answerIfCurrent(
+			pb,
+			'stats_refresh',
+			ask,
+			outcome === 'read'
+				? { status: 'done', doneAt: new Date().toISOString() }
+				: { status: 'failed', error: outcome }
+		);
+	} finally {
+		refreshingStats = false;
 	}
 }
 
@@ -2018,7 +2055,8 @@ async function main() {
 	if (statsOnly) {
 		// Only what is set up: a pass with nothing to read would write its
 		// "not connected" over the status the real worker keeps.
-		if (hasYouTube(config)) await statsPass({ pb, config, log, every: true });
+		// Asked for by hand, like a Refresh: past the automatic stop, up to the ceiling.
+		if (hasYouTube(config)) await statsPass({ pb, config, log, every: true, manual: true });
 		if (hasInstagram(config)) await instagramStatsPass({ pb, config, log });
 		if (hasFacebook(config)) await facebookStatsPass({ pb, config, log });
 		if (hasTikTok(config)) await tiktokStatsPass({ pb, config, log });
@@ -2129,7 +2167,7 @@ async function main() {
 				(count > 1
 					? `of each of ${count} channels, one every ${config.statsSeconds}s in turn, `
 					: `every ${config.statsSeconds}s, `) +
-				`up to ${config.statsBudget} units a day`
+				`stopping at ${config.statsBudget} of the day's units (a Refresh reads until ${config.statsCeiling})`
 		);
 		let statsBusy = false;
 		const tick = async () => {
@@ -2218,6 +2256,7 @@ async function main() {
 		void folderPickPass(pb).catch((err) => log(`folder pick failed: ${err.message}`));
 		void fileRequestPass(pb).catch((err) => log(`image request failed: ${err.message.split('\n')[0]}`));
 		void creatorCheckPass(pb, config).catch((err) => log(`TikTok account check failed: ${err.message.split('\n')[0]}`));
+		void statsRefreshPass(pb, config).catch((err) => log(`stats refresh failed: ${err.message.split('\n')[0]}`));
 		void importPass(pb, config).catch((err) => log(`import pass failed: ${err.message.split('\n')[0]}`));
 	}, Math.max(1, config.scoreSeconds) * 1000);
 

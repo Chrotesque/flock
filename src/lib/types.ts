@@ -668,15 +668,33 @@ export interface ChannelStatus {
 }
 
 /**
+ * What the worker spent of the YouTube Data API's units on one Pacific day
+ * (worker/quota.mjs): the total, each kind of work's part, and the uploads,
+ * which draw on a bucket of their own.
+ */
+export interface YouTubeQuota {
+	day: string;
+	units: number;
+	kinds: Record<string, number>;
+	uploads: number;
+}
+
+/**
  * The stats pass's heartbeat, in app_settings under `stats_status`. The
  * top level is the pass as a whole (the quota is the project's); `channels`
  * is per channel, by channel id, since the channels take turns.
- * `intervalSeconds` is how often each channel is read.
+ * `intervalSeconds` is how often each channel is read. `budget` is where
+ * the automatic reads stop, `ceiling` where a Refresh does, and `stopped`
+ * which of them holds (or Google's own `exhausted`); `quota` is absent from
+ * a heartbeat written before the worker counted every kind of work.
  */
 export interface StatsStatus {
 	polledAt: string;
 	unitsToday: number;
 	budget: number;
+	ceiling?: number;
+	stopped?: '' | 'auto' | 'ceiling' | 'exhausted';
+	quota?: YouTubeQuota;
 	intervalSeconds: number;
 	videos: number;
 	error: string;

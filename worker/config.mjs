@@ -141,12 +141,17 @@ export function loadConfig() {
 		previewHost: process.env.FLOCK_PREVIEW_HOST || file.previewHost || '127.0.0.1',
 		vidiqKey: process.env.VIDIQ_API_KEY || file.vidiqKey || '',
 		// The stats pass. One videos.list covers fifty videos for one unit, so the
-		// interval alone sets the daily cost: 30s is 2,880 of the 10,000 units
-		// that also pay 1,600 per upload. 0 turns the pass off.
+		// interval alone sets the daily cost: 30s is 2,880 of the day's 10,000
+		// units, which no longer pay for uploads (their own bucket of 100 a day).
+		// 0 turns the pass off.
 		statsSeconds: Number(process.env.FLOCK_STATS_SECONDS ?? file.statsSeconds ?? 30),
 		statsVideos: Number(process.env.FLOCK_STATS_VIDEOS ?? file.statsVideos ?? 50),
-		// Units the pass may spend in a day before it pauses until Google's reset.
-		statsBudget: Number(process.env.FLOCK_STATS_BUDGET ?? file.statsBudget ?? 6000),
+		// The day's units, everything flock spends together, at which the
+		// automatic reads stop until Google's reset (stats.mjs); a Refresh on
+		// the Dashboard still reads up to the ceiling, and what is above it is
+		// left for playlist adds, renames and Calendar edits. 0 is no limit.
+		statsBudget: Number(process.env.FLOCK_STATS_BUDGET ?? file.statsBudget ?? 8000),
+		statsCeiling: Number(process.env.FLOCK_STATS_CEILING ?? file.statsCeiling ?? 9000),
 		// ffmpeg, for TikTok's cover image (tiktokcover.mjs); '' looks beside
 		// this config, then on the PATH.
 		ffmpegPath: process.env.FLOCK_FFMPEG || file.ffmpegPath || '',

@@ -6,18 +6,23 @@
 // The whole design turns on one fact about the Data API's quota: a videos.list
 // call costs one unit however many ids it carries, up to fifty. So reading the
 // newest fifty every 30 seconds costs exactly what reading one would, and the
-// cadence alone sets the bill — 2,880 units a day out of the 10,000 that also
-// has to pay 1,600 for every upload. The quota is the Google Cloud project's,
-// shared by every channel. `statsBudget` is the guard: once a day's polling
-// has spent that much, the pass pauses until Google's reset at midnight
-// Pacific. A poll set too fast can then cost the day its stats, but never an
-// upload.
+// cadence alone sets the bill — about 4,200 of the day's 10,000 units with
+// three channels, counting the listings and subscriber counts. The units are
+// the Google Cloud project's, shared by every channel, and since Google's
+// change of 4 Dec 2025 they no longer pay for uploads (videos.insert has its
+// own bucket of 100 a day) — only for reads and for edits: playlist adds,
+// renames, Calendar moves and releases, deletes (quota.mjs counts them all).
+// `statsBudget` (8,000) is the guard: once the day's units, all kinds
+// together, reach it, the automatic reads stop until Google's reset at
+// midnight Pacific; a Refresh pressed on the Dashboard still reads until
+// `statsCeiling` (9,000), and the last 1,000 are left for the edits.
 
 import { forgetToken } from './google.mjs';
 import { youtubeChannels, youtubeToken } from './youtube.mjs';
 import { fetchOrExplain } from './net.mjs';
 import { creditWords, followerStep } from './followers.mjs';
 import { analyticsPass } from './ytanalytics.mjs';
+import { charge, pacificDay, quotaToday, restoreQuota, statsMayRead, unitsToday } from './quota.mjs';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 
@@ -51,10 +56,19 @@ const PLAYLIST_TTL_MS = 30 * 60 * 1000;
 // followers per video (followers.mjs): a unit each, 144 a day per channel.
 const SUBSCRIBERS_TTL_MS = 10 * 60 * 1000;
 
-// Shared by every channel: the day's spend, and the worker's polling runs.
-let spent = { day: '', units: 0 };
-let paused = false;
+// Shared by every channel: the worker's polling runs, when it last read, and
+// the Pacific day on which Google said the quota was used up.
 let runs = null;
+let lastRead = '';
+let exhausted = '';
+// What the heartbeat last said of the day's spend and the stop, so a stopped
+// pass writes it only when it moved.
+let reported = '';
+// What the pass last said about stopping, so it is said once a day.
+let stopSaid = '';
+// One pass at a time: the automatic tick and a Refresh asked for on the
+// Dashboard would otherwise read the same channel at once.
+let chain = Promise.resolve();
 // What the heartbeat says per channel, by channel id.
 let reports = null;
 let turn = 0;
@@ -82,24 +96,6 @@ function stateOf(channelId) {
 	return state;
 }
 
-/** Google's quota resets at midnight Pacific, whatever clock the worker runs on. */
-function pacificDay() {
-	return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
-}
-
-function charge(units) {
-	const day = pacificDay();
-	if (spent.day !== day) {
-		spent = { day, units: 0 };
-		paused = false;
-	}
-	spent.units += units;
-}
-
-export function unitsToday() {
-	return spent.day === pacificDay() ? spent.units : 0;
-}
-
 /**
  * The stretches during which the worker polled without a break, kept in the
  * heartbeat. The screen needs them to tell a quiet hour from an hour the
@@ -113,6 +109,27 @@ async function loadRuns(pb) {
 	runs = Array.isArray(row?.value?.runs) ? row.value.runs : [];
 	const saved = row?.value?.channels;
 	reports = saved && typeof saved === 'object' ? { ...saved } : {};
+	lastRead = typeof row?.value?.polledAt === 'string' ? row.value.polledAt : '';
+	// What the day had spent before this start, so a restart does not count
+	// from zero. A row from before quota.mjs has only the stats' units.
+	restoreQuota(row?.value?.quota ?? legacyQuota(row?.value));
+}
+
+/** The day's spend as a heartbeat from before quota.mjs said it: the stats' units, if written today. */
+function legacyQuota(value) {
+	const units = Number(value?.unitsToday);
+	const at = new Date(value?.polledAt ?? '');
+	if (!(units > 0) || !Number.isFinite(at.getTime()) || pacificDay(at) !== pacificDay()) return null;
+	return { day: pacificDay(), units, kinds: { stats: units }, uploads: 0 };
+}
+
+/** Why the stats do not read now: `exhausted` (Google said so), `ceiling`, `auto` (automatic reads only), or ''. */
+function stopState(config) {
+	if (exhausted === pacificDay()) return 'exhausted';
+	const limits = { units: unitsToday(), budget: config.statsBudget, ceiling: config.statsCeiling };
+	if (statsMayRead({ ...limits, manual: true }) === 'ceiling') return 'ceiling';
+	if (statsMayRead(limits) === 'stopped') return 'auto';
+	return '';
 }
 
 function noteRun(config, count) {
@@ -137,7 +154,6 @@ async function refreshPlaylists(pb, config, log, account) {
 	state.playlistsAt = Date.now();
 	try {
 		const res = await api(config, account, '/playlists?part=snippet,contentDetails&mine=true&maxResults=50');
-		charge(1);
 		const items = (res?.items ?? []).map((p) => ({
 			id: p.id,
 			title: p.snippet?.title ?? '',
@@ -171,7 +187,6 @@ async function readSubscribers(pb, config, log, account, rows, byVideo) {
 	state.subscribersAt = Date.now();
 	try {
 		const res = await api(config, account, '/channels?part=statistics&mine=true');
-		charge(1);
 		const stats = res?.items?.[0]?.statistics ?? {};
 		// Above 1,000 YouTube rounds the count down to three figures.
 		if (stats.hiddenSubscriberCount || stats.subscriberCount == null) throw new Error('the channel hides its subscriber count');
@@ -209,6 +224,8 @@ async function api(config, account, path, retry = true) {
 	const res = await fetchOrExplain(`${API}${path}`, {
 		headers: { Authorization: `Bearer ${token}` }
 	});
+	// Every read that reaches YouTube costs a unit, refused or not.
+	charge('stats', 1);
 	const text = await res.text();
 
 	if (res.status === 401 && retry) {
@@ -240,7 +257,6 @@ async function recentIds(config, account, count) {
 
 	if (!state.uploadsPlaylist) {
 		const channels = await api(config, account, '/channels?part=contentDetails&mine=true');
-		charge(1);
 		state.uploadsPlaylist = channels?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads ?? '';
 		if (!state.uploadsPlaylist) throw new Error('Google returned no uploads playlist for this channel.');
 	}
@@ -251,7 +267,6 @@ async function recentIds(config, account, count) {
 		account,
 		`/playlistItems?part=contentDetails&playlistId=${state.uploadsPlaylist}&maxResults=${max}`
 	);
-	charge(1);
 	const ids = (res?.items ?? []).map((item) => item.contentDetails?.videoId).filter(Boolean);
 	state.listed = { at: Date.now(), ids };
 	return ids;
@@ -263,17 +278,14 @@ async function fetchVideos(config, account, ids) {
 	const query = (list) => `/videos?part=${list.join(',')}&id=${ids.join(',')}&maxResults=50`;
 	try {
 		const res = await api(config, account, query(state.parts));
-		charge(1);
 		return res?.items ?? [];
 	} catch (err) {
 		// A 400 naming the part means this grant is not allowed the owner-only
 		// parts after all. Drop them for the rest of the run rather than fail
 		// every pass over three fields.
 		if (err.status === 400 && state.parts !== PUBLIC_PARTS && /part/i.test(err.body || '')) {
-			charge(1);
 			state.parts = PUBLIC_PARTS;
 			const res = await api(config, account, query(state.parts));
-			charge(1);
 			return res?.items ?? [];
 		}
 		throw err;
@@ -321,19 +333,25 @@ function toRow(item) {
 }
 
 /**
- * The heartbeat the Analytics screen reads: when the worker last looked, what
- * it spent, and why it stopped if it did — overall, and in `channels` per
- * channel, since the screen shows one channel at a time. Lives in
- * app_settings beside the watch index, the same small abuse for the same
- * reason — the SPA already has a way to read that collection and no way to
- * talk to the worker. `intervalSeconds` is how often each channel is read:
- * the tick times the number of channels taking turns.
+ * The heartbeat the Dashboard reads: when the worker last read, what the day's
+ * units went on (`quota`, every kind of work; `unitsToday` its total), the
+ * stops and whether one holds (`stopped`), and why it failed if it did —
+ * overall, and in `channels` per channel. Lives in app_settings beside the
+ * watch index, the same small abuse for the same reason — the SPA already has
+ * a way to read that collection and no way to talk to the worker.
+ * `intervalSeconds` is how often each channel is read: the tick times the
+ * number of channels taking turns.
  */
 async function report(pb, config, count, extra) {
+	const quota = quotaToday();
+	const stopped = stopState(config);
 	await pb.setSetting('stats_status', {
-		polledAt: new Date().toISOString(),
-		unitsToday: unitsToday(),
+		polledAt: lastRead,
+		unitsToday: quota.units,
+		quota,
 		budget: config.statsBudget,
+		ceiling: config.statsCeiling,
+		stopped,
 		intervalSeconds: config.statsSeconds * Math.max(1, count),
 		videos: 0,
 		error: '',
@@ -341,6 +359,7 @@ async function report(pb, config, count, extra) {
 		channels: reports ?? {},
 		...extra
 	});
+	reported = `${quota.day}|${quota.units}|${quota.uploads}|${stopped}`;
 }
 
 /**
@@ -409,7 +428,7 @@ async function pollChannel({ pb, config, log, account }) {
 		return items.length;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		if (/quota exhausted/.test(message)) paused = true;
+		if (/quota exhausted/.test(message)) exhausted = pacificDay();
 		// Reported once per distinct failure rather than every 30 seconds.
 		if (message !== state.lastError) {
 			log(`stats ${account.title} failed: ${message.split('\n')[0]}`);
@@ -422,22 +441,56 @@ async function pollChannel({ pb, config, log, account }) {
 
 /**
  * One tick: the next channel in turn — or, with `every` (the one-shot
- * `pnpm worker:stats`), all of them.
+ * `pnpm worker:stats`, and a Refresh pressed on the Dashboard), all of them.
+ * `manual` reads past the automatic stop, up to the ceiling. Says what it
+ * did: `read`, `stopped` (automatic reads, past the budget), `ceiling`,
+ * `exhausted` (Google said so) or `failed`.
  */
-export async function statsPass({ pb, config, log, every = false }) {
-	if (paused && spent.day === pacificDay()) return;
+export function statsPass(args) {
+	const run = chain.then(() => passOnce(args));
+	chain = run.catch(() => {});
+	return run;
+}
 
-	const budget = Math.max(0, Number(config.statsBudget) || 0);
-	if (budget && unitsToday() + 2 > budget) {
-		paused = true;
-		const why = `Paused: ${unitsToday()} of ${budget} units spent today. Resumes at midnight Pacific.`;
-		log(`stats ${why.toLowerCase()}`);
-		await report(pb, config, config.google.accounts.length, { error: why }).catch(() => {});
-		return;
+async function passOnce({ pb, config, log, every = false, manual = false }) {
+	const count = config.google.accounts.length;
+	try {
+		await loadRuns(pb);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		if (message !== passError) log(`stats failed: ${message.split('\n')[0]}`);
+		passError = message;
+		return 'failed';
+	}
+
+	const may =
+		exhausted === pacificDay()
+			? 'exhausted'
+			: statsMayRead({ units: unitsToday(), budget: config.statsBudget, ceiling: config.statsCeiling, manual });
+	if (may !== 'read') {
+		const said = `${pacificDay()}|${may}`;
+		if (stopSaid !== said) {
+			stopSaid = said;
+			log(
+				may === 'stopped'
+					? `stats: automatic reads stopped — ${unitsToday()} units of today's quota spent (stop at ${config.statsBudget}); ` +
+							`a Refresh on the Dashboard still reads until ${config.statsCeiling}. Resumes at midnight Pacific.`
+					: may === 'ceiling'
+						? `stats: reads stopped — ${unitsToday()} units of today's quota spent (ceiling ${config.statsCeiling}); ` +
+							'the rest is kept for playlist adds, renames and Calendar edits. Resumes at midnight Pacific.'
+						: 'stats: YouTube says the quota is used up — no reads until midnight Pacific.'
+			);
+		}
+		// The day's spend still moves (playlist adds, renames, moves), and the
+		// Dashboard shows it, so it is written whenever it changed.
+		const quota = quotaToday();
+		if (reported !== `${quota.day}|${quota.units}|${quota.uploads}|${stopState(config)}`) {
+			await report(pb, config, count).catch(() => {});
+		}
+		return may;
 	}
 
 	try {
-		await loadRuns(pb);
 		const list = await youtubeChannels(config);
 		if (list.length === 0) {
 			const problem = config.google.accounts.find((account) => account.problem)?.problem;
@@ -452,12 +505,15 @@ export async function statsPass({ pb, config, log, every = false }) {
 		noteRun(config, list.length);
 		let videos = 0;
 		for (const account of due) videos += await pollChannel({ pb, config, log, account });
+		lastRead = new Date().toISOString();
 		await report(pb, config, list.length, { videos });
 		passError = '';
+		return 'read';
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		if (message !== passError) log(`stats failed: ${message.split('\n')[0]}`);
 		passError = message;
-		await report(pb, config, config.google.accounts.length, { error: message }).catch(() => {});
+		await report(pb, config, count, { error: message }).catch(() => {});
+		return 'failed';
 	}
 }

@@ -147,9 +147,12 @@ Good to know:
   label.
 - **Stats cost API quota.** The Dashboard's YouTube numbers come from the
   newest 50 videos, read every 30 seconds, and each channel's subscriber count,
-  read every 10 minutes: under half the daily quota that uploads also use. `statsSeconds`, `statsVideos` and `statsBudget` in the
-  config adjust it; at the budget, polling pauses until the quota resets, so
-  uploads are never short.
+  read every 10 minutes: under half of the 10,000 units a day. Uploads have
+  their own allowance of 100 a day; the units also pay for playlist adds, renames
+  and Calendar edits. At 8,000 units the automatic reads stop until the quota
+  resets (Refresh on the Dashboard still reads until 9,000), so the last 1,000
+  are always left for those. `statsSeconds`, `statsVideos`, `statsBudget` and
+  `statsCeiling` in the config adjust it.
 
 ### TikTok
 

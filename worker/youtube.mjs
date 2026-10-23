@@ -12,6 +12,7 @@ import { pickAccount } from './accounts.mjs';
 import { youtubeVideoId } from './moves.mjs';
 import { sameTitle, snippetPatch } from './retitle.mjs';
 import { describeNetworkError, fetchOrExplain } from './net.mjs';
+import { charge, countUpload, unitCost } from './quota.mjs';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/youtube/v3/videos';
@@ -179,7 +180,11 @@ function buildResource(target, options, release) {
 	return resource;
 }
 
-async function api(token, path, options = {}) {
+/**
+ * One Data API call. `kind` is what the units went on (quota.mjs): every
+ * call that reaches YouTube is charged, refused or not.
+ */
+async function api(token, path, { kind = 'other', ...options } = {}) {
 	const res = await fetchOrExplain(`${API}${path}`, {
 		...options,
 		headers: {
@@ -188,6 +193,7 @@ async function api(token, path, options = {}) {
 			...options.headers
 		}
 	});
+	charge(kind, unitCost(options.method));
 	const text = await res.text();
 	if (!res.ok) throw new Error(`YouTube ${options.method || 'GET'} ${path} -> ${res.status}\n${text}`);
 	return text ? JSON.parse(text) : null;
@@ -231,7 +237,7 @@ export async function ownChannel(config, account, { fresh = false } = {}) {
 	const known = channels.get(account.refreshToken);
 	if (known && !fresh) return known;
 	const token = await youtubeToken(config, account);
-	const body = await api(token, '/channels?part=snippet&mine=true');
+	const body = await api(token, '/channels?part=snippet&mine=true', { kind: 'channel' });
 	const item = body?.items?.[0];
 	if (!item) throw new Error('The Google account has no YouTube channel.');
 	const channel = {
@@ -352,6 +358,8 @@ async function startSession(token, resource, { size, mimeType, notifySubscribers
 	if (!res.ok) {
 		throw new Error(`Could not start the upload (${res.status}): ${await res.text()}`);
 	}
+	// videos.insert draws on its own bucket of 100 a day, not on the units.
+	countUpload();
 	const location = res.headers.get('location');
 	if (!location) throw new Error('YouTube accepted the metadata but returned no upload URL.');
 	return location;
@@ -442,7 +450,7 @@ async function listPlaylists(token) {
 	let pageToken = '';
 	for (let page = 0; page < 4; page++) {
 		const next = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
-		const list = await api(token, `/playlists?part=snippet&mine=true&maxResults=50${next}`);
+		const list = await api(token, `/playlists?part=snippet&mine=true&maxResults=50${next}`, { kind: 'playlist' });
 		items.push(...(list.items ?? []));
 		pageToken = list.nextPageToken ?? '';
 		if (!pageToken) break;
@@ -477,6 +485,7 @@ async function addToPlaylists(token, videoId, names, log) {
 		}
 		try {
 			await api(token, '/playlistItems?part=snippet', {
+				kind: 'playlist',
 				method: 'POST',
 				body: JSON.stringify({
 					snippet: { playlistId: match.id, resourceId: { kind: 'youtube#video', videoId } }
@@ -509,6 +518,7 @@ async function setThumbnail(token, videoId, job, pb, log) {
 		},
 		body: image.bytes
 	});
+	charge('other', 50);
 	const text = await res.text();
 	if (!res.ok) {
 		const err = new Error(`thumbnails.set -> ${res.status}: ${text.slice(0, 300)}`);
@@ -649,7 +659,7 @@ async function editingToken(config, channelId, doing) {
 export async function deleteYouTubeVideo(config, channelId, videoId) {
 	const { token, channel } = await editingToken(config, channelId, 'deleting');
 	try {
-		await api(token, `/videos?id=${encodeURIComponent(videoId)}`, { method: 'DELETE' });
+		await api(token, `/videos?id=${encodeURIComponent(videoId)}`, { method: 'DELETE', kind: 'delete' });
 		return { channel, alreadyGone: false };
 	} catch (err) {
 		if (/ -> 404\b/.test(err.message)) return { channel, alreadyGone: true };
@@ -664,9 +674,9 @@ function postVideo(row) {
 	return { channelId: row.account || row.handle?.account || '', videoId };
 }
 
-/** A video's `status`, or an error when YouTube no longer has it — 1 unit. */
-async function videoStatus(token, videoId) {
-	const body = await api(token, `/videos?part=status&id=${encodeURIComponent(videoId)}`);
+/** A video's `status`, or an error when YouTube no longer has it — 1 unit, charged to `kind`. */
+async function videoStatus(token, videoId, kind) {
+	const body = await api(token, `/videos?part=status&id=${encodeURIComponent(videoId)}`, { kind });
 	const status = body?.items?.[0]?.status;
 	if (!status) throw new Error('YouTube no longer has the video');
 	return status;
@@ -699,9 +709,10 @@ export function statusPatch(status, at) {
 export async function rescheduleYouTube(config, row, at) {
 	const { channelId, videoId } = postVideo(row);
 	const { token } = await editingToken(config, channelId, 'moving');
-	const status = await videoStatus(token, videoId);
+	const status = await videoStatus(token, videoId, 'move');
 	if (!heldStatus(status)) throw new Error('YouTube has put it out already');
 	const body = await api(token, '/videos?part=status', {
+		kind: 'move',
 		method: 'PUT',
 		body: JSON.stringify({ id: videoId, status: statusPatch(status, at) })
 	});
@@ -730,12 +741,13 @@ export function publicPatch(status) {
 export async function releaseYouTubeNow(config, row) {
 	const { channelId, videoId } = postVideo(row);
 	const { token } = await editingToken(config, channelId, 'releasing');
-	const status = await videoStatus(token, videoId);
+	const status = await videoStatus(token, videoId, 'release');
 	if (!heldStatus(status)) {
 		if (status.privacyStatus === 'public') return { alreadyOut: true };
 		throw new Error(`YouTube no longer holds it for a time (it is ${status.privacyStatus}); nothing changed`);
 	}
 	const body = await api(token, '/videos?part=status', {
+		kind: 'release',
 		method: 'PUT',
 		body: JSON.stringify({ id: videoId, status: publicPatch(status) })
 	});
@@ -753,12 +765,13 @@ export async function releaseYouTubeNow(config, row) {
  */
 export async function retitleYouTube(config, channelId, videoId, title) {
 	const { token } = await editingToken(config, channelId, 'renaming');
-	const read = await api(token, `/videos?part=snippet&id=${encodeURIComponent(videoId)}`);
+	const read = await api(token, `/videos?part=snippet&id=${encodeURIComponent(videoId)}`, { kind: 'rename' });
 	const snippet = read?.items?.[0]?.snippet;
 	if (!snippet) throw new Error('YouTube no longer has the video');
 	const before = snippet.title ?? '';
 	if (sameTitle(before, title)) return { before, title: before, snippet, unchanged: true };
 	const body = await api(token, '/videos?part=snippet', {
+		kind: 'rename',
 		method: 'PUT',
 		body: JSON.stringify({ id: videoId, snippet: snippetPatch(snippet, title) })
 	});
@@ -775,7 +788,7 @@ export async function retitleYouTube(config, channelId, videoId, title) {
 export async function youtubeRelease(config, row) {
 	const { channelId, videoId } = postVideo(row);
 	const token = await youtubeToken(config, await youtubeAccount(config, channelId));
-	const status = await videoStatus(token, videoId).catch((err) => {
+	const status = await videoStatus(token, videoId, 'move').catch((err) => {
 		if (/no longer has/.test(err.message)) return null;
 		throw err;
 	});

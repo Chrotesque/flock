@@ -37,11 +37,13 @@
 		listJobs,
 		listTargets,
 		loadVideoStat,
+		requestStatsRefresh,
 		subscribeReels,
 		subscribeStats,
 		subscribeTargets,
 		toDashboardVideo
 	} from '$lib/repo';
+	import { UPLOADS_A_DAY, quotaToday, refreshDue, stopToday, stopWords, type QuotaRow } from '$lib/youtubequota';
 	import { formatBytes, formatDuration, shortCount } from '$lib/format';
 	import { KIND_LABELS } from '$lib/videokind';
 	import { TREND, changeWords } from '$lib/trend';
@@ -200,6 +202,29 @@
 		await dashData.refresh();
 		if (reset || !based) rebase();
 		now = Date.now();
+	}
+
+	/* Refresh. Once the day's units stop YouTube's automatic reads (the stats
+	 * budget), it also asks the worker to read every channel now, and it turns
+	 * red when those numbers are five minutes old (youtubequota.ts). A press
+	 * greys it for five minutes, whether or not the read comes. */
+	let refreshPressedAt = $state(0);
+	let refreshing = $state(false);
+	const refreshRed = $derived(refreshDue(status, now, refreshPressedAt));
+
+	async function onRefresh() {
+		refreshPressedAt = Date.now();
+		if (stopToday(status, Date.now()) === 'auto') {
+			refreshing = true;
+			try {
+				await requestStatsRefresh();
+			} catch {
+				// No device name, or PocketBase away: the page re-reads anyway.
+			} finally {
+				refreshing = false;
+			}
+		}
+		await load(true);
 	}
 
 	let targetTimer: ReturnType<typeof setTimeout> | undefined;
@@ -735,14 +760,21 @@
 	const noteFacebook = $derived(scope ? null : fbPage);
 	const noteTikTok = $derived(scope ? null : ttAccount);
 
+	// YouTube's units are the Cloud project's, one pool for every channel, so
+	// its line is all brands together: the newest read, any channel's error
+	// (named), and what the day's units went on.
 	const ytBeat = $derived.by(() => {
 		if (!status) return null;
-		const own = noteChannel ? status.channels?.[noteChannel.account_id] : undefined;
+		const quota = quotaToday(status, now);
+		if (!quota) return null;
+		const failing = Object.values(status.channels ?? {}).filter((c) => c?.error);
+		const named = (c: { title: string; error: string }, text: string) => (c.title ? `${c.title}: ${text}` : text);
 		return {
-			polledAt: own?.polledAt ?? status.polledAt,
-			error: own?.error || status.error,
-			units: status.unitsToday,
-			budget: status.budget
+			polledAt: status.polledAt,
+			error: status.error ? shortError(status.error) : failing[0] ? named(failing[0], shortError(failing[0].error)) : '',
+			detail: status.error || failing.map((c) => named(c, c.error)).join('\n'),
+			quota,
+			stop: stopToday(status, now)
 		};
 	});
 	const igBeat = $derived(noteInstagram ? igStatus?.accounts?.[noteInstagram.account_id] : undefined);
@@ -752,6 +784,8 @@
 
 	interface StatusLine {
 		platform: StatPlatform;
+		/** Whose numbers: the account, or every brand for YouTube's shared units. */
+		who: string;
 		level: StatusLevel;
 		read: string;
 		/** The error as one line, and as the worker wrote it (the line's tooltip). */
@@ -759,27 +793,33 @@
 		detail: string;
 		limit: { used: number; total: number; words: string } | null;
 		note: string;
+		/** YouTube's only: what the day's units went on, and the uploads' own count. */
+		costs?: { rows: QuotaRow[]; uploads: number | null };
 	}
 
 	/** The status icon's popup: a line per platform read, each with its level. */
 	const statusLines = $derived.by(() => {
 		const lines: StatusLine[] = [];
 		if (ytBeat) {
-			const limit = { used: ytBeat.units, total: ytBeat.budget, words: "units of today's stats budget" };
+			const { quota } = ytBeat;
+			const limit = { used: quota.units, total: quota.ceiling, words: 'units used today' };
 			lines.push({
 				platform: 'youtube',
+				who: brands.multiple ? 'All Brands' : accountOf('youtube'),
 				level: lineLevel({ error: ytBeat.error, ...limit }),
 				read: ago(ytBeat.polledAt),
-				error: shortError(ytBeat.error),
-				detail: ytBeat.error ?? '',
+				error: ytBeat.error,
+				detail: ytBeat.detail,
 				limit,
-				note: ''
+				note: stopWords(ytBeat.stop, quota, now),
+				costs: { rows: quota.rows, uploads: quota.uploads }
 			});
 		}
 		if (noteInstagram) {
 			const limit = allowance ? { used: allowance.used, total: allowance.total, words: 'posts in the last 24 h' } : null;
 			lines.push({
 				platform: 'instagram',
+				who: accountOf('instagram'),
 				level: lineLevel({ error: igBeat?.error, ...limit }),
 				read: ago(igBeat?.polledAt),
 				error: shortError(igBeat?.error),
@@ -793,6 +833,7 @@
 			const counts = ttBeat?.counts;
 			lines.push({
 				platform: 'tiktok',
+				who: accountOf('tiktok'),
 				// A sign-in without either reading scope is a choice (the scopes are
 				// opt-in), not a fault, so it stays neutral; one of the two missing is
 				// half a read and shows as such.
@@ -821,6 +862,7 @@
 		if (noteFacebook) {
 			lines.push({
 				platform: 'facebook',
+				who: accountOf('facebook'),
 				level: lineLevel({ error: fbBeat?.error, partial: Boolean(fbBeat?.views) }),
 				read: ago(fbBeat?.polledAt),
 				error: shortError(fbBeat?.error),
@@ -1294,7 +1336,7 @@
 					</button>
 					<div class="pop" id="dash-status" role="tooltip">
 						{#each statusLines as line (line.platform)}
-							{@const account = accountOf(line.platform)}
+							{@const account = line.who}
 							<div class="sline {line.level}">
 								<span class="sicon"><PlatformIcon platform={line.platform} size={13} /></span>
 								<div class="sbody">
@@ -1315,6 +1357,30 @@
 									{/if}
 									{#if line.note}
 										<p class="snote">{line.note}</p>
+									{/if}
+									{#if line.costs}
+										<!-- What the day's units went on: what each costs, and what it took today. -->
+										<div class="costs" role="table" aria-label="What today's units went on">
+											<div class="crow chead" role="row">
+												<span role="columnheader">Spent on</span>
+												<span role="columnheader">Costs</span>
+												<span role="columnheader">Today</span>
+											</div>
+											{#each line.costs.rows as row (row.kind)}
+												<div class="crow" class:none={row.units === 0} role="row">
+													<span role="cell">{row.label}</span>
+													<span role="cell">{row.cost}</span>
+													<span role="cell">{whole.format(row.units)}</span>
+												</div>
+											{/each}
+											{#if line.costs.uploads !== null}
+												<div class="crow uploads" class:none={line.costs.uploads === 0} role="row">
+													<span role="cell">Uploading a video</span>
+													<span role="cell">own allowance</span>
+													<span role="cell">{whole.format(line.costs.uploads)} of {UPLOADS_A_DAY}</span>
+												</div>
+											{/if}
+										</div>
 									{/if}
 								</div>
 							</div>
@@ -1348,11 +1414,14 @@
 			</button>
 			<button
 				class="btn icon refresh"
-				class:spinning={loading}
-				onclick={() => load(true)}
-				disabled={loading}
-				aria-label="Refresh"
-				title="Read everything again, and reset the change markers"
+				class:spinning={loading || refreshing}
+				class:due={refreshRed}
+				onclick={onRefresh}
+				disabled={loading || refreshing}
+				aria-label={refreshRed ? "Refresh: YouTube's numbers are over 5 minutes old" : 'Refresh'}
+				title={refreshRed
+					? `YouTube's automatic reads stopped at ${status?.budget?.toLocaleString() ?? ''} units today, and its numbers are over 5 minutes old. Press to read them now, and reset the change markers`
+					: 'Read everything again, and reset the change markers'}
 			>
 				<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
 					<path d="M13.2 6.4A5.4 5.4 0 0 0 3.3 5.1M2.8 9.6a5.4 5.4 0 0 0 9.9 1.3" />
@@ -1982,6 +2051,50 @@
 		height: 100%;
 		border-radius: inherit;
 		background: var(--level);
+	}
+
+	/* YouTube's units by what they went on: one grid, the rows its contents. */
+	.costs {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto auto;
+		gap: 2px 14px;
+		margin-top: 4px;
+		padding-top: 7px;
+		border-top: 1px solid var(--border);
+		font-size: 11.5px;
+	}
+
+	.crow {
+		display: contents;
+	}
+
+	.crow span:nth-child(n + 2) {
+		text-align: right;
+		white-space: nowrap;
+	}
+
+	.chead span {
+		font-size: 10.5px;
+		color: var(--text-faint);
+	}
+
+	.crow.none span {
+		color: var(--text-faint);
+	}
+
+	.crow.uploads span {
+		padding-top: 5px;
+	}
+
+	/* Refresh, once the automatic YouTube reads have stopped and the numbers aged. */
+	.refresh.due {
+		color: #ef4444;
+		border-color: #ef4444;
+		background: color-mix(in srgb, #ef4444 12%, transparent);
+	}
+
+	.refresh.due:hover:not(:disabled) {
+		color: #ff6b6b;
 	}
 
 	.banner {
