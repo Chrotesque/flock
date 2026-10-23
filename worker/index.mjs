@@ -15,7 +15,8 @@
 // (roles.mjs) splits the work between a NAS and a PC worker; the default,
 // `all`, does everything.
 
-import { loadConfig, requireConfig, hasYouTube, hasTikTok, hasInstagram, hasFacebook, saveSection } from './config.mjs';
+import { CONFIG_PATH, loadConfig, requireConfig, hasYouTube, hasTikTok, hasInstagram, hasFacebook, saveSection } from './config.mjs';
+import { startExtensions } from './extensions.mjs';
 import {
 	LEAD_SECONDS as FACEBOOK_LEAD_SECONDS,
 	deleteFacebookReel,
@@ -70,7 +71,7 @@ import { MANIFEST_NAME, archiveManifest, detachedKey, planProjectWrites, scanPro
 import { makeFolderWatcher } from './folderwatch.mjs';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { basename, dirname } from 'node:path';
 import { resolveFolder } from './paths.mjs';
 import { pickFolder } from './folderpick.mjs';
 import { readLocalImage } from './localfile.mjs';
@@ -2089,6 +2090,9 @@ async function main() {
 	);
 
 	await hb.start();
+
+	// This machine's own additions, if it has any (extensions.mjs).
+	void startExtensions({ pb, config, configDir: dirname(CONFIG_PATH), active: () => hb.canPublish() }, log);
 	for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, shutdown);
 
 	// The warning card: every worker with a tray icon looks, whatever its role,
