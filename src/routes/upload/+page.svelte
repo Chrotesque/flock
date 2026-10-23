@@ -15,6 +15,8 @@
 	import { buildPlan, type PlanRow } from '$lib/plan';
 	import { base } from '$app/paths';
 	import { createJob, rememberTags, rememberUsedSources, toInstant } from '$lib/repo';
+	import { findMentions, handleKey, mentionNotes } from '$lib/tiktokmentions';
+	import { tiktokHandles } from '$lib/stores/tiktokhandles.svelte';
 	import { RECORD_VERSION, timingOfTargets, type UploadRecord } from '$lib/uploadrecord';
 	import { allowanceWarning, postAllowance, youtubeGrantWarnings } from '$lib/accounts';
 	import { facebookProblems } from '$lib/facebook';
@@ -225,6 +227,9 @@
 		if (row.platform === 'tiktok') {
 			const privacy = String(row.options.privacy ?? '');
 			if (privacy && privacy !== 'Public') out.push(`Posted for ${privacy.toLowerCase()} only.`);
+			for (const note of mentionNotes(row.description, tiktokHandles.rows)) {
+				if (note.state !== 'found') out.push(note.words);
+			}
 		}
 		const due = row.immediate ? Date.now() : Date.parse(toInstant(row.date, row.time));
 		const allowance = allowanceWarning(postAllowance(accounts.for(row.platform)), due);
@@ -356,6 +361,9 @@
 						.filter(([, boxes]) => Object.keys(boxes).length > 0)
 				)
 			);
+			// The TikTok handles it names come first in the @ list next time.
+			const tiktok = plan.find((row) => row.platform === 'tiktok');
+			if (tiktok) tiktokHandles.markUsed(findMentions(tiktok.description).map((m) => handleKey(m.handle)));
 			phase = 'done';
 			// The YouTube placeholder in To finish, now rather than on the next poll.
 			void videoTodo.refresh();

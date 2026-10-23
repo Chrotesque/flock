@@ -331,6 +331,37 @@ const collections = [
 		indexes: ['CREATE INDEX `idx_title_requests_status` ON `title_requests` (`status`)']
 	},
 	{
+		// TikTok handles named in captions, looked up by the worker that
+		// publishes (worker/tiktokhandles.mjs): the page asks by writing a row
+		// as pending, the worker answers with the account's name or `missing`.
+		// The rows stay, and are what the compose screen suggests after an @
+		// (src/lib/tiktokmentions.ts).
+		name: 'tiktok_handles',
+		type: 'base',
+		...RULES,
+		fields: [
+			// Lower case, without the @: what TikTok links and the index compares.
+			{ type: 'text', name: 'handle', required: true, max: 40 },
+			{
+				type: 'select',
+				name: 'status',
+				maxSelect: 1,
+				values: ['pending', 'found', 'missing', 'failed']
+			},
+			// The account's own name, as TikTok gives it.
+			{ type: 'text', name: 'name', max: 200 },
+			{ type: 'date', name: 'checked_at' },
+			{ type: 'text', name: 'error', max: 1000 },
+			// Named in a caption that went out, or was confirmed to.
+			{ type: 'bool', name: 'used' },
+			...stamps
+		],
+		indexes: [
+			'CREATE UNIQUE INDEX `idx_tiktok_handles_handle` ON `tiktok_handles` (`handle`)',
+			'CREATE INDEX `idx_tiktok_handles_status` ON `tiktok_handles` (`status`)'
+		]
+	},
+	{
 		// Project folders: a subfolder of a project folder in Settings that
 		// holds a flock JSON file. The worker writes the first half on every
 		// change it finds (worker/projects.mjs); the page writes `status`,

@@ -255,6 +255,48 @@ export function makeClient(baseUrl) {
 			}
 		},
 
+		/** The newest handle the page asked about and TikTok has not answered (tiktokhandles.mjs). */
+		async nextTikTokHandle() {
+			const filter = encodeURIComponent('status="pending"');
+			const res = await request(
+				`/api/collections/tiktok_handles/records?perPage=1&skipTotal=1&sort=-updated&filter=${filter}`
+			);
+			return res.items?.[0] ?? null;
+		},
+
+		async listTikTokHandles() {
+			const res = await request('/api/collections/tiktok_handles/records?perPage=1000&skipTotal=1&fields=id,handle,used');
+			return res.items ?? [];
+		},
+
+		async createTikTokHandle(data) {
+			return request('/api/collections/tiktok_handles/records', { method: 'POST', body: JSON.stringify(data) });
+		},
+
+		async updateTikTokHandle(id, data) {
+			return request(`/api/collections/tiktok_handles/records/${id}`, {
+				method: 'PATCH',
+				body: JSON.stringify(data)
+			});
+		},
+
+		/** TikTok captions flock knows: the newest posts it sent and those read from TikTok. */
+		async tiktokCaptions() {
+			const filter = encodeURIComponent('platform="tiktok"');
+			const [sent, read] = await Promise.all([
+				request(
+					`/api/collections/upload_targets/records?perPage=300&skipTotal=1&sort=-created&fields=description&filter=${filter}`
+				),
+				request(
+					`/api/collections/post_stats/records?perPage=300&skipTotal=1&sort=-published_at&fields=data.title&filter=${filter}`
+				)
+			]);
+			return [
+				...(sent.items ?? []).map((row) => row.description ?? ''),
+				...(read.items ?? []).map((row) => row.data?.title ?? '')
+			];
+		},
+
 		async getJob(id) {
 			return request(`/api/collections/upload_jobs/records/${id}`);
 		},

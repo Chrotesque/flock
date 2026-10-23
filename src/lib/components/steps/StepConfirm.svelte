@@ -29,6 +29,8 @@
 		CONSENT_PREFIX
 	} from '$lib/tiktok';
 	import { facebookProblems } from '$lib/facebook';
+	import { findMentions, handleKey, mentionNotes, type MentionNote } from '$lib/tiktokmentions';
+	import { tiktokHandles } from '$lib/stores/tiktokhandles.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { projects } from '$lib/stores/projects.svelte';
 	import { mentionWords, otherBrandMentions, postTexts, type BrandMention } from '$lib/brandmention';
@@ -76,6 +78,24 @@
 		if (row.platform !== 'tiktok') return [];
 		return tiktokProblems(row.options, accounts.tiktok, draft.videoFor('tiktok').duration);
 	}
+
+	/**
+	 * TikTok's @mentions as it will read the caption that goes out: whose
+	 * account each is, or why it will not link (tiktokmentions.ts). Asked
+	 * about here too, for a caption that never passed through Details.
+	 */
+	function mentionsOf(row: PlanRow): MentionNote[] {
+		return row.platform === 'tiktok' ? mentionNotes(row.description, tiktokHandles.rows) : [];
+	}
+	let tiktokCaption = $derived(rows.find((row) => row.platform === 'tiktok')?.description ?? '');
+	$effect(() => {
+		const handles = findMentions(tiktokCaption).map((m) => handleKey(m.handle));
+		if (handles.length === 0) return;
+		untrack(() => {
+			tiktokHandles.load();
+			tiktokHandles.want(handles);
+		});
+	});
 
 	/**
 	 * What the YouTube channel's grant cannot do for this post: an upload-only
@@ -468,6 +488,7 @@
 			{@const visibility = visibilityWarning(row)}
 			{@const issues = tiktokIssues(row)}
 			{@const grant = grantIssues(row)}
+			{@const mentioned = mentionsOf(row)}
 			{@const account = accountFor(row.platform)}
 			{@const allowance = postAllowance(accounts.for(row.platform))}
 			{@const overAllowance = allowanceWarning(allowance, dueAt(row))}
@@ -549,6 +570,20 @@
 							{issue}
 						</p>
 					{/each}
+					{#each mentioned.filter((n) => n.state !== 'found') as note (note.mention.start)}
+						<p class="warnline">
+							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+								<path
+									d="M12 3.5 21 19.5H3L12 3.5Z"
+									stroke="currentColor"
+									stroke-width="1.8"
+									stroke-linejoin="round"
+								/>
+								<path d="M12 10v4M12 16.4v.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+							</svg>
+							{note.words}
+						</p>
+					{/each}
 					{#each grant as issue (issue)}
 						<p class="warnline" title="Sign the channel in again with {YOUTUBE_EDIT_SETUP} to let flock edit it after upload.">
 							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
@@ -586,6 +621,12 @@
 						{/if}
 						{#if allowance}
 							<span class="dot">·</span><span title={allowanceHint(allowance)}>{allowanceLabel(allowance)}</span>
+						{/if}
+						{#if mentioned.some((n) => n.state === 'found')}
+							<span class="dot">·</span>mentions {mentioned
+								.filter((n) => n.state === 'found')
+								.map((n) => (n.name ? `@${n.key} (${n.name})` : `@${n.key}`))
+								.join(', ')}
 						{/if}
 						{#if row.platform === 'youtube' && playlistsOf(row.options).length}
 							{@const titles = playlistsOf(row.options)}

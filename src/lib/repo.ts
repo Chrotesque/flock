@@ -26,6 +26,7 @@ import { FOLLOWER_PREFIX, facebookFollows, readFollowerState, type FollowerState
 import { cleanName, readTitleRequest, type TitleRequest } from './retitle';
 import type { PlayerJob } from './storedcopy';
 import type { SlotPost } from './takenhours';
+import { needsAsking, type TikTokHandle } from './tiktokmentions';
 import type {
 	Account,
 	Brand,
@@ -1482,6 +1483,100 @@ export async function listTitleRequests(since: Date): Promise<TitleRequest[]> {
 /** Each rename as it is asked and as the worker answers it. Returns the unsubscribe. */
 export function subscribeTitleRequests(onRow: (row: TitleRequest, action: string) => void): () => void {
 	const sub = pb.collection('title_requests').subscribe('*', (e) => onRow(readTitleRequest(e.record), e.action));
+	sub.catch(() => {});
+	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
+}
+
+/* ---- TikTok handles (tiktokmentions.ts, worker/tiktokhandles.mjs) ---- */
+
+function readTikTokHandle(row: Record<string, unknown>): TikTokHandle {
+	const text = (key: string) => (typeof row[key] === 'string' ? (row[key] as string) : '');
+	const status = text('status');
+	return {
+		id: text('id'),
+		handle: text('handle'),
+		status: status === 'found' || status === 'missing' || status === 'failed' ? status : 'pending',
+		name: text('name'),
+		checkedAt: text('checked_at').replace(' ', 'T'),
+		error: text('error'),
+		used: row.used === true,
+		updated: text('updated')
+	};
+}
+
+/** Every handle flock has asked TikTok about; none on a PocketBase without the collection. */
+export async function loadTikTokHandles(): Promise<TikTokHandle[]> {
+	try {
+		const rows = await pb.collection('tiktok_handles').getFullList<Record<string, unknown>>({ batch: 1000 });
+		return rows.map(readTikTokHandle);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Asks the worker about handles (lower case): a new row for one never asked
+ * about, the old row put back to pending for one whose answer has gone
+ * stale. Returns the rows as written.
+ */
+export async function askTikTokHandles(
+	handles: string[],
+	known: Record<string, TikTokHandle>
+): Promise<TikTokHandle[]> {
+	assertDeviceNamed();
+	const collection = pb.collection('tiktok_handles');
+	const data = { status: 'pending', error: '' };
+	const out: TikTokHandle[] = [];
+	for (const handle of handles) {
+		let id = known[handle]?.id;
+		if (!id) {
+			try {
+				out.push(readTikTokHandle(await collection.create({ handle, ...data, used: false })));
+				continue;
+			} catch (err) {
+				if ((err as { status?: number }).status === 404) {
+					throw new Error('This PocketBase has no tiktok_handles collection yet — run pnpm setup-pb.');
+				}
+				// Asked about in another browser, or by the worker, since this one loaded.
+				const there = readTikTokHandle(
+					await collection.getFirstListItem(pb.filter('handle = {:handle}', { handle }))
+				);
+				if (!needsAsking(there, Date.now())) {
+					out.push(there);
+					continue;
+				}
+				id = there.id;
+			}
+		}
+		out.push(readTikTokHandle(await collection.update(id, data)));
+	}
+	return out;
+}
+
+/** Takes back asks nobody needs any more (a handle half typed); gone already is fine. */
+export async function dropTikTokAsks(ids: string[]): Promise<void> {
+	assertDeviceNamed();
+	for (const id of ids) {
+		try {
+			const row = await pb.collection('tiktok_handles').getOne(id, { fields: 'id,status,used' });
+			if (row.status === 'pending' && row.used !== true) await pb.collection('tiktok_handles').delete(id);
+		} catch {
+			// Answered and gone, or never there.
+		}
+	}
+}
+
+/** Marks the handles a confirmed caption names, so they are suggested first. */
+export async function markTikTokHandlesUsed(rows: TikTokHandle[]): Promise<void> {
+	assertDeviceNamed();
+	for (const row of rows) {
+		if (!row.used) await pb.collection('tiktok_handles').update(row.id, { used: true });
+	}
+}
+
+/** Each handle as it is asked about and answered. Returns the unsubscribe. */
+export function subscribeTikTokHandles(onRow: (row: TikTokHandle, action: string) => void): () => void {
+	const sub = pb.collection('tiktok_handles').subscribe('*', (e) => onRow(readTikTokHandle(e.record), e.action));
 	sub.catch(() => {});
 	return () => void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
 }

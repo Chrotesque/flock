@@ -99,6 +99,7 @@ import { moveStep, requeuePatch } from './moves.mjs';
 import { SYNC_PLATFORMS, movedHandle, refusedHandle, rescheduleStep } from './reschedule.mjs';
 import { requestStep } from './requests.mjs';
 import { readTitleRequest } from './retitle.mjs';
+import { seedHandles, tiktokHandlePass } from './tiktokhandles.mjs';
 import { inJob } from './jobscope.mjs';
 
 /**
@@ -1071,6 +1072,28 @@ async function fileRequestPass(pb) {
 	} finally {
 		fetchingFiles = false;
 	}
+}
+
+/**
+ * Looks up the TikTok handles the compose screen asks about (`tiktok_handles`,
+ * tiktokhandles.mjs): one at a time, spaced out for TikTok's rate limit. On
+ * the scoring tick, since somebody may be typing; by the worker that
+ * publishes, so there is one asker. Once an hour it also lists the handles
+ * named in past TikTok captions, for the page to suggest.
+ */
+const handleLookups = { nextAt: 0, delay: 0, off: false, busy: false };
+let handlesSeededAt = 0;
+
+async function tiktokHandlesPass(pb) {
+	if (dry || handleLookups.off || !hb.canPublish()) return;
+	if (Date.now() - handlesSeededAt > 60 * 60_000 && !handleLookups.busy) {
+		handlesSeededAt = Date.now();
+		await seedHandles({ pb, log }).catch((err) => {
+			if (/ -> 404\b/.test(err.message)) return;
+			log(`could not list past TikTok handles: ${err.message.split('\n')[0]}`);
+		});
+	}
+	await tiktokHandlePass({ pb, log, state: handleLookups });
 }
 
 const noticed = new Map();
@@ -2270,6 +2293,7 @@ async function main() {
 		void folderPickPass(pb).catch((err) => log(`folder pick failed: ${err.message}`));
 		void fileRequestPass(pb).catch((err) => log(`image request failed: ${err.message.split('\n')[0]}`));
 		void creatorCheckPass(pb, config).catch((err) => log(`TikTok account check failed: ${err.message.split('\n')[0]}`));
+		void tiktokHandlesPass(pb).catch((err) => log(`TikTok handle lookup failed: ${err.message.split('\n')[0]}`));
 		void statsRefreshPass(pb, config).catch((err) => log(`stats refresh failed: ${err.message.split('\n')[0]}`));
 		void importPass(pb, config).catch((err) => log(`import pass failed: ${err.message.split('\n')[0]}`));
 	}, Math.max(1, config.scoreSeconds) * 1000);

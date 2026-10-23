@@ -1,6 +1,7 @@
 import { PLATFORMS, PLATFORM_IDS } from '../platforms';
 import { isoDate, makeTime, nextDayMatching } from '../format';
 import { tiktokProblems } from '../tiktok';
+import { captionProblems } from '../tiktokmentions';
 import { PASTE_TAG_BOX, type FlockPaste, type PastedPlatform } from '../flockpaste';
 import { withPlaylists } from '../playlists';
 import { SAVED_VERSION, withoutHandPicked, type SavedDraft } from '../projects';
@@ -312,12 +313,14 @@ class DraftStore {
 	 * TikTok would make Continue unreachable, since neither renders the field.
 	 * TikTok additionally has to pass its posting rules (see `tiktokProblems`):
 	 * an audience chosen by hand, a disclosure that says what kind, nothing
-	 * TikTok itself would refuse.
+	 * TikTok itself would refuse — and no @mention that can never link
+	 * (tiktokmentions.ts), since a caption cannot be edited once posted.
 	 */
 	isComplete(platform: PlatformId): boolean {
 		const text = this.textFor(platform);
 		if (!text.description.trim()) return false;
 		if (platform === 'tiktok' && this.tiktokProblems.length > 0) return false;
+		if (platform === 'tiktok' && captionProblems(text.description).length > 0) return false;
 		return PLATFORMS[platform].hasTitle ? Boolean(text.title.trim()) : true;
 	}
 

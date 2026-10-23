@@ -50,6 +50,18 @@
 		DISCLOSURE_INCOMPLETE,
 		DISCLOSURE_TOGGLE
 	} from '$lib/tiktok';
+	import {
+		captionSegments,
+		findMentions,
+		handleKey,
+		lowerMentions,
+		mentionAt,
+		mentionNotes,
+		replaceMention,
+		tiktokSearchUrl,
+		type Mention
+	} from '$lib/tiktokmentions';
+	import { tiktokHandles } from '$lib/stores/tiktokhandles.svelte';
 	import { ago } from '$lib/workerstatus';
 	import { portal } from '$lib/portal';
 	import type { PlatformId, PlaylistIndex, TextTemplate } from '$lib/types';
@@ -250,6 +262,146 @@
 			if (descEl) descEl.style.height = '';
 		};
 	});
+
+	/* ---- TikTok's @mentions ----
+	 *
+	 * TikTok links a mention only when it is the account's handle exactly, in
+	 * lower case, and a caption cannot be edited once posted
+	 * (tiktokmentions.ts). So while TikTok is composed, every mention is
+	 * marked in the mirror, listed under the caption with the account's own
+	 * name once the worker has asked TikTok, and an upper-case one holds
+	 * Continue with a button that fixes it. Typing after an @ opens a list of
+	 * the accounts flock knows that fit, picked with the arrows and Enter.
+	 */
+	let mentionsOn = $derived(composing === 'tiktok');
+	let mentions = $derived(mentionsOn ? findMentions(text.description) : []);
+	let notes = $derived(mentionsOn ? mentionNotes(text.description, tiktokHandles.rows) : []);
+	let caseNotes = $derived(notes.filter((n) => n.state === 'case'));
+	let segments = $derived(captionSegments(text.description, captionPreview, mentions));
+	let mentionStates = $derived(
+		mentions.map((m) => notes.find((n) => n.mention.start === m.start)?.state ?? 'bare')
+	);
+
+	// Every handle TikTok's caption names is asked about while TikTok is
+	// ticked, whichever platform is composed: a pasted caption is checked
+	// before anyone looks at it.
+	let tiktokCaption = $derived(draft.textFor('tiktok').description);
+	$effect(() => {
+		if (!tiktokActive) return;
+		const handles = findMentions(tiktokCaption).map((m) => handleKey(m.handle));
+		untrack(() => {
+			tiktokHandles.load();
+			tiktokHandles.want(handles);
+		});
+	});
+
+	function segmentClass(index: number, cut: boolean): string {
+		const state = index < 0 ? '' : `mention ${mentionStates[index]}`;
+		return `${cut ? 'cut' : ''} ${state}`.trim();
+	}
+
+	// Where the caret is, for the popup; -1 while the caption is not focused.
+	let captionCaret = $state(-1);
+	let dismissedAt = $state(-1);
+	let choiceIndex = $state(0);
+	let mirrorEl = $state<HTMLDivElement | null>(null);
+	let popAt = $state<{ left: number; top: number } | null>(null);
+
+	function trackCaret() {
+		captionCaret = descEl === document.activeElement ? (descEl?.selectionEnd ?? -1) : -1;
+	}
+
+	let activeMention = $derived(mentionsOn && captionCaret >= 0 ? mentionAt(mentions, captionCaret) : null);
+	let activeIndex = $derived(activeMention ? mentions.indexOf(activeMention) : -1);
+	let activeKey = $derived(activeMention ? handleKey(activeMention.handle) : '');
+	let exactRow = $derived(activeKey ? tiktokHandles.rows[activeKey] : undefined);
+	let popupOpen = $derived(activeMention !== null && dismissedAt !== activeMention.start);
+	let choices = $derived.by(() => {
+		if (!popupOpen || !activeMention) return [];
+		const exact = exactRow?.status === 'found' ? [exactRow] : [];
+		return [...exact, ...tiktokHandles.suggest(activeMention.handle)];
+	});
+
+	// A new mention, or a new handle typed, starts at the top of the list and
+	// may be dismissed afresh.
+	$effect(() => {
+		void activeKey;
+		choiceIndex = 0;
+	});
+	$effect(() => {
+		const start = activeMention?.start ?? -1;
+		if (start !== untrack(() => dismissedAt)) dismissedAt = -1;
+	});
+
+	// Placed under the mention as the mirror draws it; fixed and portalled,
+	// so the card cannot clip it. Measured straight from the effect, which
+	// runs once the mirror is updated — not on an animation frame, which a
+	// background tab never runs.
+	function placePopup() {
+		const mark = activeIndex >= 0 ? mirrorEl?.querySelector(`[data-mention="${activeIndex}"]`) : null;
+		if (!mark) {
+			popAt = null;
+			return;
+		}
+		const rect = mark.getBoundingClientRect();
+		popAt = { left: Math.max(8, Math.min(rect.left, window.innerWidth - 348)), top: rect.bottom + 6 };
+	}
+	$effect(() => {
+		if (!popupOpen) return;
+		void text.description;
+		void activeIndex;
+		untrack(placePopup);
+		window.addEventListener('scroll', placePopup, true);
+		window.addEventListener('resize', placePopup);
+		return () => {
+			window.removeEventListener('scroll', placePopup, true);
+			window.removeEventListener('resize', placePopup);
+		};
+	});
+
+	function pickHandle(handle: string) {
+		const mention = activeMention;
+		if (!mention) return;
+		const { text: next, caret: at } = replaceMention(text.description, mention, handle);
+		setField('description', next);
+		place('description', at);
+		captionCaret = at;
+		dismissedAt = mention.start;
+	}
+
+	function onCaptionKey(event: KeyboardEvent) {
+		if (!popupOpen || !activeMention) return;
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			event.stopPropagation();
+			dismissedAt = activeMention.start;
+			return;
+		}
+		if (choices.length === 0) return;
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			event.preventDefault();
+			const step = event.key === 'ArrowDown' ? 1 : choices.length - 1;
+			choiceIndex = (choiceIndex + step) % choices.length;
+			return;
+		}
+		// Enter on a handle already typed exactly is a line break, not a pick.
+		const choice = choices[choiceIndex];
+		if ((event.key === 'Enter' || event.key === 'Tab') && choice.handle !== activeMention.handle) {
+			event.preventDefault();
+			pickHandle(choice.handle);
+		}
+	}
+
+	/** Writes one mention, or every one, in lower case, leaving the caret alone. */
+	function fixMention(mention: Mention | null) {
+		const value = text.description;
+		setField(
+			'description',
+			mention
+				? value.slice(0, mention.start + 1) + handleKey(mention.handle) + value.slice(mention.end)
+				: lowerMentions(value)
+		);
+	}
 
 	let listedLabel = $derived.by(() => {
 		if (!playlists?.fetchedAt) return 'never';
@@ -764,10 +916,10 @@
 					</div>
 					<div class="captionwrap">
 						{#if captionPreview !== null}
-							<div class="mirror" aria-hidden="true">{text.description.slice(
-									0,
-									captionPreview
-								)}<span class="cut">{text.description.slice(captionPreview)}</span>{'​'}</div>
+							<div class="mirror" aria-hidden="true" bind:this={mirrorEl}>{#each segments as segment, i (i)}<span
+									class={segmentClass(segment.mention, segment.cut)}
+									data-mention={segment.mention < 0 ? undefined : segment.mention}>{segment.text}</span
+								>{/each}{'​'}</div>
 						{/if}
 						<textarea
 							id="description"
@@ -775,14 +927,130 @@
 							class:seethrough={captionPreview !== null}
 							bind:this={descEl}
 							value={text.description}
-							oninput={(e) => onFieldInput('description', e)}
-							onfocus={() => remember('description')}
-							onclick={() => remember('description')}
-							onkeyup={() => remember('description')}
-							onselect={() => remember('description')}
+							oninput={(e) => {
+								onFieldInput('description', e);
+								trackCaret();
+							}}
+							onfocus={() => {
+								remember('description');
+								trackCaret();
+							}}
+							onclick={() => {
+								remember('description');
+								trackCaret();
+							}}
+							onkeyup={() => {
+								remember('description');
+								trackCaret();
+							}}
+							onselect={() => {
+								remember('description');
+								trackCaret();
+							}}
+							onkeydown={onCaptionKey}
+							onblur={() => (captionCaret = -1)}
+							role={mentionsOn ? 'combobox' : undefined}
+							aria-expanded={mentionsOn ? popupOpen : undefined}
+							aria-controls={mentionsOn ? 'mention-list' : undefined}
+							aria-autocomplete={mentionsOn ? 'list' : undefined}
 							placeholder="{def.hasTitle ? 'Description' : 'Caption'} for {def.label}"
 						></textarea>
 					</div>
+					{#if notes.length > 0}
+						<ul class="mentions">
+							{#each notes as note (note.mention.start)}
+								<li class={note.state}>
+									<span class="mstate" aria-hidden="true">
+										{#if note.state === 'found'}✓{:else if note.state === 'checking'}…{:else}!{/if}
+									</span>
+									<span class="mhandle">@{note.mention.handle}</span>
+									{#if note.state === 'found'}
+										<span class="mwords">{note.name || 'on TikTok'}</span>
+									{:else if note.state === 'case'}
+										<span class="mwords">will not link: TikTok handles are lower case.</span>
+										<button class="mfix" onclick={() => fixMention(note.mention)}>Make it @{note.key}</button>
+									{:else if note.state === 'long'}
+										<span class="mwords">is longer than a TikTok handle can be.</span>
+									{:else if note.state === 'missing'}
+										<span class="mwords">TikTok has no public account by that name.</span>
+										<a class="mfix" href={tiktokSearchUrl(note.mention.handle)} target="_blank" rel="noopener">
+											Search TikTok ↗
+										</a>
+									{:else if note.state === 'failed'}
+										<span class="mwords">{note.words.replace(/^Could not ask TikTok about @\S+: /, 'not checked: ')}</span>
+										<button class="mfix" onclick={() => void tiktokHandles.recheck(note.key)}>Ask again</button>
+									{:else}
+										<span class="mwords">
+											asking TikTok…{tiktokHandles.rows[note.key]?.error
+												? ` ${tiktokHandles.rows[note.key].error}`
+												: ''}
+										</span>
+									{/if}
+								</li>
+							{/each}
+							{#if caseNotes.length > 1}
+								<li class="mall">
+									<button class="mfix" onclick={() => fixMention(null)}>Make every handle lower case</button>
+								</li>
+							{/if}
+						</ul>
+					{/if}
+					{#if tiktokHandles.error && mentionsOn && notes.length > 0}
+						<p class="mentionerr">Could not ask the worker about these handles: {tiktokHandles.error}</p>
+					{/if}
+					{#if popupOpen && popAt && activeMention}
+						<div
+							class="mentionpop"
+							id="mention-list"
+							role="listbox"
+							aria-label="TikTok accounts"
+							tabindex="-1"
+							style="left: {popAt.left}px; top: {popAt.top}px"
+							use:portal
+							onmousedown={(e) => e.preventDefault()}
+						>
+							{#if activeKey === ''}
+								<p class="popline">Type the account's handle — the part after tiktok.com/@.</p>
+							{:else if !exactRow || exactRow.status === 'pending'}
+								<p class="popline">
+									<span class="mhandle">@{activeKey}</span> — asking TikTok…{exactRow?.error ? ` ${exactRow.error}` : ''}
+								</p>
+							{:else if exactRow.status === 'missing'}
+								<p class="popline warn">
+									TikTok has no public account <span class="mhandle">@{activeKey}</span>.
+								</p>
+							{:else if exactRow.status === 'failed'}
+								<p class="popline warn">Could not ask TikTok about <span class="mhandle">@{activeKey}</span>.</p>
+							{/if}
+							{#each choices as choice, i (choice.handle)}
+								<button
+									class="popchoice"
+									class:current={i === choiceIndex}
+									role="option"
+									aria-selected={i === choiceIndex}
+									tabindex="-1"
+									onclick={() => pickHandle(choice.handle)}
+									onmouseenter={() => (choiceIndex = i)}
+								>
+									<span class="mhandle">@{choice.handle}</span>
+									<span class="popname">{choice.name}</span>
+									{#if choice.handle === activeKey}
+										<span class="popexact">✓ this handle</span>
+									{:else if choice.used}
+										<span class="popused">used before</span>
+									{/if}
+								</button>
+							{/each}
+							{#if activeMention.handle !== activeKey && exactRow?.status === 'found'}
+								<p class="popnote">Picking it writes @{activeKey}: upper case would not link.</p>
+							{/if}
+							{#if activeKey}
+								<a class="popsearch" href={tiktokSearchUrl(activeMention.handle)} target="_blank" rel="noopener">
+									Search TikTok for “{activeMention.handle}” ↗
+								</a>
+							{/if}
+						</div>
+					{/if}
 					{#if captionPreview !== null}
 						<p class="cutnote" class:over={captionHidden > 0}>
 							{#if captionHidden > 0}
@@ -2017,6 +2285,200 @@
 
 	.mirror .cut {
 		color: #f08b8b;
+	}
+
+	/* A mention's mark: only decoration, so the mirror lays out exactly like
+	   the textarea over it. */
+	.mirror .mention {
+		text-decoration-line: underline;
+		text-decoration-thickness: 1.5px;
+		text-underline-offset: 3px;
+		text-decoration-skip-ink: none;
+	}
+
+	.mirror .mention.found {
+		text-decoration-color: var(--ok);
+	}
+
+	.mirror .mention.checking {
+		text-decoration-style: dotted;
+		text-decoration-color: var(--text-faint);
+	}
+
+	.mirror .mention.case,
+	.mirror .mention.long,
+	.mirror .mention.missing,
+	.mirror .mention.failed {
+		text-decoration-style: wavy;
+		text-decoration-color: var(--warn);
+	}
+
+	.mirror .mention.case:not(.cut),
+	.mirror .mention.long:not(.cut) {
+		color: var(--warn);
+	}
+
+	.mirror .mention.bare {
+		text-decoration-line: none;
+	}
+
+	/* ---- the mentions under the caption, and the popup after an @ ---- */
+
+	.mentions {
+		list-style: none;
+		margin: 7px 0 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		font-size: 12px;
+		color: var(--text-dim);
+	}
+
+	.mentions li {
+		display: flex;
+		align-items: baseline;
+		flex-wrap: wrap;
+		gap: 0 6px;
+	}
+
+	.mstate {
+		width: 12px;
+		text-align: center;
+		font-weight: 700;
+		color: var(--text-faint);
+	}
+
+	.mentions .found .mstate {
+		color: var(--ok);
+	}
+
+	.mentions .case,
+	.mentions .long,
+	.mentions .missing,
+	.mentions .failed {
+		color: var(--warn);
+	}
+
+	.mentions .case .mstate,
+	.mentions .long .mstate,
+	.mentions .missing .mstate,
+	.mentions .failed .mstate {
+		color: var(--warn);
+	}
+
+	.mentions .mall {
+		padding-left: 18px;
+	}
+
+	.mhandle {
+		font-weight: 600;
+		color: var(--text);
+	}
+
+	.mfix {
+		padding: 1px 8px;
+		border: 1px solid var(--border-strong);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--text);
+		font: inherit;
+		font-size: 11.5px;
+		cursor: pointer;
+		text-decoration: none;
+	}
+
+	.mfix:hover,
+	.mfix:focus-visible {
+		border-color: var(--pink);
+		color: var(--pink-soft);
+	}
+
+	.mentionerr {
+		margin: 6px 0 0;
+		font-size: 11.5px;
+		color: var(--warn);
+	}
+
+	.mentionpop {
+		position: fixed;
+		z-index: 60;
+		width: 340px;
+		max-width: calc(100vw - 16px);
+		padding: 6px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-sm);
+		background: var(--surface);
+		box-shadow: var(--shadow);
+		font-size: 12.5px;
+		color: var(--text-dim);
+	}
+
+	.popline {
+		margin: 0;
+		padding: 5px 7px;
+	}
+
+	.popline.warn {
+		color: var(--warn);
+	}
+
+	.popchoice {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		width: 100%;
+		padding: 6px 7px;
+		border: 0;
+		border-radius: 6px;
+		background: transparent;
+		color: var(--text-dim);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.popchoice.current {
+		background: var(--accent-grad-soft);
+	}
+
+	.popname {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.popexact {
+		color: var(--ok);
+		font-size: 11px;
+	}
+
+	.popused {
+		color: var(--text-faint);
+		font-size: 11px;
+	}
+
+	.popnote {
+		margin: 2px 0 0;
+		padding: 3px 7px;
+		font-size: 11.5px;
+		color: var(--text-faint);
+	}
+
+	.popsearch {
+		display: block;
+		margin-top: 4px;
+		padding: 6px 7px 3px;
+		border-top: 1px solid var(--border);
+		font-size: 11.5px;
+		color: var(--text-faint);
+		text-decoration: none;
+	}
+
+	.popsearch:hover {
+		color: var(--pink-soft);
 	}
 
 	.textarea.seethrough {

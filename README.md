@@ -98,8 +98,10 @@ keeps running when no browser is open. It:
 - lists the watch and project folders, copies videos from your PC to the
   network, and files finished videos into their NAS folder.
 - reads YouTube's, Instagram's, TikTok's and Facebook's numbers for the
-  Dashboard (followers included), and
-  scores titles with vidIQ if you set that up.
+  Dashboard (followers included),
+- looks up the TikTok accounts a caption @mentions, so the compose screen
+  shows whose each one is before it goes out, and
+- scores titles with vidIQ if you set that up.
 
 A platform you have not set up just leaves its releases waiting in the queue.
 
