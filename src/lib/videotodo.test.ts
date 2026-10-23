@@ -6,6 +6,8 @@ import {
 	markDone,
 	mergeStates,
 	readTodoState,
+	relativeWords,
+	releaseWhen,
 	startOfDay,
 	todoLines,
 	videoUrl,
@@ -142,6 +144,9 @@ describe('todoLines', () => {
 			['soon', 'waiting']
 		]);
 		expect(lines[2].publicAt).toBe('2026-10-11T15:30:00Z');
+		expect(lines[2].releasedAt).toBeNull();
+		expect(lines[0].releasedAt).toBe('2026-10-11 07:00:14.000Z');
+		expect(lines[0].privacy).toBe('public');
 	});
 
 	it('drops a line once nothing is left on it', () => {
@@ -281,5 +286,38 @@ describe('todoLines with Instagram reels', () => {
 		expect(todoLines([], [up], later, { jestr: false }, [reel()])[0].instagram).toBeNull();
 		const queued = reel({ remote_url: '', status: 'pending', published_at: '', scheduled_at: '2026-10-13 06:00:00.000Z' });
 		expect(todoLines([], [up], later, { jestr: false }, [queued])[0].instagram?.state).toBe('waiting');
+	});
+});
+
+describe('the release column', () => {
+	const now = Date.parse('2026-10-23T12:00:00Z');
+	const at = (hours: number) => new Date(now + hours * 3_600_000).toISOString();
+
+	it('words the time to and since, in minutes, hours, then days', () => {
+		expect(relativeWords(now + 40 * 60_000, now)).toBe('in 40 min');
+		expect(relativeWords(now + 20_000, now)).toBe('in 1 min');
+		expect(relativeWords(now + 5 * 3_600_000, now)).toBe('in 5 h');
+		expect(relativeWords(now + 46 * 3_600_000, now)).toBe('in 2 days');
+		expect(relativeWords(now - 30 * 3_600_000, now)).toBe('1 day ago');
+		expect(relativeWords(now - 3.2 * 86_400_000, now)).toBe('3 days ago');
+	});
+
+	it('says when a scheduled video goes public, and when a public one went', () => {
+		expect(releaseWhen({ publicAt: at(46), releasedAt: null, privacy: 'private' }, now)).toEqual({
+			label: 'Goes public',
+			when: 'in 2 days',
+			at: at(46)
+		});
+		expect(releaseWhen({ publicAt: null, releasedAt: '2026-10-20 08:00:00.000Z', privacy: 'public' }, now)).toEqual({
+			label: 'Released',
+			when: '3 days ago',
+			at: '2026-10-20T08:00:00.000Z'
+		});
+	});
+
+	it('names a private or unlisted video with no release time, and nothing before it is read', () => {
+		expect(releaseWhen({ publicAt: null, releasedAt: null, privacy: 'private' }, now)).toEqual({ label: 'Private', when: '', at: '' });
+		expect(releaseWhen({ publicAt: null, releasedAt: null, privacy: 'unlisted' }, now)?.label).toBe('Unlisted');
+		expect(releaseWhen({ publicAt: null, releasedAt: null, privacy: '' }, now)).toBeNull();
 	});
 });

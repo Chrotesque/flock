@@ -158,6 +158,10 @@ export interface TodoLine {
 	instagram: InstagramStep | null;
 	/** When a scheduled video goes public; null once it is (or when not known). */
 	publicAt: string | null;
+	/** When it went public; null while it is scheduled, private or not read yet. */
+	releasedAt: string | null;
+	/** YouTube's visibility (public, private, unlisted); '' until the stats pass has read it. */
+	privacy: string;
 	/** Whether YouTube reports paid promotion on it; null until the stats pass has read it. */
 	paid: boolean | null;
 	/**
@@ -307,6 +311,8 @@ export function todoLines(
 			jestr: null as TodoLine['jestr'],
 			instagram: null as InstagramStep | null,
 			publicAt: publishAt || null,
+			releasedAt: stat?.privacy === 'public' && stat.published_at ? stat.published_at : null,
+			privacy: stat?.privacy ?? '',
 			paid: stat ? stat.data?.paidProductPlacementDetails?.hasPaidProductPlacement === true : null,
 			thumb: stat?.data?.snippet?.thumbnails?.medium?.url ?? '',
 			thumbLarge: stat?.data?.snippet?.thumbnails?.maxres?.url ?? stat?.data?.snippet?.thumbnails?.medium?.url ?? '',
@@ -336,6 +342,8 @@ export function todoLines(
 				jestr: null,
 				instagram: null,
 				publicAt: null,
+				releasedAt: null,
+				privacy: '',
 				paid: null,
 				thumb: '',
 				thumbLarge: '',
@@ -389,10 +397,60 @@ export function todoLines(
 			jestr: line.jestr,
 			instagram: line.instagram,
 			publicAt: line.publicAt,
+			releasedAt: line.releasedAt,
+			privacy: line.privacy,
 			paid: line.paid,
 			thumb: line.thumb,
 			thumbLarge: line.thumbLarge,
 			short: line.short,
 			waiting: line.waiting
 		}));
+}
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/** "in 40 min", "in 5 h", "in 2 days", or "40 min ago" … "3 days ago": from `now` to `at`. */
+export function relativeWords(at: number, now: number): string {
+	const ms = at - now;
+	const abs = Math.abs(ms);
+	const amount =
+		abs < HOUR
+			? `${Math.max(1, Math.round(abs / MINUTE))} min`
+			: abs < DAY
+				? `${Math.round(abs / HOUR)} h`
+				: (() => {
+						const days = Math.round(abs / DAY);
+						return `${days} ${days === 1 ? 'day' : 'days'}`;
+					})();
+	return ms >= 0 ? `in ${amount}` : `${amount} ago`;
+}
+
+export interface ReleaseWhen {
+	/** "Goes public", "Released", or the visibility of one never scheduled. */
+	label: string;
+	/** "in 2 days", "3 days ago"; '' for one never scheduled. */
+	when: string;
+	/** The instant it goes or went public, for the exact date on hover; '' for none. */
+	at: string;
+}
+
+/**
+ * The To finish list's release column: a scheduled video's "Goes public in
+ * 2 days", a public one's "Released 3 days ago", a private or unlisted one
+ * with no release time by its visibility alone. Null until the stats pass
+ * has read the video.
+ */
+export function releaseWhen(line: Pick<TodoLine, 'publicAt' | 'releasedAt' | 'privacy'>, now: number): ReleaseWhen | null {
+	for (const [label, iso] of [
+		['Goes public', line.publicAt],
+		['Released', line.releasedAt]
+	] as const) {
+		const at = Date.parse(String(iso ?? '').replace(' ', 'T'));
+		if (Number.isFinite(at)) return { label, when: relativeWords(at, now), at: new Date(at).toISOString() };
+	}
+	if (line.privacy === 'private') return { label: 'Private', when: '', at: '' };
+	if (line.privacy === 'unlisted') return { label: 'Unlisted', when: '', at: '' };
+	return null;
 }

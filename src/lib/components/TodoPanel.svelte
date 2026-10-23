@@ -11,7 +11,7 @@
 	import { celebrations } from '$lib/stores/celebrations.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { general } from '$lib/stores/general.svelte';
-	import { INSTAGRAM_STEP, WAITING, type InstagramStep, type TodoLine } from '$lib/videotodo';
+	import { INSTAGRAM_STEP, WAITING, releaseWhen, type InstagramStep, type TodoLine } from '$lib/videotodo';
 	import { follows, toggled } from '$lib/todobrands';
 	import type { Attention } from '$lib/attention';
 	import { ageWords, type Celebration } from '$lib/celebrate';
@@ -129,10 +129,36 @@
 		return date.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 	}
 
+	/** "Sat 25 Oct 2026, 18:00" — the release column's exact date, on hover. */
+	function exactDate(iso: string): string {
+		const date = new Date(iso);
+		if (Number.isNaN(date.getTime())) return '';
+		return date.toLocaleString([], {
+			weekday: 'short',
+			day: 'numeric',
+			month: 'short',
+			year: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
+	}
+
+	// The release column's "in 2 days" / "3 days ago" moves on while the panel is open.
+	let now = $state(Date.now());
+	$effect(() => {
+		if (!todoPanel.open) return;
+		now = Date.now();
+		const clock = setInterval(() => (now = Date.now()), 60_000);
+		return () => clearInterval(clock);
+	});
+
+	/**
+	 * The line under a title: only a placeholder's reason now. The channel
+	 * went (v0.16.78, the user's call: the brand chips above say whose list
+	 * it is), and when it goes or went public has its own column.
+	 */
 	function meta(line: TodoLine): string {
-		if (!line.studioUrl) return line.waiting ?? '';
-		const when = line.publicAt ? `Goes public ${goesPublic(line.publicAt)}` : '';
-		return [line.channel, when].filter(Boolean).join(' · ');
+		return line.studioUrl ? '' : (line.waiting ?? '');
 	}
 
 	/** The one button's tooltip: what opening Studio through it counts as done. */
@@ -399,6 +425,7 @@
 				<div class="thead" aria-hidden="true">
 					<span>Video</span>
 					<span></span>
+					<span>Release</span>
 					<span class="mid">Paid promotion</span>
 					<span class="mid">Studio · Instagram</span>
 					{#if jestr}<span class="mid">Jestr</span>{/if}
@@ -406,6 +433,7 @@
 				<ul>
 					{#each lines as line (line.id)}
 						{@const p = paid(line)}
+						{@const release = releaseWhen(line, now)}
 						<li animate:flip={{ duration: 200 }} out:fade={{ duration: 160 }}>
 							<!-- The preview: YouTube's thumbnail, small so many rows fit, a
 							     Short's upright (the middle of the 16:9 image, which is where
@@ -434,7 +462,9 @@
 
 							<div class="info">
 								{#if line.watchUrl}
-									<a class="title" href={line.watchUrl} target="_blank" rel="noopener">{line.title}</a>
+									<a class="title" href={line.watchUrl} target="_blank" rel="noopener" title={line.channel || undefined}
+										>{line.title}</a
+									>
 								{:else}
 									<span class="title">{line.title}</span>
 								{/if}
@@ -444,6 +474,14 @@
 								{/if}
 								{#if line.instagram?.state === 'open'}
 									<p class="steps">Left on Instagram: {INSTAGRAM_STEP}</p>
+								{/if}
+							</div>
+
+							<!-- When it goes or went public, relative; the exact date on hover. -->
+							<div class="release" class:upcoming={release?.label === 'Goes public'} title={release?.at ? exactDate(release.at) : undefined}>
+								{#if release}
+									<span class="rlabel">{release.label}</span>
+									{#if release.when}<span class="rwhen">{release.when}</span>{/if}
 								{/if}
 							</div>
 
@@ -932,11 +970,34 @@
 	/* One grid for the head and every row, so the columns line up. */
 	/* The Studio cell holds YouTube's button and the reel's beside it. */
 	.table {
-		--cols: 44px minmax(0, 1fr) 170px 210px 100px;
+		--cols: 44px minmax(0, 1fr) 130px 170px 210px 100px;
 	}
 
 	.table.nojestr {
-		--cols: 44px minmax(0, 1fr) 170px 210px;
+		--cols: 44px minmax(0, 1fr) 130px 170px 210px;
+	}
+
+	/* When it goes or went public: the words over the time, the date on hover. */
+	.release {
+		display: grid;
+		gap: 1px;
+		font-size: 12px;
+		line-height: 1.35;
+		color: var(--text-faint);
+	}
+
+	.release[title] {
+		cursor: help;
+	}
+
+	.rwhen {
+		color: var(--text-dim);
+		font-weight: 560;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.release.upcoming .rwhen {
+		color: var(--text);
 	}
 
 	.thead,
@@ -1255,10 +1316,10 @@
 		/* Narrow: the two platforms' entries stack, and the button wraps
 		   under the marks if it must, so the title keeps its room. */
 		.table {
-			--cols: 44px minmax(0, 1fr) 96px 180px 80px;
+			--cols: 44px minmax(0, 1fr) 96px 96px 180px 80px;
 		}
 		.table.nojestr {
-			--cols: 44px minmax(0, 1fr) 96px 180px;
+			--cols: 44px minmax(0, 1fr) 96px 96px 180px;
 		}
 		.thead,
 		li {
