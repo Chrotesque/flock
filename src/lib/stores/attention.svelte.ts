@@ -93,7 +93,10 @@ class AttentionStore {
 			]);
 			this.#targets = targets;
 			this.#status = status;
-			this.#dismissed = readDismissed(dismissed);
+			// Kept with what is in memory: a dismissal saved during this read is
+			// missing from the copy it read, which would bring the item back.
+			const stored = readDismissed(dismissed);
+			this.#dismissed = addDismissed(stored, ...this.#dismissed.filter((k) => !stored.includes(k)));
 			this.#now = new Date();
 		} catch {
 			// Unreachable PocketBase: the list stays as it was until the next read.
@@ -131,7 +134,7 @@ class AttentionStore {
 			const stored = readDismissed(await getSetting<unknown>(DISMISSED_KEY, null));
 			const next = addDismissed(stored, key);
 			await setSetting(DISMISSED_KEY, { dismissed: next });
-			this.#dismissed = next;
+			this.#dismissed = addDismissed(next, ...this.#dismissed.filter((k) => !next.includes(k)));
 			logAction('upload', `Dismissed: ${text}`, detail, job ? { job } : {});
 		} catch {
 			// Not saved: the item stays on the list.

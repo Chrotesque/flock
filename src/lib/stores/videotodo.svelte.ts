@@ -124,15 +124,18 @@ class VideoTodoStore {
 		this.#busy = true;
 		try {
 			const read = await this.#readState();
-			let state = read.state;
+			const state = read.state;
 			if (!read.complete && device.named) await setSetting(TODO_KEY, state).catch(() => {});
-			if (this.#state) state = mergeStates(state, this.#state);
 			const [stats, uploads, reels] = await Promise.all([
 				loadTodoStats(state.since),
 				loadTodoUploads(state.since),
 				loadTodoReels(state.since)
 			]);
-			this.#state = state;
+			// Merged with what is in memory now, not before the lists were read:
+			// a mark saved meanwhile is missing from the copy read above, and
+			// taking that copy brought the line back until the next read (the
+			// Jestr button needing a second press, 23 Oct 2026).
+			this.#state = this.#state ? mergeStates(state, this.#state) : state;
 			this.#stats = stats;
 			this.#uploads = uploads;
 			this.#reels = reels;
@@ -162,7 +165,8 @@ class VideoTodoStore {
 			const read = await this.#readState();
 			const next = marks.reduce((state, [kind, id]) => markDone(state, kind, id), mergeStates(read.state, this.#state));
 			await setSetting(TODO_KEY, next);
-			this.#state = next;
+			// A read that ended during the save may have brought another browser's marks.
+			this.#state = this.#state ? mergeStates(next, this.#state) : next;
 			logAction('upload', action, detail);
 		} catch {
 			// Not saved: the line keeps these parts.
