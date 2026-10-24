@@ -5,6 +5,7 @@
 	import { TREND, changeWords } from '$lib/trend';
 	import {
 		SHORT_MONTHS,
+		changeStrength,
 		monthIndex,
 		monthName,
 		prevMonth,
@@ -17,8 +18,10 @@
 	 * One metric of a brand's months as a single line, oldest month on the left
 	 * (BrandMonths' graph view): every month flock has, the brand's platforms
 	 * added up, and the month still running at its pace so far, dashed on the
-	 * end. The axis runs from the lowest month to the highest, not from nothing.
-	 * `hover` is shared by the panel's three graphs, so a month is marked on
+	 * end. Each stretch is green where the month rose on the one before and red
+	 * where it fell, mixed into the neutral line by how much (changeStrength:
+	 * a 2 % fall is barely red, halving is all red). The axis runs from the
+	 * lowest month to the highest, not from nothing. `hover` is shared by the panel's three graphs, so a month is marked on
 	 * all of them; its tooltip shows in the one under the pointer.
 	 */
 	let {
@@ -53,17 +56,24 @@
 	const at = (p: { row: MonthRow; value: number }) => `${sx(p.row.month).toFixed(1)},${sy(p.value).toFixed(1)}`;
 	const next = (a: MonthRow, b: MonthRow) => monthIndex(b.month) - monthIndex(a.month) === 1;
 
-	/** Whole months, one stroke while they follow each other. */
-	const solid = $derived(
-		points
-			.map((p, i) => (p.running ? '' : `${i > 0 && !points[i - 1].running && next(points[i - 1].row, p.row) ? 'L' : 'M'}${at(p)}`))
-			.join('')
-	);
-	/** Into a month still running: its pace is a guess, so dashed. */
-	const dashed = $derived(
-		points
-			.map((p, i) => (i > 0 && (p.running || points[i - 1].running) && next(points[i - 1].row, p.row) ? `M${at(points[i - 1])}L${at(p)}` : ''))
-			.join('')
+	// Validated as a pair on the dark surface (deutan ΔE 13.8); the slope says the same.
+	const UP = '#34d399';
+	const DOWN = '#ef4444';
+
+	/** A stretch's colour: the neutral line with green or red mixed in, the square root of the strength so small changes still show faintly. */
+	function stretchColour(from: number, to: number): string {
+		const s = changeStrength(from, to);
+		if (s === 0) return 'var(--text-dim)';
+		return `color-mix(in oklab, ${s > 0 ? UP : DOWN} ${Math.round(Math.sqrt(Math.abs(s)) * 100)}%, var(--text-dim))`;
+	}
+
+	/** One stroke from each month to the next; into a month still running it is a guess, so dashed. */
+	const stretches = $derived(
+		points.flatMap((p, i) => {
+			const prev = points[i - 1];
+			if (!prev || !next(prev.row, p.row)) return [];
+			return [{ month: p.row.month, d: `M${at(prev)}L${at(p)}`, guess: p.running || prev.running, colour: stretchColour(prev.value, p.value) }];
+		})
 	);
 
 	function niceStep(raw: number): number {
@@ -84,18 +94,23 @@
 		return out;
 	});
 
-	/** Every month while they fit, else every second or third; the year under the first and each January. */
+	/** Every month while they fit, else every second or third; the year under the first and the first of each year after. */
 	const xTicks = $derived.by(() => {
 		const stride = Math.max(1, Math.ceil(34 / (plotW / span)));
+		let year = 0;
 		return points
 			.filter((_, i) => i % stride === 0)
-			.map((p, i) => {
+			.map((p) => {
 				const [y, m] = p.row.month.split('-').map(Number);
-				return { month: p.row.month, name: SHORT_MONTHS[m - 1], year: i === 0 || m === 1 ? String(y) : '' };
+				const tick = { month: p.row.month, name: SHORT_MONTHS[m - 1], year: y !== year ? String(y) : '' };
+				year = y;
+				return tick;
 			});
 	});
 
 	const last = $derived(points.at(-1));
+	/** Months closer than this leave no room for a dot each: only the hovered one and the last then. */
+	const dense = $derived(plotW / span < 14);
 	const hovered = $derived(hover ? points.find((p) => p.row.month === hover?.month) : undefined);
 	const mine = $derived(hover?.metric === metric);
 
@@ -141,17 +156,20 @@
 					<line class="crosshair" x1={sx(hovered.row.month)} x2={sx(hovered.row.month)} y1={M.top} y2={M.top + plotH} />
 				{/if}
 
-				<path class="line" d={solid} />
-				{#if dashed}<path class="line guess" d={dashed} />{/if}
+				{#each stretches as st (st.month)}
+					<path class="line" class:guess={st.guess} d={st.d} style:stroke={st.colour} />
+				{/each}
 				{#each points as p (p.row.month)}
-					<circle
-						class="pt"
-						class:running={p.running}
-						class:hot={hovered === p}
-						cx={sx(p.row.month)}
-						cy={sy(p.value)}
-						r={hovered === p ? 5 : 4}
-					/>
+					{#if !dense || hovered === p || p === last}
+						<circle
+							class="pt"
+							class:running={p.running}
+							class:hot={hovered === p}
+							cx={sx(p.row.month)}
+							cy={sy(p.value)}
+							r={hovered === p ? 5 : 4}
+						/>
+					{/if}
 				{/each}
 				{#if last}
 					<text class="end" x={sx(last.row.month) + 10} y={sy(last.value)} dominant-baseline="middle">

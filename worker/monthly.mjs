@@ -3,9 +3,11 @@
 // YouTube's come with the channel's day report in ytanalytics.mjs; Instagram's
 // from its account insights here, once a day. Both are kept in the account's
 // follower row (`followers:<platform>:<id>`, followers.mjs) as `monthly` =
-// { 'YYYY-MM': [views, likes, comments] }, the last MONTHS_KEPT whole months
-// only — a month still running, or one the account was not yet active for
-// all of, is left out, so every month stored is a full one. The month still
+// { 'YYYY-MM': [views, likes, comments] }, every whole month there is — the
+// panel's Lifetime: YouTube's day report has the channel's whole life, and
+// Instagram's last MONTHS_KEPT months are read again while older ones are
+// kept as stored. A month still running, or one the account was not yet
+// active for all of, is left out, so every month stored is a full one. The month still
 // running is kept beside them as `monthPart` = { month, counts, through } —
 // its counts so far and the last day they cover — which the panel scales up
 // to the whole month.
@@ -13,7 +15,7 @@
 import { explain, graph } from './instagram.mjs';
 import { readState, settingKey } from './followers.mjs';
 
-/** A year of months, and the one before the first, to compare it with. */
+/** Instagram's months read again each day: a year, and the one before the first, to compare it with. */
 export const MONTHS_KEPT = 13;
 /** Instagram's insights may come in up to two days late: a month is read once it is that long over. */
 const INSTAGRAM_LAG_MS = 2 * 86_400_000;
@@ -55,7 +57,7 @@ export function youtubeMonthly(dayRows, through) {
 		t[1] += Number(row.likes) || 0;
 		t[2] += Number(row.comments) || 0;
 	}
-	return newest(out);
+	return newest(out, Infinity);
 }
 
 /**
@@ -134,6 +136,14 @@ export function monthStretches(month) {
 	];
 }
 
+/** The months just read, and the stored ones from before the first of them. */
+export function keepOlder(stored, read) {
+	const first = Object.keys(read).sort()[0];
+	if (!first) return { ...(stored ?? {}) };
+	const older = Object.entries(stored ?? {}).filter(([month]) => month < first);
+	return { ...Object.fromEntries(older), ...read };
+}
+
 /** Leading months with nothing at all are from before the account was active: left out. */
 export function dropQuietStart(monthly) {
 	const out = {};
@@ -179,7 +189,8 @@ export async function instagramMonthly({ pb, ig, log }) {
 			}
 			monthly[month] = t;
 		}
-		const kept = dropQuietStart(monthly);
+		// Months older than those read stay as stored: a whole month does not change any more.
+		const kept = dropQuietStart(keepOlder(state.monthly, monthly));
 		// The month still running, once the account was active before it (as for whole months).
 		let monthPart = null;
 		const running = partStretches(Date.now(), INSTAGRAM_LAG_MS);

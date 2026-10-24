@@ -40,6 +40,12 @@ export interface PlatformMonths {
 /** A year shown, and the month before its first to compare that with. */
 export const MONTHS_SHOWN = 12;
 
+/** The panel's timeframes, in days; null is every month flock has (Lifetime). */
+export const MONTH_SPANS = [30, 60, 90, 180, 360] as const;
+export type MonthSpan = (typeof MONTH_SPANS)[number] | null;
+/** A timeframe still shows this many months, so a line can be drawn. */
+const SPAN_MIN_MONTHS = 2;
+
 /** Less of a month than this says too little to scale up to all of it. */
 export const MIN_PART_DAYS = 1;
 
@@ -314,4 +320,29 @@ export function runningWords(row: MonthRow): string {
 	const lo = Math.min(...days);
 	const hi = Math.max(...days);
 	return `${lo === hi ? lo : `${lo}–${hi}`} of ${daysIn(row.month)} days`;
+}
+
+/**
+ * The months a timeframe shows: those any of whose days fall in the last
+ * `days` days before `now`, in the order given — but never fewer than the
+ * newest two, so there is always a line (30 days into a month with no running
+ * one yet would be one month). Null days is every month.
+ */
+export function inSpan(rows: MonthRow[], days: MonthSpan, now: number): MonthRow[] {
+	if (days === null) return rows;
+	const from = now - days * DAY;
+	const newest = [...rows].sort((a, b) => b.month.localeCompare(a.month)).slice(0, SPAN_MIN_MONTHS).map((r) => r.month);
+	return rows.filter((r) => monthStart(nextMonth(r.month)) > from || newest.includes(r.month));
+}
+
+/**
+ * How strongly a month rose or fell on the one before, from -1 to 1: the
+ * change on a log scale, so doubling is as strong as halving, with doubling
+ * or more (halving or less) at full strength and no change at 0.
+ */
+export function changeStrength(from: number, to: number): number {
+	if (from === to) return 0;
+	if (from <= 0) return 1;
+	if (to <= 0) return -1;
+	return Math.max(-1, Math.min(1, Math.log2(to / from)));
 }

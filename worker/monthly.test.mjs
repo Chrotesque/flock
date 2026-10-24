@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dropQuietStart, insightTotals, lastDayOf, monthStretches, newest, partStretches, wholeMonths, youtubeMonthly, youtubePart } from './monthly.mjs';
+import { dropQuietStart, insightTotals, keepOlder, lastDayOf, monthStretches, newest, partStretches, wholeMonths, youtubeMonthly, youtubePart } from './monthly.mjs';
 import { readMonthPart, readMonthly, readState } from './followers.mjs';
 
 const day = (d, views, likes = 0, comments = 0) => ({ day: d, subscribersGained: 0, subscribersLost: 0, views, likes, comments });
@@ -96,4 +96,15 @@ test('a follower row keeps its month still running through the next read', () =>
 	assert.equal(readState({ count: 1, at: '2026-10-20T22:47:00Z' }).monthPart, null);
 	assert.equal(readMonthPart({ ...part, through: '2026-09-30' }), null);
 	assert.equal(readMonthPart({ ...part, counts: [1, 2] }), null);
+});
+
+test("a channel's whole months go back to its first, and Instagram's older ones are kept", () => {
+	const rows = Array.from({ length: 30 }, (_, i) => day(`${2024 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}-01`, i + 1));
+	assert.equal(Object.keys(youtubeMonthly(rows, '2026-10-21')).length, 30);
+	assert.deepEqual(
+		keepOlder({ '2025-08': [1, 0, 0], '2025-09': [2, 0, 0], '2025-10': [3, 0, 0] }, { '2025-10': [30, 0, 0], '2025-11': [4, 0, 0] }),
+		{ '2025-08': [1, 0, 0], '2025-09': [2, 0, 0], '2025-10': [30, 0, 0], '2025-11': [4, 0, 0] }
+	);
+	assert.deepEqual(keepOlder(null, { '2025-10': [3, 0, 0] }), { '2025-10': [3, 0, 0] });
+	assert.deepEqual(keepOlder({ '2025-10': [3, 0, 0] }, {}), { '2025-10': [3, 0, 0] });
 });

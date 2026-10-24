@@ -14,7 +14,9 @@
 	import { TREND, changeWords } from '$lib/trend';
 	import {
 		MONTH_METRICS,
+		MONTH_SPANS,
 		brandMonths,
+		inSpan,
 		monthName,
 		monthStart,
 		monthsFromReads,
@@ -25,6 +27,7 @@
 		storedPart,
 		type MonthMetric,
 		type MonthRow,
+		type MonthSpan,
 		type PlatformMonths,
 		type ReadRow
 	} from '$lib/brandmonths';
@@ -34,8 +37,8 @@
 	 * Dashboard: views, likes and comments in each whole month of the last year
 	 * against the month before (brandmonths.ts), every platform together and
 	 * each one under it, as "vs usual" draws them, with the month still running
-	 * on top at its pace so far; or, in the graph view, each metric as a line
-	 * over every month flock has (MonthsGraph).
+	 * on top at its pace so far; or, in the graph view (the default), each
+	 * metric as a line (MonthsGraph). Both over the months of the timeframe.
 	 */
 	let { brand: brandId, onclose }: { brand: string; onclose: () => void } = $props();
 
@@ -47,28 +50,36 @@
 	const brand = $derived(brands.byId(brandId));
 	const now = Date.now();
 
-	type View = 'list' | 'graph';
+	type View = 'graph' | 'list';
 	const VIEWS: [View, string][] = [
-		['list', 'List'],
-		['graph', 'Graph']
+		['graph', 'Graph'],
+		['list', 'List']
 	];
-	const VIEW_KEY = 'flock.dashboard.months.view';
-	let view = $state<View>(readView());
+	/** The view and the timeframe, per browser: { view, span }, span null for Lifetime. */
+	const PREF_KEY = 'flock.dashboard.months';
+	const saved = readPrefs();
+	let view = $state<View>(saved.view);
+	let span = $state<MonthSpan>(saved.span);
 
-	function readView(): View {
+	function readPrefs(): { view: View; span: MonthSpan } {
 		try {
-			return localStorage.getItem(VIEW_KEY) === 'graph' ? 'graph' : 'list';
+			const raw = JSON.parse(localStorage.getItem(PREF_KEY) ?? '{}');
+			return {
+				view: raw?.view === 'list' ? 'list' : 'graph',
+				span: MONTH_SPANS.find((d) => d === raw?.span) ?? null
+			};
 		} catch {
-			return 'list';
+			return { view: 'graph', span: null };
 		}
 	}
 
-	function setView(next: View) {
-		view = next;
+	function choose(next: { view?: View; span?: MonthSpan }) {
+		if (next.view !== undefined) view = next.view;
+		if (next.span !== undefined) span = next.span;
 		try {
-			localStorage.setItem(VIEW_KEY, next);
+			localStorage.setItem(PREF_KEY, JSON.stringify({ view, span }));
 		} catch {
-			// Remembering the view is a convenience; private windows throw.
+			// Remembering them is a convenience; private windows throw.
 		}
 	}
 
@@ -102,7 +113,7 @@
 			const rows = dashData.reels.filter((r) =>
 				r.platform === platform && (platform === 'tiktok' ? onTikTokAccount(r, account) : r.account === account.account_id)
 			);
-			const months = monthsFromReads(rows, now);
+			const months = monthsFromReads(rows, now, Infinity);
 			const part = partFromReads(rows, lastRead(platform, account, rows));
 			const { first, firstWhole } = readSince(rows);
 			const note =
@@ -114,9 +125,10 @@
 			return [{ source: { platform, months, part }, note }];
 		})
 	);
-	const rows = $derived(brandMonths(sources.map((s) => s.source)));
-	/** Every month flock has, oldest first, for the graphs. */
-	const allRows = $derived(brandMonths(sources.map((s) => s.source), Infinity).reverse());
+	/** Every month flock has, newest first; the timeframe's for the list, oldest first for the graphs. */
+	const allRows = $derived(brandMonths(sources.map((s) => s.source), Infinity));
+	const rows = $derived(inSpan(allRows, span, now));
+	const graphRows = $derived([...rows].reverse());
 	let hover = $state<{ month: string; metric: MonthMetric } | null>(null);
 
 	const LABELS: Record<MonthMetric, string> = { views: 'Views', likes: 'Likes', comments: 'Comments' };
@@ -186,14 +198,27 @@
 		bind:open
 		title="{brand?.name ?? 'Brand'} · month over month"
 		subtitle={view === 'list'
-			? 'Each month of the last year against the one before, the month still running at its pace so far — a fifth up or down counts, as for vs usual.'
-			: 'Every month flock has, the platforms added up, the month still running at its pace so far (dashed). Each axis runs from the lowest month to the highest.'}
+			? 'Each month against the one before, the month still running at its pace so far — a fifth up or down counts, as for vs usual.'
+			: 'The platforms added up, the month still running at its pace so far (dashed); green where a month rose on the one before, red where it fell, the stronger the bigger the change. Each axis runs from the lowest month to the highest.'}
 		width="760px"
 	>
-		<div class="views" role="tablist" aria-label="Show as">
-			{#each VIEWS as [id, name] (id)}
-				<button role="tab" aria-selected={view === id} class:active={view === id} onclick={() => setView(id)}>{name}</button>
-			{/each}
+		<div class="bar">
+			<div class="views" role="tablist" aria-label="Show as">
+				{#each VIEWS as [id, name] (id)}
+					<button role="tab" aria-selected={view === id} class:active={view === id} onclick={() => choose({ view: id })}>{name}</button>
+				{/each}
+			</div>
+			<div class="span" role="radiogroup" aria-label="Timeframe">
+				{#each MONTH_SPANS as d (d)}
+					<button class:on={span === d} role="radio" aria-checked={span === d} title="The months of the last {d} days" onclick={() => choose({ span: d })}
+						>{d}</button
+					>
+				{/each}
+				<span class="spanunit">days</span>
+				<button class:on={span === null} role="radio" aria-checked={span === null} title="Every month flock has" onclick={() => choose({ span: null })}
+					>Lifetime</button
+				>
+			</div>
 		</div>
 
 		<ul class="sources" aria-label="Where the numbers come from">
@@ -204,12 +229,12 @@
 
 		{#if sources.length === 0}
 			<p class="none">This brand has no account chosen on any platform flock reads.</p>
-		{:else if rows.length === 0}
+		{:else if allRows.length === 0}
 			<p class="none">No month yet. A month shows once flock has it from its first day.</p>
 		{:else if view === 'graph'}
 			<div class="graphs">
 				{#each MONTH_METRICS as metric (metric)}
-					<MonthsGraph rows={allRows} {metric} label={LABELS[metric]} bind:hover />
+					<MonthsGraph rows={graphRows} {metric} label={LABELS[metric]} bind:hover />
 				{/each}
 			</div>
 		{:else}
@@ -256,10 +281,17 @@
 </div>
 
 <style>
+	.bar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 10px 14px;
+		margin: 0 0 12px;
+	}
+
 	.views {
 		display: inline-flex;
 		gap: 4px;
-		margin: 0 0 12px;
 		padding: 3px;
 		background: var(--bg-elev);
 		border: 1px solid var(--border);
@@ -284,6 +316,49 @@
 	.views button.active {
 		background: var(--surface-3);
 		color: var(--text);
+	}
+
+	/* The timeframe, as the Dashboard's filter draws it. */
+	.span {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		padding: 2px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--surface);
+	}
+
+	.span button {
+		min-width: 38px;
+		padding: 4px 9px;
+		border: none;
+		border-radius: 999px;
+		background: none;
+		font: inherit;
+		font-size: 12px;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-dim);
+		transition:
+			background 0.14s,
+			color 0.14s;
+	}
+
+	.span button:hover {
+		color: var(--text);
+	}
+
+	.span button.on {
+		background: rgba(255, 77, 158, 0.12);
+		box-shadow: inset 0 0 0 1px var(--pink);
+		color: var(--text);
+	}
+
+	.spanunit {
+		padding: 0 8px 0 4px;
+		font-size: 11.5px;
+		color: var(--text-faint);
 	}
 
 	.graphs {

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
 	brandMonths,
+	changeStrength,
 	daysIn,
+	inSpan,
 	monthsFromReads,
 	nextMonth,
 	paceOf,
@@ -163,5 +165,41 @@ describe('the month still running', () => {
 		expect(partFromReads(rows, Date.parse('2026-10-25T00:00:00Z'))).toBeNull();
 		expect(partFromReads(rows, Date.parse('2026-11-01T06:00:00Z'))).toBeNull();
 		expect(partFromReads([], until)).toBeNull();
+	});
+});
+
+describe('the timeframe and the strength of a change', () => {
+	const months: Record<string, MonthCounts> = Object.fromEntries(
+		['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09'].map((m, i) => [m, [i + 1, 0, 0] as MonthCounts])
+	);
+	const rows = brandMonths([{ platform: 'youtube', months, part: { month: '2026-10', counts: [5, 0, 0], days: 21 } }], Infinity);
+	const now = Date.parse('2026-10-24T14:00:00Z');
+	const shown = (days: Parameters<typeof inSpan>[1], at = now, list = rows) => inSpan(list, days, at).map((r) => r.month);
+
+	it('shows the months any of whose days fall in the timeframe, never fewer than two', () => {
+		expect(shown(30)).toEqual(['2026-10', '2026-09']);
+		expect(shown(60)).toEqual(['2026-10', '2026-09', '2026-08']);
+		expect(shown(90)).toEqual(['2026-10', '2026-09', '2026-08', '2026-07']);
+		expect(shown(180)).toHaveLength(7);
+		// 360 days back is 29 Oct 2025: October 2025 has three of its days in it.
+		expect(shown(360).at(-1)).toBe('2025-10');
+		expect(shown(null)).toHaveLength(14);
+		// The 1st, with no running month yet: still a line.
+		const whole = brandMonths([{ platform: 'youtube', months }], Infinity);
+		expect(shown(30, Date.parse('2026-10-01T06:00:00Z'), whole)).toEqual(['2026-09', '2026-08']);
+		// Oldest first stays oldest first.
+		expect(inSpan([...rows].reverse(), 60, now).map((r) => r.month)).toEqual(['2026-08', '2026-09', '2026-10']);
+	});
+
+	it('is a change on a log scale, full at doubling or halving', () => {
+		expect(changeStrength(100, 100)).toBe(0);
+		expect(changeStrength(100, 200)).toBe(1);
+		expect(changeStrength(100, 50)).toBe(-1);
+		expect(changeStrength(100, 900)).toBe(1);
+		expect(changeStrength(100, 98)).toBeCloseTo(-0.029, 3);
+		expect(changeStrength(100, 141)).toBeCloseTo(0.5, 2);
+		expect(changeStrength(0, 5)).toBe(1);
+		expect(changeStrength(5, 0)).toBe(-1);
+		expect(changeStrength(0, 0)).toBe(0);
 	});
 });

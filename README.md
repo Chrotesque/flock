@@ -634,8 +634,10 @@ month before, all platforms together and each below, with the month still
 running on top, judged by what its days so far come to over the whole month —
 YouTube's from YouTube Analytics, Instagram's from its account insights,
 Facebook's and TikTok's only for months flock read from their first day.
-*Graph* at the top draws each of the three as a line over every month flock
-has.
+It opens as a graph, one line for each of the three, green where a month rose
+on the one before and red where it fell, the stronger the bigger the change;
+*List* shows the months as a table. Beside it, pick the timeframe: the last
+30 to 360 days, or *Lifetime*.
 
 - **One filter for all of it:** the timeframe (the last 30 days by default,
   up to 180), which platforms (all of them is *Combined*), which kinds (Shorts,
