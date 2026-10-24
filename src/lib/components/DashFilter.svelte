@@ -18,9 +18,15 @@
 	 * Every choice of what the page looks at, in one element: a line saying
 	 * what is shown, which opens into the choices — the timeframe, platforms
 	 * (all of them together is the combined view), kinds and visibility. The
-	 * page's numbers and its list all follow it.
+	 * page's numbers and its list all follow it — but for the platforms while
+	 * the Dashboard's Extended Stats shows one alone (`override`): they stay
+	 * as chosen, greyed, and cannot be changed until it is switched off.
 	 */
-	let { filter = $bindable(), counts }: { filter: DashFilter; counts: FilterCounts } = $props();
+	let {
+		filter = $bindable(),
+		counts,
+		override = null
+	}: { filter: DashFilter; counts: FilterCounts; override?: StatPlatform | null } = $props();
 
 	let open = $state(false);
 	let root = $state<HTMLElement | null>(null);
@@ -90,11 +96,15 @@
 		<path d="M4 5h16l-6 7.5V19l-4-2v-4.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
 	</svg>
 	<button class="bar" aria-expanded={open} aria-controls="dashboard-filter" onclick={() => (open = !open)}>
-		<span class="part platforms">
+		<span
+			class="part platforms"
+			class:unused={override}
+			title={override ? `Not in effect: Extended Stats shows ${PLATFORMS[override].label} alone` : undefined}
+		>
 			{#each filter.platforms as p (p)}
-				<PlatformIcon platform={p} size={14} />
+				<PlatformIcon platform={p} size={14} dim={Boolean(override)} />
 			{/each}
-			<span>{combined ? 'Combined' : PLATFORMS[filter.platforms[0]].label}</span>
+			<span class="plabel">{combined ? 'Combined' : PLATFORMS[filter.platforms[0]].label}</span>
 		</span>
 		<span class="sep keep" aria-hidden="true"></span>
 		<span class="part days">Last {filter.days} days</span>
@@ -125,11 +135,16 @@
 				</div>
 			</section>
 
-			<section>
+			<section class:unused={override}>
 				<h3>
 					Platforms
-					<button class="link" class:on={combined} onclick={combine} disabled={combined}>Combined</button>
+					<button class="link" class:on={combined && !override} onclick={combine} disabled={combined || Boolean(override)}
+						>Combined</button
+					>
 				</h3>
+				{#if override}
+					<p class="note">Not in effect: Extended Stats shows {PLATFORMS[override].label} alone. Switch it off to choose here.</p>
+				{/if}
 				<div class="chips">
 					{#each ALL_PLATFORMS as p (p)}
 						{@const label = PLATFORMS[p].label}
@@ -140,15 +155,18 @@
 									class:on={filter.platforms.includes(p)}
 									aria-pressed={filter.platforms.includes(p)}
 									onclick={() => togglePlatform(p)}
-									title={filter.platforms.includes(p) && filter.platforms.length === 1
-										? 'At least one platform stays chosen'
-										: undefined}
+									disabled={Boolean(override)}
+									title={override
+										? 'Not in effect while Extended Stats is on'
+										: filter.platforms.includes(p) && filter.platforms.length === 1
+											? 'At least one platform stays chosen'
+											: undefined}
 								>
-									<PlatformIcon platform={p} size={14} />
+									<PlatformIcon platform={p} size={14} dim={Boolean(override)} />
 									<span class="name">{PLATFORMS[p].label}</span>
 									<span class="count">{counts.platforms[p]}</span>
 								</button>
-								{#if !(filter.platforms.length === 1 && filter.platforms[0] === p)}
+								{#if !override && !(filter.platforms.length === 1 && filter.platforms[0] === p)}
 									<button class="only" onclick={() => onlyPlatform(p)} title="Show {PLATFORMS[p].label} alone">only</button>
 								{/if}
 							</span>
@@ -284,6 +302,13 @@
 		align-items: center;
 		gap: 5px;
 		flex: none;
+	}
+
+	/* Set aside by Extended Stats: the choice struck through, the marks greyed
+	   only where their brands allow it (PlatformIcon's `dim`). */
+	.platforms.unused .plabel {
+		color: var(--text-faint);
+		text-decoration: line-through;
 	}
 
 	.sep {
@@ -436,6 +461,32 @@
 	.chip.off {
 		cursor: default;
 		opacity: 0.75;
+	}
+
+	/* The platforms while Extended Stats is on: kept as chosen, greyed, not to be changed. */
+	.note {
+		margin: -3px 0 9px;
+		font-size: 11px;
+		line-height: 1.45;
+		color: var(--warn);
+	}
+
+	.unused .chip,
+	.unused button.chip:hover {
+		border-style: dashed;
+		border-color: var(--border);
+		background: none;
+		color: var(--text-faint);
+		cursor: not-allowed;
+	}
+
+	.unused .chip.on {
+		border-color: var(--border-strong);
+		color: var(--text-dim);
+	}
+
+	.unused .chip.on .count {
+		color: var(--text-faint);
 	}
 
 	.chip .name {

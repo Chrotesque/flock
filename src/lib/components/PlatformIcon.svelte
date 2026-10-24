@@ -18,9 +18,16 @@
 	//   Facebook  — Facebook Blue with the "f" knocked out, or white.
 	// The app's own pink/purple stays reserved for selection state, so a
 	// selected platform still reads clearly next to any of these.
-	let { platform, size = 22 }: { platform: PlatformId; size?: number } = $props();
+	//
+	// `dim` shows a mark as not in effect. Only the marks whose rules allow
+	// another colour go grey: Instagram's (any solid colour) and YouTube's
+	// muted one with the compliance switch off. YouTube's red, TikTok's white
+	// and Facebook's blue may not change — fading white TikTok to grey is a
+	// recolour too — so the caller dims what is around them instead.
+	let { platform, size = 22, dim = false }: { platform: PlatformId; size?: number; dim?: boolean } = $props();
 
 	let compliant = $derived(platform === 'youtube' && general.value.complianceBranding);
+	let greyed = $derived(dim && (platform === 'instagram' || (platform === 'youtube' && !compliant)));
 </script>
 
 <svg
@@ -30,6 +37,7 @@
 	fill="none"
 	aria-hidden="true"
 	class="icon {platform}"
+	class:greyed
 >
 	{#if platform === 'youtube'}
 		<path
@@ -59,6 +67,10 @@
 	.icon {
 		display: block;
 		flex: none;
+	}
+	.greyed {
+		filter: grayscale(1);
+		opacity: 0.45;
 	}
 	/* Only used while the compliance switch is off; on, the fills above win. */
 	.youtube {

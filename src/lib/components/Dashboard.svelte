@@ -30,7 +30,8 @@
 		type FollowerState
 	} from '$lib/followers';
 	import { onTikTokAccount, tiktokRef, tiktokReportOf, tiktokStateOf } from '$lib/tiktokaccount';
-	import { COLUMNS, gridTemplate, shownColumns, type ColumnId } from '$lib/dashcolumns';
+	import { COLUMNS, extendedColumns, gridTemplate, shownColumns, type ColumnId } from '$lib/dashcolumns';
+	import { percentWords, perView, pooledPerView, readExtended, viewFilter, type ExtendedStats } from '$lib/extendedstats';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import {
 		deleteJob,
@@ -52,6 +53,7 @@
 	import {
 		ALL_PLATFORMS,
 		PLATFORM_COLOURS,
+		STAT_PLATFORMS,
 		curve,
 		filterCounts,
 		inView,
@@ -103,6 +105,7 @@
 	const FILTER_KEY = 'flock.dashboard.filter';
 	const SORT_KEY = 'flock.dashboard.sort';
 	const SORT_REVERSED_KEY = 'flock.dashboard.sortReversed';
+	const EXTENDED_KEY = 'flock.dashboard.extended';
 
 	function readPref(key: string): string | null {
 		try {
@@ -128,7 +131,9 @@
 		}
 	}
 
-	const SORTS: SortKey[] = ['date', 'views', 'likes', 'comments', 'followers', 'skip', 'usual'];
+	const SORTS: SortKey[] = ['date', 'views', 'likes', 'comments', 'followers', 'skip', 'usual', 'likeRate', 'commentRate'];
+	/** Sorted by only while Extended Stats shows their columns. */
+	const EXTENDED_SORTS: SortKey[] = ['likeRate', 'commentRate'];
 	let filter = $state<Filter>(readFilter(parsed(readPref(FILTER_KEY))));
 	let sort = $state<SortKey>(SORTS.find((s) => s === readPref(SORT_KEY)) ?? 'date');
 	$effect(() => writePref(FILTER_KEY, JSON.stringify(storedFilter(filter))));
@@ -136,6 +141,27 @@
 	let reversed = $state(readPref(SORT_REVERSED_KEY) === '1');
 	$effect(() => writePref(SORT_KEY, sort));
 	$effect(() => writePref(SORT_REVERSED_KEY, reversed ? '1' : '0'));
+
+	/* Extended Stats (extendedstats.ts): one platform at a time, chosen in its
+	 * own box, with the likes and comments per view. While it is on, the
+	 * filter's platforms are not in effect — `view` is the filter as every
+	 * number on the page applies it. */
+	let extended = $state<ExtendedStats>(readExtended(parsed(readPref(EXTENDED_KEY))));
+	$effect(() => writePref(EXTENDED_KEY, JSON.stringify(extended)));
+	const view = $derived(viewFilter(filter, extended));
+
+	function toggleExtended() {
+		extended = { ...extended, on: !extended.on };
+		// Its ratio columns go with it, so the list goes back to newest first.
+		if (!extended.on && EXTENDED_SORTS.includes(sort)) {
+			sort = 'date';
+			reversed = false;
+		}
+	}
+
+	function showPlatform(p: StatPlatform) {
+		extended = { ...extended, platform: p };
+	}
 
 	/* ---- the data ---- */
 
@@ -369,15 +395,15 @@
 	// periods, and the peers "usual" is the middle of.
 	const spanned = $derived(releases.filter((r) => inSpan(r, filter.days, now)));
 	const groups = $derived(peerGroups(spanned));
-	const counts = $derived(filterCounts(spanned, filter));
+	const counts = $derived(filterCounts(spanned, view));
 	// While editing, the videos hidden with the eye show too (faded), so one
 	// can be shown again without the filter's Hidden; the totals and the Jestr
 	// count still leave them out then (`onlyWhileEditing`), and the periods
 	// read the filter itself.
-	const inViewList = $derived(spanned.filter((r) => inView(r, editing ? { ...filter, hidden: true } : filter)));
+	const inViewList = $derived(spanned.filter((r) => inView(r, editing ? { ...view, hidden: true } : view)));
 	const onlyWhileEditing = (r: Release) => Boolean(r.hidden) && !filter.hidden;
-	const combined = $derived(isCombined(filter));
-	const multi = $derived(filter.platforms.length > 1);
+	const combined = $derived(isCombined(view));
+	const multi = $derived(view.platforms.length > 1);
 
 	/* ---- the list ---- */
 
@@ -396,6 +422,9 @@
 		/** The skip rate over the platforms in view that give one (skipRateOf). */
 		skip: number | null;
 		followers: number | null;
+		/** Likes and comments per view, in percent (Extended Stats' columns). */
+		likeRate: number | null;
+		commentRate: number | null;
 	}
 
 	function deltaOf(posts: Post[], counter: Counter): number {
@@ -410,17 +439,22 @@
 
 	const rows = $derived.by(() => {
 		const list: Row[] = inViewList.map((release) => {
-			const posts = filter.platforms.map((p) => release.posts[p]).filter((p): p is Post => Boolean(p));
+			const posts = view.platforms.map((p) => release.posts[p]).filter((p): p is Post => Boolean(p));
 			const peersOf = (post: Post) => groups.get(`${post.platform}:${release.kind}`) ?? [];
 			const judgements = posts.map((post) => judge(post, peersOf(post), now));
 			const overall = overallOf(judgements);
+			const views = sumOf(release, view.platforms, 'views');
+			const likes = sumOf(release, view.platforms, 'likes');
+			const comments = sumOf(release, view.platforms, 'comments');
 			return {
 				release,
 				posts,
-				views: sumOf(release, filter.platforms, 'views'),
-				likes: sumOf(release, filter.platforms, 'likes'),
-				comments: sumOf(release, filter.platforms, 'comments'),
-				followers: sumOf(release, filter.platforms, 'followers'),
+				views,
+				likes,
+				comments,
+				followers: sumOf(release, view.platforms, 'followers'),
+				likeRate: perView(likes, views),
+				commentRate: perView(comments, views),
 				delta: {
 					views: deltaOf(posts, 'views'),
 					likes: deltaOf(posts, 'likes'),
@@ -431,7 +465,7 @@
 				overall,
 				ratio: overall.ratio,
 				curves: posts.map((post) => curve(post, peersOf(post), now)),
-				skip: skipRateOf(release, filter.platforms)
+				skip: skipRateOf(release, view.platforms)
 			};
 		});
 		return sortRows(list, sort, reversed);
@@ -440,6 +474,8 @@
 	/* ---- Jestr campaigns (jestrcampaign.ts): a column, and marks made in Edit mode, with the integration on ---- */
 
 	const jestrOn = $derived(general.value.jestrIntegration);
+	// Extended Stats has no Jestr column, so a click there opens the row rather than marking it unseen.
+	const marksJestr = $derived(jestrOn && !extended.on);
 	const flagged = $derived(flaggedPosts(dashData.targets));
 
 	function campaignPosts(r: Release): CampaignPosts {
@@ -464,7 +500,9 @@
 
 	/* ---- the list's columns, as Settings → Dashboard arranges them (dashcolumns.ts) ---- */
 
-	const columns = $derived(shownColumns(general.value.dashboardColumns, { jestr: jestrOn }));
+	const columns = $derived(
+		extended.on ? extendedColumns(general.value.dashboardColumns) : shownColumns(general.value.dashboardColumns, { jestr: jestrOn })
+	);
 	const grids = $derived({
 		wide: gridTemplate(columns, 'wide'),
 		mid: gridTemplate(columns, 'mid'),
@@ -492,7 +530,7 @@
 	/** The accounts' counts now, for the column's tooltip. */
 	const followerCounts = $derived(
 		followersInView
-			.filter((s) => filter.platforms.includes(s.platform))
+			.filter((s) => view.platforms.includes(s.platform))
 			.map((s) => `${s.name || PLATFORMS[s.platform].label} (${PLATFORMS[s.platform].label}) ${whole.format(s.count)} ${followerWord(s.platform, s.count)}`)
 	);
 	const followersAbout = $derived(
@@ -641,11 +679,35 @@
 		return sum;
 	});
 
+	// Every video's likes and comments against every video's views, each video
+	// counted only where both were read (Extended Stats' ratio columns).
+	const rateTotals = $derived.by(() => {
+		const counted = rows.filter((row) => !onlyWhileEditing(row.release));
+		return {
+			likes: pooledPerView(counted.map((row) => ({ count: row.likes, views: row.views }))),
+			comments: pooledPerView(counted.map((row) => ({ count: row.comments, views: row.views })))
+		};
+	});
+	/** A share of the views: 1.09 %, in the browser's decimal mark. */
+	const percent = (rate: number | null) => (rate === null ? '—' : percentWords(rate));
+	const RATE_ABOUT = {
+		likes: "Likes as a share of the views: 12 likes on 1,100 views is 1.09 %. The total is every video's likes against every video's views.",
+		comments:
+			"Comments as a share of the views: 3 comments on 1,100 views is 0.27 %. The total is every video's comments against every video's views."
+	};
+
+	/** One video's ratio in words: what it is over. */
+	function rateTitle(count: number | null, views: number | null, [one, many]: [string, string]): string {
+		if (views === null || views <= 0) return 'No views read yet';
+		if (count === null) return `Its ${many} are not read yet`;
+		return `${whole.format(count)} ${count === 1 ? one : many} on ${whole.format(views)} ${views === 1 ? 'view' : 'views'}`;
+	}
+
 	// Of every view on the videos in the list on a platform that gives a skip
 	// rate (SKIP_PLATFORMS), the share skipped: each rate weighted by its views.
-	const skipInView = $derived(SKIP_PLATFORMS.filter((p) => filter.platforms.includes(p)));
+	const skipInView = $derived(SKIP_PLATFORMS.filter((p) => view.platforms.includes(p)));
 	const pooledSkip = $derived(
-		pooledSkipRate(rows.filter((row) => !onlyWhileEditing(row.release)).flatMap((row) => skipPosts(row.release, filter.platforms)))
+		pooledSkipRate(rows.filter((row) => !onlyWhileEditing(row.release)).flatMap((row) => skipPosts(row.release, view.platforms)))
 	);
 	const skipShown = (rate: number) => `${rate.toLocaleString('en-GB', { maximumFractionDigits: 1 })} %`;
 	const SKIP_WORDS: Partial<Record<StatPlatform, string>> = {
@@ -663,13 +725,13 @@
 
 	function skipTitle(r: Release): string {
 		if (skipInView.length === 0) return 'Neither YouTube nor Instagram is in view';
-		const posts = skipPosts(r, filter.platforms);
+		const posts = skipPosts(r, view.platforms);
 		if (posts.length === 0) return `No ${skipInView.map((p) => PLATFORMS[p].label).join(' or ')} post`;
 		const lines = posts.map(
 			(p) =>
 				`${PLATFORMS[p.platform].label}: ${p.skipRate == null ? SKIP_UNKNOWN[p.platform] : `${skipShown(p.skipRate)} ${SKIP_WORDS[p.platform]}`}`
 		);
-		const pooled = skipRateOf(r, filter.platforms);
+		const pooled = skipRateOf(r, view.platforms);
 		if (posts.filter((p) => p.skipRate != null).length > 1 && pooled != null) {
 			lines.push(`Together: ${skipShown(pooled)}, each weighted by its views`);
 		}
@@ -723,7 +785,7 @@
 	}
 
 	async function toggle(release: Release) {
-		if (editing && jestrOn) {
+		if (editing && marksJestr) {
 			toggleCampaign(release);
 			return;
 		}
@@ -745,11 +807,11 @@
 	const nowDate = $derived(new Date(now));
 	// The periods run up to a year, past the list's timeframe, so they count
 	// every video the filter's other choices keep.
-	const periods = $derived(periodStats(releases.filter((r) => inView(r, filter)), filter, nowDate, followersInView));
+	const periods = $derived(periodStats(releases.filter((r) => inView(r, view)), view, nowDate, followersInView));
 	// A platform whose views are read for none of the videos (Facebook without
 	// read_insights) says so, rather than +0.
 	const viewsUnread = $derived(
-		new Set(filter.platforms.filter((p) => !inViewList.some((r) => typeof r.posts[p]?.views === 'number')))
+		new Set(view.platforms.filter((p) => !inViewList.some((r) => typeof r.posts[p]?.views === 'number')))
 	);
 
 	/* ---- side notes: when each platform was read, and what is left of the day ---- */
@@ -1060,6 +1122,11 @@
 	</span>
 {/snippet}
 
+<!-- A count as a share of the views (Extended Stats). -->
+{#snippet rate(value: number | null, title: string, cls: string)}
+	<span class="num cell rate {cls}" class:none={value === null} {title}>{percent(value)}</span>
+{/snippet}
+
 {#snippet sortHead(key: SortKey, label: string, cls = '', about = '')}
 	<button
 		class="colhead {cls}"
@@ -1085,8 +1152,12 @@
 		{@render sortHead('views', 'Views', cellOf(col))}
 	{:else if col === 'likes'}
 		{@render sortHead('likes', 'Likes', cellOf(col))}
+	{:else if col === 'likeRate'}
+		{@render sortHead('likeRate', 'Like ratio', cellOf(col), RATE_ABOUT.likes)}
 	{:else if col === 'comments'}
 		{@render sortHead('comments', 'Comments', cellOf(col))}
+	{:else if col === 'commentRate'}
+		{@render sortHead('commentRate', 'Comment ratio', cellOf(col), RATE_ABOUT.comments)}
 	{:else if col === 'skip'}
 		{@render sortHead('skip', 'Skipped', cellOf(col), skipAbout)}
 	{:else if col === 'curve'}
@@ -1119,6 +1190,18 @@
 		{@render counter(totals.likes, totals.dLikes, cellOf(col))}
 	{:else if col === 'comments'}
 		{@render counter(totals.comments, totals.dComments, cellOf(col))}
+	{:else if col === 'likeRate'}
+		{@render rate(
+			rateTotals.likes,
+			rateTotals.likes === null ? 'No likes and views read among the videos in view' : "Every video's likes against every video's views",
+			cellOf(col)
+		)}
+	{:else if col === 'commentRate'}
+		{@render rate(
+			rateTotals.comments,
+			rateTotals.comments === null ? 'No comments and views read among the videos in view' : "Every video's comments against every video's views",
+			cellOf(col)
+		)}
 	{:else if col === 'skip'}
 		<span
 			class="num cell skip {cellOf(col)}"
@@ -1148,7 +1231,7 @@
 			>
 		{/if}
 	{:else if col === 'video'}
-		{@const visibility = visibilityOf(r, filter.platforms)}
+		{@const visibility = visibilityOf(r, view.platforms)}
 		{@const note = renameNote(r)}
 		<span class="vid {cellOf(col)}">
 			<span class="vtitle">{r.title}</span>
@@ -1185,7 +1268,7 @@
 		</span>
 	{:else if col === 'jestr'}
 		{@const campaign = campaigns.has(r.key)}
-		{@const marking = editing && jestrOn}
+		{@const marking = editing && marksJestr}
 		<span
 			class="jcell {cellOf(col)}"
 			class:on={campaign}
@@ -1204,11 +1287,15 @@
 		{@render stacked(row, 'views', cellOf(col), true)}
 	{:else if col === 'likes'}
 		{@render stacked(row, 'likes', cellOf(col))}
+	{:else if col === 'likeRate'}
+		{@render rate(row.likeRate, rateTitle(row.likes, row.views, ['like', 'likes']), cellOf(col))}
 	{:else if col === 'comments'}
 		{@render stacked(row, 'comments', cellOf(col))}
+	{:else if col === 'commentRate'}
+		{@render rate(row.commentRate, rateTitle(row.comments, row.views, ['comment', 'comments']), cellOf(col))}
 	{:else if col === 'skip'}
 		<!-- One platform: its rate behind its dot; two: the rate over both, each under it as the counters have. -->
-		{@const posts = skipPosts(r, filter.platforms)}
+		{@const posts = skipPosts(r, view.platforms)}
 		<span class="num cell stack skip {cellOf(col)}" class:none={row.skip === null} title={skipTitle(r)}>
 			{#if posts.length > 1}
 				<span>{row.skip === null ? '—' : skipShown(row.skip)}</span>
@@ -1256,8 +1343,8 @@
 <div class="page">
 	<!-- One row: what is looked at, for which brand, as which accounts — and when each was read. -->
 	<h1 class="hidden">Dashboard</h1>
-	<div class="toolbar">
-		<DashFilter bind:filter {counts} />
+	<div class="toolbar" class:extended={extended.on}>
+		<DashFilter bind:filter {counts} override={extended.on ? extended.platform : null} />
 		{#if brands.multiple}
 			<div class="brands" role="radiogroup" aria-label="Brand in view">
 				{#each devtestDashboardScopes as s (s.label)}
@@ -1321,6 +1408,40 @@
 			{/if}
 		{/if}
 		<div class="aside">
+			<!-- Extended Stats: a switch, and under it in the same box, while it is
+			     on, a button per platform — the one shown. The box grows downwards
+			     for them; the toolbar makes room below, so nothing beside it moves. -->
+			<div class="ext" class:on={extended.on}>
+				<div class="extbox">
+					<button
+						class="extswitch"
+						role="switch"
+						aria-checked={extended.on}
+						onclick={toggleExtended}
+						title={extended.on
+							? `${PLATFORMS[extended.platform].label} alone, with the likes and comments per view. Switch off to go back to the filter's platforms`
+							: "One platform at a time, with the likes and comments per view. The filter's platforms are set aside meanwhile"}
+					>
+						<span class="track" aria-hidden="true"><span class="knob"></span></span>
+						Extended Stats
+					</button>
+					<div class="extplats" role="radiogroup" aria-label="The platform Extended Stats shows" inert={!extended.on}>
+						{#each STAT_PLATFORMS as p (p)}
+							<button
+								class="extplat"
+								class:on={extended.platform === p}
+								role="radio"
+								aria-checked={extended.platform === p}
+								aria-label={PLATFORMS[p].label}
+								title="{PLATFORMS[p].label} alone"
+								onclick={() => showPlatform(p)}
+							>
+								<PlatformIcon platform={p} size={15} />
+							</button>
+						{/each}
+					</div>
+				</div>
+			</div>
 			<!-- When each platform was read and what is left of the day, behind one
 			     icon coloured by the worst of it; hover or focus shows the lines. -->
 			{#if statusLines.length > 0}
@@ -1402,7 +1523,7 @@
 					? 'Stop editing'
 					: editArmed
 						? 'Press again to edit'
-						: `Rename or hide videos${jestrOn ? ', mark Jestr campaigns' : ''} (press twice)`}
+						: `Rename or hide videos${marksJestr ? ', mark Jestr campaigns' : ''} (press twice)`}
 			>
 				{#if editing}
 					<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect class="fill" x="3.5" y="3.5" width="9" height="9" rx="1.5" /></svg>
@@ -1462,7 +1583,7 @@
 									? '. Some were not read yet at its start, so they count from when flock first read them.'
 									: '.'}
 							</p>
-							{#each filter.platforms as p (p)}
+							{#each view.platforms as p (p)}
 								<p class="pline">
 									<i style:background={PLATFORM_COLOURS[p]}></i>
 									<span class="pname">{PLATFORMS[p].label}</span>
@@ -1493,7 +1614,7 @@
 								{/if}
 							</p>
 							<p class="pnote">How far the accounts' counts moved since the start of the period: followers won less followers lost.</p>
-							{#each filter.platforms as p (p)}
+							{#each view.platforms as p (p)}
 								{@const gain = period.byPlatform[p].followers}
 								<p class="pline">
 									<i style:background={PLATFORM_COLOURS[p]}></i>
@@ -1521,7 +1642,7 @@
 			is on, or on some only; the worker renames it within seconds. The eye hides a video from the Dashboard —
 			the list, the totals, the periods and the usual; while editing, hidden ones stay in the list, faded, so the eye
 			can show one again. <em>Hidden</em> in the filter shows them outside Edit mode too.
-			{#if jestrOn}Click a video to mark it as a Jestr campaign, or to take the mark off.{/if}
+			{#if marksJestr}Click a video to mark it as a Jestr campaign, or to take the mark off.{/if}
 			Press <strong>■</strong> when finished.
 			{#if lastHidden}
 				<span class="undo">Hid “{lastHidden.title}” <button onclick={undoHide}>Undo</button></span>
@@ -1552,7 +1673,7 @@
 		{#each rows as row (row.release.key)}
 			{@const r = row.release}
 			{@const campaign = campaigns.has(r.key)}
-			{@const marking = editing && jestrOn}
+			{@const marking = editing && marksJestr}
 			<div class="item" class:open={openKey === r.key} class:tinted={Boolean(r.tint)} class:hiddenvideo={r.hidden} style:--tint={r.tint}>
 				<!-- The pencil and the eye sit over the row, not in it: a button cannot hold another. -->
 				<div class="line">
@@ -1625,7 +1746,7 @@
 								</p>
 							</div>
 						</div>
-						{#each filter.platforms as p (p)}
+						{#each view.platforms as p (p)}
 							{@const post = r.posts[p]}
 							{#if post}
 								{@const facts = factsFor(post)}
@@ -1884,6 +2005,141 @@
 		align-items: center;
 		gap: 8px;
 		margin-left: auto;
+	}
+
+	/* Extended Stats. The box keeps the row's height in the toolbar and hangs
+	   below it while on; the toolbar's margin grows by as much (the icons' 26px
+	   and the 6px under them), so the periods move down rather than under it. */
+	.toolbar {
+		transition: margin-bottom 0.16s;
+	}
+
+	.toolbar.extended {
+		margin-bottom: calc(14px + 32px);
+	}
+
+	.ext {
+		flex: none;
+		height: 32px;
+	}
+
+	.extbox {
+		display: grid;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-sm);
+		background: var(--surface-2);
+		transition: border-color 0.14s;
+	}
+
+	.extbox:hover,
+	.ext.on .extbox {
+		border-color: var(--pink);
+	}
+
+	.extswitch {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		height: 30px;
+		padding: 0 11px 0 8px;
+		font: inherit;
+		font-size: 12.5px;
+		font-weight: 560;
+		color: var(--text-dim);
+		white-space: nowrap;
+	}
+
+	.extswitch:hover,
+	.ext.on .extswitch {
+		color: var(--text);
+	}
+
+	.track {
+		position: relative;
+		flex: none;
+		width: 30px;
+		height: 17px;
+		border-radius: 999px;
+		background: var(--surface-3);
+		border: 1px solid var(--border-strong);
+		transition:
+			background 0.16s,
+			border-color 0.16s;
+	}
+
+	.knob {
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		width: 11px;
+		height: 11px;
+		border-radius: 999px;
+		background: var(--text-dim);
+		transition:
+			transform 0.16s,
+			background 0.16s;
+	}
+
+	.ext.on .track {
+		background: var(--accent-grad);
+		border-color: transparent;
+	}
+
+	.ext.on .knob {
+		transform: translateX(13px);
+		background: #fff;
+	}
+
+	.extplats {
+		display: flex;
+		gap: 4px;
+		max-height: 0;
+		padding: 0 6px;
+		overflow: hidden;
+		opacity: 0;
+		transition:
+			max-height 0.16s,
+			padding 0.16s,
+			opacity 0.16s;
+	}
+
+	.ext.on .extplats {
+		max-height: 32px;
+		padding-bottom: 6px;
+		opacity: 1;
+	}
+
+	/* The marks stay as their brands have them; the button around one says it is shown. */
+	.extplat {
+		flex: 1;
+		display: grid;
+		place-items: center;
+		height: 26px;
+		border: 1px solid transparent;
+		border-radius: 7px;
+		transition:
+			border-color 0.14s,
+			background 0.14s;
+	}
+
+	.extplat:hover {
+		border-color: var(--border-strong);
+	}
+
+	.extplat.on {
+		border-color: var(--pink);
+		background: var(--accent-grad-soft);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.toolbar,
+		.extbox,
+		.track,
+		.knob,
+		.extplats,
+		.extplat {
+			transition: none;
+		}
 	}
 
 	/* Square icon buttons: the status, Edit and Refresh. */
@@ -2803,7 +3059,8 @@
 		height: 6px;
 	}
 
-	.skip.none {
+	.skip.none,
+	.rate.none {
 		color: var(--text-faint);
 	}
 

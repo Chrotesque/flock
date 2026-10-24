@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
 	COLUMN_ORDER,
 	DEFAULT_COLUMNS,
+	EXTENDED_COLUMNS,
 	columnWords,
+	extendedColumns,
 	columnsAt,
 	gridTemplate,
 	moveBefore,
@@ -93,6 +95,18 @@ describe('the grid', () => {
 		expect(gridTemplate(shown, 'mid')).toBe('var(--thumbcol) minmax(0, 1fr) 84px 104px 132px 112px');
 		expect(columnsAt(shown, 'mid')).toEqual(['thumb', 'video', 'followers', 'views', 'curve', 'usual']);
 		expect(gridTemplate(shown, 'narrow')).toBe('var(--thumbcol) minmax(0, 1fr) 96px 76px');
+	});
+
+	it('draws the Extended Stats set whatever the layout, the thumbnail as the layout has it', () => {
+		const layout = setShown(moveBefore(DEFAULT_COLUMNS, 'usual', 'jestr'), 'likes', false);
+		expect(extendedColumns(layout)).toEqual(['thumb', 'video', 'views', 'likes', 'likeRate', 'comments', 'commentRate', 'followers', 'skip', 'curve', 'usual']);
+		expect(extendedColumns(setShown(DEFAULT_COLUMNS, 'thumb', false))).toEqual(['video', ...EXTENDED_COLUMNS]);
+		expect(EXTENDED_COLUMNS).not.toContain('jestr');
+	});
+
+	it('never puts the ratios in a stored layout', () => {
+		expect(readColumns([{ id: 'likeRate', on: true }, { id: 'commentRate', on: true }])).toEqual(DEFAULT_COLUMNS);
+		expect(COLUMN_ORDER).not.toContain('likeRate');
 	});
 
 	it('says a layout in words', () => {

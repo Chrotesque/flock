@@ -694,6 +694,14 @@ describe('sortRows', () => {
 		expect(sortRows(skips, 'skip').map((x) => x.release.key)).toEqual(['mid', 'old', 'new']);
 	});
 
+	it('sorts the likes and comments per view highest first, missing last', () => {
+		const rated = rows.map((row, i) => ({ ...row, likeRate: [1.5, null, 4][i], commentRate: [0.2, 0.9, null][i] }));
+		expect(sortRows(rated, 'likeRate').map((x) => x.release.key)).toEqual(['mid', 'old', 'new']);
+		expect(sortRows(rated, 'likeRate', true).map((x) => x.release.key)).toEqual(['old', 'mid', 'new']);
+		expect(sortRows(rated, 'commentRate').map((x) => x.release.key)).toEqual(['new', 'old', 'mid']);
+		expect(sortWords('likeRate', false)).toBe('highest first');
+	});
+
 	it('turns round when reversed, still missing last', () => {
 		expect(sortRows(rows, 'date', true).map((x) => x.release.key)).toEqual(['old', 'mid', 'new']);
 		expect(sortRows(rows, 'views', true).map((x) => x.release.key)).toEqual(['new', 'old', 'mid']);

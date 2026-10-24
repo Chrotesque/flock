@@ -833,7 +833,7 @@ export function periodStats(releases: Release[], filter: DashFilter, now: Date, 
 
 /* ---- sorting ---- */
 
-export type SortKey = 'date' | 'views' | 'likes' | 'comments' | 'followers' | 'usual' | 'skip';
+export type SortKey = 'date' | 'views' | 'likes' | 'comments' | 'followers' | 'usual' | 'skip' | 'likeRate' | 'commentRate';
 
 /** How a video stands on every platform in view at once. */
 export interface Overall {
@@ -879,7 +879,9 @@ export function ratioOf(judgements: Judgement[]): number | null {
 /**
  * Newest first, or most first — the skip rate fewest first, so the best is
  * on top either way — or, `reversed`, the other way round. A missing number
- * sorts last both ways, and ties newest first. `ratio` is views over usual.
+ * sorts last both ways, and ties newest first. `ratio` is views over usual;
+ * `likeRate` and `commentRate` the likes and comments per view (Extended
+ * Stats, extendedstats.ts).
  */
 export function sortRows<
 	T extends {
@@ -890,6 +892,8 @@ export function sortRows<
 		followers?: number | null;
 		ratio: number | null;
 		skip?: number | null;
+		likeRate?: number | null;
+		commentRate?: number | null;
 	}
 >(rows: T[], key: SortKey, reversed = false): T[] {
 	const value = (row: T): number | null =>
@@ -897,8 +901,8 @@ export function sortRows<
 			? row.release.at
 			: key === 'usual'
 				? row.ratio
-				: key === 'skip'
-					? (row.skip ?? null)
+				: key === 'skip' || key === 'likeRate' || key === 'commentRate'
+					? (row[key] ?? null)
 					: key === 'followers'
 						? (row.followers ?? null)
 						: row[key];
@@ -922,6 +926,8 @@ export function sortWords(key: SortKey, reversed: boolean): string {
 		comments: ['most first', 'fewest first'],
 		followers: ['most first', 'fewest first'],
 		skip: ['fewest skipped first', 'most skipped first'],
+		likeRate: ['highest first', 'lowest first'],
+		commentRate: ['highest first', 'lowest first'],
 		usual: ['furthest ahead first', 'furthest behind first']
 	}[key];
 	return reversed ? other : usual;

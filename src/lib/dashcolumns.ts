@@ -4,7 +4,8 @@
  * (shared by every browser). The thumbnail and the video's title always lead
  * — the title cannot be hidden, the thumbnail can; everything after them
  * moves and hides freely. The Jestr column exists only with the Jestr
- * integration on.
+ * integration on. Extended Stats (extendedstats.ts) draws a set of its own,
+ * with the likes and comments per view, which Settings does not offer.
  */
 
 export type ColumnId =
@@ -17,7 +18,9 @@ export type ColumnId =
 	| 'comments'
 	| 'skip'
 	| 'curve'
-	| 'usual';
+	| 'usual'
+	| 'likeRate'
+	| 'commentRate';
 
 export interface DashColumn {
 	id: ColumnId;
@@ -66,6 +69,9 @@ export const COLUMNS: Record<ColumnId, ColumnDef> = {
 		mid: null,
 		narrow: null
 	},
+	// Extended Stats' own, never in a stored layout (not in COLUMN_ORDER).
+	likeRate: { label: 'Like ratio', about: 'Likes per view, in percent', width: 'content', mid: null, narrow: null },
+	commentRate: { label: 'Comment ratio', about: 'Comments per view, in percent', width: 'content', mid: null, narrow: null },
 	curve: { label: 'From release', about: 'Views from release, the usual for its kind dashed', width: 156, mid: 132, narrow: null },
 	usual: {
 		label: 'vs usual',
@@ -79,6 +85,9 @@ export const COLUMNS: Record<ColumnId, ColumnDef> = {
 export const COLUMN_ORDER: ColumnId[] = ['thumb', 'video', 'jestr', 'followers', 'views', 'likes', 'comments', 'skip', 'curve', 'usual'];
 
 export const DEFAULT_COLUMNS: DashColumn[] = COLUMN_ORDER.map((id) => ({ id, on: true }));
+
+/** What Extended Stats shows after the title, in this order whatever the layout: no Jestr, and the ratios beside their counters. */
+export const EXTENDED_COLUMNS: ColumnId[] = ['views', 'likes', 'likeRate', 'comments', 'commentRate', 'followers', 'skip', 'curve', 'usual'];
 
 const isColumn = (id: unknown): id is ColumnId => typeof id === 'string' && (COLUMN_ORDER as string[]).includes(id);
 const FIXED = COLUMN_ORDER.filter((id) => COLUMNS[id].fixed);
@@ -141,6 +150,12 @@ export function available(id: ColumnId, { jestr }: { jestr: boolean }): boolean 
 /** The columns the list draws, in order. */
 export function shownColumns(columns: DashColumn[], options: { jestr: boolean }): ColumnId[] {
 	return columns.filter((c) => c.on && available(c.id, options)).map((c) => c.id);
+}
+
+/** The columns Extended Stats draws: the thumbnail as the layout has it, the title, then its own set. */
+export function extendedColumns(columns: DashColumn[]): ColumnId[] {
+	const thumb = columns.find((c) => c.id === 'thumb')?.on !== false;
+	return [...(thumb ? (['thumb'] as ColumnId[]) : []), 'video', ...EXTENDED_COLUMNS];
 }
 
 export type ListSize = 'wide' | 'mid' | 'narrow';

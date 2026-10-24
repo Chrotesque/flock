@@ -683,6 +683,14 @@ on the one before and red where it fell, the stronger the bigger the change;
   limit is half used, orange when it is nearly used, red on an error or a
   limit used up. Hover it for when each platform was last read, YouTube's
   quota for the day and Instagram's posts in the last 24 hours.
+- **Extended Stats**, the switch left of the status icon: one platform at a
+  time, picked by its icon in the box under the switch, with each video's
+  likes and comments per view beside them (12 likes on 1,100 views is
+  1.09 %). Its columns are views, likes, like ratio, comments, comment ratio,
+  followers, skipped, from release and vs usual, whatever Settings arranges;
+  every number on the page is that platform's alone. Meanwhile the filter's
+  platforms are greyed and not in effect — its timeframe, kinds and
+  visibility still are. The browser remembers the switch and the platform.
 - **Stored on the NAS**, folded away at the bottom: the newest uploads, with a
   delete per upload (press it twice).
 - **Renaming a video:** press the pencil at the top right twice within two
