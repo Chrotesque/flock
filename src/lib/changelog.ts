@@ -21,7 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
-	{ at: '2026-10-25T00:25:15+02:00', version: '0.18.11', line: 'Added: Log > Update Tab' },
+	{ at: '2026-10-25T00:25:15+02:00', version: '0.19.0', line: 'Added: Log > Update Tab' },
 	{ at: '2026-10-25T00:15:47+02:00', version: '0.18.10', line: 'Added: Update > What Changed' },
 	{ at: '2026-10-24T23:51:04+02:00', version: '0.18.9', line: 'Changed: Ratio View Heatmap' },
 	{ at: '2026-10-24T23:35:10+02:00', version: '0.18.8', line: 'Added: Log > Sub Filtering' },
