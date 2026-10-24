@@ -833,10 +833,10 @@ export function periodStats(releases: Release[], filter: DashFilter, now: Date, 
 
 /* ---- sorting ---- */
 
-/** One platform's likes or comments per view: Ratio View's per-platform headers sort by them. */
-export type PlatformRateKey = `${'likeRate' | 'commentRate'}:${StatPlatform}`;
+/** One platform's likes, comments or engagements per view: Ratio View's per-platform headers sort by them. */
+export type PlatformRateKey = `${'likeRate' | 'commentRate' | 'engagedRate'}:${StatPlatform}`;
 
-export const PLATFORM_RATE_KEYS: PlatformRateKey[] = (['likeRate', 'commentRate'] as const).flatMap((kind) =>
+export const PLATFORM_RATE_KEYS: PlatformRateKey[] = (['likeRate', 'commentRate', 'engagedRate'] as const).flatMap((kind) =>
 	STAT_PLATFORMS.map((p): PlatformRateKey => `${kind}:${p}`)
 );
 
@@ -854,6 +854,7 @@ export type SortKey =
 	| 'skip'
 	| 'likeRate'
 	| 'commentRate'
+	| 'engagedRate'
 	| PlatformRateKey;
 
 /** How a video stands on every platform in view at once. */
@@ -901,8 +902,9 @@ export function ratioOf(judgements: Judgement[]): number | null {
  * Newest first, or most first — the skip rate fewest first, so the best is
  * on top either way — or, `reversed`, the other way round. A missing number
  * sorts last both ways, and ties newest first. `ratio` is views over usual;
- * `likeRate` and `commentRate` the likes and comments per view (Ratio View,
- * ratioview.ts), and `rates` each platform's own, by PlatformRateKey.
+ * `likeRate`, `commentRate` and `engagedRate` the likes, comments and both
+ * together per view (Ratio View, ratioview.ts), and `rates` each platform's
+ * own, by PlatformRateKey.
  */
 export function sortRows<
 	T extends {
@@ -915,6 +917,7 @@ export function sortRows<
 		skip?: number | null;
 		likeRate?: number | null;
 		commentRate?: number | null;
+		engagedRate?: number | null;
 		rates?: Partial<Record<PlatformRateKey, number | null>>;
 	}
 >(rows: T[], key: SortKey, reversed = false): T[] {
@@ -925,7 +928,7 @@ export function sortRows<
 			? row.release.at
 			: key === 'usual'
 				? row.ratio
-				: key === 'skip' || key === 'likeRate' || key === 'commentRate'
+				: key === 'skip' || key === 'likeRate' || key === 'commentRate' || key === 'engagedRate'
 					? (row[key] ?? null)
 					: key === 'followers'
 						? (row.followers ?? null)
@@ -953,6 +956,7 @@ export function sortWords(key: SortKey, reversed: boolean): string {
 		skip: ['fewest skipped first', 'most skipped first'],
 		likeRate: ['highest first', 'lowest first'],
 		commentRate: ['highest first', 'lowest first'],
+		engagedRate: ['highest first', 'lowest first'],
 		usual: ['furthest ahead first', 'furthest behind first']
 	}[key];
 	return reversed ? other : usual;

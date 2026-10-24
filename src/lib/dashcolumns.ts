@@ -17,6 +17,7 @@ export type ColumnId =
 	| 'likes'
 	| 'comments'
 	| 'skip'
+	| 'engaged'
 	| 'curve'
 	| 'usual';
 
@@ -67,6 +68,13 @@ export const COLUMNS: Record<ColumnId, ColumnDef> = {
 		mid: null,
 		narrow: null
 	},
+	engaged: {
+		label: 'Engaged',
+		about: 'Engagement rate by views: likes and comments over views × 100, every platform together, each one below',
+		width: 'content',
+		mid: null,
+		narrow: null
+	},
 	curve: { label: 'From release', about: 'Views from release, the usual for its kind dashed', width: 156, mid: 132, narrow: null },
 	usual: {
 		label: 'vs usual',
@@ -77,7 +85,7 @@ export const COLUMNS: Record<ColumnId, ColumnDef> = {
 	}
 };
 
-export const COLUMN_ORDER: ColumnId[] = ['thumb', 'video', 'jestr', 'followers', 'views', 'likes', 'comments', 'skip', 'curve', 'usual'];
+export const COLUMN_ORDER: ColumnId[] = ['thumb', 'video', 'jestr', 'followers', 'views', 'likes', 'comments', 'skip', 'engaged', 'curve', 'usual'];
 
 export const DEFAULT_COLUMNS: DashColumn[] = COLUMN_ORDER.map((id) => ({ id, on: true }));
 
@@ -182,10 +190,11 @@ export function columnWords(columns: DashColumn[]): string {
 
 /**
  * What Ratio View shows after the title, whatever the layout: no Jestr,
- * followers or curve. Likes and comments carry their share of the views;
- * the views, the benchmark, and each of the two have a line after them.
+ * followers or curve. Likes and comments carry their share of the views,
+ * *Engaged* the two together; the views, the benchmark, and the likes and
+ * comments have a line after them.
  */
-export const RATIO_COLUMNS: ColumnId[] = ['views', 'likes', 'comments', 'skip', 'usual'];
+export const RATIO_COLUMNS: ColumnId[] = ['views', 'likes', 'comments', 'skip', 'engaged', 'usual'];
 
 /** The columns with a line after them, wherever another column follows. */
 export const RATIO_LINES: ColumnId[] = ['views', 'likes', 'comments'];

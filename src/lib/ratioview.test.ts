@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+	engagedRate,
+	engagementsOf,
 	percentWords,
 	perView,
 	platformTotal,
@@ -92,6 +94,19 @@ describe('shortTitle', () => {
 	});
 });
 
+describe('engagement rate by views', () => {
+	it('counts likes and comments as engagements, only where both were read', () => {
+		expect(engagementsOf({ likes: 15, comments: 5 })).toBe(20);
+		expect(engagementsOf({ likes: 15, comments: null })).toBeNull();
+	});
+
+	it('is engagements over views × 100, pooled by the views', () => {
+		expect(engagedRate([post(529, 15, 5)])).toBeCloseTo(3.7807, 4);
+		expect(engagedRate([post(1000, 8, 2), post(1000, 28, 2), post(500, 9, null), post(0, 3, 1)])).toBe(2);
+		expect(engagedRate([post(null, 1, 1)])).toBeNull();
+	});
+});
+
 describe('slots and totals', () => {
 	it('gives a slot to every platform any video is on, in display order', () => {
 		expect(slotPlatforms([{ posts: { facebook: post(1, 1, 1) } }, { posts: { youtube: post(1, 1, 1) } }])).toEqual(['youtube', 'facebook']);
@@ -101,7 +116,7 @@ describe('slots and totals', () => {
 
 	it('adds a platform’s counters up and pools its shares by the views', () => {
 		const total = platformTotal([post(1100, 12, 3, 40), post(900, 8, null, 20), post(null, 5, 1)]);
-		expect(total).toMatchObject({ views: 2000, likes: 25, comments: 4, likeRate: 1 });
+		expect(total).toMatchObject({ views: 2000, likes: 25, comments: 4, likeRate: 1, engagedRate: 15 / 11 });
 		expect(total.commentRate).toBeCloseTo(3 / 11, 9);
 		expect(total.skip).toBeCloseTo(31, 6);
 		expect(platformTotal([post(null, null, null)])).toMatchObject({ views: null, likes: null, likeRate: null, skip: null });

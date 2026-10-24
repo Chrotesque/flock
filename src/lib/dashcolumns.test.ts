@@ -40,7 +40,9 @@ describe('readColumns', () => {
 			{ id: 'likes', on: true },
 			{ id: 'jestr', on: true }
 		]);
-		expect(ids(read)).toEqual(['thumb', 'video', 'views', 'followers', 'usual', 'curve', 'skip', 'comments', 'likes', 'jestr']);
+		// Engaged, not stored yet, lands after Skipped, the column it follows by default.
+		expect(ids(read)).toEqual(['thumb', 'video', 'views', 'followers', 'usual', 'curve', 'skip', 'engaged', 'comments', 'likes', 'jestr']);
+		expect(read.find((c) => c.id === 'engaged')?.on).toBe(true);
 		expect(read.find((c) => c.id === 'thumb')?.on).toBe(false);
 		expect(read.find((c) => c.id === 'followers')?.on).toBe(false);
 		expect(read.find((c) => c.id === 'usual')?.on).toBe(true);
@@ -85,14 +87,14 @@ describe('moving and hiding', () => {
 describe('the grid', () => {
 	it('draws the shown columns, Jestr only with the integration', () => {
 		const layout = setShown(DEFAULT_COLUMNS, 'likes', false);
-		expect(shownColumns(layout, { jestr: false })).toEqual(['thumb', 'video', 'followers', 'views', 'comments', 'skip', 'curve', 'usual']);
+		expect(shownColumns(layout, { jestr: false })).toEqual(['thumb', 'video', 'followers', 'views', 'comments', 'skip', 'engaged', 'curve', 'usual']);
 		expect(shownColumns(layout, { jestr: true })).toContain('jestr');
 	});
 
 	it('gives each size its widths, leaving out what a narrow list drops', () => {
 		const shown = shownColumns(DEFAULT_COLUMNS, { jestr: false });
 		expect(gridTemplate(shown, 'wide')).toBe(
-			'var(--thumbcol) minmax(0, 1fr) max-content max-content max-content max-content max-content 156px max-content'
+			'var(--thumbcol) minmax(0, 1fr) max-content max-content max-content max-content max-content max-content 156px max-content'
 		);
 		expect(gridTemplate(shown, 'mid')).toBe('var(--thumbcol) minmax(0, 1fr) 84px 104px 132px 112px');
 		expect(columnsAt(shown, 'mid')).toEqual(['thumb', 'video', 'followers', 'views', 'curve', 'usual']);
@@ -101,15 +103,15 @@ describe('the grid', () => {
 
 	it('draws the Ratio View set whatever the layout, the thumbnail as the layout has it', () => {
 		const layout = setShown(moveBefore(DEFAULT_COLUMNS, 'usual', 'jestr'), 'likes', false);
-		expect(ratioColumns(layout)).toEqual(['thumb', 'video', 'views', 'likes', 'comments', 'skip', 'usual']);
+		expect(ratioColumns(layout)).toEqual(['thumb', 'video', 'views', 'likes', 'comments', 'skip', 'engaged', 'usual']);
 		expect(ratioColumns(setShown(DEFAULT_COLUMNS, 'thumb', false))).toEqual(['video', ...RATIO_COLUMNS]);
 	});
 
 	it('gives Ratio View a track per platform, a line after the views, likes and comments, and keeps the ratios longest', () => {
 		const ids = ratioColumns(DEFAULT_COLUMNS);
-		const slots = { views: 4, likes: 4, comments: 4, skip: 2, usual: 4 };
+		const slots = { views: 4, likes: 4, comments: 4, skip: 2, engaged: 4, usual: 4 };
 		expect(ratioTemplate(ids, slots, 'wide')).toBe(
-			'var(--thumbcol) minmax(max-content, 1fr) repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(2, max-content) repeat(4, max-content)'
+			'var(--thumbcol) minmax(max-content, 1fr) repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(2, max-content) repeat(4, max-content) repeat(4, max-content)'
 		);
 		// No line after the last column.
 		expect(ratioTemplate(ids, slots, 'mid')).toBe(
@@ -117,12 +119,13 @@ describe('the grid', () => {
 		);
 		expect(ratioTemplate(ids, { views: 0 }, 'narrow')).toBe('var(--thumbcol) minmax(max-content, 1fr) repeat(1, max-content) 1px repeat(1, max-content)');
 		expect(ratioOff('skip', 'mid')).toBe(true);
+		expect(ratioOff('engaged', 'mid')).toBe(true);
 		expect(ratioOff('video', 'narrow')).toBe(false);
 	});
 
 	it('says a layout in words', () => {
 		expect(columnWords(setShown(moveBefore(DEFAULT_COLUMNS, 'views', 'jestr'), 'skip', false))).toBe(
-			'Thumbnail, Video, Views, Jestr, Followers, Likes, Comments, From release, vs usual (hidden: Skipped)'
+			'Thumbnail, Video, Views, Jestr, Followers, Likes, Comments, Engaged, From release, vs usual (hidden: Skipped)'
 		);
 	});
 });

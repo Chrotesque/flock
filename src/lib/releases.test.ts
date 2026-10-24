@@ -712,6 +712,12 @@ describe('sortRows', () => {
 		expect(sortRows(rated, 'likeRate:instagram', true).map((x) => x.release.key)).toEqual(['old', 'mid', 'new']);
 		expect(sortRows(rated, 'commentRate:youtube').map((x) => x.release.key)).toEqual(['new', 'mid', 'old']);
 		expect(sortWords('commentRate:tiktok', true)).toBe('lowest first');
+		expect(sortRows(rated.map((row, i) => ({ ...row, engagedRate: [3, 1, null][i] })), 'engagedRate').map((x) => x.release.key)).toEqual([
+			'old',
+			'new',
+			'mid'
+		]);
+		expect(isPlatformRateKey('engagedRate:youtube')).toBe(true);
 		expect(isPlatformRateKey('likeRate:facebook')).toBe(true);
 		expect(isPlatformRateKey('likeRate:myspace')).toBe(false);
 	});

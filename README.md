@@ -667,7 +667,10 @@ on the one before and red where it fell, the stronger the bigger the change;
   the start: Instagram's estimate of those skipped within the first 3 seconds,
   and YouTube's plays that never became an engaged view, together on top and
   each below (weighed by views). A fresh reel shows — until Instagram has a
-  figure, a Short until YouTube Analytics has caught up, about two days. Sort by
+  figure, a Short until YouTube Analytics has caught up, about two days.
+  *Engaged* is the engagement rate by views: likes and comments over views
+  × 100, every platform together on top (weighed by views) and each below.
+  Sort by
   any column — best first, click it again for the other way round; click a video for everything YouTube
   and Instagram report about it, and to play it. It plays the copy flock filed
   in the upload's NAS folder, streamed by the NAS worker; a video sent from the
@@ -685,13 +688,14 @@ on the one before and red where it fell, the stronger the bigger the change;
   quota for the day and Instagram's posts in the last 24 hours.
 - **Ratio View**, the switch left of the status icon: the platforms side by
   side, each behind its coloured square — its views, then its likes and
-  comments with their share of its views (`20 / 1.09%`), its skip rate and
-  how it stands against usual. No sums, no followers, no curve; lines after
+  comments with their share of its views (`20 / 1.09%`), its skip rate, its
+  engagement rate and how it stands against usual. No sums, no followers, no
+  curve; lines after
   the views, the likes and the comments, and titles cut to 20 characters to
   make room. Once it is on, the platforms' marks beside the switch add a
-  platform or take it out with a click. *Likes & Ratio* and *Comments &
-  Ratio* sort by every platform together; the marks under them sort by one
-  platform's ratio, highest first (click again for lowest). A window under
+  platform or take it out with a click. *Likes & Ratio*, *Comments & Ratio*
+  and *Engaged* sort by every platform together; the marks under them sort by
+  one platform's, highest first (click again for lowest). A window under
   about 1,900 px wide scrolls the list sideways. Meanwhile the filter's
   platforms are greyed and not in effect — its timeframe, kinds and
   visibility still are. The browser remembers the switch and the platforms.

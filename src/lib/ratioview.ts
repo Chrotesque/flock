@@ -66,12 +66,27 @@ export function slotPlatforms(releases: Pick<Release, 'posts'>[], platforms: Sta
 	return STAT_PLATFORMS.filter((p) => platforms.includes(p) && releases.some((r) => r.posts[p]));
 }
 
+/**
+ * A post's engagements: its likes and comments — the two interactions flock
+ * reads on every platform (only TikTok's shares besides, so they are left
+ * out to keep the platforms comparable). Null unless both were read.
+ */
+export function engagementsOf(post: Pick<Post, 'likes' | 'comments'>): number | null {
+	return typeof post.likes === 'number' && typeof post.comments === 'number' ? post.likes + post.comments : null;
+}
+
+/** Engagement rate by views: engagements over views × 100, pooled by views over several posts. */
+export function engagedRate(posts: Pick<Post, 'likes' | 'comments' | 'views'>[]): number | null {
+	return pooledPerView(posts.map((post) => ({ count: engagementsOf(post), views: post.views })));
+}
+
 export interface PlatformTotal {
 	views: number | null;
 	likes: number | null;
 	comments: number | null;
 	likeRate: number | null;
 	commentRate: number | null;
+	engagedRate: number | null;
 	/** The skip rate over its posts, weighted by their views (pooledSkipRate). */
 	skip: number | null;
 }
@@ -86,6 +101,7 @@ export function platformTotal(posts: Post[]): PlatformTotal {
 		comments: sum('comments'),
 		likeRate: pooledPerView(posts.map((post) => ({ count: post.likes, views: post.views }))),
 		commentRate: pooledPerView(posts.map((post) => ({ count: post.comments, views: post.views }))),
+		engagedRate: engagedRate(posts),
 		skip: pooledSkipRate(posts)
 	};
 }

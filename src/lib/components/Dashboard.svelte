@@ -42,6 +42,8 @@
 		type ListSize
 	} from '$lib/dashcolumns';
 	import {
+		engagedRate,
+		engagementsOf,
 		percentWords,
 		perView,
 		platformTotal,
@@ -156,7 +158,7 @@
 	}
 
 	/** Sorted by only in Ratio View, whose headers they are. */
-	const RATIO_SORTS: SortKey[] = ['likeRate', 'commentRate', ...PLATFORM_RATE_KEYS];
+	const RATIO_SORTS: SortKey[] = ['likeRate', 'commentRate', 'engagedRate', ...PLATFORM_RATE_KEYS];
 	const SORTS: SortKey[] = ['date', 'views', 'likes', 'comments', 'followers', 'skip', 'usual', ...RATIO_SORTS];
 	let filter = $state<Filter>(readFilter(parsed(readPref(FILTER_KEY))));
 	let sort = $state<SortKey>(SORTS.find((s) => s === readPref(SORT_KEY)) ?? 'date');
@@ -457,7 +459,9 @@
 		/** Likes and comments per view over every platform in view, in percent: what Ratio View sorts by. */
 		likeRate: number | null;
 		commentRate: number | null;
-		/** Each platform's own likes and comments per view, by PlatformRateKey: Ratio View's per-platform sorts. */
+		/** Likes and comments together per view over the platforms in view, pooled by views (ratioview.ts). */
+		engagedRate: number | null;
+		/** Each platform's own likes, comments and both per view, by PlatformRateKey: Ratio View's per-platform sorts. */
 		rates: Partial<Record<PlatformRateKey, number | null>>;
 	}
 
@@ -489,12 +493,14 @@
 				followers: sumOf(release, view.platforms, 'followers'),
 				likeRate: perView(likes, views),
 				commentRate: perView(comments, views),
+				engagedRate: engagedRate(posts),
 				rates: Object.fromEntries(
 					STAT_PLATFORMS.flatMap((p) => {
 						const post = release.posts[p];
 						return [
 							[`likeRate:${p}`, perView(post?.likes, post?.views)],
-							[`commentRate:${p}`, perView(post?.comments, post?.views)]
+							[`commentRate:${p}`, perView(post?.comments, post?.views)],
+							[`engagedRate:${p}`, post ? engagedRate([post]) : null]
 						];
 					})
 				),
@@ -564,7 +570,18 @@
 	}
 	const templateAt = (size: ListSize) =>
 		ratioView
-			? ratioTemplate(columns, { views: spanOf('views'), likes: spanOf('likes'), comments: spanOf('comments'), skip: spanOf('skip'), usual: spanOf('usual') }, size)
+			? ratioTemplate(
+					columns,
+					{
+						views: spanOf('views'),
+						likes: spanOf('likes'),
+						comments: spanOf('comments'),
+						skip: spanOf('skip'),
+						engaged: spanOf('engaged'),
+						usual: spanOf('usual')
+					},
+					size
+				)
 			: gridTemplate(columns, size);
 	const grids = $derived({ wide: templateAt('wide'), mid: templateAt('mid'), narrow: templateAt('narrow') });
 	/** A cell's classes: its column, whether it is sized to its content, and whether the narrower lists leave it out. */
@@ -756,9 +773,39 @@
 			"Each platform's likes, then their share of its views: 12 likes on 1,100 views is 12 / 1.09%. Sorted by every platform's likes together against their views together; the marks under it sort by one platform's.",
 		comments:
 			"Each platform's comments, then their share of its views: 3 comments on 1,100 views is 3 / 0.27%. Sorted by every platform's comments together against their views together; the marks under it sort by one platform's.",
+		engaged:
+			"Engagement rate by views: each platform's engagements — its likes and comments, the two every platform reports — over its views × 100; 15 likes and 5 comments on 529 views is 3.78%. Sorted by every platform together; the marks under it sort by one platform's.",
 		usual: "Each platform's views against the usual for the kind at the same age; within a fifth either way is about usual. Sorted by every platform together."
 	};
 	const SHARE_WORDS = { likes: ['like', 'likes'], comments: ['comment', 'comments'] } as const;
+	/** The header sorting by every platform together, its name, and what one platform's mark under it sorts by. */
+	const RATE_HEADS = {
+		likes: { kind: 'likeRate', label: 'Likes & Ratio', what: 'like ratio' },
+		comments: { kind: 'commentRate', label: 'Comments & Ratio', what: 'comment ratio' },
+		engaged: { kind: 'engagedRate', label: 'Engaged', what: 'engagement rate' }
+	} as const;
+
+	const ENGAGED_ABOUT =
+		"Engagement rate by views: engagements — likes and comments, the two every platform reports — over views × 100; 15 likes and 5 comments on 529 views is 3.78%. On top every platform in view together, pooled by views, and under it each platform's own.";
+
+	/** A video's engagement rate in words, a line per platform, and together where there are several. */
+	function engagedRows(row: Row): string {
+		if (row.posts.length === 0) return 'Nothing in view';
+		const lines = row.posts.map((post) => engagedTitle(post.platform, post));
+		if (row.posts.length > 1 && row.engagedRate !== null) lines.push(`Together: ${percent(row.engagedRate)}, pooled by views`);
+		return lines.join('\n');
+	}
+
+	/** One platform's engagement rate in words: what it is made of. */
+	function engagedTitle(p: StatPlatform, post: Pick<Post, 'likes' | 'comments' | 'views'>, total = false): string {
+		const label = PLATFORMS[p].label;
+		const n = engagementsOf(post);
+		if (n === null) return `${label}: ${post.likes === null ? 'likes' : 'comments'} not read yet`;
+		const parts = `${whole.format(post.likes ?? 0)} ${post.likes === 1 ? 'like' : 'likes'} + ${whole.format(post.comments ?? 0)} ${post.comments === 1 ? 'comment' : 'comments'}`;
+		const rate = engagedRate([post]);
+		const of = rate === null || post.views === null ? ', no views read yet' : ` on ${whole.format(post.views)} ${post.views === 1 ? 'view' : 'views'}: ${percent(rate)}`;
+		return `${label}: ${whole.format(n)} ${n === 1 ? 'engagement' : 'engagements'} (${parts})${of}${total ? ' — every video together, each counted where both were read' : ''}`;
+	}
 
 	/** One platform's count and its share of the views, in words; `total` for the total row. */
 	function shareTitle(p: StatPlatform, col: 'likes' | 'comments', n: number | null, views: number | null, gain = 0, total = false): string {
@@ -781,6 +828,9 @@
 	function judgedWords(j: Judgement | undefined): string {
 		return j && j.views !== null && j.usual !== null && j.usual > 0 ? againstUsual(j.views / j.usual).replace(/\s%$/, '%') : '';
 	}
+
+	// Every video's likes and comments against its views, on every platform in view, pooled by views.
+	const engagedTotal = $derived(engagedRate(rows.filter((row) => !onlyWhileEditing(row.release)).flatMap((row) => row.posts)));
 
 	// Of every view on the videos in the list on a platform that gives a skip
 	// rate (SKIP_PLATFORMS), the share skipped: each rate weighted by its views.
@@ -1231,6 +1281,8 @@
 		{@render sortHead('comments', 'Comments', cellOf(col))}
 	{:else if col === 'skip'}
 		{@render sortHead('skip', 'Skipped', cellOf(col), skipAbout)}
+	{:else if col === 'engaged'}
+		{@render sortHead('engagedRate', 'Engaged', cellOf(col), ENGAGED_ABOUT)}
 	{:else if col === 'curve'}
 		<span class="colhead {cellOf(col)}" title="Views from release, up to its first week; dashed: the usual for its kind">From release</span>
 	{:else if col === 'usual'}
@@ -1270,6 +1322,15 @@
 			>{#if skipInView.length === 1}<i style:background={PLATFORM_COLOURS[skipInView[0]]}></i>{/if}{pooledSkip === null
 				? '—'
 				: skipShown(pooledSkip)}</span
+		>
+	{:else if col === 'engaged'}
+		<span
+			class="num cell eng {cellOf(col)}"
+			class:none={engagedTotal === null}
+			title={engagedTotal === null
+				? 'No likes, comments and views read among the videos in view'
+				: `Every video's likes and comments together against every video's views, on every platform in view: ${percent(engagedTotal)}`}
+			>{percent(engagedTotal)}</span
 		>
 	{:else}
 		<span class={cellOf(col)}></span>
@@ -1369,6 +1430,18 @@
 				>
 			{/if}
 		</span>
+	{:else if col === 'engaged'}
+		<!-- Every platform in view together, and each one under it behind its square, as the counters have. -->
+		<span class="num cell stack eng {cellOf(col)}" class:none={row.engagedRate === null} title={engagedRows(row)}>
+			<span>{percent(row.engagedRate)}</span>
+			{#if multi && row.posts.length > 1}
+				<span class="parts">
+					{#each row.posts as post (post.platform)}
+						<span><i style:background={PLATFORM_COLOURS[post.platform]}></i>{percent(engagedRate([post]))}</span>
+					{/each}
+				</span>
+			{/if}
+		</span>
 	{:else if col === 'curve'}
 		<span class="spark {cellOf(col)}"><ViewsCurve curves={row.curves} /></span>
 	{:else if col === 'usual'}
@@ -1411,14 +1484,14 @@
 	{:else if col === 'views'}
 		{@render sortHead('views', 'Views', cellOf(col), RATIO_ABOUT.views, spanOf(col))}
 		{@render line(col)}
-	{:else if col === 'likes' || col === 'comments'}
+	{:else if col === 'likes' || col === 'comments' || col === 'engaged'}
 		<!-- The column's name, sorting by every platform together, and under it a sort per platform, over its slots. -->
-		{@const kind = (col === 'likes' ? 'likeRate' : 'commentRate') as 'likeRate' | 'commentRate'}
+		{@const head = RATE_HEADS[col]}
 		<span class="pcells phead {cellOf(col)}" style:grid-column="span {spanOf(col)}">
-			{@render sortHead(kind, col === 'likes' ? 'Likes & Ratio' : 'Comments & Ratio', 'pgroup', RATIO_ABOUT[col])}
+			{@render sortHead(head.kind, head.label, 'pgroup', RATIO_ABOUT[col])}
 			{#each slotsOf(col) as p (p)}
-				{@const key = `${kind}:${p}` as PlatformRateKey}
-				{@const what = `${PLATFORMS[p].label}'s ${col === 'likes' ? 'like' : 'comment'} ratio`}
+				{@const key = `${head.kind}:${p}` as PlatformRateKey}
+				{@const what = `${PLATFORMS[p].label}'s ${head.what}`}
 				<button
 					class="psort"
 					class:on={sort === key}
@@ -1470,6 +1543,15 @@
 								: `${PLATFORMS[p].label}: ${skipShown(t.skip)} of these videos' views skipped at the start (each video's rate weighted by its views)`}
 							><i style:background={PLATFORM_COLOURS[p]}></i><span class="pnum">{t.skip === null ? '—' : skipShown(t.skip)}</span></span
 						>
+					{:else if col === 'engaged'}
+						<span
+							class="pslot"
+							class:none={t.engagedRate === null}
+							title={t.engagedRate === null
+								? `${PLATFORMS[p].label}: no likes, comments and views read among these videos`
+								: `${PLATFORMS[p].label}: ${percent(t.engagedRate)} — every video's likes and comments together against every video's views`}
+							><i style:background={PLATFORM_COLOURS[p]}></i><span class="pnum"><span class="pratio">{percent(t.engagedRate)}</span></span></span
+						>
 					{/if}
 				{/each}
 			{/if}
@@ -1514,6 +1596,11 @@
 			class:none={post.skipRate == null}
 			title="{PLATFORMS[p].label}: {post.skipRate == null ? SKIP_UNKNOWN[p] : `${skipShown(post.skipRate)} ${SKIP_WORDS[p]}`}"
 			><i style:background={PLATFORM_COLOURS[p]}></i><span class="pnum">{post.skipRate == null ? '—' : skipShown(post.skipRate)}</span></span
+		>
+	{:else if col === 'engaged'}
+		{@const rate = engagedRate([post])}
+		<span class="pslot" class:none={rate === null} title={engagedTitle(p, post)}
+			><i style:background={PLATFORM_COLOURS[p]}></i><span class="pnum"><span class="pratio">{percent(rate)}</span></span></span
 		>
 	{:else if col === 'usual'}
 		{@const j = row.judgements.find((x) => x.platform === p)}
@@ -3240,7 +3327,8 @@
 		height: 6px;
 	}
 
-	.skip.none {
+	.skip.none,
+	.eng.none {
 		color: var(--text-faint);
 	}
 
