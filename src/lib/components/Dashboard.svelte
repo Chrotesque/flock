@@ -1821,38 +1821,19 @@
 		color: var(--text);
 	}
 
-	/* Hovered, a chip grows a mouse with its right button lit: right-click opens
-	   the brand's month over month. The growth is drawn over the next chip, not
-	   laid out: nothing beside it moves, and the pointer passes through it, so
-	   the next chip is hovered as soon as the pointer is on it. Opaque, and in
-	   the chip's own border and, for the chosen one, the gradient's end colour. */
+	/* Hovered or focused, a brand chip grows a mouse with its right button lit:
+	   right-click opens the brand's month over month. It grows in place, so the
+	   chips after it move right rather than being covered, and its border turns
+	   a strong light colour. */
 	.rclick {
-		position: absolute;
-		top: -1px;
-		bottom: -1px;
-		left: calc(100% - 12px);
 		display: inline-flex;
 		align-items: center;
-		padding: 0 10px 0 0;
-		border: 1px solid var(--pink-soft);
-		border-left: 0;
-		border-radius: 0 999px 999px 0;
-		background: var(--bg-elev);
-		pointer-events: none;
+		max-width: 0;
+		overflow: hidden;
 		opacity: 0;
-		clip-path: inset(0 100% 0 0);
 		transition:
-			opacity 0.16s,
-			clip-path 0.16s;
-	}
-
-	.hint.on .rclick {
-		border-color: var(--pink);
-		background: linear-gradient(rgba(255, 77, 158, 0.18), rgba(255, 77, 158, 0.18)), var(--bg-elev);
-	}
-
-	.hint.tinted:not(.on) .rclick {
-		border-color: color-mix(in srgb, var(--chip) 70%, transparent);
+			max-width 0.16s,
+			opacity 0.16s;
 	}
 
 	.rclick i {
@@ -1875,38 +1856,20 @@
 		stroke: none;
 	}
 
-	/* Set apart while it shows: a blurred outline straight underneath, round the
-	   chip and its growth together (a filter takes in the drawn-over part, a
-	   box-shadow would not). */
-	.hint {
-		transition:
-			border-color 0.14s,
-			background 0.14s,
-			color 0.14s,
-			filter 0.16s;
+	.hint:hover .rclick,
+	.hint:focus-visible .rclick {
+		max-width: 34px;
+		opacity: 1;
 	}
 
 	.hint:hover,
 	.hint:focus-visible {
-		z-index: 2;
-		filter: drop-shadow(0 0 2px #000) drop-shadow(0 0 7px #000) drop-shadow(0 0 14px #000);
+		border-color: #ffd0e4;
 	}
 
-	/* On the same ground as its growth, so the two meet without a seam. */
-	.hint:not(.on):hover,
-	.hint:not(.on):focus-visible {
-		background: var(--bg-elev);
-	}
-
-	.hint.on:hover,
-	.hint.on:focus-visible {
-		background: var(--accent-grad-soft), var(--bg-elev);
-	}
-
-	.hint:hover .rclick,
-	.hint:focus-visible .rclick {
-		opacity: 1;
-		clip-path: inset(0 0 0 0);
+	.hint.tinted:not(.on):hover,
+	.hint.tinted:not(.on):focus-visible {
+		border-color: color-mix(in srgb, var(--chip) 45%, #fff);
 	}
 
 	@media (prefers-reduced-motion: reduce) {
