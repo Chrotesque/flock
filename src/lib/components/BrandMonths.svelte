@@ -6,7 +6,7 @@
 	import { brands } from '$lib/stores/brands.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
 	import { dashData } from '$lib/stores/dashdata.svelte';
-	import { accountFor } from '$lib/accounts';
+	import { accountFor, accountLabel } from '$lib/accounts';
 	import { stateOf } from '$lib/followers';
 	import { onTikTokAccount, tiktokReportOf } from '$lib/tiktokaccount';
 	import { PLATFORMS } from '$lib/platforms';
@@ -94,11 +94,17 @@
 		return Number.isFinite(latest) ? Math.min(latest, now) : now;
 	}
 
-	/** Each platform the brand posts on: its whole months and the month still running, and where they come from or why there are none. */
+	/**
+	 * Each platform the brand posts on: its whole months and the month still
+	 * running, the account they are read from (YouTube by channel name, a Page
+	 * by its name, Instagram and TikTok by handle) and where they come from or
+	 * why there are none.
+	 */
 	const sources = $derived(
-		STAT_PLATFORMS.flatMap((platform): { source: PlatformMonths; note: string }[] => {
+		STAT_PLATFORMS.flatMap((platform): { source: PlatformMonths; who: string; note: string }[] => {
 			const account = accountFor(brand, platform, accounts.list, brands.list.length);
 			if (!account) return [];
+			const who = platform === 'instagram' || platform === 'tiktok' ? accountLabel(account) : account.name || accountLabel(account);
 			if (platform === 'youtube' || platform === 'instagram') {
 				const state = stateOf(dashData.followers, platform, account.account_id);
 				const months = state?.monthly ?? null;
@@ -106,7 +112,7 @@
 				const note = months
 					? from
 					: `${from} — not read yet: the worker reads them ${platform === 'youtube' ? 'every 6 hours (with the Analytics grant)' : 'once a day'}`;
-				return [{ source: { platform, months: months ?? {}, part: storedPart(state?.monthPart) }, note }];
+				return [{ source: { platform, months: months ?? {}, part: storedPart(state?.monthPart) }, who, note }];
 			}
 			const rows = dashData.reels.filter((r) =>
 				r.platform === platform && (platform === 'tiktok' ? onTikTokAccount(r, account) : r.account === account.account_id)
@@ -120,7 +126,7 @@
 					: Object.keys(months).length > 0 || part
 						? `flock's own reads since ${day(first)}`
 						: `flock's own reads since ${day(first)} — the first whole month is ${monthName(firstWhole ?? '', 'long')}`;
-			return [{ source: { platform, months, part }, note }];
+			return [{ source: { platform, months, part }, who, note }];
 		})
 	);
 	/** Every month flock has, newest first; the timeframe's for the list, oldest first for the graphs. */
@@ -221,14 +227,17 @@
 			{#if sources.length > 0}
 				<!-- Where each platform's numbers come from, on hover or focus. -->
 				<div class="hold">
-					<button class="sourcebtn" aria-label="Where the numbers come from" aria-describedby="month-sources">
+					<button class="sourcebtn" aria-label="The accounts and where their numbers come from" aria-describedby="month-sources">
 						{#each sources as s (s.source.platform)}<PlatformIcon platform={s.source.platform} size={16} />{/each}
 					</button>
 					<div class="ppop" id="month-sources" role="tooltip">
 						{#each sources as s (s.source.platform)}
 							<p class="pline">
 								<i style:background={PLATFORM_COLOURS[s.source.platform]}></i>
-								<span><strong>{label(s.source.platform)}</strong> {s.note}</span>
+								<span>
+									<strong>{label(s.source.platform)}</strong>{#if s.who}<span class="who">{s.who}</span>{/if}
+									<span class="note">{s.note}</span>
+								</span>
 							</p>
 						{/each}
 					</div>
@@ -459,6 +468,15 @@
 	.pline strong {
 		font-weight: 600;
 		color: var(--text-dim);
+	}
+
+	.pline .who {
+		margin-left: 6px;
+		color: var(--text);
+	}
+
+	.pline .note {
+		display: block;
 	}
 
 	i {

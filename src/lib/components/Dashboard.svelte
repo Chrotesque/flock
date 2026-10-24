@@ -875,7 +875,7 @@
 	});
 	const statusLevel = $derived(worstLevel(statusLines.map((line) => line.level)));
 
-	/** The account a platform's numbers are read from, for the legend: YouTube by channel name, a Page by its name, Instagram and TikTok by handle. */
+	/** The account a platform's numbers are read from, for the status lines: YouTube by channel name, a Page by its name, Instagram and TikTok by handle. */
 	function accountOf(p: StatPlatform): string {
 		const account = p === 'youtube' ? noteChannel : p === 'facebook' ? noteFacebook : p === 'tiktok' ? noteTikTok : noteInstagram;
 		if (!account) return '';
@@ -1312,12 +1312,6 @@
 				<BrandMonths brand={brandPanel} onclose={() => (brandPanel = null)} />
 			{/if}
 		{/if}
-		<span class="legend">
-			{#each filter.platforms as p (p)}
-				{@const account = accountOf(p)}
-				<span><i style:background={PLATFORM_COLOURS[p]}></i>{PLATFORMS[p].label}{#if account}<em>({account})</em>{/if}</span>
-			{/each}
-		</span>
 		<div class="aside">
 			<!-- When each platform was read and what is left of the day, behind one
 			     icon coloured by the worst of it; hover or focus shows the lines. -->
@@ -1816,20 +1810,6 @@
 		color: var(--text);
 	}
 
-	.legend {
-		display: inline-flex;
-		flex-wrap: wrap;
-		gap: 4px 14px;
-		font-size: 11.5px;
-		color: var(--text-dim);
-	}
-
-	.legend em {
-		margin-left: 4px;
-		font-style: normal;
-		color: var(--text-faint);
-	}
-
 	.aside {
 		display: flex;
 		align-items: center;
@@ -2116,7 +2096,6 @@
 		color: var(--pink-soft);
 	}
 
-	.legend span,
 	.split span,
 	.parts span,
 	.sub span {
