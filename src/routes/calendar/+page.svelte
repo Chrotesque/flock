@@ -11,6 +11,7 @@
 	import { base } from '$app/paths';
 	import { MoveRefused, isMoving, landReason, lockReason, moveRefusal } from '$lib/reschedule';
 	import { isPlatformId, PLATFORMS, PLATFORM_IDS } from '$lib/platforms';
+	import { productLabel } from '$lib/product';
 	import { addDays, dayStart, isoDate, makeTime, minuteOf } from '$lib/format';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
@@ -81,7 +82,7 @@
 		 */
 		brand: string;
 		brandName: string;
-		/** The upload's product name, shown under its box while editing; '' for none. */
+		/** The upload's product name as stored; shown under its box while editing (productLabel); '' for none. */
 		product: string;
 	}
 
@@ -354,7 +355,7 @@
 				groupOf={(entry) => entry.job}
 				past={(entry) => entry.past}
 				groupTip={uploadTip}
-				groupLabel={editing ? (items) => items[0]?.product ?? '' : undefined}
+				groupLabel={editing ? (items) => productLabel(items[0]?.product ?? '') : undefined}
 				card={cardFor}
 				center={actions}
 				toolbar={legend}
@@ -410,7 +411,7 @@
 			.filter((entry) => entry.job === first.job)
 			.map((entry) => ({ ...entry, status: statusLabel(entry), ...moveNote(entry) }))}
 		brand={labelBrands ? brandOf(first) : ''}
-		product={editing ? first.product : ''}
+		product={editing ? productLabel(first.product) : ''}
 	/>
 {/snippet}
 

@@ -31,7 +31,7 @@
 		posts: Post[];
 		date: string;
 		brand?: string;
-		/** The upload's product name in full — its box may show it cut short. */
+		/** The upload's product name, uncut — its box may end it in "…". */
 		product?: string;
 	} = $props();
 

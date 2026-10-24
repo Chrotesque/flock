@@ -712,7 +712,8 @@ current hour is marked in pink; hover a box to read every post of that upload.
 It opens read-only: press *Edit* twice within two seconds, then drag an icon
 to move that platform's post, or a box's grip (its left edge) to move the
 whole upload, to another day or hour at least 15 minutes ahead. In Edit mode
-each box also shows its upload's product name under the icons. A YouTube
+each box also shows its upload's product name under the icons: the part
+before a colon, and a name typed in capitals in normal capitals. A YouTube
 video or Facebook reel already uploaded moves there too: the worker gives the
 platform the new time within seconds. Right-click any post of an upload to
 release all of it at once or delete it, or tick the platforms to release or
