@@ -39,7 +39,7 @@
 		marker,
 		offscreen,
 		dense = false,
-		rowSpace = 0,
+		rowHeight = 20,
 		allHours = false,
 		quarters = false,
 		dayCount = 7,
@@ -111,8 +111,11 @@
 		 * would treble the row height for no gain.
 		 */
 		dense?: boolean;
-		/** With `dense`, room added above and below each hour's cards, in px. */
-		rowSpace?: number;
+		/**
+		 * With `dense`, an hour row's least height in px, its border included.
+		 * 20 holds an 18px card; the Calendar's 16px boxes fit in 17.
+		 */
+		rowHeight?: number;
 		/** Every hour at once: the grid is as tall as its 24 rows, with no scrolling inside it. */
 		allHours?: boolean;
 		/**
@@ -165,7 +168,7 @@
 	} = $props();
 
 	const HOURS = Array.from({ length: 24 }, (_, i) => i);
-	let rowPx = $derived(dense ? 20 + 2 * rowSpace : 56);
+	let rowPx = $derived(dense ? rowHeight : 56);
 
 	/* ---- now ----
 	 *
@@ -1067,7 +1070,6 @@
 							class:now={thisHour && day.iso === today}
 							class:over={over === key(day.iso, hour)}
 							data-cell={key(day.iso, hour)}
-							style:padding-block={dense && rowSpace ? `${rowSpace}px` : undefined}
 						>
 							{#each bundlesAt(day.iso, hour) as bundle (bundle.key)}
 								{@const label = groupOf && groupLabel ? groupLabel(bundle.items).trim() : ''}
@@ -1220,17 +1222,9 @@
 		grid-template-columns: var(--gutter) repeat(var(--days, 7), minmax(0, 1fr));
 	}
 
-	/* Two or three weeks side by side: narrower day heads, the date on top of
-	   the markers rather than beside them. */
+	/* Two or three weeks side by side: narrower day heads. */
 	.calendar.many .dayhead {
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 4px;
-		padding: 7px 6px;
-	}
-
-	.calendar.many .dom {
-		font-size: 15px;
+		padding: 2px 6px;
 	}
 
 	.head {
@@ -1238,11 +1232,12 @@
 		background: var(--surface-2);
 	}
 
+	/* The zone selector sets the head row's height: it and 2px either side. */
 	.corner {
 		border-right: 1px solid var(--border);
 		display: grid;
 		align-items: center;
-		padding: 6px;
+		padding: 2px 6px;
 	}
 
 	.zonepick {
@@ -1263,13 +1258,23 @@
 		color: var(--text);
 	}
 
+	/* The day's name and number on one line, at either end of the head; the
+	   markers, where there are any, on a line under them. Centred in the
+	   row, which the zone selector beside them makes tall enough. */
 	.dayhead {
-		padding: 9px 10px;
+		padding: 2px 10px;
 		border-right: 1px solid var(--border);
 		display: flex;
-		align-items: center;
+		flex-direction: column;
+		justify-content: center;
+		gap: 4px;
+	}
+
+	.daymeta {
+		display: flex;
+		align-items: baseline;
 		justify-content: space-between;
-		gap: 8px;
+		gap: 6px;
 	}
 
 	.dayhead:last-child {
@@ -1281,7 +1286,6 @@
 	}
 
 	.dow {
-		display: block;
 		font-size: 9.5px;
 		font-weight: 700;
 		letter-spacing: 0.09em;
@@ -1293,12 +1297,12 @@
 		color: var(--pink-soft);
 	}
 
+	/* The name's size and weight, in the brighter text colour. */
 	.dom {
-		display: block;
-		font-size: 17px;
-		font-weight: 620;
-		letter-spacing: -0.02em;
-		line-height: 1.15;
+		font-size: 9.5px;
+		font-weight: 700;
+		letter-spacing: 0.09em;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.dayhead.today .dom {
@@ -1407,12 +1411,12 @@
 	}
 
 	/* One upload's posts in this hour: its platforms side by side in one
-	   box, as tall as the slim row. */
+	   box, as tall as the Calendar's row (rowHeight 17, its border aside). */
 	.bundle.boxed {
 		display: inline-flex;
 		align-items: center;
 		gap: 2px;
-		height: 18px;
+		height: 16px;
 		padding: 0 3px;
 		border-radius: 6px;
 		border: 1px solid var(--border-strong);
@@ -1433,7 +1437,7 @@
 		height: auto;
 		min-width: 0;
 		max-width: 100%;
-		padding: 2px 4px 3px;
+		padding: 2px 4px;
 	}
 
 	.bundlerow {
@@ -1441,7 +1445,7 @@
 		align-items: center;
 		justify-content: center;
 		gap: 2px;
-		height: 16px;
+		height: 14px;
 	}
 
 	/* Centred, so it takes its own width: capped at the box's as well, or a
@@ -1497,7 +1501,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 2px;
-		height: 18px;
+		height: 16px;
 		padding: 0 3px;
 		border-radius: 6px;
 		border: 1px solid var(--pink-soft);
@@ -1549,7 +1553,7 @@
 	   filled, its row tinted, today's cell outlined — above it is done,
 	   below it is still to come. */
 	.timelabel.now .hourtext {
-		padding: 2px 6px;
+		padding: 1px 6px;
 		border-radius: 5px;
 		background: var(--pink);
 		color: #fff;
@@ -1856,12 +1860,6 @@
 
 		.calendar {
 			overflow-x: auto;
-		}
-
-		.dayhead {
-			flex-direction: column;
-			align-items: flex-start;
-			gap: 4px;
 		}
 
 		.markers {
