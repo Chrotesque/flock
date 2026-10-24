@@ -77,11 +77,16 @@ test('an edit of a post flock holds after all goes on its row; one in hand waits
 	assert.equal(requestStep(row({ request: edit, status: 'publishing' })).action, 'wait');
 });
 
-test('an edit of a post another platform holds is dropped, with why', () => {
+test("an edit of a reel Facebook holds is Facebook's to change", () => {
 	const reel = { platform: 'facebook', remote_url: 'https://www.facebook.com/reel/2229/', handle: { videoId: '2229' }, request: edit };
+	assert.deepEqual(requestStep(row(reel)), { action: 'retext', request: edit, remoteId: '2229' });
+});
+
+test('an edit of a post Instagram or TikTok has is dropped, with why', () => {
+	const reel = { platform: 'instagram', status: 'published', remote_url: 'https://www.instagram.com/reel/x/', request: edit };
 	assert.deepEqual(requestStep(row(reel)), {
 		action: 'drop',
 		request: edit,
-		reason: 'flock cannot edit a Facebook post once Facebook has it'
+		reason: 'Instagram lets flock change nothing on a post once it has it'
 	});
 });

@@ -24,7 +24,7 @@
 		updateJobImages,
 		type TargetPlan
 	} from '$lib/repo';
-	import { planEdit, stepWords, type EditRow } from '$lib/uploadedit';
+	import { planEdit, stepWords, type EditRow, type EditStep } from '$lib/uploadedit';
 	import { uploadEdit } from '$lib/stores/uploadedit.svelte';
 	import { logAction } from '$lib/log';
 	import { findMentions, handleKey, mentionNotes } from '$lib/tiktokmentions';
@@ -85,16 +85,23 @@
 	});
 
 	/** The wizard's posts as an edit would save them (uploadedit.ts). */
-	function editRows(rows: PlanRow[], job: string): EditRow[] {
-		return rows.map((row) => ({
-			platform: row.platform,
-			title: row.title,
-			description: row.description,
-			options: $state.snapshot(row.options) as OptionValues,
-			at: toInstant(row.date, row.time),
-			immediate: row.immediate,
-			kept: draft.videoFor(row.platform).kept?.job === job
-		}));
+	function editRows(rows: PlanRow[], session: EditSession): EditRow[] {
+		const kept = groupsOf(rows).find((group) => group.video.kept?.job === session.job);
+		const pictures = imageEdits(session, kept).changed;
+		return rows.map((row) => {
+			const picture = pictures.find((c) => c.platform === row.platform);
+			const now = picture ? draft.imageFor(picture.platform) : null;
+			return {
+				platform: row.platform,
+				title: row.title,
+				description: row.description,
+				options: $state.snapshot(row.options) as OptionValues,
+				at: toInstant(row.date, row.time),
+				immediate: row.immediate,
+				kept: draft.videoFor(row.platform).kept?.job === session.job,
+				...(picture ? { cover: now && imageFits(now, picture.platform) ? ('changed' as const) : ('removed' as const) } : {})
+			};
+		});
 	}
 
 	/**
@@ -109,13 +116,13 @@
 			posts: session.targets,
 			baseline: session.baseline,
 			opened,
-			rows: editRows(plan, session.job)
+			rows: editRows(plan, session)
 		});
 		const kept = groupsOf(plan).find((group) => group.video.kept?.job === session.job);
 		const others = groupsOf(plan).filter((group) => !group.video.kept);
 		const lines = [
 			...steps.map(stepWords),
-			...imageEdits(session, kept).words,
+			...imageWords(imageEdits(session, kept).changed, steps),
 			...others.map((group) => `${group.platforms.map((id) => PLATFORMS[id].label).join(', ')}: new video ${draft.slotName(group.slot)}`)
 		];
 		return { lines, refused };
@@ -412,10 +419,13 @@
 	 * kept video whose picture is not the one the edit opened with gets the
 	 * new one, or none (the platform then picks a frame).
 	 */
-	function imageEdits(session: EditSession, kept: Group | undefined): { fields: Parameters<typeof updateJobImages>[1]; words: string[] } {
+	function imageEdits(
+		session: EditSession,
+		kept: Group | undefined
+	): { fields: Parameters<typeof updateJobImages>[1]; changed: { platform: ImagePlatform; words: string }[] } {
 		const fields: Parameters<typeof updateJobImages>[1] = {};
-		const words: string[] = [];
-		if (!kept) return { fields, words };
+		const changed: { platform: ImagePlatform; words: string }[] = [];
+		if (!kept) return { fields, changed };
 		const covers = coversFor(kept.platforms);
 		const map = [
 			['instagram', 'cover', covers.cover],
@@ -427,9 +437,17 @@
 			const opened = session.images[platform] ?? null;
 			if (draft.imageFor(platform) === opened) continue;
 			fields[field] = file;
-			words.push(`${PLATFORMS[platform].label}: ${file ? 'cover changed' : 'cover taken off'}`);
+			changed.push({ platform, words: `${PLATFORMS[platform].label}: ${file ? 'cover changed' : 'cover taken off'}` });
 		}
-		return { fields, words };
+		return { fields, changed };
+	}
+
+	/**
+	 * Lines for the pictures an edit changed, but not for a post the worker is
+	 * told of: its own line says so.
+	 */
+	function imageWords(changed: { platform: ImagePlatform; words: string }[], steps: EditStep[]): string[] {
+		return changed.filter((c) => !steps.some((s) => s.kind === 'ask' && s.platform === c.platform)).map((c) => c.words);
 	}
 
 	/**
@@ -453,13 +471,13 @@
 			if (!job) return refuse('This upload is gone — it was deleted since the edit opened.');
 			const everyGroup = groupsOf(plan);
 			const keptGroup = everyGroup.find((group) => group.video.kept?.job === session.job);
-			const rows = editRows(plan, session.job);
+			const rows = editRows(plan, session);
 			const opened = session.posts.filter((post) => !post.locked).map((post) => post.platform);
 			const { steps, refused } = planEdit({ posts: targets, baseline: session.baseline, opened, rows });
 			if (refused.length > 0) return refuse(`Nothing saved. ${refused.join(' ')}`);
 			const newGroups = everyGroup.filter((group) => !group.video.kept && !draft.queued.includes(group.slot));
 			const images = imageEdits(session, keptGroup);
-			if (steps.length === 0 && newGroups.length === 0 && images.words.length === 0) {
+			if (steps.length === 0 && newGroups.length === 0 && images.changed.length === 0) {
 				return refuse('Nothing changed, so there is nothing to save.');
 			}
 
@@ -477,14 +495,16 @@
 			}
 			sending = null;
 
+			// The pictures before the steps: a reel's new cover is the upload's
+			// file, which the worker reads when it is asked.
+			await updateJobImages(session.job, images.fields);
 			const added = plan.filter((row) => steps.some((step) => step.kind === 'add' && step.platform === row.platform));
 			await applyEdit(session.job, steps, added.map(targetPlan));
-			await updateJobImages(session.job, images.fields);
 			rememberSent();
 
 			const lines = [
 				...steps.map(stepWords),
-				...images.words,
+				...imageWords(images.changed, steps),
 				...newGroups.map((group) => `${group.platforms.map((id) => PLATFORMS[id].label).join(', ')}: new video ${draft.slotName(group.slot)}`)
 			];
 			const record = keptGroup ? recordOf(keptGroup, everyGroup) : undefined;

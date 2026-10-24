@@ -358,6 +358,49 @@ export async function retitleFacebookReel(config, pageId, videoId, title) {
 }
 
 /**
+ * Edits a reel on the Page, as an edit in the upload wizard asked
+ * (requests.mjs `retext`): its caption, read back until it shows — the call
+ * a rename makes — and, when the edit gave it another picture, its cover,
+ * the job's `facebook_cover` set as the preferred thumbnail as at upload and
+ * tried as long. Meta documents both for videos; neither has been run live on
+ * a reel already finished. A cover that would not take is said, not thrown:
+ * the caption is in by then.
+ */
+export async function editFacebookReel(config, row, edit, { pb, job, log = () => {} } = {}) {
+	const { page, videoId } = postReel(config, row);
+	let captionChanged = false;
+	try {
+		const before = await readCaption(page, videoId);
+		const caption = String(edit.description ?? '');
+		if (caption.trim() !== before.trim()) {
+			await graph(page, `/${videoId}`, { method: 'POST', params: { description: caption } });
+			let shown = false;
+			for (let look = 0; look < 3 && !shown; look++) {
+				shown = (await readCaption(page, videoId)).trim() === caption.trim();
+				if (!shown) await sleep(2000);
+			}
+			if (!shown) throw new Error('Facebook still shows the old caption after the change');
+			captionChanged = true;
+		}
+	} catch (err) {
+		throw explainFacebook(err);
+	}
+	let coverMissed = '';
+	if (edit.cover) {
+		if (!job?.facebook_cover) {
+			coverMissed = `${COVER_MISSING} the upload holds no Facebook cover.`;
+		} else {
+			const got = await withCoverRetries(
+				async () => setReelCover(page, videoId, await pb.openFacebookCover(job), job.facebook_cover),
+				{ retryable: transientGraphError, log }
+			);
+			if ('error' in got) coverMissed = coverNote(got.error, got);
+		}
+	}
+	return { captionChanged, coverMissed, notes: coverMissed ? [coverMissed] : [] };
+}
+
+/**
  * The time Facebook holds a post's reel for, or that it is out (or gone) —
  * for an upload from before flock kept that (reschedule.mjs `learn`).
  */

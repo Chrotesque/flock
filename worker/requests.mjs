@@ -11,8 +11,9 @@
  * - `remove`  either, for a delete: deleted on the platform, then the row
  * - `now`     flock holds it after all: its time becomes now
  * - `forget`  flock holds it after all, for a delete: the row goes
- * - `retext`  an edit of a video YouTube holds or has put out (uploadedit.ts):
- *             its title, description, tags and playlists changed there
+ * - `retext`  an edit of a video YouTube or a reel Facebook holds or has put
+ *             out (uploadedit.ts): YouTube's title, description, tags and
+ *             playlists, Facebook's caption and cover, changed there
  * - `apply`   an edit, flock holding the post after all: its row takes it
  * - `wait`    being published right now: asked again on the next tick
  * - `drop`    nothing flock can do: the request is cleared, with why
@@ -61,12 +62,14 @@ export function requestStep(row, { held = false } = {}) {
 	return { action: row.platform === 'youtube' ? 'publish' : 'resend', request, remoteId };
 }
 
-/** An edit: a YouTube video's text and playlists changed there, wherever it stands; flock's own post rewritten. */
+/** An edit: a YouTube video's or Facebook reel's changed there, wherever it stands; flock's own post rewritten. */
 function editStep(row, request, name) {
 	const onPlatform = row.status === 'scheduled' || row.status === 'published' || Boolean(row.remote_url);
 	if (!onPlatform) return { action: 'apply', request };
-	if (row.platform !== 'youtube') return { action: 'drop', request, reason: `flock cannot edit a ${name} post once ${name} has it` };
-	const remoteId = youtubeVideoId(row.remote_url);
+	if (row.platform !== 'youtube' && row.platform !== 'facebook') {
+		return { action: 'drop', request, reason: `${name} lets flock change nothing on a post once it has it` };
+	}
+	const remoteId = row.platform === 'youtube' ? youtubeVideoId(row.remote_url) : facebookVideoId(row);
 	if (!remoteId) return { action: 'drop', request, reason: `its ${name} link names no video` };
 	return { action: 'retext', request, remoteId };
 }

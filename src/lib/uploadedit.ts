@@ -11,12 +11,13 @@ import type { OptionValues, PlatformId, UploadTarget } from './types';
  * Who holds each post decides what an edit can do, as for moves
  * (reschedule.ts). A post flock still holds — pending, its slot ahead and not
  * yet taken up, or failed with nothing on the platform — is the page's to
- * rewrite: text, options, time, cover, even the video. A YouTube video the
- * platform already holds for its time is the worker's: its title,
- * description, tags and playlists change through YouTube's API
- * (worker/requests.mjs), its time through the move the Calendar already
- * makes, nothing else. Anything out already, being sent, or about to be, is
- * left as it is: it opens locked, with why.
+ * rewrite: text, options, time, cover, even the video. A YouTube video or
+ * Facebook reel the platform already holds for its time is the worker's
+ * (worker/requests.mjs): YouTube's title, description, tags and playlists,
+ * Facebook's caption and cover change through their APIs, the time through
+ * the move the Calendar already makes, nothing else; another video goes up
+ * as a new upload, the old one deleted there. Anything out already, being
+ * sent, or about to be, is left as it is: it opens locked, with why.
  *
  * What changed is worked out against the upload as it was loaded into the
  * wizard (`baseline`), not against the stored rows: the text there is what
@@ -37,7 +38,7 @@ export type EditPost = Pick<UploadTarget, 'id' | 'platform' | 'status' | 'schedu
 export type EditHold = { by: 'page' } | { by: 'worker' } | { refused: string };
 
 /** The platforms whose post the worker edits once the platform holds it. */
-export const WORKER_EDITS: readonly PlatformId[] = ['youtube'];
+export const WORKER_EDITS: readonly PlatformId[] = ['youtube', 'facebook'];
 
 export function editHold(post: ActionPost, now = Date.now()): EditHold {
 	const name = PLATFORMS[post.platform]?.label ?? post.platform;
@@ -72,6 +73,8 @@ export interface EditRow extends EditState {
 	immediate: boolean;
 	/** On the upload's own video still; false when another one was picked for it. */
 	kept: boolean;
+	/** Its picture against the one the edit opened with: another, none, or the same (absent). */
+	cover?: 'changed' | 'removed';
 }
 
 /** What a post's edit touched. */
@@ -80,6 +83,8 @@ export interface EditChanges {
 	/** Option keys whose value differs. */
 	options: string[];
 	time: boolean;
+	/** Its picture changed or taken off. */
+	cover: boolean;
 }
 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -91,12 +96,13 @@ export function editChanges(base: EditState, row: EditRow): EditChanges {
 	return {
 		text: row.title !== base.title || row.description !== base.description,
 		options: keys.filter((key) => !same(base.options[key], row.options[key])),
-		time: row.immediate || minute(row.at) !== minute(base.at)
+		time: row.immediate || minute(row.at) !== minute(base.at),
+		cover: Boolean(row.cover)
 	};
 }
 
 export function changedAnything(changes: EditChanges): boolean {
-	return changes.text || changes.options.length > 0 || changes.time;
+	return changes.text || changes.options.length > 0 || changes.time || changes.cover;
 }
 
 /**
@@ -112,6 +118,16 @@ export const YOUTUBE_EDITABLE: readonly string[] = [
 	'playlist'
 ];
 
+/**
+ * What each platform lets a post it holds change through its API beyond the
+ * text and the time, and those changes in words. Facebook's reel takes a new
+ * caption and a new cover; it has no options to change.
+ */
+const WORKER_EDITABLE: Partial<Record<PlatformId, { keys: readonly string[]; words: string }>> = {
+	youtube: { keys: YOUTUBE_EDITABLE, words: 'its title, description, tags and playlists' },
+	facebook: { keys: [], words: 'its caption and cover' }
+};
+
 /** An option key in the screens' words. */
 const optionLabel = optionName;
 
@@ -125,6 +141,8 @@ export interface EditRequest {
 	options: OptionValues;
 	/** As the post stood, for the playlists to leave and the Log line. */
 	before: { title: string; description: string; options: OptionValues };
+	/** A new cover: the upload's picture for the platform, written there before this was asked. */
+	cover?: boolean;
 }
 
 export type EditStep =
@@ -180,14 +198,13 @@ export function planEdit({ posts, baseline, opened, rows, now = Date.now() }: Ed
 		const hold = editHold(post, now);
 		if (!row.kept) {
 			if ('refused' in hold) refused.push(`${name(row.platform)}: ${hold.refused}`);
-			else if (hold.by === 'worker') refused.push(`${name(row.platform)}: ${name(row.platform)} has the video already; flock cannot swap it there yet.`);
 			else steps.push({ kind: 'replace', id: post.id, platform: row.platform, by: hold.by });
 			continue;
 		}
 		const base = baseline[row.platform];
 		const changes = base
 			? editChanges(base, row)
-			: { text: true, options: Object.keys(row.options), time: true };
+			: { text: true, options: Object.keys(row.options), time: true, cover: Boolean(row.cover) };
 		if (!changedAnything(changes)) continue;
 		if ('refused' in hold) {
 			refused.push(`${name(row.platform)}: ${hold.refused}`);
@@ -219,15 +236,20 @@ export function planEdit({ posts, baseline, opened, rows, now = Date.now() }: Ed
 			refused.push(`${name(row.platform)}: ${name(row.platform)} holds it for its time — release it from the Calendar's menu instead.`);
 			continue;
 		}
-		const fixed = changes.options.filter((key) => !YOUTUBE_EDITABLE.includes(key));
+		const editable = WORKER_EDITABLE[row.platform] ?? { keys: [], words: 'its text' };
+		const fixed = changes.options.filter((key) => !editable.keys.includes(key));
 		if (fixed.length > 0) {
 			refused.push(
-				`${name(row.platform)}: ${name(row.platform)} has the video already, so only its title, description, tags and playlists ` +
+				`${name(row.platform)}: ${name(row.platform)} has the video already, so only ${editable.words} ` +
 					`can change — not ${fixed.map((key) => optionLabel(row.platform, key)).join(', ')}.`
 			);
 			continue;
 		}
-		const asks = changes.text || changes.options.length > 0;
+		if (row.cover === 'removed') {
+			refused.push(`${name(row.platform)}: ${name(row.platform)} keeps the cover it has; pick another picture rather than none.`);
+			continue;
+		}
+		const asks = changes.text || changes.options.length > 0 || changes.cover;
 		steps.push({
 			kind: 'ask',
 			id: post.id,
@@ -238,7 +260,8 @@ export function planEdit({ posts, baseline, opened, rows, now = Date.now() }: Ed
 						title: row.title,
 						description: row.description,
 						options: row.options,
-						before: { title: post.title, description: post.description, options: post.options }
+						before: { title: post.title, description: post.description, options: post.options },
+						...(changes.cover ? { cover: true } : {})
 					}
 				: null,
 			at: changes.time ? row.at : null,
@@ -265,6 +288,7 @@ export function stepWords(step: EditStep): string {
 		[
 			changes.text ? 'text' : '',
 			...changes.options.map((key) => optionLabel(step.platform, key)),
+			changes.cover ? 'cover' : '',
 			changes.time ? 'time' : ''
 		]
 			.filter(Boolean)
@@ -277,7 +301,9 @@ export function stepWords(step: EditStep): string {
 		case 'add':
 			return `${name}: added`;
 		case 'replace':
-			return `${name}: goes with the new video`;
+			return step.by === 'worker'
+				? `${name}: goes up again with the new video — the worker deletes the old one on ${name}`
+				: `${name}: goes with the new video`;
 		case 'remove':
 			return step.by === 'worker' ? `${name}: taken off — the worker deletes it on ${name}` : `${name}: taken off`;
 	}

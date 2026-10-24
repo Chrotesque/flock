@@ -6,6 +6,7 @@ import {
 	SCHEDULE_MAX_MS,
 	checkFacebookGrant,
 	coverNote,
+	editFacebookReel,
 	facebookAccount,
 	reelState,
 	releasePlan
@@ -145,5 +146,53 @@ describe('the reel cover', () => {
 			coverNote(new Error('Cannot read the stored Facebook cover (404)\nmore')),
 			'Cover not set: Cannot read the stored Facebook cover (404). Facebook shows a frame it picks.'
 		);
+	});
+});
+
+describe('editFacebookReel', () => {
+	const config = { facebook: { apiVersion: 'v23.0', accounts: [{ pageId: 'p1', pageName: 'Owls Nest', pageAccessToken: 't1' }] } };
+	const row = { platform: 'facebook', account: 'p1', remote_url: 'https://www.facebook.com/reel/2229/', handle: { videoId: '2229' } };
+
+	/** A Graph stand-in holding one reel's caption; every call is kept. */
+	function stub(caption) {
+		const calls = [];
+		const realFetch = globalThis.fetch;
+		globalThis.fetch = async (url, init = {}) => {
+			const u = new URL(String(url));
+			const body = init.body;
+			calls.push({ method: init.method ?? 'GET', path: u.pathname, body });
+			if ((init.method ?? 'GET') === 'GET') return new Response(JSON.stringify({ description: caption }), { status: 200 });
+			if (body instanceof URLSearchParams && body.has('description')) caption = body.get('description');
+			return new Response('{"success":true}', { status: 200 });
+		};
+		return { calls, restore: () => (globalThis.fetch = realFetch) };
+	}
+
+	it('writes the new caption, reads it back, and sets the cover from the upload', async () => {
+		const graphStub = stub('Old caption');
+		try {
+			const pb = { openFacebookCover: async () => ({ bytes: Buffer.from('png'), mimeType: 'image/png' }) };
+			const done = await editFacebookReel(config, row, { description: 'New caption', cover: true }, { pb, job: { facebook_cover: 'c.png' } });
+			assert.deepEqual(done, { captionChanged: true, coverMissed: '', notes: [] });
+			const posts = graphStub.calls.filter((c) => c.method === 'POST');
+			assert.equal(posts[0].path, '/v23.0/2229');
+			assert.equal(posts[0].body.get('description'), 'New caption');
+			assert.equal(posts[1].path, '/v23.0/2229/thumbnails');
+			assert.ok(posts[1].body instanceof FormData);
+		} finally {
+			graphStub.restore();
+		}
+	});
+
+	it('leaves a caption Facebook has already, and says when there is no cover to set', async () => {
+		const graphStub = stub('Same');
+		try {
+			const done = await editFacebookReel(config, row, { description: 'Same', cover: true }, { job: {} });
+			assert.equal(done.captionChanged, false);
+			assert.match(done.coverMissed, /^Cover not set: the upload holds no Facebook cover.$/);
+			assert.equal(graphStub.calls.filter((c) => c.method === 'POST').length, 0);
+		} finally {
+			graphStub.restore();
+		}
 	});
 });

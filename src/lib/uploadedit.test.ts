@@ -62,17 +62,15 @@ describe('editHold', () => {
 		expect(editHold(post({ request: { kind: 'delete' } }), NOW)).toEqual({ refused: 'The worker is on it already.' });
 	});
 
-	it('does not reach into a reel Facebook holds yet', () => {
-		expect(editHold(post({ platform: 'facebook', status: 'scheduled' }), NOW)).toEqual({
-			refused: 'Facebook has it already; flock cannot edit it there yet.'
-		});
+	it('leaves a reel Facebook holds to the worker too', () => {
+		expect(editHold(post({ platform: 'facebook', status: 'scheduled' }), NOW)).toEqual({ by: 'worker' });
 	});
 });
 
 describe('editChanges', () => {
 	it('names what was touched, and nothing else', () => {
 		const changes = editChanges(state(), row({ description: 'Owls at dawn', options: { privacy: 'Friends', coverImageAt: 'end' } }));
-		expect(changes).toEqual({ text: true, options: ['privacy'], time: false });
+		expect(changes).toEqual({ text: true, options: ['privacy'], time: false, cover: false });
 		expect(changedAnything(editChanges(state(), row()))).toBe(false);
 	});
 
@@ -112,7 +110,7 @@ describe('planEdit', () => {
 				id: 'p1',
 				platform: 'tiktok',
 				patch: { title: '', description: 'Owls at dawn', options: { privacy: 'Public', coverImageAt: 'end' }, scheduled_at: at(7) },
-				changes: { text: true, options: [], time: true }
+				changes: { text: true, options: [], time: true, cover: false }
 			}
 		]);
 		expect(stepWords(steps[0])).toBe('TikTok: text, time changed');
@@ -191,7 +189,7 @@ describe('planEdit', () => {
 						before: { title: 'Owls', description: 'At dusk', options: yt.options }
 					},
 					at: null,
-					changes: { text: true, options: ['playlists', 'tags', 'tagsOther'], time: false }
+					changes: { text: true, options: ['playlists', 'tags', 'tagsOther'], time: false, cover: false }
 				}
 			]);
 		});
@@ -243,7 +241,7 @@ describe('planEdit', () => {
 		expect(refused).toEqual([]);
 	});
 
-	it('hands a post given another video to the new upload, flock-held only', () => {
+	it('hands a post given another video to the new upload, the old one deleted by whoever holds it', () => {
 		const swap = planEdit({ posts: [post()], baseline: { tiktok: state() }, opened, rows: [row({ kept: false })], now: NOW });
 		expect(swap.steps).toEqual([{ kind: 'replace', id: 'p1', platform: 'tiktok', by: 'page' }]);
 		const held = planEdit({
@@ -253,7 +251,57 @@ describe('planEdit', () => {
 			rows: [row({ platform: 'youtube', kept: false })],
 			now: NOW
 		});
-		expect(held.refused).toEqual(['YouTube: YouTube has the video already; flock cannot swap it there yet.']);
+		expect(held.steps).toEqual([{ kind: 'replace', id: 'p1', platform: 'youtube', by: 'worker' }]);
+		expect(stepWords(held.steps[0])).toBe('YouTube: goes up again with the new video — the worker deletes the old one on YouTube');
+		const late = planEdit({
+			posts: [post({ platform: 'youtube', status: 'published' })],
+			baseline: { youtube: state() },
+			opened: ['youtube'],
+			rows: [row({ platform: 'youtube', kept: false })],
+			now: NOW
+		});
+		expect(late.refused).toEqual(['YouTube: It is out on YouTube already.']);
+	});
+
+	describe('a reel Facebook holds', () => {
+		const reel = post({ id: 'f1', platform: 'facebook', status: 'scheduled', description: 'Old caption', options: {} });
+		const base = state({ description: 'Old caption', options: {} });
+		const fbRow = (extra: Partial<EditRow>) => row({ platform: 'facebook', ...base, ...extra });
+
+		it('asks the worker for a new caption and a new cover', () => {
+			const { steps, refused } = planEdit({
+				posts: [reel],
+				baseline: { facebook: base },
+				opened: ['facebook'],
+				rows: [fbRow({ description: 'New caption', cover: 'changed' })],
+				now: NOW
+			});
+			expect(refused).toEqual([]);
+			expect(steps).toMatchObject([
+				{
+					kind: 'ask',
+					request: { kind: 'edit', description: 'New caption', cover: true, before: { description: 'Old caption' } },
+					at: null,
+					changes: { text: true, options: [], time: false, cover: true }
+				}
+			]);
+			expect(stepWords(steps[0])).toBe('Facebook: text, cover — the worker changes it on Facebook');
+		});
+
+		it('asks for a cover alone, without the text', () => {
+			const { steps } = planEdit({ posts: [reel], baseline: { facebook: base }, opened: ['facebook'], rows: [fbRow({ cover: 'changed' })], now: NOW });
+			expect(steps).toMatchObject([{ kind: 'ask', request: { cover: true, description: 'Old caption' } }]);
+		});
+
+		it('cannot take its cover away', () => {
+			const { refused } = planEdit({ posts: [reel], baseline: { facebook: base }, opened: ['facebook'], rows: [fbRow({ cover: 'removed' })], now: NOW });
+			expect(refused).toEqual(['Facebook: Facebook keeps the cover it has; pick another picture rather than none.']);
+		});
+
+		it('moves it only up to 28 days ahead', () => {
+			const { refused } = planEdit({ posts: [reel], baseline: { facebook: base }, opened: ['facebook'], rows: [fbRow({ at: at(24 * 30) })], now: NOW });
+			expect(refused).toEqual(['Facebook: Facebook holds a reel at most 28 days ahead.']);
+		});
 	});
 });
 

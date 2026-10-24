@@ -27,7 +27,8 @@ import {
 	publishToFacebook,
 	refreshFacebookPages,
 	rescheduleFacebookReel,
-	retitleFacebookReel
+	retitleFacebookReel,
+	editFacebookReel
 } from './facebook.mjs';
 import {
 	FAILED_WINDOW_MS,
@@ -159,6 +160,7 @@ const ADAPTERS = {
 		remove: deleteFacebookReel,
 		reschedule: rescheduleFacebookReel,
 		retitle: retitleFacebookReel,
+		retext: editFacebookReel,
 		release: facebookRelease,
 		publishReady: publishReadyReel,
 		timing: 'slot',
@@ -1728,16 +1730,19 @@ async function editOne(pb, config, row, step) {
 
 	inHand.add(row.id);
 	try {
-		const done = await hb.track(`Editing on ${name}: "${title}"`, () => adapter.retext(config, row, edit, log), {
+		// A new cover is the job's file, put there by the page before it asked.
+		const job = edit.cover ? await pb.getJob(row.job).catch(() => null) : null;
+		const done = await hb.track(`Editing on ${name}: "${title}"`, () => adapter.retext(config, row, edit, { pb, job, log }), {
 			publishing: true
 		});
-		const missed = [...done.notAdded.map((n) => `not added to playlist "${n}"`), ...done.notLeft.map((n) => `still in playlist "${n}"`)];
+		const missed = done.notes ?? [];
 		await pb.updateTarget(row.id, {
 			...taken,
 			...(missed.length > 0 ? { handle: refusedHandle(row.handle, `Edited, but ${missed.join('; ')}.`) } : {})
 		});
-		if (done.textChanged) {
-			await keepRenamed(pb, { platform: row.platform, videoId: step.remoteId }, { title: done.snippet.title, snippet: done.snippet }).catch(
+		if (done.textChanged || done.captionChanged) {
+			const shown = row.platform === 'youtube' ? { title: done.snippet.title, snippet: done.snippet } : { caption: edit.description };
+			await keepRenamed(pb, { platform: row.platform, videoId: step.remoteId }, shown).catch(
 				(err) => log(`edited, but its stats row was not updated: ${err.message.split('\n')[0]}`)
 			);
 		}

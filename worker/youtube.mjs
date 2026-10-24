@@ -861,7 +861,7 @@ async function removeFromPlaylists(token, videoId, names, log) {
  * holds them already — then the playlists it joins or leaves. What could not
  * be done with the playlists comes back with the snippet YouTube answered.
  */
-export async function editYouTube(config, row, edit, log = () => {}) {
+export async function editYouTube(config, row, edit, { log = () => {} } = {}) {
 	const { channelId, videoId } = postVideo(row);
 	const { token } = await editingToken(config, channelId, 'editing');
 	const read = await api(token, `/videos?part=snippet&id=${encodeURIComponent(videoId)}`, { kind: 'edit' });
@@ -884,7 +884,8 @@ export async function editYouTube(config, row, edit, log = () => {}) {
 	const { add, remove } = playlistChanges(edit.before?.options, edit.options);
 	const notAdded = add.length > 0 ? await addToPlaylists(token, videoId, add, log) : [];
 	const notLeft = remove.length > 0 ? await removeFromPlaylists(token, videoId, remove, log) : [];
-	return { snippet: answered, textChanged: answered !== snippet, notAdded, notLeft };
+	const notes = [...notAdded.map((n) => `not added to playlist "${n}"`), ...notLeft.map((n) => `still in playlist "${n}"`)];
+	return { snippet: answered, textChanged: answered !== snippet, notAdded, notLeft, notes };
 }
 
 /**

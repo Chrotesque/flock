@@ -725,8 +725,9 @@ in — each post's text as typed, its options, time and cover, and the video
 already stored — and confirming there saves over it; Review lists what saving
 will change first. A post flock still holds (Instagram and TikTok until just
 before their time) changes completely, a different video included. A YouTube
-video already uploaded takes a new title, description, tags and playlists
-from the worker. A post that is out, or about to go out, opens locked and
+video already uploaded takes a new title, description, tags and playlists,
+and a Facebook reel a new caption and cover, from the worker; given another
+video, either is deleted there and uploaded again. A post that is out, or about to go out, opens locked and
 says why. TikTok's audience and the other choices it wants made by hand are
 picked again.
 
