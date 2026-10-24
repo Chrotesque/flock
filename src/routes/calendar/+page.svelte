@@ -330,15 +330,6 @@
 		{:else if loading && entries.length === 0}
 			<p class="banner">Loading…</p>
 		{:else}
-			{#if editing}
-				<p class="banner editing">
-					<strong>EDITING SCHEDULE</strong> — Drag an icon to move that platform's post, or a
-					box's grip (left edge) to move the whole upload — at least 15 minutes ahead; YouTube and
-					Facebook are told by the worker within seconds. Right-click a post or a box to edit the upload
-					in Upload, release it at once or delete it. A post that can no longer move shakes and says why.
-				</p>
-			{/if}
-
 			{#if moveError}
 				<p class="banner error">Could not move that release — {moveError}</p>
 			{/if}
@@ -358,6 +349,7 @@
 				groupLabel={editing ? (items) => productLabel(items[0]?.product ?? '') : undefined}
 				card={cardFor}
 				center={actions}
+				start={editing ? editBannerStart : undefined}
 				toolbar={legend}
 				candrag={canMove}
 				lockedWhy={(entry) => lockReason(entry)}
@@ -453,7 +445,59 @@
 	</button>
 {/snippet}
 
+<!-- While editing, in the bar's two gaps either side of the middle: after
+     Today, and before the counts. -->
+{#snippet editBanner(side: 'start' | 'end')}
+	<div class="editbanner {side}">
+		<span class="editlabel">EDITING<span class="rest">{' '}SCHEDULE</span></span>
+		<button class="info" aria-label="What editing the schedule means" aria-describedby="edit-help-{side}">
+			<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+				<circle class="ring" cx="8" cy="8" r="6.9" />
+				<circle class="dot" cx="8" cy="4.9" r="1" />
+				<path class="stem" d="M8 7.3v4.4" />
+			</svg>
+		</button>
+		<div class="editpop" id="edit-help-{side}" role="tooltip">
+			<p class="lead">
+				The schedule can be changed while this shows. Every change is saved the moment it is made;
+				STOP only locks the calendar again.
+			</p>
+			<ul>
+				<li><strong>One post:</strong> drag a platform's icon to another hour. It keeps its minutes.</li>
+				<li>
+					<strong>A whole upload:</strong> drag the grip on its box's left edge; every post in that box
+					goes along.
+				</li>
+				<li>
+					<strong>Where to:</strong> at least 15 minutes from now; a Facebook reel at most 28 days ahead.
+				</li>
+				<li>
+					<strong>YouTube and Facebook</strong> already hold their posts: the worker tells them the new
+					time within seconds. A pink dot on the icon means it is still telling them, an amber one that
+					the platform refused — hover the box for why.
+				</li>
+				<li>
+					<strong>Right-click</strong> a post or a box to edit the upload in Upload, release it at once or
+					delete it.
+				</li>
+				<li>
+					<strong>Locked:</strong> a post that is out, uploading or about to go out shakes when picked up
+					and says why.
+				</li>
+				<li>An upload with a product name shows it under its box while editing.</li>
+			</ul>
+		</div>
+	</div>
+{/snippet}
+
+{#snippet editBannerStart()}
+	{@render editBanner('start')}
+{/snippet}
+
 {#snippet legend()}
+	{#if editing}
+		{@render editBanner('end')}
+	{/if}
 	<div class="legend">
 		<span class="count">{upcoming} upcoming</span>
 		{#if released > 0}
@@ -520,17 +564,189 @@
 		color: #fff;
 	}
 
-	.banner.editing {
-		margin-bottom: 12px;
+	/* The edit banner, in the bar: it fills the gap it sits in, as tall as
+	   the week's arrows (on both sides, though the counts' side is lower),
+	   with the label in its middle. */
+	.editbanner {
+		position: relative;
+		flex: 1 1 0;
+		min-width: 36px;
+		box-sizing: border-box;
+		height: 34px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 7px;
+		padding: 0 12px;
+		border-radius: var(--radius);
 		background: var(--pink);
-		border-color: var(--pink);
+		border: 1px solid var(--pink);
 		color: var(--bg);
-		font-weight: 500;
 	}
 
-	.banner.editing strong {
+	.editlabel {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 12.5px;
 		font-weight: 800;
 		letter-spacing: 0.04em;
+	}
+
+	/* The gaps narrow with the window: the label shortens to EDITING, then
+	   leaves the (i) alone, rather than being cut off mid-word. The widths
+	   are the words plus the gap and the (i), measured. */
+	.editbanner {
+		container-type: inline-size;
+	}
+
+	@container (max-width: 158px) {
+		.editlabel .rest {
+			display: none;
+		}
+	}
+
+	@container (max-width: 86px) {
+		.editlabel {
+			display: none;
+		}
+	}
+
+	/* Where the bar wraps, nothing has a gap to fill: the banner is as wide
+	   as its words. */
+	@media (max-width: 1100px) {
+		.editbanner {
+			flex: none;
+			container-type: normal;
+		}
+	}
+
+	.info {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 20px;
+		height: 20px;
+		padding: 0;
+		border: 0;
+		border-radius: 50%;
+		background: none;
+		color: var(--bg);
+		cursor: help;
+		transition: transform 0.14s;
+	}
+
+	.info svg {
+		display: block;
+	}
+
+	.info .ring {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.6;
+		transition: fill 0.14s;
+	}
+
+	.info .dot {
+		fill: currentColor;
+		transition: fill 0.14s;
+	}
+
+	.info .stem {
+		stroke: currentColor;
+		stroke-width: 1.7;
+		stroke-linecap: round;
+		transition: stroke 0.14s;
+	}
+
+	/* Hovered or focused, the ring fills and the i turns pink. */
+	.info:hover,
+	.info:focus-visible {
+		transform: scale(1.12);
+	}
+
+	.info:hover .ring,
+	.info:focus-visible .ring {
+		fill: var(--bg);
+	}
+
+	.info:hover .dot,
+	.info:focus-visible .dot {
+		fill: var(--pink);
+	}
+
+	.info:hover .stem,
+	.info:focus-visible .stem {
+		stroke: var(--pink);
+	}
+
+	.info:focus-visible {
+		outline: 2px solid var(--bg);
+		outline-offset: 2px;
+	}
+
+	/* Under the banner, over the grid: from its left edge after Today, from
+	   its right edge before the counts, so it opens towards the middle. */
+	.editpop {
+		position: absolute;
+		top: calc(100% + 8px);
+		left: 0;
+		z-index: 40;
+		width: max-content;
+		max-width: min(400px, calc(100vw - 40px));
+		padding: 12px 14px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius);
+		background: var(--surface);
+		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+		font-size: 12px;
+		line-height: 1.5;
+		color: var(--text-dim);
+		opacity: 0;
+		visibility: hidden;
+		transform: translateY(-4px);
+		pointer-events: none;
+		transition:
+			opacity 0.14s,
+			transform 0.14s,
+			visibility 0s 0.14s;
+	}
+
+	.editbanner.end .editpop {
+		left: auto;
+		right: 0;
+	}
+
+	.info:hover ~ .editpop,
+	.info:focus-visible ~ .editpop {
+		opacity: 1;
+		visibility: visible;
+		transform: none;
+		transition:
+			opacity 0.14s,
+			transform 0.14s;
+	}
+
+	.editpop .lead {
+		margin: 0 0 8px;
+		color: var(--text);
+	}
+
+	.editpop ul {
+		display: grid;
+		gap: 5px;
+		margin: 0;
+		padding-left: 16px;
+	}
+
+	.editpop li::marker {
+		color: var(--pink);
+	}
+
+	.editpop strong {
+		font-weight: 650;
+		color: var(--text);
 	}
 
 	.banner {

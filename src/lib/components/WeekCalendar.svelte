@@ -1147,7 +1147,10 @@
 		gap: 16px;
 	}
 
+	/* Its whole column, not just its content (an auto margin would shrink it),
+	   so a toolbar item that grows can fill the gap before the middle. */
 	.bar.centred .side.end {
+		margin-left: 0;
 		justify-content: flex-end;
 	}
 
@@ -1830,6 +1833,10 @@
 		.bar.centred {
 			display: flex;
 			flex-wrap: wrap;
+		}
+
+		.bar.centred .side.end {
+			margin-left: auto;
 		}
 	}
 
