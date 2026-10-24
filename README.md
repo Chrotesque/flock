@@ -625,6 +625,12 @@ Settings, local or on the network, like watch folders.
 
 ### Other screens
 
+**Update available!** slides in above *Worker* when a newer flock has been
+deployed than the open page runs (it looks every five minutes and whenever
+you come back to the tab). Click it to reload. It waits while a video is
+uploading, and asks for a second click when an upload being composed would
+be lost.
+
 **Dashboard**, at the top of the sidebar, opens over whatever page you are on,
 and flock opens on it; its arrow points back while it is open. Click it again,
 press Esc or go to another page to close it. For the brand in view it shows

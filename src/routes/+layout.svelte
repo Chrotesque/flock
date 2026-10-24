@@ -24,6 +24,8 @@
 	import { DEVTEST_ICON, devtestActive, devtestPasteKeys, shownDevtestPages, startDevtest } from '$lib/devtest';
 	import { CELEBRATE_MARK, CELEBRATE_PLACE, TODO_MARKS } from '$lib/todoicon';
 	import { wobble } from '$lib/wobble';
+	import { appUpdate } from '$lib/stores/appupdate.svelte';
+	import { VERSION } from '$lib/version';
 
 	/** flock's public website (source in site/), where the brand at the foot of the rail leads. */
 	const SITE_URL = 'https://flock-scheduler.netlify.app/';
@@ -36,7 +38,9 @@
 		const stopAttention = attention.start();
 		const stopCelebrations = celebrations.start();
 		const stopDevtest = startDevtest();
+		const stopUpdate = appUpdate.start();
 		return () => {
+			stopUpdate();
 			stopProjects();
 			stopTodo();
 			stopAttention();
@@ -47,6 +51,35 @@
 
 	// A local-devtest module changing something says so on every page.
 	let devtest = $derived(devtestActive());
+
+	/*
+	 * "Update available!" (appupdate.ts): a newer flock is deployed than this
+	 * page runs, and a click reloads it. An upload going up holds it — the
+	 * reload would cut it off — and an upload being composed is in memory
+	 * only, so then it takes a second click within three seconds.
+	 */
+	let updateArmed = $state(false);
+	let updateTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function reloadForUpdate() {
+		if (appUpdate.uploading) return;
+		if (draft.hasContent && !updateArmed) {
+			updateArmed = true;
+			if (updateTimer) clearTimeout(updateTimer);
+			updateTimer = setTimeout(() => (updateArmed = false), 3000);
+			return;
+		}
+		location.reload();
+	}
+
+	const updateWords = $derived.by(() => {
+		const update = appUpdate.available;
+		if (!update) return { line: '', title: '' };
+		const what = update.sameVersion ? `A newer build of v${update.version}` : `v${update.version}`;
+		if (appUpdate.uploading) return { line: 'Reload once the upload is done', title: `${what} is out. Reload once the upload is done: reloading now would cut it off.` };
+		if (updateArmed) return { line: 'Again to reload — the draft is lost', title: 'Click again within three seconds to reload: the upload being composed here is lost.' };
+		return { line: `v${update.version} · click to reload`, title: `${what} is out; this page runs v${VERSION}. Click to reload it.` };
+	});
 
 	/**
 	 * A project in the sidebar opens on the Upload page, which takes it from
@@ -408,6 +441,32 @@
 				</a>
 			{/if}
 
+			{#if appUpdate.available}
+				<!-- Slides in from the rail's left edge: a tab whose left side stays behind the edge. -->
+				<button
+					class="update"
+					class:armed={updateArmed}
+					class:waiting={appUpdate.uploading}
+					aria-disabled={appUpdate.uploading}
+					onclick={reloadForUpdate}
+					title={updateWords.title}
+				>
+					<span class="updatetext">
+						<span class="updatehead">Update available!</span>
+						<span class="updateline">{updateWords.line}</span>
+					</span>
+					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+						<path
+							d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"
+							stroke="currentColor"
+							stroke-width="1.8"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					</svg>
+				</button>
+			{/if}
+
 			<section class="worker" aria-label="Worker status">
 				<div class="workerhead">
 					<span class="workername">Worker</span>
@@ -593,6 +652,83 @@
 
 	.todo + .lower {
 		margin-top: 0;
+	}
+
+	/* "Update available!": a tab sliding in from the rail's left edge. Its
+	   margin takes back the rail's padding so it starts at the edge itself;
+	   with no left border, only its right corners are rounded and seen. */
+	.update {
+		justify-self: start;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-left: -14px;
+		padding: 9px 13px 9px 14px;
+		border: 1px solid var(--pink);
+		border-left: 0;
+		border-radius: 0 12px 12px 0;
+		background: linear-gradient(135deg, rgba(168, 85, 247, 0.22), rgba(255, 77, 158, 0.22)), var(--surface);
+		box-shadow: 0 0 22px rgba(255, 77, 158, 0.18);
+		color: var(--text);
+		text-align: left;
+		animation: update-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+		transition:
+			background 0.15s,
+			box-shadow 0.15s;
+	}
+
+	.update:hover {
+		background: linear-gradient(135deg, rgba(168, 85, 247, 0.34), rgba(255, 77, 158, 0.34)), var(--surface);
+		box-shadow: 0 0 26px rgba(255, 77, 158, 0.3);
+	}
+
+	.update.armed {
+		background: var(--pink-hot);
+		border-color: var(--pink-hot);
+		color: #fff;
+	}
+
+	.update.waiting {
+		cursor: default;
+		border-color: var(--border-strong);
+		box-shadow: none;
+	}
+
+	.update svg {
+		flex: none;
+		color: var(--pink-soft);
+	}
+
+	.update.armed svg {
+		color: #fff;
+	}
+
+	.updatetext {
+		display: grid;
+		gap: 2px;
+		min-width: 0;
+	}
+
+	.updatehead {
+		font-size: 13.5px;
+		font-weight: 700;
+		letter-spacing: 0.01em;
+	}
+
+	.updateline {
+		font-size: 11px;
+		color: var(--text-dim);
+		white-space: nowrap;
+	}
+
+	.update.armed .updateline {
+		color: #fff;
+	}
+
+	@keyframes update-in {
+		from {
+			transform: translateX(-100%);
+		}
 	}
 
 	/* Right under the main links: these are things to start, not to finish. */
@@ -963,6 +1099,10 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
+		.update {
+			animation: none;
+		}
+
 		.tile:hover .tileicon,
 		.tile:focus-visible .tileicon {
 			animation: none;
@@ -1301,6 +1441,17 @@
 			display: flex;
 			align-items: center;
 			gap: 12px;
+		}
+		/* A pill in the bar: no edge to come from. */
+		.update {
+			margin-left: 0;
+			padding: 6px 11px;
+			border-left: 1px solid var(--pink);
+			border-radius: 999px;
+			animation: none;
+		}
+		.updateline {
+			display: none;
 		}
 		/* Neither fits a one-row bar; the wide layout shows them. */
 		.todo,

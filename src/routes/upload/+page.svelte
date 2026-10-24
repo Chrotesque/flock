@@ -47,6 +47,7 @@
 	import { takenHours } from '$lib/stores/takenhours.svelte';
 	import { hourKey, takenWhy } from '$lib/takenhours';
 	import { onDestroy } from 'svelte';
+	import { appUpdate } from '$lib/stores/appupdate.svelte';
 
 	settings.load();
 	general.load();
@@ -161,6 +162,12 @@
 	let phase = $state<'idle' | 'uploading' | 'done' | 'error'>('idle');
 	let progress = $state(0);
 	let failure = $state('');
+
+	// The sidebar's "Update available!" reloads the page, which would cut an upload off: it waits.
+	$effect(() => {
+		appUpdate.uploading = phase === 'uploading';
+	});
+	onDestroy(() => (appUpdate.uploading = false));
 
 	// Any edit disarms the confirmation, so a stale second click cannot fire.
 	$effect(() => {
