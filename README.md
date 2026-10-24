@@ -637,7 +637,7 @@ Facebook's and TikTok's only for months flock read from their first day.
 It opens as a graph, one line for each of the three, green where a month rose
 on the one before and red where it fell, the stronger the bigger the change;
 *List* shows the months as a table. Beside it, pick the timeframe: the last
-30 to 360 days, or *Lifetime*.
+30 to 360 days, or *Lifetime*; it opens on 180 days.
 
 - **One filter for all of it:** the timeframe (the last 30 days by default,
   up to 180), which platforms (all of them is *Combined*), which kinds (Shorts,

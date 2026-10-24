@@ -55,31 +55,28 @@
 		['graph', 'Graph'],
 		['list', 'List']
 	];
-	/** The view and the timeframe, per browser: { view, span }, span null for Lifetime. */
+	/** The view, per browser: { view }. The timeframe is not kept: the panel always opens on OPEN_SPAN. */
 	const PREF_KEY = 'flock.dashboard.months';
-	const saved = readPrefs();
-	let view = $state<View>(saved.view);
-	let span = $state<MonthSpan>(saved.span);
+	const OPEN_SPAN: MonthSpan = 180;
+	let view = $state<View>(readView());
+	let span = $state<MonthSpan>(OPEN_SPAN);
 
-	function readPrefs(): { view: View; span: MonthSpan } {
+	function readView(): View {
 		try {
-			const raw = JSON.parse(localStorage.getItem(PREF_KEY) ?? '{}');
-			return {
-				view: raw?.view === 'list' ? 'list' : 'graph',
-				span: MONTH_SPANS.find((d) => d === raw?.span) ?? null
-			};
+			return JSON.parse(localStorage.getItem(PREF_KEY) ?? '{}')?.view === 'list' ? 'list' : 'graph';
 		} catch {
-			return { view: 'graph', span: null };
+			return 'graph';
 		}
 	}
 
 	function choose(next: { view?: View; span?: MonthSpan }) {
-		if (next.view !== undefined) view = next.view;
 		if (next.span !== undefined) span = next.span;
+		if (next.view === undefined) return;
+		view = next.view;
 		try {
-			localStorage.setItem(PREF_KEY, JSON.stringify({ view, span }));
+			localStorage.setItem(PREF_KEY, JSON.stringify({ view }));
 		} catch {
-			// Remembering them is a convenience; private windows throw.
+			// Remembering it is a convenience; private windows throw.
 		}
 	}
 
