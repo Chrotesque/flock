@@ -3470,6 +3470,12 @@
 		margin-bottom: -8px;
 	}
 
+	/* Between the total and the first video, a heavier line than between the
+	   videos: the totals read apart from the rows under them. */
+	.list.ratio .row.total + .item > .line > .row {
+		border-top: 2px solid var(--text-faint);
+	}
+
 	.cell.up {
 		color: var(--ok);
 		font-weight: 600;
