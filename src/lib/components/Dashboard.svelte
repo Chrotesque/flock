@@ -1293,7 +1293,7 @@
 							else brandPanel = brand.id;
 						}}
 						>{brand.name}<span class="rclick" aria-hidden="true"
-							><i></i><svg viewBox="0 0 16 16" width="13" height="13"
+							><i></i><svg viewBox="0 0 16 16" width="18" height="18"
 								><rect x="3.5" y="1.5" width="9" height="13" rx="4.5" /><path d="M8 1.5V7M3.5 7h9" /><path
 									class="lit"
 									d="M8.6 2.1a3.9 3.9 0 0 1 3.3 3.9v.4H8.6z"
@@ -1833,7 +1833,7 @@
 		left: calc(100% - 12px);
 		display: inline-flex;
 		align-items: center;
-		padding: 0 9px 0 0;
+		padding: 0 10px 0 0;
 		border: 1px solid var(--pink-soft);
 		border-left: 0;
 		border-radius: 0 999px 999px 0;
@@ -1858,8 +1858,8 @@
 	.rclick i {
 		flex: none;
 		width: 1px;
-		height: 13px;
-		margin: 0 6px 0 8px;
+		height: 16px;
+		margin: 0 6px 0 9px;
 		background: var(--border-strong);
 	}
 
@@ -1867,7 +1867,7 @@
 		flex: none;
 		fill: none;
 		stroke: var(--text-dim);
-		stroke-width: 1.3;
+		stroke-width: 1.15;
 	}
 
 	.rclick .lit {
@@ -1875,9 +1875,32 @@
 		stroke: none;
 	}
 
+	/* Set apart while it shows: a blurred outline straight underneath, round the
+	   chip and its growth together (a filter takes in the drawn-over part, a
+	   box-shadow would not). */
+	.hint {
+		transition:
+			border-color 0.14s,
+			background 0.14s,
+			color 0.14s,
+			filter 0.16s;
+	}
+
 	.hint:hover,
 	.hint:focus-visible {
 		z-index: 2;
+		filter: drop-shadow(0 0 2px #000) drop-shadow(0 0 7px #000) drop-shadow(0 0 14px #000);
+	}
+
+	/* On the same ground as its growth, so the two meet without a seam. */
+	.hint:not(.on):hover,
+	.hint:not(.on):focus-visible {
+		background: var(--bg-elev);
+	}
+
+	.hint.on:hover,
+	.hint.on:focus-visible {
+		background: var(--accent-grad-soft), var(--bg-elev);
 	}
 
 	.hint:hover .rclick,
