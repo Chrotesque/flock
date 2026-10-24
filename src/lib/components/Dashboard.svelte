@@ -1275,7 +1275,7 @@
 				{/each}
 				{#each brands.ordered as brand (brand.id)}
 					<button
-						class="brandchip"
+						class="brandchip hint"
 						class:on={!scope && brand.id === brands.currentId}
 						role="radio"
 						aria-checked={!scope && brand.id === brands.currentId}
@@ -1291,7 +1291,15 @@
 							// A local scope's own menu, while it is chosen, offers the panel in turn.
 							if (scope?.BrandMenu) brandMenu = { brand: brand.id, x: e.clientX, y: e.clientY };
 							else brandPanel = brand.id;
-						}}>{brand.name}</button
+						}}
+						>{brand.name}<span class="rclick" aria-hidden="true"
+							><i></i><svg viewBox="0 0 16 16" width="13" height="13"
+								><rect x="3.5" y="1.5" width="9" height="13" rx="4.5" /><path d="M8 1.5V7M3.5 7h9" /><path
+									class="lit"
+									d="M8.6 2.1a3.9 3.9 0 0 1 3.3 3.9v.4H8.6z"
+								/></svg
+							></span
+						></button
 					>
 				{/each}
 			</div>
@@ -1786,6 +1794,9 @@
 	}
 
 	.brandchip {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
 		padding: 5px 13px;
 		border-radius: 999px;
 		border: 1px solid var(--border-strong);
@@ -1808,6 +1819,78 @@
 		border-color: var(--pink);
 		background: var(--accent-grad-soft);
 		color: var(--text);
+	}
+
+	/* Hovered, a chip grows a mouse with its right button lit: right-click opens
+	   the brand's month over month. The growth is drawn over the next chip, not
+	   laid out: nothing beside it moves, and the pointer passes through it, so
+	   the next chip is hovered as soon as the pointer is on it. Opaque, and in
+	   the chip's own border and, for the chosen one, the gradient's end colour. */
+	.rclick {
+		position: absolute;
+		top: -1px;
+		bottom: -1px;
+		left: calc(100% - 12px);
+		display: inline-flex;
+		align-items: center;
+		padding: 0 9px 0 0;
+		border: 1px solid var(--pink-soft);
+		border-left: 0;
+		border-radius: 0 999px 999px 0;
+		background: var(--bg-elev);
+		pointer-events: none;
+		opacity: 0;
+		clip-path: inset(0 100% 0 0);
+		transition:
+			opacity 0.16s,
+			clip-path 0.16s;
+	}
+
+	.hint.on .rclick {
+		border-color: var(--pink);
+		background: linear-gradient(rgba(255, 77, 158, 0.18), rgba(255, 77, 158, 0.18)), var(--bg-elev);
+	}
+
+	.hint.tinted:not(.on) .rclick {
+		border-color: color-mix(in srgb, var(--chip) 70%, transparent);
+	}
+
+	.rclick i {
+		flex: none;
+		width: 1px;
+		height: 13px;
+		margin: 0 6px 0 8px;
+		background: var(--border-strong);
+	}
+
+	.rclick svg {
+		flex: none;
+		fill: none;
+		stroke: var(--text-dim);
+		stroke-width: 1.3;
+	}
+
+	.rclick .lit {
+		fill: var(--pink-soft);
+		stroke: none;
+	}
+
+	.hint:hover,
+	.hint:focus-visible {
+		z-index: 2;
+	}
+
+	.hint:hover .rclick,
+	.hint:focus-visible .rclick {
+		opacity: 1;
+		clip-path: inset(0 0 0 0);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.brandchip,
+		.rclick {
+			transition: none;
+		}
 	}
 
 	.aside {
