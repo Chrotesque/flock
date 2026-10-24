@@ -189,21 +189,22 @@ export function columnWords(columns: DashColumn[]): string {
 /* ---- Ratio View (ratioview.ts) ---- */
 
 /**
- * What Ratio View shows after the title, whatever the layout: no Jestr,
- * followers or curve. Likes and comments carry their share of the views,
- * *Engaged* the two together; the views, the benchmark, and the likes and
- * comments have a line after them.
+ * What Ratio View shows after the title, whatever the layout, each a cell per
+ * platform coloured against that platform's usual (ratioview.ts): the reach
+ * (`usual`: views against the usual at the same age), likes and comments per
+ * view, and the skip rate. No Jestr, followers, curve or engagement rate; a
+ * line after the reach, the likes and the comments.
  */
-export const RATIO_COLUMNS: ColumnId[] = ['views', 'likes', 'comments', 'skip', 'engaged', 'usual'];
+export const RATIO_COLUMNS: ColumnId[] = ['usual', 'likes', 'comments', 'skip'];
 
 /** The columns with a line after them, wherever another column follows. */
-export const RATIO_LINES: ColumnId[] = ['views', 'likes', 'comments'];
+export const RATIO_LINES: ColumnId[] = ['usual', 'likes', 'comments'];
 
-/** Which of them the narrower lists keep: the views and the ratios first. */
+/** Which of them the narrower lists keep: the reach and the ratios first. */
 const RATIO_AT: Record<ListSize, ColumnId[]> = {
 	wide: RATIO_COLUMNS,
-	mid: ['views', 'likes', 'comments'],
-	narrow: ['views', 'likes']
+	mid: ['usual', 'likes', 'comments'],
+	narrow: ['usual', 'likes']
 };
 
 /** The columns Ratio View draws: the thumbnail as the layout has it, the title, then its own set. */

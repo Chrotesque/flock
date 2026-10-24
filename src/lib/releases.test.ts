@@ -695,12 +695,13 @@ describe('sortRows', () => {
 		expect(sortRows(skips, 'skip').map((x) => x.release.key)).toEqual(['mid', 'old', 'new']);
 	});
 
-	it('sorts the likes and comments per view highest first, missing last', () => {
-		const rated = rows.map((row, i) => ({ ...row, likeRate: [1.5, null, 4][i], commentRate: [0.2, 0.9, null][i] }));
-		expect(sortRows(rated, 'likeRate').map((x) => x.release.key)).toEqual(['mid', 'old', 'new']);
-		expect(sortRows(rated, 'likeRate', true).map((x) => x.release.key)).toEqual(['old', 'mid', 'new']);
-		expect(sortRows(rated, 'commentRate').map((x) => x.release.key)).toEqual(['new', 'old', 'mid']);
-		expect(sortWords('likeRate', false)).toBe('highest first');
+	it('sorts against the usual: likes and comments highest first, skips lowest, missing last', () => {
+		const rated = rows.map((row, i) => ({ ...row, vsUsual: [{ likes: 1.5, skip: 1.2 }, { likes: null, comments: 0.9, skip: 0.8 }, { likes: 4 }][i] }));
+		expect(sortRows(rated, 'likeVsUsual').map((x) => x.release.key)).toEqual(['mid', 'old', 'new']);
+		expect(sortRows(rated, 'likeVsUsual', true).map((x) => x.release.key)).toEqual(['old', 'mid', 'new']);
+		expect(sortRows(rated, 'commentVsUsual').map((x) => x.release.key)).toEqual(['new', 'mid', 'old']);
+		expect(sortRows(rated, 'skipVsUsual').map((x) => x.release.key)).toEqual(['new', 'old', 'mid']);
+		expect(sortWords('skipVsUsual', false)).toBe('furthest under usual first');
 	});
 
 	it('sorts by one platform’s likes or comments per view, missing last', () => {
@@ -717,7 +718,12 @@ describe('sortRows', () => {
 			'new',
 			'mid'
 		]);
-		expect(isPlatformRateKey('engagedRate:youtube')).toBe(true);
+		const skipped = rows.map((row, i) => ({ ...row, rates: [{ 'skipRate:youtube': 50 }, { 'skipRate:youtube': 40 }, {}][i] }));
+		expect(sortRows(skipped, 'skipRate:youtube').map((x) => x.release.key)).toEqual(['new', 'old', 'mid']);
+		expect(sortWords('skipRate:youtube', false)).toBe('fewest skipped first');
+		expect(sortWords('reach:tiktok', false)).toBe('furthest ahead first');
+		expect(isPlatformRateKey('reach:youtube')).toBe(true);
+		expect(isPlatformRateKey('engagedRate:youtube')).toBe(false);
 		expect(isPlatformRateKey('likeRate:facebook')).toBe(true);
 		expect(isPlatformRateKey('likeRate:myspace')).toBe(false);
 	});

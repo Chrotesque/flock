@@ -692,17 +692,17 @@ on the one before and red where it fell, the stronger the bigger the change;
   limit is half used, orange when it is nearly used, red on an error or a
   limit used up. Hover it for when each platform was last read, YouTube's
   quota for the day and Instagram's posts in the last 24 hours.
-- **Ratio View**, the switch left of the status icon: the platforms side by
-  side, each behind its coloured square — its views, then its likes and
-  comments with their share of its views (`20 / 1.09%`), its skip rate, its
-  engagement rate and how it stands against usual. No sums, no followers, no
-  curve; lines after
-  the views, the likes and the comments, and titles cut to 20 characters to
-  make room. Once it is on, the platforms' marks beside the switch add a
-  platform or take it out with a click. *Likes & Ratio*, *Comments & Ratio*
-  and *Engaged* sort by every platform together; the marks under them sort by
-  one platform's, highest first (click again for lowest). A window under
-  about 1,900 px wide scrolls the list sideways. Meanwhile the filter's
+- **Ratio View**, the switch left of the status icon: a heatmap of each
+  video on each platform against your usual there — its reach (views against
+  the usual at the same age), likes and comments per view, and skip rate.
+  Green is better than your usual on that platform, amber worse, plain about
+  the same; a dashed dot means under 100 views, too few to say. The top row
+  shows each platform's usual (the middle of the listed videos with 100+
+  views — filter to Shorts for Shorts' own). Hover a cell for its numbers.
+  Each column's name sorts every platform together against its usual; the
+  marks under it sort by one platform (click again for the other way). Once
+  it is on, the platforms' marks beside the switch add a platform or take it
+  out. Titles are cut to 20 characters to make room. Meanwhile the filter's
   platforms are greyed and not in effect — its timeframe, kinds and
   visibility still are. The browser remembers the switch and the platforms.
 - **Stored on the NAS**, folded away at the bottom: the newest uploads, with a

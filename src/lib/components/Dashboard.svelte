@@ -42,17 +42,23 @@
 		type ListSize
 	} from '$lib/dashcolumns';
 	import {
+		MIN_VIEWS,
 		engagedRate,
 		engagementsOf,
 		percentWords,
-		perView,
-		platformTotal,
+		rateOf,
+		rateWords,
 		readRatioPlatforms,
 		shortTitle,
 		slotPlatforms,
+		standing,
 		toggleRatioPlatform,
+		usualOf,
 		viewFilter,
-		type PlatformTotal
+		vsUsual,
+		type RateKind,
+		type Standing,
+		type Usual
 	} from '$lib/ratioview';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import {
@@ -158,8 +164,8 @@
 	}
 
 	/** Sorted by only in Ratio View, whose headers they are. */
-	const RATIO_SORTS: SortKey[] = ['likeRate', 'commentRate', 'engagedRate', ...PLATFORM_RATE_KEYS];
-	const SORTS: SortKey[] = ['date', 'views', 'likes', 'comments', 'followers', 'skip', 'usual', ...RATIO_SORTS];
+	const RATIO_SORTS: SortKey[] = ['likeVsUsual', 'commentVsUsual', 'skipVsUsual', ...PLATFORM_RATE_KEYS];
+	const SORTS: SortKey[] = ['date', 'views', 'likes', 'comments', 'followers', 'skip', 'usual', 'engagedRate', ...RATIO_SORTS];
 	let filter = $state<Filter>(readFilter(parsed(readPref(FILTER_KEY))));
 	let sort = $state<SortKey>(SORTS.find((s) => s === readPref(SORT_KEY)) ?? 'date');
 	$effect(() => writePref(FILTER_KEY, JSON.stringify(storedFilter(filter))));
@@ -456,12 +462,11 @@
 		/** The skip rate over the platforms in view that give one (skipRateOf). */
 		skip: number | null;
 		followers: number | null;
-		/** Likes and comments per view over every platform in view, in percent: what Ratio View sorts by. */
-		likeRate: number | null;
-		commentRate: number | null;
 		/** Likes and comments together per view over the platforms in view, pooled by views (ratioview.ts). */
 		engagedRate: number | null;
-		/** Each platform's own likes, comments and both per view, by PlatformRateKey: Ratio View's per-platform sorts. */
+		/** Each rate against its platforms' usual, every platform together (vsUsual): what Ratio View's columns sort by. */
+		vsUsual: Record<RateKind, number | null>;
+		/** Each platform's own, by PlatformRateKey: Ratio View's per-platform sorts. */
 		rates: Partial<Record<PlatformRateKey, number | null>>;
 	}
 
@@ -475,32 +480,43 @@
 		return sum;
 	}
 
+	// Ratio View's usual: each platform's middle rate over the public videos in the
+	// list with enough views — never a hidden one, as for the views' usual.
+	const usuals = $derived.by(() => {
+		const counted = inViewList.filter((r) => !r.hidden && r.privacy === 'public');
+		return Object.fromEntries(
+			STAT_PLATFORMS.map((p) => [p, usualOf(counted.map((r) => r.posts[p]).filter((post): post is Post => Boolean(post)))])
+		) as Record<StatPlatform, Usual>;
+	});
+
 	const rows = $derived.by(() => {
 		const list: Row[] = inViewList.map((release) => {
 			const posts = view.platforms.map((p) => release.posts[p]).filter((p): p is Post => Boolean(p));
 			const peersOf = (post: Post) => groups.get(`${post.platform}:${release.kind}`) ?? [];
 			const judgements = posts.map((post) => judge(post, peersOf(post), now));
 			const overall = overallOf(judgements);
-			const views = sumOf(release, view.platforms, 'views');
-			const likes = sumOf(release, view.platforms, 'likes');
-			const comments = sumOf(release, view.platforms, 'comments');
 			return {
 				release,
 				posts,
-				views,
-				likes,
-				comments,
+				views: sumOf(release, view.platforms, 'views'),
+				likes: sumOf(release, view.platforms, 'likes'),
+				comments: sumOf(release, view.platforms, 'comments'),
 				followers: sumOf(release, view.platforms, 'followers'),
-				likeRate: perView(likes, views),
-				commentRate: perView(comments, views),
 				engagedRate: engagedRate(posts),
+				vsUsual: {
+					likes: vsUsual(posts, usuals, 'likes'),
+					comments: vsUsual(posts, usuals, 'comments'),
+					skip: vsUsual(posts, usuals, 'skip')
+				},
 				rates: Object.fromEntries(
 					STAT_PLATFORMS.flatMap((p) => {
 						const post = release.posts[p];
+						const j = judgements.find((x) => x.platform === p);
 						return [
-							[`likeRate:${p}`, perView(post?.likes, post?.views)],
-							[`commentRate:${p}`, perView(post?.comments, post?.views)],
-							[`engagedRate:${p}`, post ? engagedRate([post]) : null]
+							[`reach:${p}`, j && j.views !== null && j.usual !== null && j.usual > 0 ? j.views / j.usual : null],
+							[`likeRate:${p}`, post ? rateOf(post, 'likes') : null],
+							[`commentRate:${p}`, post ? rateOf(post, 'comments') : null],
+							[`skipRate:${p}`, post ? rateOf(post, 'skip') : null]
 						];
 					})
 				),
@@ -756,34 +772,95 @@
 		return sum;
 	});
 
-	/* ---- Ratio View: each platform's own numbers, side by side ---- */
+	const skipAbout =
+		'The share of views dropped at the start. Instagram: skipped within the first 3 seconds, its own estimate. ' +
+		'YouTube: plays that never became an engaged view (YouTube Analytics, about two days behind; YouTube does not say where that line is, so it is not quite the same 3 seconds). ' +
+		'Facebook and TikTok give none.';
 
-	// Each platform's numbers over the videos in the list, for the total row.
-	const slotTotals = $derived.by(() => {
-		const counted = rows.filter((row) => !onlyWhileEditing(row.release));
-		return Object.fromEntries(
-			slots.map((p) => [p, platformTotal(counted.map((row) => row.release.posts[p]).filter((post): post is Post => Boolean(post)))])
-		) as Partial<Record<StatPlatform, PlatformTotal>>;
-	});
-	/** A share of the views: 1.09%, in the browser's decimal mark. */
+	/* ---- Ratio View: a heatmap against each platform's usual (ratioview.ts) ---- */
+
+	/** A share of the views: 1.09%, in the browser's decimal mark (the normal list's Engaged). */
 	const percent = (rate: number | null) => (rate === null ? '—' : percentWords(rate));
-	const RATIO_ABOUT = {
-		views: "Each platform's own views: what its likes and comments are measured against. Sorted by every platform's views together.",
-		likes:
-			"Each platform's likes, then their share of its views: 12 likes on 1,100 views is 12 / 1.09%. Sorted by every platform's likes together against their views together; the marks under it sort by one platform's.",
-		comments:
-			"Each platform's comments, then their share of its views: 3 comments on 1,100 views is 3 / 0.27%. Sorted by every platform's comments together against their views together; the marks under it sort by one platform's.",
-		engaged:
-			"Engagement rate by views: each platform's engagements — its likes and comments, the two every platform reports — over its views × 100; 15 likes and 5 comments on 529 views is 3.78%. Sorted by every platform together; the marks under it sort by one platform's.",
-		usual: "Each platform's views against the usual for the kind at the same age; within a fifth either way is about usual. Sorted by every platform together."
+
+	type RatioCol = 'usual' | 'likes' | 'comments' | 'skip';
+	/** Each column's header: what it sorts by, every platform together and one platform's mark under it, and what it says. */
+	const RATIO_HEADS: Record<RatioCol, { sort: SortKey; kind: 'reach' | 'likeRate' | 'commentRate' | 'skipRate'; label: string; what: string; about: string }> = {
+		usual: {
+			sort: 'usual',
+			kind: 'reach',
+			label: 'Reach vs usual',
+			what: 'views against usual',
+			about:
+				"Each platform's views against the middle of its videos of the kind at the same age, up to the first week; within a fifth either way is about usual. Sorted by every platform together; the marks under it sort by one platform's."
+		},
+		likes: {
+			sort: 'likeVsUsual',
+			kind: 'likeRate',
+			label: 'Likes per view',
+			what: 'likes per view',
+			about:
+				"Each platform's likes per view, coloured against its usual — the middle of its videos in the list with 100+ views; within a fifth either way is about usual. Sorted by every platform together against its usual; the marks under it sort by one platform's."
+		},
+		comments: {
+			sort: 'commentVsUsual',
+			kind: 'commentRate',
+			label: 'Comments per view',
+			what: 'comments per view',
+			about:
+				"Each platform's comments per view, coloured against its usual — the middle of its videos in the list with 100+ views; within a fifth either way is about usual. Sorted by every platform together against its usual; the marks under it sort by one platform's."
+		},
+		skip: {
+			sort: 'skipVsUsual',
+			kind: 'skipRate',
+			label: 'Skipped',
+			what: 'skip rate',
+			about: `${skipAbout} Coloured against each platform's usual, fewer being better; within a tenth either way is about usual. The marks under it sort by one platform's.`
+		}
 	};
-	const SHARE_WORDS = { likes: ['like', 'likes'], comments: ['comment', 'comments'] } as const;
-	/** The header sorting by every platform together, its name, and what one platform's mark under it sorts by. */
-	const RATE_HEADS = {
-		likes: { kind: 'likeRate', label: 'Likes & Ratio', what: 'like ratio' },
-		comments: { kind: 'commentRate', label: 'Comments & Ratio', what: 'comment ratio' },
-		engaged: { kind: 'engagedRate', label: 'Engaged', what: 'engagement rate' }
-	} as const;
+	const isRatioCol = (col: ColumnId): col is RatioCol => col in RATIO_HEADS;
+
+	const STANDING_WORDS: Record<Standing, string> = { up: 'better than usual', usual: 'about usual', down: 'worse than usual' };
+	const RATE_NOUNS: Record<'likes' | 'comments', [string, string]> = { likes: ['like', 'likes'], comments: ['comment', 'comments'] };
+
+	/** A reach cell's colour: the platform's verdict on its views. */
+	function reachTone(j: Judgement | undefined): Standing | 'none' {
+		return !j?.verdict ? 'none' : j.verdict === 'ahead' ? 'up' : j.verdict === 'behind' ? 'down' : 'usual';
+	}
+
+	/** A reach cell in words: the verdict's own, and the views now. */
+	function reachTitle(j: Judgement | undefined, post: Post, release: Release): string {
+		const label = PLATFORMS[post.platform].label;
+		const now = post.views === null ? '' : `\n${label} now: ${whole.format(post.views)} ${post.views === 1 ? 'view' : 'views'}`;
+		return `${j ? judgementTitle(j, release) : `${label}: nothing to compare with`}${now}`;
+	}
+
+	/** A rate cell in words: what it is made of, and how it stands against the platform's usual. */
+	function rateTitle(post: Post, kind: RateKind): string {
+		const p = post.platform;
+		const label = PLATFORMS[p].label;
+		const views = post.views;
+		if (views === null) return `${label}: views not read yet`;
+		if (views < MIN_VIEWS) return `${label}: ${whole.format(views)} ${views === 1 ? 'view' : 'views'} — under ${MIN_VIEWS}, too few to say`;
+		const rate = rateOf(post, kind);
+		let what: string;
+		if (kind === 'skip') what = rate === null ? (SKIP_UNKNOWN[p] ?? 'no skip rate') : `${rateWords(rate)} ${SKIP_WORDS[p] ?? 'skipped'}`;
+		else {
+			const n = post[kind];
+			const [one, many] = RATE_NOUNS[kind];
+			what = n === null ? `its ${many} are not read yet` : `${whole.format(n)} ${n === 1 ? one : many} on ${whole.format(views)} views: ${rate === null ? '—' : rateWords(rate)}`;
+		}
+		const usual = usuals[p][kind];
+		const st = standing(rate, usual, kind);
+		const against = usual === null ? `No usual on ${label} yet` : `Usual on ${label}: ${rateWords(usual)}${st ? `, so ${STANDING_WORDS[st]}` : ''}`;
+		return `${label}: ${what}\n${against}`;
+	}
+
+	/** The usual row's cell in words. */
+	function usualTitle(p: StatPlatform, col: RatioCol): string {
+		const label = PLATFORMS[p].label;
+		if (col === 'usual') return `${label}: each video's views are measured against the middle of ${label}'s videos of its kind at the same age`;
+		return `${label}'s usual ${RATIO_HEADS[col].what}: the middle of its public videos in this list with ${MIN_VIEWS}+ views — the filter decides which`;
+	}
 
 	const ENGAGED_ABOUT =
 		"Engagement rate by views: engagements — likes and comments, the two every platform reports — over views × 100; 15 likes and 5 comments on 529 views is 3.78%. On top every platform in view together, pooled by views, and under it each platform's own.";
@@ -805,23 +882,6 @@
 		const rate = engagedRate([post]);
 		const of = rate === null || post.views === null ? ', no views read yet' : ` on ${whole.format(post.views)} ${post.views === 1 ? 'view' : 'views'}: ${percent(rate)}`;
 		return `${label}: ${whole.format(n)} ${n === 1 ? 'engagement' : 'engagements'} (${parts})${of}${total ? ' — every video together, each counted where both were read' : ''}`;
-	}
-
-	/** One platform's count and its share of the views, in words; `total` for the total row. */
-	function shareTitle(p: StatPlatform, col: 'likes' | 'comments', n: number | null, views: number | null, gain = 0, total = false): string {
-		const label = PLATFORMS[p].label;
-		const [one, many] = SHARE_WORDS[col];
-		if (n === null) return `${label}: ${total ? 'no' : 'its'} ${many} ${total ? 'read yet' : 'are not read yet'}`;
-		const moved = gain ? ` (${gain > 0 ? '+' : ''}${whole.format(gain)} since opened)` : '';
-		const share = perView(n, views);
-		const of = share === null || views === null ? ', no views read yet' : ` on ${whole.format(views)} ${views === 1 ? 'view' : 'views'}: ${percent(share)}`;
-		return `${label}: ${whole.format(n)} ${n === 1 ? one : many}${moved}${of}${total ? ` — every video's ${many} against every video's views` : ''}`;
-	}
-
-	/** One platform's views on a video, in words. */
-	function viewsTitle(p: StatPlatform, views: number | null, gain = 0): string {
-		if (views === null) return `${PLATFORMS[p].label}: views not read yet`;
-		return `${PLATFORMS[p].label}: ${whole.format(views)} ${views === 1 ? 'view' : 'views'}${gain ? ` (${gain > 0 ? '+' : ''}${whole.format(gain)} since opened)` : ''}`;
 	}
 
 	/** A platform against its usual as a difference (+34%, like the ratios beside it), or nothing with no usual. */
@@ -847,11 +907,6 @@
 		instagram: 'not given yet',
 		youtube: 'not known yet — YouTube Analytics runs about two days behind'
 	};
-	const skipAbout =
-		'The share of views dropped at the start. Instagram: skipped within the first 3 seconds, its own estimate. ' +
-		'YouTube: plays that never became an engaged view (YouTube Analytics, about two days behind; YouTube does not say where that line is, so it is not quite the same 3 seconds). ' +
-		'Facebook and TikTok give none.';
-
 	function skipTitle(r: Release): string {
 		if (skipInView.length === 0) return 'Neither YouTube nor Instagram is in view';
 		const posts = skipPosts(r, view.platforms);
@@ -1470,25 +1525,22 @@
 	{/if}
 {/snippet}
 
-<!-- Ratio View's cells: each column a subgrid over a track per platform (dashcolumns.ts),
-     a slot each — the platform's square, then its own numbers — and the lines after the
-     views, the likes and the comments. -->
+<!-- Ratio View's cells, a heatmap: each column a subgrid over a track per platform
+     (dashcolumns.ts), each cell that platform's own number coloured by how it stands against
+     the platform's usual (ratioview.ts), and lines after the reach, the likes and the comments. -->
 {#snippet line(col: ColumnId)}
 	{@const cls = lineOf(col)}
 	{#if cls}<span class={cls} aria-hidden="true"></span>{/if}
 {/snippet}
 
 {#snippet ratioHead(col: ColumnId)}
-	{#if col === 'thumb' || col === 'video'}
+	{#if !isRatioCol(col)}
 		{@render headCell(col)}
-	{:else if col === 'views'}
-		{@render sortHead('views', 'Views', cellOf(col), RATIO_ABOUT.views, spanOf(col))}
-		{@render line(col)}
-	{:else if col === 'likes' || col === 'comments' || col === 'engaged'}
-		<!-- The column's name, sorting by every platform together, and under it a sort per platform, over its slots. -->
-		{@const head = RATE_HEADS[col]}
+	{:else}
+		<!-- The column's name, sorting by every platform together, and under it a sort per platform, over its cells. -->
+		{@const head = RATIO_HEADS[col]}
 		<span class="pcells phead {cellOf(col)}" style:grid-column="span {spanOf(col)}">
-			{@render sortHead(head.kind, head.label, 'pgroup', RATIO_ABOUT[col])}
+			{@render sortHead(head.sort, head.label, 'pgroup', head.about)}
 			{#each slotsOf(col) as p (p)}
 				{@const key = `${head.kind}:${p}` as PlatformRateKey}
 				{@const what = `${PLATFORMS[p].label}'s ${head.what}`}
@@ -1497,7 +1549,9 @@
 					class:on={sort === key}
 					onclick={() => sortBy(key)}
 					aria-label="Sort by {what}"
-					title={sort === key ? `Sorted by ${what}, ${sortWords(key, reversed)} — click for ${sortWords(key, !reversed)}` : `Sort by ${what}, highest first`}
+					title={sort === key
+						? `Sorted by ${what}, ${sortWords(key, reversed)} — click for ${sortWords(key, !reversed)}`
+						: `Sort by ${what}, ${sortWords(key, false)}`}
 				>
 					<PlatformIcon platform={p} size={12} />
 					{#if sort === key}<span class="arrow" aria-hidden="true">{reversed ? '↑' : '↓'}</span>{/if}
@@ -1505,63 +1559,31 @@
 			{/each}
 		</span>
 		{@render line(col)}
-	{:else if col === 'skip'}
-		{@render sortHead('skip', 'Skipped', cellOf(col), skipAbout, spanOf(col))}
-	{:else if col === 'usual'}
-		{@render sortHead('usual', 'vs usual', cellOf(col), RATIO_ABOUT.usual, spanOf(col))}
 	{/if}
 {/snippet}
 
-{#snippet ratioTotal(col: ColumnId)}
-	{#if col === 'thumb' || col === 'video'}
-		{@render totalCell(col)}
-	{:else}
+<!-- In place of a total: each platform's usual, what the colours below are measured against. -->
+{#snippet ratioUsual(col: ColumnId)}
+	{#if col === 'thumb'}
+		<span class={cellOf(col)}></span>
+	{:else if col === 'video'}
+		<span class="vid {cellOf(col)}">
+			<span class="vtitle">Your usual</span>
+			<span class="vmeta">middle of {MIN_VIEWS}+ views</span>
+		</span>
+	{:else if isRatioCol(col)}
 		<span class="pcells {cellOf(col)}" style:grid-column="span {spanOf(col)}">
-			{#if col !== 'usual'}
-				{#each slotsOf(col) as p (p)}
-					{@const t = slotTotals[p]}
-					{#if !t}
-						<span class="pslot"></span>
-					{:else if col === 'views'}
-						<span class="pslot" title="{viewsTitle(p, t.views)} on these videos"
-							><i style:background={PLATFORM_COLOURS[p]}></i><span class="pnum">{count(t.views)}</span></span
-						>
-					{:else if col === 'likes' || col === 'comments'}
-						<span class="pslot" title={shareTitle(p, col, t[col], t.views, 0, true)}
-							><i style:background={PLATFORM_COLOURS[p]}></i><span class="pnum"
-								><span class="pcount">{count(t[col])}</span><span class="psep">/</span><span class="pratio"
-									>{percent(col === 'likes' ? t.likeRate : t.commentRate)}</span
-								></span
-							></span
-						>
-					{:else if col === 'skip'}
-						<span
-							class="pslot"
-							class:none={t.skip === null}
-							title={t.skip === null
-								? `${PLATFORMS[p].label}: no skip rate among these videos`
-								: `${PLATFORMS[p].label}: ${skipShown(t.skip)} of these videos' views skipped at the start (each video's rate weighted by its views)`}
-							><i style:background={PLATFORM_COLOURS[p]}></i><span class="pnum">{t.skip === null ? '—' : skipShown(t.skip)}</span></span
-						>
-					{:else if col === 'engaged'}
-						<span
-							class="pslot"
-							class:none={t.engagedRate === null}
-							title={t.engagedRate === null
-								? `${PLATFORMS[p].label}: no likes, comments and views read among these videos`
-								: `${PLATFORMS[p].label}: ${percent(t.engagedRate)} — every video's likes and comments together against every video's views`}
-							><i style:background={PLATFORM_COLOURS[p]}></i><span class="pnum"><span class="pratio">{percent(t.engagedRate)}</span></span></span
-						>
-					{/if}
-				{/each}
-			{/if}
+			{#each slotsOf(col) as p (p)}
+				{@const value = col === 'usual' ? null : usuals[p][col]}
+				<span class="hcell base" title={usualTitle(p, col)}>{value === null ? '—' : rateWords(value)}</span>
+			{/each}
 		</span>
 		{@render line(col)}
 	{/if}
 {/snippet}
 
 {#snippet ratioCell(col: ColumnId, row: Row)}
-	{#if col === 'thumb' || col === 'video'}
+	{#if !isRatioCol(col)}
 		{@render rowCell(col, row)}
 	{:else}
 		<span class="pcells {cellOf(col)}" style:grid-column="span {spanOf(col)}">
@@ -1571,44 +1593,20 @@
 	{/if}
 {/snippet}
 
-<!-- One platform's numbers in a column; an empty slot where the video is not on it, so the rest line up. -->
-{#snippet ratioSlot(col: ColumnId, row: Row, p: StatPlatform)}
+<!-- One platform's cell; an empty one where the video is not on it, so the rest line up. -->
+{#snippet ratioSlot(col: RatioCol, row: Row, p: StatPlatform)}
 	{@const post = row.release.posts[p]}
 	{#if !post}
-		<span class="pslot"></span>
-	{:else if col === 'views'}
-		{@const gain = deltaOf([post], 'views')}
-		<span class="pslot" class:up={gain > 0} title={viewsTitle(p, post.views, gain)}
-			><i style:background={PLATFORM_COLOURS[p]}></i><span class="pnum"><span class="pcount">{count(post.views)}</span></span></span
-		>
-	{:else if col === 'likes' || col === 'comments'}
-		{@const gain = deltaOf([post], col)}
-		<span class="pslot" class:up={gain > 0} title={shareTitle(p, col, post[col], post.views, gain)}
-			><i style:background={PLATFORM_COLOURS[p]}></i><span class="pnum"
-				><span class="pcount">{count(post[col])}</span><span class="psep">/</span><span class="pratio"
-					>{percent(perView(post[col], post.views))}</span
-				></span
-			></span
-		>
-	{:else if col === 'skip'}
-		<span
-			class="pslot"
-			class:none={post.skipRate == null}
-			title="{PLATFORMS[p].label}: {post.skipRate == null ? SKIP_UNKNOWN[p] : `${skipShown(post.skipRate)} ${SKIP_WORDS[p]}`}"
-			><i style:background={PLATFORM_COLOURS[p]}></i><span class="pnum">{post.skipRate == null ? '—' : skipShown(post.skipRate)}</span></span
-		>
-	{:else if col === 'engaged'}
-		{@const rate = engagedRate([post])}
-		<span class="pslot" class:none={rate === null} title={engagedTitle(p, post)}
-			><i style:background={PLATFORM_COLOURS[p]}></i><span class="pnum"><span class="pratio">{percent(rate)}</span></span></span
-		>
+		<span class="hcell absent"></span>
 	{:else if col === 'usual'}
 		{@const j = row.judgements.find((x) => x.platform === p)}
-		<span class="pslot" title={j ? judgementTitle(j, row.release) : ''}
-			><i style:background={PLATFORM_COLOURS[p]}></i><span class="pnum judged {j?.verdict ?? 'none'}"
-				><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d={TREND[j?.verdict ?? 'none']} /></svg
-				>{judgedWords(j)}</span
-			></span
+		<span class="hcell {reachTone(j)}" title={reachTitle(j, post, row.release)}>{judgedWords(j) || '—'}</span>
+	{:else if post.views !== null && post.views < MIN_VIEWS}
+		<span class="hcell few" title={rateTitle(post, col)}>·</span>
+	{:else}
+		{@const rate = rateOf(post, col)}
+		<span class="hcell {standing(rate, usuals[p][col], col) ?? 'none'}" title={rateTitle(post, col)}
+			>{rate === null ? '—' : rateWords(rate)}</span
 		>
 	{/if}
 {/snippet}
@@ -1927,6 +1925,16 @@
 		</p>
 	{/if}
 
+	{#if ratioView}
+		<p class="ratiolegend">
+			<span><span class="hcell up" aria-hidden="true"></span>Better than your usual on that platform</span>
+			<span><span class="hcell down" aria-hidden="true"></span>Worse</span>
+			<span><span class="hcell" aria-hidden="true"></span>About the same</span>
+			<span><span class="hcell few" aria-hidden="true"></span>Under {MIN_VIEWS} views: too few to say</span>
+			<span class="hint">Hover a cell for its numbers</span>
+		</p>
+	{/if}
+
 	<!-- The cells follow the layout set under Settings → Dashboard (dashcolumns.ts);
 	     each carries its column's class, so the narrower lists can leave some out. -->
 	<section
@@ -1943,7 +1951,7 @@
 			{#each columns as col (col)}{@render (ratioView ? ratioHead : headCell)(col)}{/each}
 		</div>
 		<div class="row total">
-			{#each columns as col (col)}{@render (ratioView ? ratioTotal : totalCell)(col)}{/each}
+			{#each columns as col (col)}{@render (ratioView ? ratioUsual : totalCell)(col)}{/each}
 		</div>
 
 		{#each rows as row (row.release.key)}
@@ -3332,24 +3340,23 @@
 		color: var(--text-faint);
 	}
 
-	/* ---- Ratio View: each platform's numbers on tracks of their own ---- */
+	/* ---- Ratio View: a heatmap, each platform's cells on tracks of their own ---- */
 
-	/* A column's slots, one per platform: a subgrid over the list's tracks, so
-	   each platform's numbers line up down the list. More room before a
-	   column than between its platforms. */
+	/* A column's cells, one per platform: a subgrid over the list's tracks, so
+	   each platform's cells line up down the list. More room before a column
+	   than between its platforms. */
 	.pcells {
 		display: grid;
 		grid-template-columns: subgrid;
-		column-gap: 8px;
+		column-gap: 6px;
 		padding-left: 14px;
 		font-size: 12px;
-		color: var(--text-dim);
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
 	}
 
-	/* After the title and right after the line, the list's gap is room enough. */
-	.pcells.c-views,
+	/* After the title and right after a line, the list's gap is room enough. */
+	.pcells.c-usual,
 	.bench + .pcells {
 		padding-left: 0;
 	}
@@ -3361,71 +3368,102 @@
 		min-width: 100%;
 	}
 
-	/* Every platform's numbers need about a 1,900 px window; a narrower one
-	   scrolls the list sideways rather than cutting columns off. */
+	/* A window too narrow for every platform's cells scrolls the list
+	   sideways rather than cutting columns off. */
 	.list.ratio {
 		overflow-x: auto;
 		overflow-y: hidden;
 	}
 
-	/* The platform's square on the left, its numbers on the right. */
-	.pslot {
+	/* One platform's number, coloured by how it stands against that platform's
+	   usual: green better, amber worse — the colours of vs usual — plain about
+	   usual, dashed under 100 views. The marks in the header say which
+	   platform a column of cells is; the cells never take a platform's colour. */
+	.hcell {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		gap: 4px;
+		justify-content: center;
+		min-width: 54px;
+		height: 24px;
+		padding: 0 8px;
+		border-radius: 6px;
+		background: var(--surface-2);
+		color: var(--text-dim);
 	}
 
-	.pslot i {
-		width: 7px;
-		height: 7px;
-	}
-
-	.pnum {
-		display: inline-flex;
-		align-items: baseline;
-	}
-
-	.psep {
-		margin: 0 3px;
-		color: var(--text-faint);
-	}
-
-	.pratio {
-		color: var(--text);
-		font-weight: 600;
-	}
-
-	.pslot.up .pcount {
+	.hcell.up {
+		background: color-mix(in srgb, var(--ok) 18%, transparent);
 		color: var(--ok);
-		font-weight: 600;
+		font-weight: 650;
 	}
 
-	.pslot.none {
+	.hcell.down {
+		background: color-mix(in srgb, var(--warn) 16%, transparent);
+		color: var(--warn);
+		font-weight: 650;
+	}
+
+	.hcell.none {
 		color: var(--text-faint);
 	}
 
-	.pcells .judged {
-		align-items: center;
-		gap: 4px;
+	.hcell.few {
+		background: none;
+		border: 1px dashed var(--border-strong);
+		color: var(--text-faint);
 	}
 
-	.row.total .pcells {
+	.hcell.absent {
+		background: none;
+	}
+
+	/* The usual row: what the colours are measured against. */
+	.hcell.base {
+		background: none;
+		border: 1px solid var(--border-strong);
 		color: var(--text);
 		font-weight: 600;
 	}
 
-	/* A line after the views — the benchmark here — and after the likes and the
-	   comments, through every row from its top border to its bottom, in the
-	   rows' own border colour. */
+	/* What the colours mean, over the list. */
+	.ratiolegend {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px 18px;
+		margin: 0 0 10px 2px;
+		font-size: 11.5px;
+		color: var(--text-dim);
+	}
+
+	.ratiolegend > span {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+	}
+
+	.ratiolegend .hcell {
+		min-width: 0;
+		width: 20px;
+		height: 13px;
+		padding: 0;
+		border-radius: 4px;
+	}
+
+	.ratiolegend .hint {
+		color: var(--text-faint);
+	}
+
+	/* A line after the reach, the likes and the comments, through every row
+	   from its top border to its bottom, in the rows' own border colour. */
 	.bench {
 		align-self: stretch;
 		margin-block: -7px;
 		background: var(--border);
 	}
 
-	/* The header: each column's name on its first line, and under the likes'
-	   and the comments' a sort per platform, over that platform's slots. */
+	/* The header: each column's name on its first line, and under it a sort
+	   per platform, over that platform's cells. */
 	.ratio .row.cols {
 		align-items: start;
 	}
@@ -3438,13 +3476,12 @@
 		grid-column: 1 / -1;
 	}
 
-	/* Its padding is taken back by the margin, so the mark sits over the slot's square. */
+	/* Centred over its platform's cells. */
 	.psort {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
+		justify-content: center;
 		gap: 4px;
-		margin: 0 -4px;
 		padding: 2px 4px;
 		border-radius: 5px;
 		font-size: 11px;

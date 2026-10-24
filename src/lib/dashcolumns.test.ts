@@ -103,23 +103,23 @@ describe('the grid', () => {
 
 	it('draws the Ratio View set whatever the layout, the thumbnail as the layout has it', () => {
 		const layout = setShown(moveBefore(DEFAULT_COLUMNS, 'usual', 'jestr'), 'likes', false);
-		expect(ratioColumns(layout)).toEqual(['thumb', 'video', 'views', 'likes', 'comments', 'skip', 'engaged', 'usual']);
+		expect(ratioColumns(layout)).toEqual(['thumb', 'video', 'usual', 'likes', 'comments', 'skip']);
 		expect(ratioColumns(setShown(DEFAULT_COLUMNS, 'thumb', false))).toEqual(['video', ...RATIO_COLUMNS]);
 	});
 
-	it('gives Ratio View a track per platform, a line after the views, likes and comments, and keeps the ratios longest', () => {
+	it('gives Ratio View a track per platform, a line after the reach, likes and comments, and keeps the ratios longest', () => {
 		const ids = ratioColumns(DEFAULT_COLUMNS);
-		const slots = { views: 4, likes: 4, comments: 4, skip: 2, engaged: 4, usual: 4 };
+		const slots = { usual: 4, likes: 4, comments: 4, skip: 2 };
 		expect(ratioTemplate(ids, slots, 'wide')).toBe(
-			'var(--thumbcol) minmax(max-content, 1fr) repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(2, max-content) repeat(4, max-content) repeat(4, max-content)'
+			'var(--thumbcol) minmax(max-content, 1fr) repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(2, max-content)'
 		);
 		// No line after the last column.
 		expect(ratioTemplate(ids, slots, 'mid')).toBe(
 			'var(--thumbcol) minmax(max-content, 1fr) repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(4, max-content)'
 		);
-		expect(ratioTemplate(ids, { views: 0 }, 'narrow')).toBe('var(--thumbcol) minmax(max-content, 1fr) repeat(1, max-content) 1px repeat(1, max-content)');
+		expect(ratioTemplate(ids, { usual: 0 }, 'narrow')).toBe('var(--thumbcol) minmax(max-content, 1fr) repeat(1, max-content) 1px repeat(1, max-content)');
 		expect(ratioOff('skip', 'mid')).toBe(true);
-		expect(ratioOff('engaged', 'mid')).toBe(true);
+		expect(ratioOff('engaged', 'wide')).toBe(true);
 		expect(ratioOff('video', 'narrow')).toBe(false);
 	});
 

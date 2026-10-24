@@ -2,15 +2,20 @@ import { describe, expect, it } from 'vitest';
 import {
 	engagedRate,
 	engagementsOf,
+	MIN_VIEWS,
 	percentWords,
 	perView,
-	platformTotal,
 	pooledPerView,
+	rateOf,
+	rateWords,
 	readRatioPlatforms,
 	shortTitle,
 	slotPlatforms,
+	standing,
 	toggleRatioPlatform,
-	viewFilter
+	usualOf,
+	viewFilter,
+	vsUsual
 } from './ratioview';
 import { DEFAULT_FILTER, STAT_PLATFORMS, type Post } from './releases';
 
@@ -114,11 +119,48 @@ describe('slots and totals', () => {
 		expect(slotPlatforms([{ posts: { facebook: post(1, 1, 1), youtube: post(1, 1, 1) } }], ['facebook', 'tiktok'])).toEqual(['facebook']);
 	});
 
-	it('adds a platform’s counters up and pools its shares by the views', () => {
-		const total = platformTotal([post(1100, 12, 3, 40), post(900, 8, null, 20), post(null, 5, 1)]);
-		expect(total).toMatchObject({ views: 2000, likes: 25, comments: 4, likeRate: 1, engagedRate: 15 / 11 });
-		expect(total.commentRate).toBeCloseTo(3 / 11, 9);
-		expect(total.skip).toBeCloseTo(31, 6);
-		expect(platformTotal([post(null, null, null)])).toMatchObject({ views: null, likes: null, likeRate: null, skip: null });
+});
+
+describe('against the usual', () => {
+	it('leaves a rate out below the views it takes to mean anything', () => {
+		expect(MIN_VIEWS).toBe(100);
+		expect(rateOf(post(15, 1, 0), 'likes')).toBeNull();
+		expect(rateOf(post(919, 15, 5), 'likes')).toBeCloseTo(1.632, 3);
+		expect(rateOf(post(919, 15, 5, 42), 'skip')).toBe(42);
+		expect(rateOf(post(99, 15, 5, 42), 'skip')).toBeNull();
+	});
+
+	it('takes the usual as the middle rate of the posts with enough views', () => {
+		const usual = usualOf([post(1000, 10, 2, 50), post(1000, 20, 0, 40), post(1000, 30, 1, null), post(20, 20, 20, 90)]);
+		expect(usual).toEqual({ likes: 2, comments: 0.1, skip: 45 });
+		expect(usualOf([])).toEqual({ likes: null, comments: null, skip: null });
+	});
+
+	it('says better, worse or about usual, fewer skips being better', () => {
+		expect(standing(1.9, 1.5, 'likes')).toBe('up');
+		expect(standing(1.1, 1.5, 'likes')).toBe('down');
+		expect(standing(1.6, 1.5, 'likes')).toBe('usual');
+		expect(standing(40, 46, 'skip')).toBe('up');
+		expect(standing(52, 46, 'skip')).toBe('down');
+		expect(standing(48, 46, 'skip')).toBe('usual');
+		expect(standing(0.4, 0, 'comments')).toBe('up');
+		expect(standing(0, 0, 'comments')).toBe('usual');
+		expect(standing(null, 1, 'likes')).toBeNull();
+	});
+
+	it('measures a whole video by the mean of its platforms against theirs', () => {
+		const yt = { ...post(1000, 30, 0), platform: 'youtube' as const };
+		const ig = { ...post(1000, 10, 0), platform: 'instagram' as const };
+		const tiny = { ...post(10, 5, 0), platform: 'tiktok' as const };
+		const usual = { youtube: { likes: 1.5, comments: 0, skip: null }, instagram: { likes: 2, comments: 0, skip: null }, tiktok: { likes: 3, comments: 0, skip: null } };
+		expect(vsUsual([yt, ig, tiny], usual, 'likes')).toBeCloseTo((2 + 0.5) / 2, 9);
+		expect(vsUsual([yt], usual, 'comments')).toBeNull();
+	});
+
+	it('writes a rate with the decimals it needs', () => {
+		expect(rateWords(0, 'en-GB')).toBe('0%');
+		expect(rateWords(0.536, 'en-GB')).toBe('0.54%');
+		expect(rateWords(1.632, 'en-GB')).toBe('1.6%');
+		expect(rateWords(10.08, 'de-DE')).toBe('10,1%');
 	});
 });
