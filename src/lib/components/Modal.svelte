@@ -6,6 +6,7 @@
 		title = '',
 		subtitle = '',
 		width = '640px',
+		maxHeight = '',
 		header,
 		children,
 		footer
@@ -14,6 +15,8 @@
 		title?: string;
 		subtitle?: string;
 		width?: string;
+		/** Over the sheet's usual min(84vh, 860px), for a panel that should fit on the screen whole. */
+		maxHeight?: string;
 		header?: Snippet;
 		children?: Snippet;
 		footer?: Snippet;
@@ -39,7 +42,7 @@
 	>
 		<div
 			class="sheet scroll"
-			style="max-width: {width}"
+			style="max-width: {width}{maxHeight ? `; max-height: ${maxHeight}` : ''}"
 			role="dialog"
 			aria-modal="true"
 			aria-label={title}

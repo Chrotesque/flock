@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Modal from './Modal.svelte';
 	import MonthsGraph from './MonthsGraph.svelte';
+	import PlatformIcon from './PlatformIcon.svelte';
 	import { portal } from '$lib/portal';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
@@ -197,7 +198,8 @@
 		subtitle={view === 'list'
 			? 'Each month against the one before, the month still running at its pace so far — a fifth up or down counts, as for vs usual.'
 			: 'The platforms added up, the month still running at its pace so far (dashed); green where a month rose on the one before, red where it fell, the stronger the bigger the change. Each axis runs from the lowest month to the highest.'}
-		width="760px"
+		width="900px"
+		maxHeight="min(94vh, 1000px)"
 	>
 		<div class="bar">
 			<div class="views" role="tablist" aria-label="Show as">
@@ -216,13 +218,23 @@
 					>Lifetime</button
 				>
 			</div>
+			{#if sources.length > 0}
+				<!-- Where each platform's numbers come from, on hover or focus. -->
+				<div class="hold">
+					<button class="sourcebtn" aria-label="Where the numbers come from" aria-describedby="month-sources">
+						{#each sources as s (s.source.platform)}<PlatformIcon platform={s.source.platform} size={16} />{/each}
+					</button>
+					<div class="ppop" id="month-sources" role="tooltip">
+						{#each sources as s (s.source.platform)}
+							<p class="pline">
+								<i style:background={PLATFORM_COLOURS[s.source.platform]}></i>
+								<span><strong>{label(s.source.platform)}</strong> {s.note}</span>
+							</p>
+						{/each}
+					</div>
+				</div>
+			{/if}
 		</div>
-
-		<ul class="sources" aria-label="Where the numbers come from">
-			{#each sources as s (s.source.platform)}
-				<li><i style:background={PLATFORM_COLOURS[s.source.platform]}></i><strong>{label(s.source.platform)}</strong> {s.note}</li>
-			{/each}
-		</ul>
 
 		{#if sources.length === 0}
 			<p class="none">This brand has no account chosen on any platform flock reads.</p>
@@ -363,24 +375,88 @@
 		gap: 18px;
 	}
 
-	.sources {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px 18px;
-		margin: 0 0 14px;
-		padding: 0;
-		list-style: none;
-		font-size: 12px;
-		color: var(--text-faint);
+	/* The platforms' marks, right of the timeframe; where each one's numbers come from opens under it. */
+	.hold {
+		position: relative;
+		margin-left: auto;
 	}
 
-	.sources li {
+	.sourcebtn {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
+		gap: 8px;
+		padding: 6px 11px;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: var(--bg-elev);
+		cursor: default;
+		transition: border-color 0.14s;
 	}
 
-	.sources strong {
+	.hold:hover .sourcebtn,
+	.sourcebtn:focus-visible {
+		border-color: var(--border-strong);
+	}
+
+	.ppop {
+		position: absolute;
+		top: calc(100% + 8px);
+		right: 0;
+		z-index: 30;
+		display: grid;
+		gap: 6px;
+		width: max-content;
+		max-width: min(420px, calc(100vw - 40px));
+		margin: 0;
+		padding: 11px 13px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius);
+		background: var(--surface);
+		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+		font-size: 12px;
+		color: var(--text-faint);
+		opacity: 0;
+		visibility: hidden;
+		transform: translateY(-4px);
+		transition:
+			opacity 0.14s,
+			transform 0.14s,
+			visibility 0s 0.14s;
+	}
+
+	/* Bridges the gap to the button, so the pointer can move onto the popup. */
+	.ppop::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: -9px;
+		height: 9px;
+	}
+
+	.hold:hover .ppop,
+	.hold:focus-within .ppop {
+		opacity: 1;
+		visibility: visible;
+		transform: none;
+		transition:
+			opacity 0.14s,
+			transform 0.14s;
+	}
+
+	.pline {
+		display: flex;
+		align-items: baseline;
+		gap: 7px;
+		margin: 0;
+	}
+
+	.pline i {
+		position: relative;
+		top: -1px;
+	}
+
+	.pline strong {
 		font-weight: 600;
 		color: var(--text-dim);
 	}
