@@ -183,9 +183,12 @@ export function columnWords(columns: DashColumn[]): string {
 /**
  * What Ratio View shows after the title, whatever the layout: no Jestr,
  * followers or curve. Likes and comments carry their share of the views;
- * the views, the benchmark, have a line after them.
+ * the views, the benchmark, and each of the two have a line after them.
  */
 export const RATIO_COLUMNS: ColumnId[] = ['views', 'likes', 'comments', 'skip', 'usual'];
+
+/** The columns with a line after them, wherever another column follows. */
+export const RATIO_LINES: ColumnId[] = ['views', 'likes', 'comments'];
 
 /** Which of them the narrower lists keep: the views and the ratios first. */
 const RATIO_AT: Record<ListSize, ColumnId[]> = {
@@ -209,18 +212,18 @@ export function ratioOff(id: ColumnId, size: ListSize): boolean {
  * Ratio View's grid at a size: a track per platform in each column
  * (`slots`, each as wide as its widest number in any row, so every
  * platform's numbers line up down the list), the title taking what is
- * left but never less than itself, and a 1px track for the line after the
- * views.
+ * left but never less than itself, and a 1px track for each line
+ * (RATIO_LINES) that has a column after it at this size.
  */
 export function ratioTemplate(ids: ColumnId[], slots: Partial<Record<ColumnId, number>>, size: ListSize): string {
-	return ids
-		.filter((id) => !ratioOff(id, size))
-		.flatMap((id) => {
+	const shown = ids.filter((id) => !ratioOff(id, size));
+	return shown
+		.flatMap((id, i) => {
 			if (id === 'thumb') return ['var(--thumbcol)'];
 			// At least as wide as the shortened title (the list does not let its meta line widen it).
 			if (id === 'video') return ['minmax(max-content, 1fr)'];
 			const tracks = `repeat(${Math.max(1, slots[id] ?? 1)}, max-content)`;
-			return id === 'views' ? [tracks, '1px'] : [tracks];
+			return RATIO_LINES.includes(id) && i < shown.length - 1 ? [tracks, '1px'] : [tracks];
 		})
 		.join(' ');
 }

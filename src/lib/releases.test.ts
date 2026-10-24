@@ -24,6 +24,7 @@ import {
 	skipRateOf,
 	sortRows,
 	sortWords,
+	isPlatformRateKey,
 	storedFilter,
 	sumOf,
 	thin,
@@ -700,6 +701,19 @@ describe('sortRows', () => {
 		expect(sortRows(rated, 'likeRate', true).map((x) => x.release.key)).toEqual(['old', 'mid', 'new']);
 		expect(sortRows(rated, 'commentRate').map((x) => x.release.key)).toEqual(['new', 'old', 'mid']);
 		expect(sortWords('likeRate', false)).toBe('highest first');
+	});
+
+	it('sorts by one platform’s likes or comments per view, missing last', () => {
+		const rated = rows.map((row, i) => ({
+			...row,
+			rates: [{ 'likeRate:instagram': 2.5 }, { 'likeRate:instagram': null, 'commentRate:youtube': 1 }, { 'likeRate:instagram': 4 }][i]
+		}));
+		expect(sortRows(rated, 'likeRate:instagram').map((x) => x.release.key)).toEqual(['mid', 'old', 'new']);
+		expect(sortRows(rated, 'likeRate:instagram', true).map((x) => x.release.key)).toEqual(['old', 'mid', 'new']);
+		expect(sortRows(rated, 'commentRate:youtube').map((x) => x.release.key)).toEqual(['new', 'mid', 'old']);
+		expect(sortWords('commentRate:tiktok', true)).toBe('lowest first');
+		expect(isPlatformRateKey('likeRate:facebook')).toBe(true);
+		expect(isPlatformRateKey('likeRate:myspace')).toBe(false);
 	});
 
 	it('turns round when reversed, still missing last', () => {

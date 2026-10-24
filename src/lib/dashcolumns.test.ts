@@ -105,14 +105,15 @@ describe('the grid', () => {
 		expect(ratioColumns(setShown(DEFAULT_COLUMNS, 'thumb', false))).toEqual(['video', ...RATIO_COLUMNS]);
 	});
 
-	it('gives Ratio View a track per platform, a line after the views, and keeps the ratios longest', () => {
+	it('gives Ratio View a track per platform, a line after the views, likes and comments, and keeps the ratios longest', () => {
 		const ids = ratioColumns(DEFAULT_COLUMNS);
 		const slots = { views: 4, likes: 4, comments: 4, skip: 2, usual: 4 };
 		expect(ratioTemplate(ids, slots, 'wide')).toBe(
-			'var(--thumbcol) minmax(max-content, 1fr) repeat(4, max-content) 1px repeat(4, max-content) repeat(4, max-content) repeat(2, max-content) repeat(4, max-content)'
+			'var(--thumbcol) minmax(max-content, 1fr) repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(2, max-content) repeat(4, max-content)'
 		);
+		// No line after the last column.
 		expect(ratioTemplate(ids, slots, 'mid')).toBe(
-			'var(--thumbcol) minmax(max-content, 1fr) repeat(4, max-content) 1px repeat(4, max-content) repeat(4, max-content)'
+			'var(--thumbcol) minmax(max-content, 1fr) repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(4, max-content)'
 		);
 		expect(ratioTemplate(ids, { views: 0 }, 'narrow')).toBe('var(--thumbcol) minmax(max-content, 1fr) repeat(1, max-content) 1px repeat(1, max-content)');
 		expect(ratioOff('skip', 'mid')).toBe(true);

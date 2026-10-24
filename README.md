@@ -683,15 +683,18 @@ on the one before and red where it fell, the stronger the bigger the change;
   limit is half used, orange when it is nearly used, red on an error or a
   limit used up. Hover it for when each platform was last read, YouTube's
   quota for the day and Instagram's posts in the last 24 hours.
-- **Ratio View**, the switch left of the status icon: every platform side by
+- **Ratio View**, the switch left of the status icon: the platforms side by
   side, each behind its coloured square — its views, then its likes and
   comments with their share of its views (`20 / 1.09%`), its skip rate and
-  how it stands against usual. No sums, no followers, no curve; a line after
-  the views marks them as what the rest is measured against, and titles are
-  cut to 20 characters to make room. A window under about 1,900 px wide
-  scrolls the list sideways. Meanwhile the filter's platforms are greyed and
-  not in effect — its timeframe, kinds and visibility still are. The browser
-  remembers the switch.
+  how it stands against usual. No sums, no followers, no curve; lines after
+  the views, the likes and the comments, and titles cut to 20 characters to
+  make room. Once it is on, the platforms' marks beside the switch add a
+  platform or take it out with a click. *Likes & Ratio* and *Comments &
+  Ratio* sort by every platform together; the marks under them sort by one
+  platform's ratio, highest first (click again for lowest). A window under
+  about 1,900 px wide scrolls the list sideways. Meanwhile the filter's
+  platforms are greyed and not in effect — its timeframe, kinds and
+  visibility still are. The browser remembers the switch and the platforms.
 - **Stored on the NAS**, folded away at the bottom: the newest uploads, with a
   delete per upload (press it twice).
 - **Renaming a video:** press the pencil at the top right twice within two

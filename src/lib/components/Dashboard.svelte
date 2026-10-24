@@ -30,8 +30,28 @@
 		type FollowerState
 	} from '$lib/followers';
 	import { onTikTokAccount, tiktokRef, tiktokReportOf, tiktokStateOf } from '$lib/tiktokaccount';
-	import { COLUMNS, gridTemplate, ratioColumns, ratioOff, ratioTemplate, shownColumns, type ColumnId, type ListSize } from '$lib/dashcolumns';
-	import { percentWords, perView, platformTotal, shortTitle, slotPlatforms, viewFilter, type PlatformTotal } from '$lib/ratioview';
+	import {
+		COLUMNS,
+		RATIO_LINES,
+		gridTemplate,
+		ratioColumns,
+		ratioOff,
+		ratioTemplate,
+		shownColumns,
+		type ColumnId,
+		type ListSize
+	} from '$lib/dashcolumns';
+	import {
+		percentWords,
+		perView,
+		platformTotal,
+		readRatioPlatforms,
+		shortTitle,
+		slotPlatforms,
+		toggleRatioPlatform,
+		viewFilter,
+		type PlatformTotal
+	} from '$lib/ratioview';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import {
 		deleteJob,
@@ -53,7 +73,10 @@
 	import {
 		ALL_PLATFORMS,
 		PLATFORM_COLOURS,
+		PLATFORM_RATE_KEYS,
+		STAT_PLATFORMS,
 		curve,
+		isPlatformRateKey,
 		filterCounts,
 		inView,
 		isCombined,
@@ -72,6 +95,7 @@
 		type DashFilter as Filter,
 		type Judgement,
 		type Overall,
+		type PlatformRateKey,
 		type Post,
 		type Release,
 		type SortKey,
@@ -105,6 +129,7 @@
 	const SORT_KEY = 'flock.dashboard.sort';
 	const SORT_REVERSED_KEY = 'flock.dashboard.sortReversed';
 	const RATIO_KEY = 'flock.dashboard.ratioView';
+	const RATIO_PLATFORMS_KEY = 'flock.dashboard.ratioPlatforms';
 
 	function readPref(key: string): string | null {
 		try {
@@ -130,9 +155,9 @@
 		}
 	}
 
-	const SORTS: SortKey[] = ['date', 'views', 'likes', 'comments', 'followers', 'skip', 'usual', 'likeRate', 'commentRate'];
 	/** Sorted by only in Ratio View, whose headers they are. */
-	const RATIO_SORTS: SortKey[] = ['likeRate', 'commentRate'];
+	const RATIO_SORTS: SortKey[] = ['likeRate', 'commentRate', ...PLATFORM_RATE_KEYS];
+	const SORTS: SortKey[] = ['date', 'views', 'likes', 'comments', 'followers', 'skip', 'usual', ...RATIO_SORTS];
 	let filter = $state<Filter>(readFilter(parsed(readPref(FILTER_KEY))));
 	let sort = $state<SortKey>(SORTS.find((s) => s === readPref(SORT_KEY)) ?? 'date');
 	$effect(() => writePref(FILTER_KEY, JSON.stringify(storedFilter(filter))));
@@ -146,13 +171,25 @@
 	 * While it is on, the filter's platforms are not in effect: `view` is the
 	 * filter as every number on the page applies it. */
 	let ratioView = $state(readPref(RATIO_KEY) === '1');
+	// The platforms it shows, picked beside its switch: every one to begin with.
+	let ratioPlatforms = $state<StatPlatform[]>(readRatioPlatforms(parsed(readPref(RATIO_PLATFORMS_KEY))));
 	$effect(() => writePref(RATIO_KEY, ratioView ? '1' : '0'));
-	const view = $derived(viewFilter(filter, ratioView));
+	$effect(() => writePref(RATIO_PLATFORMS_KEY, JSON.stringify(ratioPlatforms)));
+	const view = $derived(viewFilter(filter, ratioView, ratioPlatforms));
 
 	function toggleRatioView() {
 		ratioView = !ratioView;
 		// Its headers' sorts go with it, so the list goes back to newest first.
 		if (!ratioView && RATIO_SORTS.includes(sort)) {
+			sort = 'date';
+			reversed = false;
+		}
+	}
+
+	/** A platform added to Ratio View or taken out; a sort by one taken out goes back to newest first. */
+	function pickRatioPlatform(p: StatPlatform) {
+		ratioPlatforms = toggleRatioPlatform(ratioPlatforms, p);
+		if (isPlatformRateKey(sort) && !ratioPlatforms.some((x) => sort.endsWith(`:${x}`))) {
 			sort = 'date';
 			reversed = false;
 		}
@@ -420,6 +457,8 @@
 		/** Likes and comments per view over every platform in view, in percent: what Ratio View sorts by. */
 		likeRate: number | null;
 		commentRate: number | null;
+		/** Each platform's own likes and comments per view, by PlatformRateKey: Ratio View's per-platform sorts. */
+		rates: Partial<Record<PlatformRateKey, number | null>>;
 	}
 
 	function deltaOf(posts: Post[], counter: Counter): number {
@@ -450,6 +489,15 @@
 				followers: sumOf(release, view.platforms, 'followers'),
 				likeRate: perView(likes, views),
 				commentRate: perView(comments, views),
+				rates: Object.fromEntries(
+					STAT_PLATFORMS.flatMap((p) => {
+						const post = release.posts[p];
+						return [
+							[`likeRate:${p}`, perView(post?.likes, post?.views)],
+							[`commentRate:${p}`, perView(post?.comments, post?.views)]
+						];
+					})
+				),
 				delta: {
 					views: deltaOf(posts, 'views'),
 					likes: deltaOf(posts, 'likes'),
@@ -500,10 +548,20 @@
 	);
 	// Ratio View: a slot in every row for each platform any video in the list
 	// is on — the skip rate's only for those that give one.
-	const slots = $derived(slotPlatforms(inViewList));
+	const slots = $derived(slotPlatforms(inViewList, view.platforms));
 	const skipSlots = $derived(slots.filter((p) => SKIP_PLATFORMS.includes(p)));
 	const slotsOf = (col: ColumnId): StatPlatform[] => (col === 'skip' ? skipSlots : slots);
 	const spanOf = (col: ColumnId) => Math.max(1, slotsOf(col).length);
+	/**
+	 * The line after a column (RATIO_LINES), as the template draws it: only
+	 * where another column follows at that size, so never after the last.
+	 */
+	function lineOf(col: ColumnId): string | null {
+		const next = columns[columns.indexOf(col) + 1];
+		if (!RATIO_LINES.includes(col) || !next) return null;
+		const off = (size: ListSize) => ratioOff(col, size) || ratioOff(next, size);
+		return `bench${off('mid') ? ' midoff' : ''}${off('narrow') ? ' narrowoff' : ''}`;
+	}
 	const templateAt = (size: ListSize) =>
 		ratioView
 			? ratioTemplate(columns, { views: spanOf('views'), likes: spanOf('likes'), comments: spanOf('comments'), skip: spanOf('skip'), usual: spanOf('usual') }, size)
@@ -695,9 +753,9 @@
 	const RATIO_ABOUT = {
 		views: "Each platform's own views: what its likes and comments are measured against. Sorted by every platform's views together.",
 		likes:
-			"Each platform's likes, then their share of its views: 12 likes on 1,100 views is 12 / 1.09%. Sorted by every platform's likes together against their views together.",
+			"Each platform's likes, then their share of its views: 12 likes on 1,100 views is 12 / 1.09%. Sorted by every platform's likes together against their views together; the marks under it sort by one platform's.",
 		comments:
-			"Each platform's comments, then their share of its views: 3 comments on 1,100 views is 3 / 0.27%. Sorted by every platform's comments together against their views together.",
+			"Each platform's comments, then their share of its views: 3 comments on 1,100 views is 3 / 0.27%. Sorted by every platform's comments together against their views together; the marks under it sort by one platform's.",
 		usual: "Each platform's views against the usual for the kind at the same age; within a fifth either way is about usual. Sorted by every platform together."
 	};
 	const SHARE_WORDS = { likes: ['like', 'likes'], comments: ['comment', 'comments'] } as const;
@@ -1250,7 +1308,9 @@
 					><span class="dot">·</span>
 				{/if}
 				<span title={new Date(r.at).toLocaleString()}>{released(r.at)} · {span(now - r.at)} ago</span>
-				<span class="dot">·</span>{KIND_ONE[r.kind]}{#if r.duration > 0}&nbsp;{formatDuration(r.duration)}{/if}
+				{#if !ratioView}
+					<span class="dot">·</span>{KIND_ONE[r.kind]}{#if r.duration > 0}&nbsp;{formatDuration(r.duration)}{/if}
+				{/if}
 				{#if visibility !== 'public'}
 					<span class="dot">·</span><span class="priv {visibility}">{visibility}</span>
 				{/if}
@@ -1338,17 +1398,40 @@
 {/snippet}
 
 <!-- Ratio View's cells: each column a subgrid over a track per platform (dashcolumns.ts),
-     a slot each — the platform's square, then its own numbers — and the line after the views. -->
+     a slot each — the platform's square, then its own numbers — and the lines after the
+     views, the likes and the comments. -->
+{#snippet line(col: ColumnId)}
+	{@const cls = lineOf(col)}
+	{#if cls}<span class={cls} aria-hidden="true"></span>{/if}
+{/snippet}
+
 {#snippet ratioHead(col: ColumnId)}
 	{#if col === 'thumb' || col === 'video'}
 		{@render headCell(col)}
 	{:else if col === 'views'}
 		{@render sortHead('views', 'Views', cellOf(col), RATIO_ABOUT.views, spanOf(col))}
-		<span class="bench {cellOf(col)}" aria-hidden="true"></span>
-	{:else if col === 'likes'}
-		{@render sortHead('likeRate', 'Likes & Ratio', cellOf(col), RATIO_ABOUT.likes, spanOf(col))}
-	{:else if col === 'comments'}
-		{@render sortHead('commentRate', 'Comments & Ratio', cellOf(col), RATIO_ABOUT.comments, spanOf(col))}
+		{@render line(col)}
+	{:else if col === 'likes' || col === 'comments'}
+		<!-- The column's name, sorting by every platform together, and under it a sort per platform, over its slots. -->
+		{@const kind = (col === 'likes' ? 'likeRate' : 'commentRate') as 'likeRate' | 'commentRate'}
+		<span class="pcells phead {cellOf(col)}" style:grid-column="span {spanOf(col)}">
+			{@render sortHead(kind, col === 'likes' ? 'Likes & Ratio' : 'Comments & Ratio', 'pgroup', RATIO_ABOUT[col])}
+			{#each slotsOf(col) as p (p)}
+				{@const key = `${kind}:${p}` as PlatformRateKey}
+				{@const what = `${PLATFORMS[p].label}'s ${col === 'likes' ? 'like' : 'comment'} ratio`}
+				<button
+					class="psort"
+					class:on={sort === key}
+					onclick={() => sortBy(key)}
+					aria-label="Sort by {what}"
+					title={sort === key ? `Sorted by ${what}, ${sortWords(key, reversed)} — click for ${sortWords(key, !reversed)}` : `Sort by ${what}, highest first`}
+				>
+					<PlatformIcon platform={p} size={12} />
+					{#if sort === key}<span class="arrow" aria-hidden="true">{reversed ? '↑' : '↓'}</span>{/if}
+				</button>
+			{/each}
+		</span>
+		{@render line(col)}
 	{:else if col === 'skip'}
 		{@render sortHead('skip', 'Skipped', cellOf(col), skipAbout, spanOf(col))}
 	{:else if col === 'usual'}
@@ -1391,7 +1474,7 @@
 				{/each}
 			{/if}
 		</span>
-		{#if col === 'views'}<span class="bench {cellOf(col)}" aria-hidden="true"></span>{/if}
+		{@render line(col)}
 	{/if}
 {/snippet}
 
@@ -1402,7 +1485,7 @@
 		<span class="pcells {cellOf(col)}" style:grid-column="span {spanOf(col)}">
 			{#each slotsOf(col) as p (p)}{@render ratioSlot(col, row, p)}{/each}
 		</span>
-		{#if col === 'views'}<span class="bench {cellOf(col)}" aria-hidden="true"></span>{/if}
+		{@render line(col)}
 	{/if}
 {/snippet}
 
@@ -1511,20 +1594,42 @@
 			{/if}
 		{/if}
 		<div class="aside">
-			<!-- Ratio View: every platform side by side, with the likes and comments per view. -->
-			<button
-				class="ratioswitch"
-				class:on={ratioView}
-				role="switch"
-				aria-checked={ratioView}
-				onclick={toggleRatioView}
-				title={ratioView
-					? "Every platform side by side, with the likes and comments per view. Switch off to go back to the filter's platforms"
-					: "Every platform side by side, each with its own views, likes and comments and their share of the views. The filter's platforms are set aside meanwhile"}
-			>
-				<span class="track" aria-hidden="true"><span class="knob"></span></span>
-				Ratio View
-			</button>
+			<!-- Ratio View: a switch, and once it is on, beside it in the same box, the
+			     platforms it shows — each added or taken out with a click. The box grows
+			     to the left; its right edge stays where it is. -->
+			<div class="ratiobox" class:on={ratioView}>
+				<button
+					class="ratioswitch"
+					role="switch"
+					aria-checked={ratioView}
+					onclick={toggleRatioView}
+					title={ratioView
+						? "The platforms picked beside the switch, side by side, with the likes and comments per view. Switch off to go back to the filter's platforms"
+						: "Every platform side by side, each with its own views, likes and comments and their share of the views. The filter's platforms are set aside meanwhile"}
+				>
+					<span class="track" aria-hidden="true"><span class="knob"></span></span>
+					Ratio View
+				</button>
+				<div class="ratioplats" role="group" aria-label="The platforms Ratio View shows" inert={!ratioView}>
+					{#each STAT_PLATFORMS as p (p)}
+						{@const shown = ratioPlatforms.includes(p)}
+						<button
+							class="ratioplat"
+							class:on={shown}
+							aria-pressed={shown}
+							aria-label={PLATFORMS[p].label}
+							title={shown
+								? ratioPlatforms.length === 1
+									? `${PLATFORMS[p].label}: at least one platform stays`
+									: `Take ${PLATFORMS[p].label} out`
+								: `Add ${PLATFORMS[p].label}`}
+							onclick={() => pickRatioPlatform(p)}
+						>
+							<PlatformIcon platform={p} size={14} dim={!shown} />
+						</button>
+					{/each}
+				</div>
+			</div>
 			<!-- When each platform was read and what is left of the day, behind one
 			     icon coloured by the worst of it; hover or focus shows the lines. -->
 			{#if statusLines.length > 0}
@@ -2091,31 +2196,85 @@
 		margin-left: auto;
 	}
 
-	/* Ratio View's switch, as tall as the icon buttons beside it. */
-	.ratioswitch {
+	/* Ratio View's box, as tall as the icon buttons beside it: the switch, and
+	   once on, the platforms after it — the box grows, its right edge staying. */
+	.ratiobox {
 		flex: none;
-		display: inline-flex;
+		display: flex;
 		align-items: center;
-		gap: 8px;
 		height: 32px;
-		padding: 0 11px 0 8px;
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface-2);
+		transition: border-color 0.14s;
+	}
+
+	.ratiobox:hover,
+	.ratiobox.on {
+		border-color: var(--pink);
+	}
+
+	.ratioswitch {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		height: 30px;
+		padding: 0 11px 0 8px;
 		font: inherit;
 		font-size: 12.5px;
 		font-weight: 560;
 		color: var(--text-dim);
 		white-space: nowrap;
-		transition:
-			border-color 0.14s,
-			color 0.14s;
 	}
 
 	.ratioswitch:hover,
-	.ratioswitch.on {
-		border-color: var(--pink);
+	.ratiobox.on .ratioswitch {
 		color: var(--text);
+	}
+
+	.ratioplats {
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		max-width: 0;
+		overflow: hidden;
+		opacity: 0;
+		transition:
+			max-width 0.16s,
+			opacity 0.16s,
+			padding 0.16s;
+	}
+
+	.ratiobox.on .ratioplats {
+		max-width: 140px;
+		padding: 0 4px 0 7px;
+		border-left: 1px solid var(--border-strong);
+		opacity: 1;
+	}
+
+	/* A platform shown is framed in pink; one taken out has a dashed frame, its
+	   mark greyed only where its brand allows (PlatformIcon's `dim`). */
+	.ratioplat {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 26px;
+		height: 24px;
+		border: 1px dashed var(--border-strong);
+		border-radius: 6px;
+		transition:
+			border-color 0.14s,
+			background 0.14s;
+	}
+
+	.ratioplat:hover {
+		border-color: var(--pink-soft);
+	}
+
+	.ratioplat.on {
+		border-style: solid;
+		border-color: var(--pink);
+		background: var(--accent-grad-soft);
 	}
 
 	.track {
@@ -2144,18 +2303,20 @@
 			background 0.16s;
 	}
 
-	.ratioswitch.on .track {
+	.ratiobox.on .track {
 		background: var(--accent-grad);
 		border-color: transparent;
 	}
 
-	.ratioswitch.on .knob {
+	.ratiobox.on .knob {
 		transform: translateX(13px);
 		background: #fff;
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.ratioswitch,
+		.ratiobox,
+		.ratioplats,
+		.ratioplat,
 		.track,
 		.knob {
 			transition: none;
@@ -3166,12 +3327,54 @@
 		font-weight: 600;
 	}
 
-	/* The views are the benchmark here: a line after them, through every row
-	   from its top border to its bottom. */
+	/* A line after the views — the benchmark here — and after the likes and the
+	   comments, through every row from its top border to its bottom, in the
+	   rows' own border colour. */
 	.bench {
 		align-self: stretch;
 		margin-block: -7px;
-		background: var(--text-faint);
+		background: var(--border);
+	}
+
+	/* The header: each column's name on its first line, and under the likes'
+	   and the comments' a sort per platform, over that platform's slots. */
+	.ratio .row.cols {
+		align-items: start;
+	}
+
+	.phead {
+		row-gap: 6px;
+	}
+
+	.phead .pgroup {
+		grid-column: 1 / -1;
+	}
+
+	/* Its padding is taken back by the margin, so the mark sits over the slot's square. */
+	.psort {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 4px;
+		margin: 0 -4px;
+		padding: 2px 4px;
+		border-radius: 5px;
+		font-size: 11px;
+		font-weight: 650;
+		transition: background 0.14s;
+	}
+
+	.psort:hover {
+		background: var(--surface-3);
+	}
+
+	.psort.on {
+		background: var(--accent-grad-soft);
+		box-shadow: inset 0 0 0 1px var(--pink);
+	}
+
+	.psort .arrow {
+		margin-left: 0;
 	}
 
 	.row.cols .bench {

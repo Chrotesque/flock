@@ -28,7 +28,7 @@
 		overridden = false
 	}: { filter: DashFilter; counts: FilterCounts; overridden?: boolean } = $props();
 
-	const NOT_IN_EFFECT = 'Not in effect: Ratio View shows every platform side by side';
+	const NOT_IN_EFFECT = 'Not in effect: Ratio View shows the platforms picked beside its switch';
 
 	let open = $state(false);
 	let root = $state<HTMLElement | null>(null);

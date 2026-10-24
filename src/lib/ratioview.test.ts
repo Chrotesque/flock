@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { percentWords, perView, platformTotal, pooledPerView, shortTitle, slotPlatforms, viewFilter } from './ratioview';
+import {
+	percentWords,
+	perView,
+	platformTotal,
+	pooledPerView,
+	readRatioPlatforms,
+	shortTitle,
+	slotPlatforms,
+	toggleRatioPlatform,
+	viewFilter
+} from './ratioview';
 import { DEFAULT_FILTER, STAT_PLATFORMS, type Post } from './releases';
 
 const post = (views: number | null, likes: number | null, comments: number | null, skipRate: number | null = null): Post => ({
@@ -25,7 +35,23 @@ describe('viewFilter', () => {
 
 	it('puts every platform in place of the filter’s, keeping every other choice', () => {
 		expect(viewFilter(filter, true)).toEqual({ ...filter, platforms: STAT_PLATFORMS });
+		expect(viewFilter(filter, true, ['instagram', 'tiktok'])).toEqual({ ...filter, platforms: ['instagram', 'tiktok'] });
 		expect(filter.platforms).toEqual(['youtube']);
+	});
+});
+
+describe('the platforms Ratio View shows', () => {
+	it('reads a stored list in display order, every platform when it holds none', () => {
+		expect(readRatioPlatforms(['tiktok', 'youtube', 'myspace'])).toEqual(['youtube', 'tiktok']);
+		expect(readRatioPlatforms([])).toEqual(STAT_PLATFORMS);
+		expect(readRatioPlatforms(null)).toEqual(STAT_PLATFORMS);
+	});
+
+	it('adds and takes away, in display order, keeping the last one', () => {
+		expect(toggleRatioPlatform(['tiktok'], 'youtube')).toEqual(['youtube', 'tiktok']);
+		expect(toggleRatioPlatform(['youtube', 'tiktok'], 'youtube')).toEqual(['tiktok']);
+		const last: ['facebook'] = ['facebook'];
+		expect(toggleRatioPlatform(last, 'facebook')).toBe(last);
 	});
 });
 
@@ -70,6 +96,7 @@ describe('slots and totals', () => {
 	it('gives a slot to every platform any video is on, in display order', () => {
 		expect(slotPlatforms([{ posts: { facebook: post(1, 1, 1) } }, { posts: { youtube: post(1, 1, 1) } }])).toEqual(['youtube', 'facebook']);
 		expect(slotPlatforms([])).toEqual([]);
+		expect(slotPlatforms([{ posts: { facebook: post(1, 1, 1), youtube: post(1, 1, 1) } }], ['facebook', 'tiktok'])).toEqual(['facebook']);
 	});
 
 	it('adds a platform’s counters up and pools its shares by the views', () => {

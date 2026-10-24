@@ -833,7 +833,28 @@ export function periodStats(releases: Release[], filter: DashFilter, now: Date, 
 
 /* ---- sorting ---- */
 
-export type SortKey = 'date' | 'views' | 'likes' | 'comments' | 'followers' | 'usual' | 'skip' | 'likeRate' | 'commentRate';
+/** One platform's likes or comments per view: Ratio View's per-platform headers sort by them. */
+export type PlatformRateKey = `${'likeRate' | 'commentRate'}:${StatPlatform}`;
+
+export const PLATFORM_RATE_KEYS: PlatformRateKey[] = (['likeRate', 'commentRate'] as const).flatMap((kind) =>
+	STAT_PLATFORMS.map((p): PlatformRateKey => `${kind}:${p}`)
+);
+
+export function isPlatformRateKey(key: string): key is PlatformRateKey {
+	return (PLATFORM_RATE_KEYS as string[]).includes(key);
+}
+
+export type SortKey =
+	| 'date'
+	| 'views'
+	| 'likes'
+	| 'comments'
+	| 'followers'
+	| 'usual'
+	| 'skip'
+	| 'likeRate'
+	| 'commentRate'
+	| PlatformRateKey;
 
 /** How a video stands on every platform in view at once. */
 export interface Overall {
@@ -881,7 +902,7 @@ export function ratioOf(judgements: Judgement[]): number | null {
  * on top either way — or, `reversed`, the other way round. A missing number
  * sorts last both ways, and ties newest first. `ratio` is views over usual;
  * `likeRate` and `commentRate` the likes and comments per view (Ratio View,
- * ratioview.ts).
+ * ratioview.ts), and `rates` each platform's own, by PlatformRateKey.
  */
 export function sortRows<
 	T extends {
@@ -894,10 +915,13 @@ export function sortRows<
 		skip?: number | null;
 		likeRate?: number | null;
 		commentRate?: number | null;
+		rates?: Partial<Record<PlatformRateKey, number | null>>;
 	}
 >(rows: T[], key: SortKey, reversed = false): T[] {
 	const value = (row: T): number | null =>
-		key === 'date'
+		isPlatformRateKey(key)
+			? (row.rates?.[key] ?? null)
+			: key === 'date'
 			? row.release.at
 			: key === 'usual'
 				? row.ratio
@@ -919,6 +943,7 @@ export function sortRows<
 
 /** Which way a column sorts, in words, for its header's tooltip. */
 export function sortWords(key: SortKey, reversed: boolean): string {
+	if (isPlatformRateKey(key)) return reversed ? 'lowest first' : 'highest first';
 	const [usual, other] = {
 		date: ['newest first', 'oldest first'],
 		views: ['most first', 'fewest first'],

@@ -4,14 +4,28 @@ import { STAT_PLATFORMS, pooledSkipRate, type DashFilter, type Post, type Releas
  * The Dashboard's Ratio View: every platform side by side, each with its own
  * views and its likes and comments with their share of those views — no sums
  * across platforms in the rows. Switched per browser
- * (`flock.dashboard.ratioView`). While it is on, the filter's platforms are
- * not in effect: every platform is shown, and the filter's other choices —
- * timeframe, kinds, visibility — still are.
+ * (`flock.dashboard.ratioView`), with the platforms it shows picked beside
+ * the switch (`flock.dashboard.ratioPlatforms`, every one to begin with).
+ * While it is on, the filter's platforms are not in effect; its other
+ * choices — timeframe, kinds, visibility — still are.
  */
 
-/** The filter as the page applies it: in Ratio View, every platform. */
-export function viewFilter(filter: DashFilter, ratioView: boolean): DashFilter {
-	return ratioView ? { ...filter, platforms: [...STAT_PLATFORMS] } : filter;
+/** The filter as the page applies it: in Ratio View, the platforms picked beside its switch. */
+export function viewFilter(filter: DashFilter, ratioView: boolean, platforms: StatPlatform[] = STAT_PLATFORMS): DashFilter {
+	return ratioView ? { ...filter, platforms: [...platforms] } : filter;
+}
+
+/** The stored platforms, in display order; none or nothing known is every one. */
+export function readRatioPlatforms(raw: unknown): StatPlatform[] {
+	const list = Array.isArray(raw) ? STAT_PLATFORMS.filter((p) => raw.includes(p)) : [];
+	return list.length > 0 ? list : [...STAT_PLATFORMS];
+}
+
+/** A platform added or taken away, in display order; the last one stays, as the filter's does. */
+export function toggleRatioPlatform(platforms: StatPlatform[], p: StatPlatform): StatPlatform[] {
+	const on = platforms.includes(p);
+	if (on && platforms.length === 1) return platforms;
+	return STAT_PLATFORMS.filter((x) => (x === p ? !on : platforms.includes(x)));
 }
 
 /** A counter as a share of the views, in percent: 12 likes on 1,100 views is 1.09. Null without views to divide by. */
@@ -47,9 +61,9 @@ export function shortTitle(title: string, max = 20): string {
 	return chars.length > max ? `${chars.slice(0, max).join('').trimEnd()}...` : chars.join('');
 }
 
-/** The platforms any of the videos is on, in display order: a slot each in every row. */
-export function slotPlatforms(releases: Pick<Release, 'posts'>[]): StatPlatform[] {
-	return STAT_PLATFORMS.filter((p) => releases.some((r) => r.posts[p]));
+/** The platforms shown that any of the videos is on, in display order: a slot each in every row. */
+export function slotPlatforms(releases: Pick<Release, 'posts'>[], platforms: StatPlatform[] = STAT_PLATFORMS): StatPlatform[] {
+	return STAT_PLATFORMS.filter((p) => platforms.includes(p) && releases.some((r) => r.posts[p]));
 }
 
 export interface PlatformTotal {
