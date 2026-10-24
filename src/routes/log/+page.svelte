@@ -5,6 +5,7 @@
 	import { isUploadRow, uploadRowTimings, type PostTiming } from '$lib/uploadrecord';
 	import TimingChip from '$lib/components/TimingChip.svelte';
 	import { toneOf, depthOf } from '$lib/workerlog';
+	import { actionWords, wordKey } from '$lib/logwords';
 	import type { LogCategory, LogEntry, WorkerLine } from '$lib/types';
 
 	type Tab = LogCategory | 'all' | 'worker';
@@ -29,6 +30,8 @@
 
 	let category = $state<Tab>('all');
 	let query = $state('');
+	/** The second bar's choice, a `wordKey`; null for every action. */
+	let word = $state<string | null>(null);
 
 	async function load() {
 		loading = true;
@@ -88,10 +91,26 @@
 
 	let workerDays = $derived(byDay(visibleWorker));
 
+	let inCategory = $derived(
+		category === 'all' ? entries : entries.filter((entry) => entry.category === category)
+	);
+
+	/** The first words of the tab's actions, for the bar under the tabs. */
+	let words = $derived(actionWords(inCategory.map((entry) => entry.action)));
+
+	/** A word the tab no longer has (a refresh) filters nothing. */
+	let activeWord = $derived(word && words.some((w) => w.key === word) ? word : null);
+
+	/** A word kept only where the new tab has it, so it never comes back unseen. */
+	function chooseCategory(id: Tab) {
+		category = id;
+		if (word && !words.some((w) => w.key === word)) word = null;
+	}
+
 	let visible = $derived.by(() => {
 		const needle = query.trim().toLowerCase();
-		return entries.filter((entry) => {
-			if (category !== 'all' && entry.category !== category) return false;
+		return inCategory.filter((entry) => {
+			if (activeWord && wordKey(entry.action) !== activeWord) return false;
 			if (!needle) return true;
 			return (
 				entry.action.toLowerCase().includes(needle) ||
@@ -176,7 +195,7 @@
 					role="tab"
 					aria-selected={category === item.id}
 					class:active={category === item.id}
-					onclick={() => (category = item.id)}
+					onclick={() => chooseCategory(item.id)}
 				>
 					{item.label}
 					<span class="count">{counts[item.id]}</span>
@@ -200,6 +219,25 @@
 			{/if}
 		</div>
 	</div>
+
+	{#if category !== 'worker' && words.length > 0}
+		<div class="words" role="group" aria-label="Show only actions starting with">
+			<button class:active={!activeWord} aria-pressed={!activeWord} onclick={() => (word = null)}>
+				All
+				<span class="count">{inCategory.length}</span>
+			</button>
+			{#each words as item (item.key)}
+				<button
+					class:active={activeWord === item.key}
+					aria-pressed={activeWord === item.key}
+					onclick={() => (word = activeWord === item.key ? null : item.key)}
+				>
+					{item.label}
+					<span class="count">{item.count}</span>
+				</button>
+			{/each}
+		</div>
+	{/if}
 
 	{#if category === 'worker'}
 		{#if workerError}
@@ -382,6 +420,48 @@
 	}
 
 	.tabs button.active .count {
+		color: var(--pink-soft);
+	}
+
+	/* The second bar: an action's first word, narrower than the tabs above. */
+	.words {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 5px;
+		margin: -6px 0 18px;
+	}
+
+	.words button {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 3px 10px;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		font-size: 11.5px;
+		font-weight: 560;
+		color: var(--text-dim);
+		transition: background 0.15s, color 0.15s, border-color 0.15s;
+	}
+
+	.words button:hover {
+		border-color: var(--pink);
+		color: var(--text);
+	}
+
+	.words button.active {
+		background: var(--surface-3);
+		border-color: rgba(255, 77, 158, 0.55);
+		color: var(--text);
+	}
+
+	.words .count {
+		font-family: var(--mono);
+		font-size: 10px;
+		color: var(--text-faint);
+	}
+
+	.words button.active .count {
 		color: var(--pink-soft);
 	}
 
