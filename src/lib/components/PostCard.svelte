@@ -203,7 +203,7 @@
 	/* The grid's box round the upload is the frame. */
 	.tile.bare {
 		width: 14px;
-		height: 14px;
+		height: 16px;
 		border: none;
 		border-radius: 3px;
 		background: none;
