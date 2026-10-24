@@ -22,6 +22,8 @@ export interface UploadRecord {
 	brand: string;
 	/** The project folder it was opened from, '' when none. */
 	project: string;
+	/** What the video is about, as given on the Details step (since 0.17.3; absent before and when none). */
+	product?: string;
 	video: RecordVideo;
 	/** The confirm's other videos, when platforms were given files of their own. */
 	others: { name: string; platforms: PlatformId[] }[];
@@ -160,6 +162,7 @@ export function readUploadRecord(raw: unknown): UploadRecord | null {
 		timeZone: str(r.timeZone),
 		brand: str(r.brand),
 		project: str(r.project),
+		...(str(r.product) ? { product: str(r.product) } : {}),
 		video: {
 			name: str(video.name),
 			size: num(video.size),
@@ -200,6 +203,7 @@ export function recordFromJob(job: UploadJob, targets: UploadTarget[]): UploadRe
 		timeZone: '',
 		brand: job.brand_name ?? '',
 		project: '',
+		...(job.product ? { product: job.product } : {}),
 		video: {
 			name: job.video_name,
 			size: job.video_size,

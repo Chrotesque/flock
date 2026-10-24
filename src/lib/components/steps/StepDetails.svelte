@@ -1317,6 +1317,18 @@
 	<div class="aside">
 	<div class="side">
 
+		<!-- The upload's, not a platform's: shown whichever one is composed. Never folded — it is one line. -->
+		<FoldBox label="Product name">
+			<input
+				class="input"
+				type="text"
+				maxlength="200"
+				placeholder="The game this video is about"
+				aria-label="Product name"
+				bind:value={draft.product}
+			/>
+		</FoldBox>
+
 		{#if showJestrBox}
 			<FoldBox label="Jestr" platforms={jestrPlatforms}>
 				<Checkbox

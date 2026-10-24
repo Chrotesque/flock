@@ -104,6 +104,7 @@ class UploadEditStore {
 			}
 		}
 
+		draft.product = job.product ?? '';
 		draft.useOwnSplit([]);
 		draft.keepVideo('all', keptVideo(job));
 		await loadImages(job);
@@ -129,6 +130,7 @@ class UploadEditStore {
 		draft.editing = {
 			job: job.id,
 			title: job.title || job.video_name || 'Untitled',
+			product: job.product ?? '',
 			posts: posts.map(({ target, locked }) => ({ id: target.id, platform: target.platform, locked })),
 			targets: posts.map(({ target }) => $state.snapshot(target) as UploadTarget),
 			baseline,

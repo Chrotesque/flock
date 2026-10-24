@@ -81,6 +81,8 @@
 		 */
 		brand: string;
 		brandName: string;
+		/** The upload's product name, shown under its box while editing; '' for none. */
+		product: string;
 	}
 
 	/**
@@ -240,7 +242,8 @@
 			remote_url: target.remote_url ?? '',
 			past: passed || target.status === 'cancelled',
 			brand: target.brand ?? '',
-			brandName: target.brand_name ?? ''
+			brandName: target.brand_name ?? '',
+			product: target.product ?? ''
 		};
 	}
 
@@ -351,6 +354,7 @@
 				groupOf={(entry) => entry.job}
 				past={(entry) => entry.past}
 				groupTip={uploadTip}
+				groupLabel={editing ? (items) => items[0]?.product ?? '' : undefined}
 				card={cardFor}
 				center={actions}
 				toolbar={legend}
@@ -406,6 +410,7 @@
 			.filter((entry) => entry.job === first.job)
 			.map((entry) => ({ ...entry, status: statusLabel(entry), ...moveNote(entry) }))}
 		brand={labelBrands ? brandOf(first) : ''}
+		product={editing ? first.product : ''}
 	/>
 {/snippet}
 

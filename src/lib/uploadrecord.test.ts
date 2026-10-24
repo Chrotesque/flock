@@ -21,6 +21,7 @@ const record: UploadRecord = {
 	timeZone: 'Europe/Berlin',
 	brand: 'Owls Nest',
 	project: '',
+	product: 'Lantern Keep',
 	video: { name: 'clip.mp4', size: 1000, duration: 42, source: 'nas', path: '\\\\nas\\in\\clip.mp4', previewed: true },
 	others: [{ name: 'cut.mp4', platforms: ['tiktok'] }],
 	destination: { label: 'Archive', path: '\\\\nas\\archive' },
@@ -52,6 +53,11 @@ const record: UploadRecord = {
 describe('readUploadRecord', () => {
 	it('reads back what was written', () => {
 		expect(readUploadRecord(JSON.parse(JSON.stringify(record)))).toEqual(record);
+	});
+
+	it('reads a record from before product names as having none', () => {
+		const { product: _, ...older } = record;
+		expect(readUploadRecord(JSON.parse(JSON.stringify(older)))).not.toHaveProperty('product');
 	});
 
 	it('reads a record from before Facebook covers as having none', () => {

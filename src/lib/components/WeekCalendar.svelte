@@ -48,6 +48,7 @@
 		groupOf,
 		past,
 		groupTip,
+		groupLabel,
 		candrag,
 		lockedWhy,
 		landWhy,
@@ -84,6 +85,12 @@
 		past?: (item: T) => boolean;
 		/** With `groupOf`, what hovering a box opens: given the box's items. */
 		groupTip?: Snippet<[T[]]>;
+		/**
+		 * With `groupOf`, a line under a box's icons — the Calendar's product
+		 * name while editing; '' for none. The box grows to hold it, and a line
+		 * too long for it ends in "…".
+		 */
+		groupLabel?: (items: T[]) => string;
 		card: Snippet<[T]>;
 		/** The bar's right end. */
 		toolbar?: Snippet;
@@ -795,6 +802,52 @@
 
 <svelte:window onresize={onScroll} onkeydown={onWindowKey} onpointerdown={onWindowPointer} />
 
+<!-- A cell's cards of one group: the box's grip, then each card. -->
+{#snippet bundleCards(items: T[])}
+	{#if groupOf && ondropgroup && items.length > 1}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<span
+			class="grip"
+			class:locked={items.some((item) => !candrag?.(item))}
+			onpointerdown={(e) => pressGrip(e, items)}
+			onpointermove={moveDrag}
+			onpointerup={endDrag}
+			onpointercancel={cancelDrag}
+		></span>
+	{/if}
+	{#each items as item (item.id)}
+		{@const why = ondropitem && lockedWhy ? lockedWhy(item) : ''}
+		{#if candrag?.(item)}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="slot grab"
+				class:lifted={draggingIds.includes(item.id)}
+				class:wiggle={wiggling.includes(item.id)}
+				use:register={item.id}
+				oncontextmenu={oncontext ? (e) => context(e, [item]) : undefined}
+				onpointerdown={(e) => beginDrag(e, item.id)}
+				onpointermove={moveDrag}
+				onpointerup={endDrag}
+				onpointercancel={cancelDrag}
+			>
+				{@render card(item)}
+			</div>
+		{:else}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="slot"
+				class:locked={Boolean(why)}
+				class:wiggle={wiggling.includes(item.id)}
+				use:register={item.id}
+				oncontextmenu={oncontext ? (e) => context(e, [item]) : undefined}
+				onpointerdown={why ? (e) => pressLocked(e, item) : undefined}
+			>
+				{@render card(item)}
+			</div>
+		{/if}
+	{/each}
+{/snippet}
+
 <header class="bar" class:centred={Boolean(center)}>
 	<div class="side">
 		<div class="nav">
@@ -1017,57 +1070,23 @@
 							style:padding-block={dense && rowSpace ? `${rowSpace}px` : undefined}
 						>
 							{#each bundlesAt(day.iso, hour) as bundle (bundle.key)}
+								{@const label = groupOf && groupLabel ? groupLabel(bundle.items).trim() : ''}
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<div
 									class="bundle"
 									class:boxed={Boolean(groupOf)}
+									class:labelled={Boolean(label)}
 									class:done={bundle.done}
 									onmouseenter={groupTip ? (e) => openTip(e, bundle.items) : undefined}
 									onmouseleave={groupTip ? closeTip : undefined}
 									oncontextmenu={oncontext && groupOf ? (e) => context(e, bundle.items) : undefined}
 								>
-									{#if groupOf && ondropgroup && bundle.items.length > 1}
-										<!-- svelte-ignore a11y_no_static_element_interactions -->
-										<span
-											class="grip"
-											class:locked={bundle.items.some((item) => !candrag?.(item))}
-											onpointerdown={(e) => pressGrip(e, bundle.items)}
-											onpointermove={moveDrag}
-											onpointerup={endDrag}
-											onpointercancel={cancelDrag}
-										></span>
+									{#if label}
+										<span class="bundlerow">{@render bundleCards(bundle.items)}</span>
+										<span class="bundlelabel">{label}</span>
+									{:else}
+										{@render bundleCards(bundle.items)}
 									{/if}
-									{#each bundle.items as item (item.id)}
-										{@const why = ondropitem && lockedWhy ? lockedWhy(item) : ''}
-										{#if candrag?.(item)}
-											<!-- svelte-ignore a11y_no_static_element_interactions -->
-											<div
-												class="slot grab"
-												class:lifted={draggingIds.includes(item.id)}
-												class:wiggle={wiggling.includes(item.id)}
-												use:register={item.id}
-												oncontextmenu={oncontext ? (e) => context(e, [item]) : undefined}
-												onpointerdown={(e) => beginDrag(e, item.id)}
-												onpointermove={moveDrag}
-												onpointerup={endDrag}
-												onpointercancel={cancelDrag}
-											>
-												{@render card(item)}
-											</div>
-										{:else}
-											<!-- svelte-ignore a11y_no_static_element_interactions -->
-											<div
-												class="slot"
-												class:locked={Boolean(why)}
-												class:wiggle={wiggling.includes(item.id)}
-												use:register={item.id}
-												oncontextmenu={oncontext ? (e) => context(e, [item]) : undefined}
-												onpointerdown={why ? (e) => pressLocked(e, item) : undefined}
-											>
-												{@render card(item)}
-											</div>
-										{/if}
-									{/each}
 								</div>
 							{/each}
 						</div>
@@ -1400,6 +1419,45 @@
 	.bundle.boxed.done {
 		border-color: var(--border);
 		background: transparent;
+	}
+
+	/* With a line under the icons (groupLabel): two rows, as wide as the
+	   wider of them, never wider than the cell — the line ends in "…". */
+	.bundle.boxed.labelled {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 1px;
+		height: auto;
+		min-width: 0;
+		max-width: 100%;
+		padding: 2px 4px 3px;
+	}
+
+	.bundlerow {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 2px;
+		height: 16px;
+	}
+
+	/* Centred, so it takes its own width: capped at the box's as well, or a
+	   long name runs out of the cell instead of ending in "…". */
+	.bundlelabel {
+		min-width: 0;
+		max-width: min(140px, 100%);
+		align-self: center;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 9.5px;
+		line-height: 11px;
+		font-weight: 560;
+		color: var(--text-dim);
+	}
+
+	.bundle.done .bundlelabel {
+		color: var(--text-faint);
 	}
 
 	.bundle.boxed:hover {

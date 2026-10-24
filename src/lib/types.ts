@@ -189,6 +189,8 @@ export interface UploadJob {
 	brand?: string;
 	/** The brand's name when the upload was made, kept after a deletion. */
 	brand_name?: string;
+	/** What the video is about (the game); '' when none was given. */
+	product?: string;
 	created: string;
 	updated: string;
 }
@@ -220,9 +222,10 @@ export interface UploadTarget {
 	handle?: unknown;
 	/** A release now or a delete from the Calendar, waiting for the worker (postactions.ts). */
 	request?: unknown;
-	/** The job's brand, filled in by `listTargets` — not a column of its own. */
+	/** The job's brand and product, filled in by `listTargets` — not columns of their own. */
 	brand?: string;
 	brand_name?: string;
+	product?: string;
 	created: string;
 	updated: string;
 }

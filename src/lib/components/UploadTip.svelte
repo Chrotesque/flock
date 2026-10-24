@@ -22,7 +22,18 @@
 		noteKind?: '' | 'busy' | 'warn';
 	}
 
-	let { posts, date, brand = '' }: { posts: Post[]; date: string; brand?: string } = $props();
+	let {
+		posts,
+		date,
+		brand = '',
+		product = ''
+	}: {
+		posts: Post[];
+		date: string;
+		brand?: string;
+		/** The upload's product name in full — its box may show it cut short. */
+		product?: string;
+	} = $props();
 
 	function day(iso: string): string {
 		const [y, m, d] = iso.split('-').map(Number);
@@ -36,6 +47,9 @@
 		<span class="brand">{brand}</span>
 	{/if}
 </div>
+{#if product}
+	<p class="product">{product}</p>
+{/if}
 
 {#each posts as post (post.id)}
 	{@const hasTitle = PLATFORMS[post.platform].hasTitle}
@@ -75,6 +89,13 @@
 		font-size: 11px;
 		font-weight: 650;
 		color: var(--text-dim);
+	}
+
+	.product {
+		margin: 0 0 4px;
+		font-size: 12px;
+		font-weight: 620;
+		color: var(--text);
 	}
 
 	.brand {

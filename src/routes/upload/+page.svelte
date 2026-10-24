@@ -22,6 +22,7 @@
 		rememberUsedSources,
 		toInstant,
 		updateJobImages,
+		updateJobProduct,
 		type TargetPlan
 	} from '$lib/repo';
 	import { planEdit, stepWords, type EditRow, type EditStep } from '$lib/uploadedit';
@@ -120,13 +121,23 @@
 		});
 		const kept = groupsOf(plan).find((group) => group.video.kept?.job === session.job);
 		const others = groupsOf(plan).filter((group) => !group.video.kept);
+		const product = productEdit(session);
 		const lines = [
 			...steps.map(stepWords),
 			...imageWords(imageEdits(session, kept).changed, steps),
-			...others.map((group) => `${group.platforms.map((id) => PLATFORMS[id].label).join(', ')}: new video ${draft.slotName(group.slot)}`)
+			...others.map((group) => `${group.platforms.map((id) => PLATFORMS[id].label).join(', ')}: new video ${draft.slotName(group.slot)}`),
+			...(product.changed ? [product.words] : [])
 		];
 		return { lines, refused };
 	});
+
+	/** The product name an edit leaves, and whether it differs from the one it opened with. */
+	function productEdit(session: EditSession): { changed: boolean; value: string; words: string } {
+		const value = draft.product.trim();
+		const before = session.product.trim();
+		const words = !value ? `Product name taken off (was ${before})` : before ? `Product: ${before} → ${value}` : `Product: ${value}`;
+		return { changed: value !== before, value, words };
+	}
 
 	/** Why an edit cannot be saved as it stands. */
 	let editHold = $derived(
@@ -256,6 +267,7 @@
 			timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? '',
 			brand: brands.current?.name ?? '',
 			project: draft.project ? (projects.byId(draft.project)?.name ?? '') : '',
+			...(draft.product.trim() ? { product: draft.product.trim() } : {}),
 			video: {
 				name: file?.name ?? nasFile?.name ?? kept?.name ?? '',
 				size: file?.size ?? nasFile?.size ?? kept?.size ?? 0,
@@ -371,6 +383,7 @@
 				duration,
 				destination: general.defaultDestination,
 				brand: brands.current ?? null,
+				product: draft.product.trim(),
 				targets: group.rows.map(targetPlan),
 				record: $state.snapshot(recordFor(group, everyGroup, cover, facebookCover, tiktokCover)) as UploadRecord
 			},
@@ -477,7 +490,8 @@
 			if (refused.length > 0) return refuse(`Nothing saved. ${refused.join(' ')}`);
 			const newGroups = everyGroup.filter((group) => !group.video.kept && !draft.queued.includes(group.slot));
 			const images = imageEdits(session, keptGroup);
-			if (steps.length === 0 && newGroups.length === 0 && images.changed.length === 0) {
+			const product = productEdit(session);
+			if (steps.length === 0 && newGroups.length === 0 && images.changed.length === 0 && !product.changed) {
 				return refuse('Nothing changed, so there is nothing to save.');
 			}
 
@@ -498,6 +512,7 @@
 			// The pictures before the steps: a reel's new cover is the upload's
 			// file, which the worker reads when it is asked.
 			await updateJobImages(session.job, images.fields);
+			if (product.changed) await updateJobProduct(session.job, product.value);
 			const added = plan.filter((row) => steps.some((step) => step.kind === 'add' && step.platform === row.platform));
 			await applyEdit(session.job, steps, added.map(targetPlan));
 			rememberSent();
@@ -505,7 +520,8 @@
 			const lines = [
 				...steps.map(stepWords),
 				...imageWords(images.changed, steps),
-				...newGroups.map((group) => `${group.platforms.map((id) => PLATFORMS[id].label).join(', ')}: new video ${draft.slotName(group.slot)}`)
+				...newGroups.map((group) => `${group.platforms.map((id) => PLATFORMS[id].label).join(', ')}: new video ${draft.slotName(group.slot)}`),
+				...(product.changed ? [product.words] : [])
 			];
 			const record = keptGroup ? recordOf(keptGroup, everyGroup) : undefined;
 			logAction('upload', `Edited "${session.title}"`, lines.join('; '), { job: session.job, data: record });

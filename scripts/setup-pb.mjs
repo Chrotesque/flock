@@ -179,6 +179,9 @@ const collections = [
 			// snapshot below is what the job keeps.
 			{ type: 'relation', name: 'brand', collection: 'brands', maxSelect: 1, cascadeDelete: false },
 			{ type: 'text', name: 'brand_name', max: 120 },
+			// What the video is about — the game, for these channels. Typed on the
+			// Details step, shown under the upload's box in the Calendar's Edit mode.
+			{ type: 'text', name: 'product', max: 200 },
 			...stamps
 		],
 		indexes: [

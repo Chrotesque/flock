@@ -134,6 +134,7 @@
 			`Confirmed ${at(record.confirmedAt)}${device}`,
 			record.brand,
 			record.project ? `project ${record.project}` : '',
+			(job?.product || record.product) ? `product ${job?.product || record.product}` : '',
 			record.version ? `flock v${record.version}` : ''
 		]
 			.filter(Boolean)

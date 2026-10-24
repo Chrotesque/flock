@@ -35,6 +35,8 @@ export interface SavedDraft {
 	brand: string;
 	step: 0 | 1 | 2 | 3;
 	composing: PlatformId | null;
+	/** The upload's product name (since 0.17.3; '' before). */
+	product: string;
 	texts: Partial<Record<PlatformId, PlatformText>>;
 	selected: Partial<Record<PlatformId, boolean>>;
 	overrides: Partial<Record<PlatformId, OptionValues>>;
@@ -158,6 +160,7 @@ export function readSavedDraft(raw: unknown): SavedDraft | null {
 		brand: str(raw.brand),
 		step: step === 1 || step === 2 || step === 3 ? step : 0,
 		composing: typeof raw.composing === 'string' && isPlatformId(raw.composing) ? raw.composing : null,
+		product: str(raw.product),
 		texts: perPlatform(raw.texts, (v) =>
 			isRecord(v) ? { title: str(v.title), description: str(v.description) } : undefined
 		),

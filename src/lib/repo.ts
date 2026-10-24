@@ -470,6 +470,8 @@ export interface CreateJobInput {
 	destination: { label: string; path: string } | null;
 	/** The brand the upload is made for; its name is snapshotted with it. */
 	brand: Brand | null;
+	/** What the video is about (the game); '' for none. */
+	product: string;
 	targets: TargetPlan[];
 	/** What was confirmed, kept on the Log row (uploadrecord.ts). */
 	record?: UploadRecord;
@@ -499,6 +501,7 @@ export async function createJob(
 		form.set('brand', input.brand.id);
 		form.set('brand_name', input.brand.name);
 	}
+	if (input.product) form.set('product', input.product);
 	if (input.thumbnail) form.set('thumbnail', input.thumbnail);
 	if (input.cover) form.set('cover', input.cover);
 	if (input.facebookCover) form.set('facebook_cover', input.facebookCover);
@@ -1193,20 +1196,21 @@ export async function listJobs(limit = 25): Promise<UploadJob[]> {
 }
 
 /**
- * Targets with the brand of the job each belongs to, as `brand` and
- * `brand_name` — the only parts of the job the screens listing targets need.
+ * Targets with the brand and product of the job each belongs to, as
+ * `brand`, `brand_name` and `product` — the only parts of the job the
+ * screens listing targets need.
  */
 export async function listTargets(jobId?: string): Promise<UploadTarget[]> {
 	const rows = await pb.collection('upload_targets').getFullList({
 		sort: 'scheduled_at',
 		expand: 'job',
-		fields: '*,expand.job.brand,expand.job.brand_name',
+		fields: '*,expand.job.brand,expand.job.brand_name,expand.job.product',
 		...(jobId ? { filter: `job="${jobId}"` } : {})
 	});
 	return rows.map((row) => {
-		const job = (row.expand?.job ?? {}) as { brand?: string; brand_name?: string };
+		const job = (row.expand?.job ?? {}) as { brand?: string; brand_name?: string; product?: string };
 		const { expand: _expand, ...rest } = row;
-		return { ...rest, brand: job.brand ?? '', brand_name: job.brand_name ?? '' };
+		return { ...rest, brand: job.brand ?? '', brand_name: job.brand_name ?? '', product: job.product ?? '' };
 	}) as unknown as UploadTarget[];
 }
 
@@ -1808,6 +1812,12 @@ export async function updateJobImages(
 	assertDeviceNamed();
 	if (Object.keys(images).length === 0) return;
 	await pb.collection('upload_jobs').update(jobId, images);
+}
+
+/** An upload's product name, changed by an edit; '' takes it off. */
+export async function updateJobProduct(jobId: string, product: string): Promise<void> {
+	assertDeviceNamed();
+	await pb.collection('upload_jobs').update(jobId, { product });
 }
 
 export async function loadProjectImage(row: ProjectRow, field: 'thumbnail' | 'cover', name: string): Promise<File | null> {

@@ -71,6 +71,8 @@ export interface EditSession {
 	job: string;
 	/** The upload's label, for the header. */
 	title: string;
+	/** Its product name as the edit opened it. */
+	product: string;
 	posts: { id: string; platform: PlatformId; locked: string }[];
 	/** The posts as they stood when the edit opened, for the Review step to say what saving does. */
 	targets: EditPost[];
@@ -162,6 +164,12 @@ class DraftStore {
 
 	/** Which platform the details step is currently composing. */
 	composing = $state<PlatformId | null>(null);
+
+	/**
+	 * What the video is about — the game, for these channels. One per
+	 * upload, written on every job it makes; optional.
+	 */
+	product = $state('');
 
 	/**
 	 * One entry per possible slot, all present from the start so the pickers
@@ -590,6 +598,7 @@ class DraftStore {
 	/** Anything typed or picked that starting over would lose. */
 	get hasContent(): boolean {
 		return (
+			Boolean(this.product.trim()) ||
 			Object.values(this.texts).some((t) => Boolean(t && (t.title.trim() || t.description.trim()))) ||
 			Object.values(this.videos).some((v) => Boolean(v.file || v.nasFile || v.kept)) ||
 			Boolean(this.thumbnail || this.cover)
@@ -616,6 +625,7 @@ class DraftStore {
 			brand: this.#brand,
 			step: this.step,
 			composing: this.composing,
+			product: this.product,
 			texts: this.texts,
 			selected: this.selected,
 			overrides,
@@ -640,6 +650,7 @@ class DraftStore {
 	 * the save (TikTok's) sends it back to Details.
 	 */
 	restoreSaved(saved: SavedDraft) {
+		this.product = saved.product;
 		this.texts = saved.texts;
 		this.selected = saved.selected;
 		this.overrides = saved.overrides;
@@ -696,6 +707,7 @@ class DraftStore {
 		this.queued = [];
 		this.queuedJobs = [];
 		this.overrideTaken = false;
+		this.product = '';
 		this.texts = {};
 		this.composing = null;
 		// The split is the arrangement, not this video: the remembered one
