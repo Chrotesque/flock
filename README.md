@@ -574,6 +574,7 @@ Text written elsewhere, in a chat with an assistant say, goes in with one
 {
   "flock": 1,
   "brand": "My brand",
+  "product": "The game: its subtitle",
   "thumbnail": "C:/Users/me/Pictures/cover.png",
   "youtube": { "title": "…", "description": "…", "tags": ["…"], "playlists": ["…", "…"], "schedule": "2026-10-13 18:00" },
   "instagram": { "caption": "…", "schedule": "2026-10-13 19:30" },
@@ -586,6 +587,7 @@ it in. A note in the corner says what was filled. With several brands, a
 `brand` that matches none (a typo) fills nothing: the note asks which brand it
 is for, suggesting the closest one.
 
+- **`product`** fills the *Product name* box on Details.
 - **Tags** go into YouTube's *Other* box.
 - **`playlists`** takes one title or a list (`"playlist"` works too). A title
   the channel has no playlist for is named in the note.

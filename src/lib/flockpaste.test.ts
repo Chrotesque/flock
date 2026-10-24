@@ -74,6 +74,20 @@ describe('readFlockPaste: what counts as a flock block', () => {
 		expect(read(block({ thumbnail: 'C:/Users/me/thumb.png' })).thumbnail).toBe('C:/Users/me/thumb.png');
 	});
 
+	it('reads the product name, trimmed, and leaves it empty without one', () => {
+		const paste = read(block({ product: ' Lantern Keep: The Long Night ', youtube: { title: 't' } }));
+		expect(paste.product).toBe('Lantern Keep: The Long Night');
+		expect(paste.notes).toEqual([]);
+		expect(read(block({ youtube: { title: 't' } })).product).toBe('');
+	});
+
+	it('fills a block that carries only a product name, and says when it is not text', () => {
+		expect(read(block({ product: 'Lantern Keep' })).notes).toEqual([]);
+		const odd = read(block({ product: ['Lantern Keep'], youtube: { title: 't' } }));
+		expect(odd.product).toBe('');
+		expect(odd.notes).toEqual(['Ignored "product": expected the name as text.']);
+	});
+
 	it('never reads \\n or \\t in a path as a newline or a tab', () => {
 		expect(read('{"flock": 1, "thumbnail": "C:\\new\\thumb.png"}').thumbnail).toBe('C:\\new\\thumb.png');
 	});

@@ -13,6 +13,7 @@ import type { Brand, PlatformId } from './types';
  *   {
  *     "flock": 1,
  *     "brand": "Paper Moon",
+ *     "product": "Lantern Keep: The Long Night",
  *     "thumbnail": "C:/Users/me/Pictures/thumb.png",
  *     "youtube":   { "title": "…", "description": "…", "tags": ["…"], "playlists": ["…", "…"], "schedule": "2026-10-13 18:00" },
  *     "instagram": { "caption": "…", "schedule": "2026-10-13 19:30" },
@@ -22,6 +23,8 @@ import type { Brand, PlatformId } from './types';
  * `schedule` is the release slot, in local time — the clock where flock is
  * used — and only fills the Schedule step, where it can still be changed.
  * `playlists` may be one title or a list, and may be called `playlist`.
+ * `product` is what the video is about (the game), for the whole upload: it
+ * fills the Details step's Product name box.
  *
  * Only text and what is written alongside it travel this way. TikTok's
  * audience, comments, Duet, Stitch and disclosure, and paid promotion, are
@@ -51,6 +54,8 @@ export interface Slot {
 
 export interface FlockPaste {
 	brand: string;
+	/** The upload's product name; '' when the block gives none. */
+	product: string;
 	/** A path on the worker's machine; the worker fetches it (repo.requestLocalImage). */
 	thumbnail: string;
 	/** In the order the block names them. */
@@ -182,7 +187,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const TOP_KEYS = new Set(['flock', 'brand', 'thumbnail']);
+const TOP_KEYS = new Set(['flock', 'brand', 'product', 'thumbnail']);
 const PLATFORM_KEYS = new Set(['title', 'description', 'caption', 'tags', 'playlist', 'playlists', 'schedule']);
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -229,7 +234,11 @@ function normalise(
 	const claimed: NonNullable<FlockPaste['claimed']> = {};
 
 	const brand = text(data.brand) ?? '';
+	const product = text(data.product) ?? '';
 	const thumbnail = text(data.thumbnail) ?? '';
+	if (data.product !== undefined && text(data.product) === undefined) {
+		notes.push('Ignored "product": expected the name as text.');
+	}
 
 	for (const [rawKey, value] of Object.entries(data)) {
 		const key = rawKey.trim().toLowerCase();
@@ -247,10 +256,12 @@ function normalise(
 		if (own.length > 0) claimed[key] = Object.fromEntries(own);
 	}
 
-	if (Object.keys(platforms).length === 0 && !thumbnail) {
+	if (Object.keys(platforms).length === 0 && !thumbnail && !product) {
 		notes.push('The block names no platform, so there was nothing to fill.');
 	}
-	return Object.keys(claimed).length > 0 ? { brand, thumbnail, platforms, notes, claimed } : { brand, thumbnail, platforms, notes };
+	return Object.keys(claimed).length > 0
+		? { brand, product, thumbnail, platforms, notes, claimed }
+		: { brand, product, thumbnail, platforms, notes };
 }
 
 function readPlatform(

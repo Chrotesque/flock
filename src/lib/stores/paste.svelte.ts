@@ -17,6 +17,8 @@ export interface PasteNotice {
 	error: string;
 	/** The brand the draft was filled for, with more than one brand. */
 	brand: string;
+	/** The product name the block filled in, '' when it gave none. */
+	product: string;
 	platforms: { id: PlatformId; summary: string }[];
 	notes: string[];
 	thumbnail: { path: string; state: 'fetching' | 'waiting' | 'done' | 'failed'; message: string } | null;
@@ -38,6 +40,7 @@ const emptyNotice = (): PasteNotice => ({
 	title: '',
 	error: '',
 	brand: '',
+	product: '',
 	platforms: [],
 	notes: [],
 	thumbnail: null,
@@ -146,6 +149,8 @@ class PasteStore {
 		}
 		draft.followBrand(brands.currentId);
 		draft.applyPaste(paste.platforms);
+		// Like the text: what the block carries goes over what was there.
+		if (paste.product) draft.product = paste.product;
 		// Keys a local module reads (devtest.ts), straight after, before its
 		// own effects can fill the same choices from elsewhere.
 		if (paste.claimed) notes.push(...devtestApplyPaste(paste.claimed, { resumed: false }));
@@ -162,6 +167,7 @@ class PasteStore {
 			...emptyNotice(),
 			title: opts.title ?? 'Filled from paste',
 			brand: brands.multiple ? (brands.current?.name ?? '') : '',
+			product: paste.product,
 			platforms: (Object.entries(paste.platforms) as [PlatformId, NonNullable<FlockPaste['platforms'][PlatformId]>][]).map(
 				([id, entry]) => ({ id, summary: filledSummary(id, entry) })
 			),

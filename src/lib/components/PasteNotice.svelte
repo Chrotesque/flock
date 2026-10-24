@@ -64,6 +64,13 @@
 			</div>
 		{/if}
 
+		{#if notice.product}
+			<p class="product">
+				<span class="what-for">Product</span>
+				<span class="what">{notice.product}</span>
+			</p>
+		{/if}
+
 		{#if notice.platforms.length > 0}
 			<ul class="filled">
 				{#each notice.platforms as entry (entry.id)}
@@ -177,6 +184,13 @@
 
 	.what {
 		min-width: 0;
+	}
+
+	.product {
+		display: flex;
+		gap: 8px;
+		margin: 0 0 4px;
+		overflow-wrap: anywhere;
 	}
 
 	.thumb {
