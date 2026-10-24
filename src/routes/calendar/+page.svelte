@@ -341,7 +341,7 @@
 				rolling
 				lead={LEAD}
 				dense
-				rowSpace={1.5}
+				rowSpace={3.5}
 				allHours
 				groupOf={(entry) => entry.job}
 				past={(entry) => entry.past}
