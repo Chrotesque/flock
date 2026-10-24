@@ -8,6 +8,8 @@
  * asks the server it was loaded from.
  */
 
+import type { Change } from './version';
+
 export interface Build {
 	version: string;
 	/** When it was built (ms); null for a name without one. */
@@ -50,4 +52,32 @@ export function updateFrom(running: string, deployed: unknown): Update | null {
 	if (order < 0) return null;
 	if (order === 0 && (there.builtAt === null || here.builtAt === null || there.builtAt <= here.builtAt)) return null;
 	return { version: there.version, sameVersion: order === 0 };
+}
+
+/**
+ * The change lines a page lacks: those in the deployed build's
+ * `whatsnew.json` (`{ changes }`, newest first) that it does not carry
+ * itself, from its own version on — so a line added on a redeploy of the same
+ * version shows too, and an older line reworded since does not.
+ */
+export function newChanges(running: string, mine: readonly Change[], deployed: unknown): Change[] {
+	const list = deployed && typeof deployed === 'object' ? (deployed as { changes?: unknown }).changes : null;
+	if (!Array.isArray(list)) return [];
+	const known = new Set(mine.map((c) => `${c.version}\n${c.line}`));
+	return list.filter(
+		(c): c is Change =>
+			!!c &&
+			typeof c.version === 'string' &&
+			typeof c.line === 'string' &&
+			c.line.trim() !== '' &&
+			readBuild(c.version) !== null &&
+			compareVersions(c.version, running) >= 0 &&
+			!known.has(`${c.version}\n${c.line}`)
+	);
+}
+
+/** The box's two lines: the changes, or the newest one and how many more when they do not fit. */
+export function changeLines(changes: readonly Change[], max = 2): string[] {
+	if (changes.length <= max) return changes.map((c) => c.line);
+	return [...changes.slice(0, max - 1).map((c) => c.line), `+${changes.length - max + 1} more`];
 }

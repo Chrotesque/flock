@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { compareVersions, readBuild, updateFrom } from './appupdate';
+import { changeLines, compareVersions, newChanges, readBuild, updateFrom } from './appupdate';
+import { CHANGES, VERSION } from './version';
 
 describe('readBuild', () => {
 	it('reads a build’s version and when it was built', () => {
@@ -42,5 +43,69 @@ describe('updateFrom', () => {
 		expect(updateFrom(running, { version: '1792870592576' })).toBeNull();
 		expect(updateFrom('1792870592576', { version: '0.18.4+2000' })).toBeNull();
 		expect(updateFrom(running, null)).toBeNull();
+	});
+});
+
+describe('newChanges', () => {
+	const mine = [
+		{ version: '0.18.10', line: 'Added: Update > What Changed' },
+		{ version: '0.18.9', line: 'Changed: Ratio View > Heatmap' }
+	];
+
+	it('gives the deployed lines this page does not carry, newest first', () => {
+		const deployed = {
+			version: '0.18.12',
+			changes: [
+				{ version: '0.18.12', line: 'Fixed: Calendar > Drag' },
+				{ version: '0.18.11', line: 'Added: Log > Sub Filtering' },
+				...mine
+			]
+		};
+		expect(newChanges('0.18.10', mine, deployed)).toEqual(deployed.changes.slice(0, 2));
+	});
+
+	it('gives a line added on a redeploy of the same version', () => {
+		const deployed = { changes: [{ version: '0.18.10', line: 'Fixed: Update > Width' }, ...mine] };
+		expect(newChanges('0.18.10', mine, deployed)).toEqual([{ version: '0.18.10', line: 'Fixed: Update > Width' }]);
+	});
+
+	it('leaves out lines older than this page, reworded ones too', () => {
+		const deployed = { changes: [{ version: '0.18.9', line: 'Changed: Ratio View > Heat Map' }, mine[0]] };
+		expect(newChanges('0.18.10', mine, deployed)).toEqual([]);
+	});
+
+	it('reads nothing from an old build or a broken file', () => {
+		expect(newChanges('0.18.10', mine, null)).toEqual([]);
+		expect(newChanges('0.18.10', mine, '<!doctype html>')).toEqual([]);
+		expect(newChanges('0.18.10', mine, { version: '0.18.11' })).toEqual([]);
+		expect(newChanges('0.18.10', mine, { changes: [null, { version: 'x', line: 'y' }, { version: '0.18.11', line: ' ' }, { version: '0.18.11' }] })).toEqual([]);
+	});
+});
+
+describe('changeLines', () => {
+	const at = (n: number) => Array.from({ length: n }, (_, i) => ({ version: `0.18.${20 - i}`, line: `Line ${i + 1}` }));
+
+	it('shows up to two lines as they are', () => {
+		expect(changeLines([])).toEqual([]);
+		expect(changeLines(at(1))).toEqual(['Line 1']);
+		expect(changeLines(at(2))).toEqual(['Line 1', 'Line 2']);
+	});
+
+	it('shows the newest and how many more past two', () => {
+		expect(changeLines(at(3))).toEqual(['Line 1', '+2 more']);
+		expect(changeLines(at(7))).toEqual(['Line 1', '+6 more']);
+	});
+});
+
+describe('CHANGES', () => {
+	it('says what this version changed, in short lines, newest first', () => {
+		expect(CHANGES[0]?.version).toBe(VERSION);
+		expect(CHANGES.filter((c) => c.version === VERSION).length).toBeLessThanOrEqual(2);
+		for (const c of CHANGES) {
+			expect(readBuild(c.version)).not.toBeNull();
+			// About what fits the rail at 11px; a longer one is cut there (the tooltip has it whole).
+			expect(c.line.length).toBeLessThanOrEqual(28);
+		}
+		for (let i = 1; i < CHANGES.length; i++) expect(compareVersions(CHANGES[i - 1].version, CHANGES[i].version)).toBeGreaterThanOrEqual(0);
 	});
 });

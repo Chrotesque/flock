@@ -627,7 +627,8 @@ Settings, local or on the network, like watch folders.
 
 **Update available!** slides in above *Worker* when a newer flock has been
 deployed than the open page runs (it looks every five minutes and whenever
-you come back to the tab). Click it to reload. It waits while a video is
+you come back to the tab), with a line or two on what changed (hover it for
+all of them). Click it to reload. It waits while a video is
 uploading, and asks for a second click when an upload being composed would
 be lost.
 

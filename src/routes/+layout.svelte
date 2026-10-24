@@ -25,6 +25,7 @@
 	import { CELEBRATE_MARK, CELEBRATE_PLACE, TODO_MARKS } from '$lib/todoicon';
 	import { wobble } from '$lib/wobble';
 	import { appUpdate } from '$lib/stores/appupdate.svelte';
+	import { changeLines } from '$lib/appupdate';
 	import { VERSION } from '$lib/version';
 
 	/** flock's public website (source in site/), where the brand at the foot of the rail leads. */
@@ -74,11 +75,15 @@
 
 	const updateWords = $derived.by(() => {
 		const update = appUpdate.available;
-		if (!update) return { line: '', title: '' };
+		if (!update) return { lines: [], title: '' };
 		const what = update.sameVersion ? `A newer build of v${update.version}` : `v${update.version}`;
-		if (appUpdate.uploading) return { line: 'Reload once the upload is done', title: `${what} is out. Reload once the upload is done: reloading now would cut it off.` };
-		if (updateArmed) return { line: 'Again to reload — the draft is lost', title: 'Click again within three seconds to reload: the upload being composed here is lost.' };
-		return { line: `v${update.version} · click to reload`, title: `${what} is out; this page runs v${VERSION}. Click to reload it.` };
+		if (appUpdate.uploading) return { lines: ['Reload once the upload is done'], title: `${what} is out. Reload once the upload is done: reloading now would cut it off.` };
+		if (updateArmed) return { lines: ['Again to reload — the draft is lost'], title: 'Click again within three seconds to reload: the upload being composed here is lost.' };
+		const changes = appUpdate.changes;
+		// What changed, or (from a build that does not say) just the version.
+		const lines = changes.length ? changeLines(changes) : [`v${update.version} · click to reload`];
+		const listed = changes.length ? `\n\n${changes.map((c) => c.line).join('\n')}\n\n` : ' ';
+		return { lines, title: `${what} is out; this page runs v${VERSION}.${listed}Click to reload it.` };
 	});
 
 	/**
@@ -453,7 +458,9 @@
 				>
 					<span class="updatetext">
 						<span class="updatehead">Update available!</span>
-						<span class="updateline">{updateWords.line}</span>
+						{#each updateWords.lines as line, i (i)}
+							<span class="updateline">{line}</span>
+						{/each}
 					</span>
 					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
 						<path
@@ -662,6 +669,8 @@
 		display: flex;
 		align-items: center;
 		gap: 12px;
+		/* No wider than the rail, so a long line is cut rather than run out. */
+		max-width: calc(100% + 14px);
 		margin-left: -14px;
 		padding: 9px 13px 9px 14px;
 		border: 1px solid var(--pink);
@@ -719,6 +728,10 @@
 		font-size: 11px;
 		color: var(--text-dim);
 		white-space: nowrap;
+		/* Short on purpose (CHANGES in version.ts); whatever still does not
+		   fit the rail is cut here and read whole in the tooltip. */
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.update.armed .updateline {
