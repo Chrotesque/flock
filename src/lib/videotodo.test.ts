@@ -162,13 +162,34 @@ describe('todoLines', () => {
 		expect(lines.map((l) => [l.id, l.title, l.studio])).toEqual([['new', 'Upload new', ['thumbnail', 'paid promotion']]]);
 	});
 
-	it('leaves out uploads from before the start; a long video gets its thumbnail', () => {
+	it('leaves out uploads from before the start', () => {
 		const old = upload('before', '2026-10-10 17:00:00.000Z');
-		const long = upload('long', '2026-10-11 10:00:00.000Z');
-		const longStat = stat('long', '2026-10-11 10:00:00.000Z', { duration: 900, privacy: 'unlisted' });
-		expect(todoLines([longStat], [old, long], fresh, { jestr: false }).map((l) => [l.id, l.studio])).toEqual([
-			['long', ['thumbnail', 'paid promotion']]
-		]);
+		const recent = upload('recent', '2026-10-11 10:00:00.000Z');
+		expect(todoLines([], [old, recent], fresh, { jestr: false }).map((l) => l.id)).toEqual(['recent']);
+	});
+
+	it('lists Shorts only: never a long video or a live stream, whichever part would list it', () => {
+		const live = { liveStreamingDetails: { actualStartTime: '2026-10-11T09:00:00Z', actualEndTime: '2026-10-11T10:30:00Z' } };
+		const read = [
+			stat('long', '2026-10-11 10:00:00.000Z', { duration: 900 }),
+			stat('stream', '2026-10-11 11:00:00.000Z', { duration: 5574, data: live }),
+			stat('clip', '2026-10-11 11:30:00.000Z', { duration: 40, data: live }),
+			stat('short', '2026-10-11 12:00:00.000Z'),
+			stat('three', '2026-10-11 13:00:00.000Z', { duration: 180 })
+		];
+		const sent = [
+			upload('long', '2026-10-11 09:50:00.000Z'),
+			upload('stream', '2026-10-11 10:50:00.000Z'),
+			upload('short', '2026-10-11 11:50:00.000Z')
+		];
+		expect(todoLines(read, sent, fresh, { jestr: true }).map((l) => l.id)).toEqual(['short', 'three']);
+		expect(todoLines(read, sent, fresh, { jestr: false }).map((l) => l.id)).toEqual(['short']);
+	});
+
+	it('lists a video not read yet until the stats pass reads it as long', () => {
+		const up = upload('v1', '2026-10-11 10:00:00.000Z');
+		expect(todoLines([], [up], fresh, { jestr: false }).map((l) => l.id)).toEqual(['v1']);
+		expect(todoLines([stat('v1', '2026-10-11 10:00:00.000Z', { duration: 900 })], [up], fresh, { jestr: false })).toEqual([]);
 	});
 
 	it('holds a placeholder from confirm until YouTube has the video', () => {
@@ -223,8 +244,8 @@ describe('todoLines', () => {
 		]);
 		const big = { ...read, data: { snippet: { thumbnails: { ...read.data?.snippet?.thumbnails, maxres: { url: 'max.jpg' } } } } };
 		expect(todoLines([big], uploads, fresh, { jestr: false })[0].thumbLarge).toBe('max.jpg');
-		const long = todoLines([{ ...read, duration: 900 }], uploads, fresh, { jestr: false })[0];
-		expect(long.short).toBe(false);
+		const three = todoLines([{ ...read, duration: 180 }], uploads, fresh, { jestr: false })[0];
+		expect(three.short).toBe(false);
 		expect(todoLines([], uploads, fresh, { jestr: false }).map((l) => [l.thumb, l.short])).toEqual([['', false]]);
 	});
 
@@ -272,6 +293,11 @@ describe('todoLines with Instagram reels', () => {
 		const lines = todoLines([], [up], studioDone, { jestr: false }, [reel()]);
 		expect(lines.map((l) => [l.id, l.studio, l.instagram?.state])).toEqual([['v1', [], 'open']]);
 		expect(todoLines([], [up], { ...studioDone, instagram: ['r1'] }, { jestr: false }, [reel()])).toEqual([]);
+	});
+
+	it('lists no reel whose upload went to YouTube as a long video', () => {
+		const long = stat('v1', '2026-10-12 06:00:00.000Z', { duration: 600 });
+		expect(todoLines([long], [up], fresh, { jestr: false }, [reel()])).toEqual([]);
 	});
 
 	it('shows a reel done while the line stays for something else', () => {

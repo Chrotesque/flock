@@ -799,11 +799,12 @@ open the list over the page.
   video in YouTube Studio and counts both as done; the label itself is added
   in the Instagram app on a phone (the website cannot). Reels going out from
   20 Oct 2026 on are listed. A legend in the list's top right says what
-  each mark and colour means.
+  each mark and colour means. Only Shorts get a row: long videos and live
+  streams are never listed.
 - From confirm until YouTube has the video, the row shows a turning ring:
   the upload went through, and YouTube is still to answer.
 - With the **Jestr integration** on (off by default; its switch is not part
-  of the published app), every video on a
+  of the published app), every Short on a
   connected channel is listed with a *Jestr* button; press it once the video is
   linked on [Jestr](https://jestr.gg). A scheduled video's button works once it
   is public.

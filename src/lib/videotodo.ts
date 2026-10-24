@@ -1,4 +1,4 @@
-import { kindOf } from './videokind';
+import { kindOf, type VideoKind } from './videokind';
 import { studioTasks, studioUrl, videoIdOf } from './studio';
 
 /**
@@ -33,6 +33,10 @@ import { studioTasks, studioUrl, videoIdOf } from './studio';
  *   YouTube has it (no link yet), and with Jestr on until the channel's next
  *   read lists it — a placeholder with a spinner, so a finished upload is
  *   never mistaken for a missing one (v0.11.7, the user's request).
+ *
+ * Shorts only (v0.17.2, the user's call): a video the stats pass has read as
+ * long form or a live stream (videokind.ts) is never listed, whichever part
+ * would list it. One not read yet is listed until it is.
  *
  * A line goes once nothing is left on it. Stored in `app_settings` under
  * `video_todo` as { since, jestr, studio, instagram, instagramSince }:
@@ -292,13 +296,14 @@ export function todoLines(
 	const statsById = new Map(stats.filter((row) => row.video_id).map((row) => [row.video_id, row]));
 	const reelByJob = new Map<string, TodoReelRow>();
 	for (const reel of reels) if (reel.job && !reelByJob.has(reel.job)) reelByJob.set(reel.job, reel);
-	const lines = new Map<string, TodoLine & { at: number }>();
+	const lines = new Map<string, TodoLine & { at: number; kind: VideoKind | null }>();
 
 	const lineFor = (id: string, at: number, fallbackTitle?: string, fallbackChannel?: string) => {
 		const known = lines.get(id);
 		if (known) return known;
 		const stat = statsById.get(id);
 		const live = Boolean(stat?.data?.liveStreamingDetails && Object.keys(stat.data.liveStreamingDetails).length);
+		const kind = stat ? kindOf({ duration: Number(stat.duration), live }) : null;
 		const publishAt = stat?.privacy === 'private' ? (stat.data?.status?.publishAt ?? '') : '';
 		const line = {
 			id,
@@ -316,9 +321,10 @@ export function todoLines(
 			paid: stat ? stat.data?.paidProductPlacementDetails?.hasPaidProductPlacement === true : null,
 			thumb: stat?.data?.snippet?.thumbnails?.medium?.url ?? '',
 			thumbLarge: stat?.data?.snippet?.thumbnails?.maxres?.url ?? stat?.data?.snippet?.thumbnails?.medium?.url ?? '',
-			short: Boolean(stat) && kindOf({ duration: Number(stat?.duration), live }) === 'short',
+			short: kind === 'short',
 			waiting: null as string | null,
-			at
+			at,
+			kind
 		};
 		lines.set(id, line);
 		return line;
@@ -349,7 +355,8 @@ export function todoLines(
 				thumbLarge: '',
 				short: false,
 				waiting: upload.status === 'publishing' ? WAITING.uploading : WAITING.queued,
-				at: created
+				at: created,
+				kind: null
 			});
 			continue;
 		}
@@ -380,10 +387,12 @@ export function todoLines(
 	return [...lines.values()]
 		.filter(
 			(line) =>
-				line.studio.length > 0 ||
+				line.kind !== 'long' &&
+				line.kind !== 'live' &&
+				(line.studio.length > 0 ||
 				line.jestr !== null ||
-				(line.instagram !== null && line.instagram.state !== 'done') ||
-				line.waiting !== null
+					(line.instagram !== null && line.instagram.state !== 'done') ||
+					line.waiting !== null)
 		)
 		.sort((a, b) => a.at - b.at)
 		.map((line): TodoLine => ({
