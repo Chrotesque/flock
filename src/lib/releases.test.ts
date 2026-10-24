@@ -628,6 +628,7 @@ describe('periodStats', () => {
 			analytics: null,
 			engaged: null,
 			monthly: null,
+			monthPart: null,
 			analyticsThrough: ''
 		});
 		const followers = [

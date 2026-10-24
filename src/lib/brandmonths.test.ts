@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { brandMonths, monthsFromReads, nextMonth, prevMonth, readSince, type MonthCounts } from './brandmonths';
+import {
+	brandMonths,
+	daysIn,
+	monthsFromReads,
+	nextMonth,
+	paceOf,
+	partFromReads,
+	prevMonth,
+	readSince,
+	runningWords,
+	storedPart,
+	type MonthCounts
+} from './brandmonths';
 import type { Sample } from './releases';
 
 const s = (iso: string, views: number, likes = 0, comments = 0): Sample => [iso, views, likes, comments];
@@ -91,5 +103,65 @@ describe('brandMonths', () => {
 	it('steps across a year', () => {
 		expect(nextMonth('2026-12')).toBe('2027-01');
 		expect(prevMonth('2026-01')).toBe('2025-12');
+	});
+});
+
+describe('the month still running', () => {
+	const yt: Record<string, MonthCounts> = { '2026-08': [38227, 524, 55], '2026-09': [31762, 270, 51] };
+
+	it("reads the worker's running month as the days it covers", () => {
+		expect(storedPart({ month: '2026-10', counts: [21000, 210, 21], through: '2026-10-21' })).toEqual({ month: '2026-10', counts: [21000, 210, 21], days: 21 });
+		// A whole month, a day from another month, nothing covered or a broken row is no part.
+		expect(storedPart({ month: '2026-09', counts: [1, 1, 1], through: '2026-09-30' })).toBeNull();
+		expect(storedPart({ month: '2026-10', counts: [1, 1, 1], through: '2026-09-30' })).toBeNull();
+		expect(storedPart({ month: '2026-10', counts: [1, 1], through: '2026-10-05' })).toBeNull();
+		expect(storedPart(null)).toBeNull();
+		expect(daysIn('2026-02')).toBe(28);
+		expect(daysIn('2028-02')).toBe(29);
+	});
+
+	it('scales the count so far up to the whole month', () => {
+		expect(paceOf({ month: '2026-10', counts: [21000, 210, 20], days: 21 })).toEqual([31000, 310, 30]);
+	});
+
+	it('puts it on top, judged by its pace against the whole month before', () => {
+		const rows = brandMonths([{ platform: 'youtube', months: yt, part: { month: '2026-10', counts: [21000, 210, 21], days: 21 } }]);
+		expect(rows.map((r) => r.month)).toEqual(['2026-10', '2026-09', '2026-08']);
+		const oct = rows[0].cells.views;
+		expect(oct).toMatchObject({ value: 21000, pace: 31000, compared: 31000, previous: 31762, verdict: 'usual' });
+		expect(oct.parts[0]).toMatchObject({ value: 21000, pace: 31000, days: 21 });
+		expect(rows[0].running).toEqual([{ platform: 'youtube', days: 21 }]);
+		expect(runningWords(rows[0])).toBe('21 of 31 days');
+		// Whole months are as before.
+		expect(rows[1].running).toEqual([]);
+		expect(rows[1].cells.views).toMatchObject({ value: 31762, pace: 31762 });
+		expect(runningWords(rows[1])).toBe('');
+		// Twelve whole months still show beside it.
+		const many = Object.fromEntries(Array.from({ length: 13 }, (_, i) => [`2025-${String(i + 1).padStart(2, '0')}`.replace('2025-13', '2026-01'), [i, 0, 0] as MonthCounts]));
+		expect(brandMonths([{ platform: 'youtube', months: many, part: { month: '2026-02', counts: [1, 0, 0], days: 3 } }])).toHaveLength(13);
+	});
+
+	it('names the stretch when platforms cover different days, and a whole month wins over a part', () => {
+		const rows = brandMonths([
+			{ platform: 'youtube', months: yt, part: { month: '2026-10', counts: [100, 0, 0], days: 21 } },
+			{ platform: 'facebook', months: {}, part: { month: '2026-10', counts: [50, 0, 0], days: 24.4 } }
+		]);
+		expect(runningWords(rows[0])).toBe('21–24 of 31 days');
+		// Facebook has no whole September: judged on YouTube's pace alone.
+		expect(rows[0].cells.views.compared).toBe(Math.round((100 * 31) / 21));
+		expect(brandMonths([{ platform: 'youtube', months: yt, part: { month: '2026-09', counts: [5, 0, 0], days: 3 } }])[0].cells.views.value).toBe(31762);
+	});
+
+	it("works it out from flock's own reads up to the last read", () => {
+		const rows = [
+			{ published_at: '2026-09-20T18:00:00Z', history: [s('2026-10-14T18:26:00Z', 1000, 10, 1), s('2026-11-10T00:00:00Z', 1500, 15, 2)] },
+			{ published_at: '2026-11-05T12:00:00Z', history: [s('2026-11-05T13:00:00Z', 10), s('2026-11-11T00:00:00Z', 300, 3, 1)] }
+		];
+		const until = Date.parse('2026-11-12T12:00:00Z');
+		expect(partFromReads(rows, until)).toEqual({ month: '2026-11', counts: [500 + 300, 5 + 3, 1 + 1], days: 11.5 });
+		// Not read from the month's first moment, or not a day in yet: none.
+		expect(partFromReads(rows, Date.parse('2026-10-25T00:00:00Z'))).toBeNull();
+		expect(partFromReads(rows, Date.parse('2026-11-01T06:00:00Z'))).toBeNull();
+		expect(partFromReads([], until)).toBeNull();
 	});
 });

@@ -36,6 +36,8 @@ export interface FollowerState {
 	engaged: Record<string, [number, number]> | null;
 	/** The account's own [views, likes, comments] per whole month, 'YYYY-MM' (worker/monthly.mjs); null until read. */
 	monthly: Record<string, [number, number, number]> | null;
+	/** The month still running: its [views, likes, comments] so far and the last day they cover ('YYYY-MM-DD'); null without one. */
+	monthPart: { month: string; counts: [number, number, number]; through: string } | null;
 	/** The last day those cover, 'YYYY-MM-DD' (YouTube's, Pacific); '' until read. */
 	analyticsThrough: string;
 }
@@ -68,6 +70,7 @@ export function readFollowerState(raw: unknown): FollowerState | null {
 		analytics: readPairs(r.analytics),
 		engaged: readPairs(r.engaged),
 		monthly: readMonthly(r.monthly),
+		monthPart: readMonthPart(r.monthPart),
 		analyticsThrough: typeof r.analyticsThrough === 'string' ? r.analyticsThrough : ''
 	};
 }
@@ -82,6 +85,16 @@ function readMonthly(raw: unknown): Record<string, [number, number, number]> | n
 		}
 	}
 	return out;
+}
+
+/** The month still running (worker/monthly.mjs), read back; null when it is not one. */
+function readMonthPart(raw: unknown): FollowerState['monthPart'] {
+	if (!raw || typeof raw !== 'object') return null;
+	const { month, counts, through } = raw as Record<string, unknown>;
+	if (typeof month !== 'string' || !/^\d{4}-\d{2}$/.test(month)) return null;
+	if (typeof through !== 'string' || !through.startsWith(`${month}-`)) return null;
+	if (!Array.isArray(counts) || counts.length !== 3 || !counts.every((n) => typeof n === 'number')) return null;
+	return { month, counts: [counts[0], counts[1], counts[2]], through };
 }
 
 /** Per-video pairs of numbers, read back; null when there are none stored. */

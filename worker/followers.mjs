@@ -56,8 +56,20 @@ export function readState(raw) {
 		// The account's views, likes and comments per whole month, the platform's
 		// own figures (monthly.mjs), and when they were last read.
 		monthly: readMonthly(raw.monthly),
+		// The month still running, so far: { month, counts, through } (monthly.mjs); null without one.
+		monthPart: readMonthPart(raw.monthPart),
 		monthlyAt: typeof raw.monthlyAt === 'string' ? raw.monthlyAt : ''
 	};
+}
+
+/** { month: 'YYYY-MM', counts: [views, likes, comments], through: 'YYYY-MM-DD' }, read back; null when it is not one. */
+export function readMonthPart(raw) {
+	if (!raw || typeof raw !== 'object') return null;
+	const { month, counts, through } = raw;
+	if (typeof month !== 'string' || !/^\d{4}-\d{2}$/.test(month)) return null;
+	if (typeof through !== 'string' || !through.startsWith(`${month}-`)) return null;
+	if (!Array.isArray(counts) || counts.length !== 3 || !counts.every((n) => typeof n === 'number')) return null;
+	return { month, counts: [counts[0], counts[1], counts[2]], through };
 }
 
 /** { 'YYYY-MM': [views, likes, comments] }, read back; null when none are stored. */

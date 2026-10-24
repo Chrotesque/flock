@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dropQuietStart, insightTotals, lastDayOf, monthStretches, newest, wholeMonths, youtubeMonthly } from './monthly.mjs';
-import { readMonthly, readState } from './followers.mjs';
+import { dropQuietStart, insightTotals, lastDayOf, monthStretches, newest, partStretches, wholeMonths, youtubeMonthly, youtubePart } from './monthly.mjs';
+import { readMonthPart, readMonthly, readState } from './followers.mjs';
 
 const day = (d, views, likes = 0, comments = 0) => ({ day: d, subscribersGained: 0, subscribersLost: 0, views, likes, comments });
 
@@ -59,4 +59,41 @@ test('a follower row keeps its months through the next read', () => {
 	assert.deepEqual(state.monthly, { '2026-09': [120, 6, 1] });
 	assert.equal(readState({ count: 1, at: '2026-10-20T22:47:00Z' }).monthly, null);
 	assert.equal(readMonthly('x'), null);
+});
+
+test("a channel's month still running is its days so far, once it was active all of it", () => {
+	const rows = [day('2026-08-10', 50, 2, 1), day('2026-09-30', 20, 1, 0), day('2026-10-01', 300, 9, 2), day('2026-10-18', 40, 1, 0), day('2026-10-19', 5)];
+	assert.deepEqual(youtubePart(rows, '2026-10-18'), { month: '2026-10', counts: [340, 10, 2], through: '2026-10-18' });
+	// Through the month's last day it is whole, and the next has nothing yet.
+	assert.equal(youtubePart(rows, '2026-09-30'), null);
+	// Active only since the 10th of August: August is no month to scale up.
+	assert.equal(youtubePart(rows, '2026-08-20'), null);
+	assert.equal(youtubePart(rows, ''), null);
+});
+
+test("Instagram's month still running is asked for up to the day its lag reaches", () => {
+	const lag = 2 * 86_400_000;
+	const oct = partStretches(Date.parse('2026-10-24T10:52:00Z'), lag);
+	assert.equal(oct.month, '2026-10');
+	assert.equal(oct.through, '2026-10-21');
+	assert.deepEqual(
+		oct.stretches.map(([a, b]) => [new Date(a * 1000).toISOString().slice(0, 10), new Date(b * 1000).toISOString().slice(0, 10)]),
+		[
+			['2026-10-01', '2026-10-16'],
+			['2026-10-16', '2026-10-22']
+		]
+	);
+	// Early in a month the lag still holds the month before, which is not whole yet either.
+	assert.deepEqual(partStretches(Date.parse('2026-11-01T12:00:00Z'), lag).month, '2026-10');
+	assert.equal(partStretches(Date.parse('2026-11-01T12:00:00Z'), lag).through, '2026-10-29');
+	assert.equal(partStretches(Date.parse('2026-11-03T05:00:00Z'), lag), null);
+	assert.equal(partStretches(Date.parse('2026-11-04T05:00:00Z'), lag).stretches.length, 1);
+});
+
+test('a follower row keeps its month still running through the next read', () => {
+	const part = { month: '2026-10', counts: [340, 10, 2], through: '2026-10-18' };
+	assert.deepEqual(readState({ count: 1, at: '2026-10-20T22:47:00Z', monthPart: part }).monthPart, part);
+	assert.equal(readState({ count: 1, at: '2026-10-20T22:47:00Z' }).monthPart, null);
+	assert.equal(readMonthPart({ ...part, through: '2026-09-30' }), null);
+	assert.equal(readMonthPart({ ...part, counts: [1, 2] }), null);
 });

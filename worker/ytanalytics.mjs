@@ -13,14 +13,14 @@
 // those past YouTube's old view threshold, so the share that never got there
 // is the Dashboard's skip rate for YouTube — `analyticsThrough` = the last
 // day YouTube has, `monthly` = the channel's views, likes and comments per
-// whole month (monthly.mjs, from the same day report), and, once, the
-// channel's daily counts in front of what flock recorded (mergeBackfill).
+// whole month and `monthPart` the month still running so far (monthly.mjs,
+// from the same day report), and, once, the channel's daily counts in front of what flock recorded (mergeBackfill).
 
 import { forgetToken, grantedScope } from './google.mjs';
 import { youtubeToken } from './youtube.mjs';
 import { fetchOrExplain } from './net.mjs';
 import { mergeBackfill, readState, settingKey } from './followers.mjs';
-import { youtubeMonthly } from './monthly.mjs';
+import { youtubeMonthly, youtubePart } from './monthly.mjs';
 
 const API = 'https://youtubeanalytics.googleapis.com/v2/reports';
 export const ANALYTICS_SCOPE = 'https://www.googleapis.com/auth/yt-analytics.readonly';
@@ -201,6 +201,7 @@ export async function analyticsPass({ pb, config, log, account }) {
 			analyticsThrough: lastDay(days),
 			analyticsAt: new Date(now).toISOString(),
 			monthly: youtubeMonthly(days, lastDay(days)),
+			monthPart: youtubePart(days, lastDay(days)),
 			monthlyAt: new Date(now).toISOString()
 		};
 		if (!state.backfilled && days.length > 0) {

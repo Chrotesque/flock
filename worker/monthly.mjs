@@ -5,7 +5,10 @@
 // follower row (`followers:<platform>:<id>`, followers.mjs) as `monthly` =
 // { 'YYYY-MM': [views, likes, comments] }, the last MONTHS_KEPT whole months
 // only — a month still running, or one the account was not yet active for
-// all of, is left out, so every month stored is a full one.
+// all of, is left out, so every month stored is a full one. The month still
+// running is kept beside them as `monthPart` = { month, counts, through } —
+// its counts so far and the last day they cover — which the panel scales up
+// to the whole month.
 
 import { explain, graph } from './instagram.mjs';
 import { readState, settingKey } from './followers.mjs';
@@ -53,6 +56,46 @@ export function youtubeMonthly(dayRows, through) {
 		t[2] += Number(row.comments) || 0;
 	}
 	return newest(out);
+}
+
+/**
+ * A channel's month still running from its day report: the month `through`
+ * falls in, when YouTube has not every day of it yet, with its counts so far.
+ * Null when `through` ends its month (that month is whole, and the next has
+ * no day yet) or the channel was not active for all of it.
+ */
+export function youtubePart(dayRows, through) {
+	if (!through) return null;
+	const month = monthOf(through);
+	if (lastDayOf(month) <= through) return null;
+	const first = [...dayRows]
+		.sort((a, b) => String(a.day).localeCompare(String(b.day)))
+		.find((row) => Number(row.views) || Number(row.likes) || Number(row.comments));
+	if (!first || `${month}-01` < String(first.day)) return null;
+	const counts = [0, 0, 0];
+	for (const row of dayRows) {
+		if (monthOf(row.day) !== month || String(row.day) > through) continue;
+		counts[0] += Number(row.views) || 0;
+		counts[1] += Number(row.likes) || 0;
+		counts[2] += Number(row.comments) || 0;
+	}
+	return { month, counts, through };
+}
+
+/**
+ * The month still running as far as Instagram has it in: the month `now - lag`
+ * falls in, up to the start of that day, as stretches in Unix seconds and the
+ * last day covered. Null on its first day, when nothing of it is in yet.
+ */
+export function partStretches(now, lag = 0) {
+	const until = Date.parse(`${new Date(now - lag).toISOString().slice(0, 10)}T00:00:00Z`);
+	const month = monthOf(now - lag);
+	if (until <= Date.parse(`${month}-01T00:00:00Z`)) return null;
+	const end = until / 1000;
+	const stretches = monthStretches(month)
+		.map(([since, upTo]) => [since, Math.min(upTo, end)])
+		.filter(([since, upTo]) => since < upTo);
+	return { month, stretches, through: new Date(until - 86_400_000).toISOString().slice(0, 10) };
 }
 
 /** The last MONTHS_KEPT months of a monthly record. */
@@ -137,10 +180,23 @@ export async function instagramMonthly({ pb, ig, log }) {
 			monthly[month] = t;
 		}
 		const kept = dropQuietStart(monthly);
+		// The month still running, once the account was active before it (as for whole months).
+		let monthPart = null;
+		const running = partStretches(Date.now(), INSTAGRAM_LAG_MS);
+		if (running && Object.keys(kept).length > 0) {
+			const counts = [0, 0, 0];
+			for (const [since, until] of running.stretches) {
+				const res = await graph(ig, `/${ig.igUserId}/insights`, {
+					params: { metric: 'views,likes,comments', period: 'day', metric_type: 'total_value', since: String(since), until: String(until) }
+				});
+				insightTotals(res).forEach((n, i) => (counts[i] += n));
+			}
+			monthPart = { month: running.month, counts, through: running.through };
+		}
 		// Re-read just before writing: the follower count may have moved while the months were read.
 		const fresh = readState((await pb.getSetting(key))?.value) ?? state;
-		await pb.setSetting(key, { ...fresh, monthly: kept, monthlyAt: new Date().toISOString() });
-		const message = `monthly @${ig.username}: ${Object.keys(kept).length} whole months from Instagram's insights`;
+		await pb.setSetting(key, { ...fresh, monthly: kept, monthPart, monthlyAt: new Date().toISOString() });
+		const message = `monthly @${ig.username}: ${Object.keys(kept).length} whole months from Instagram's insights${monthPart ? `, ${monthPart.month} through ${monthPart.through}` : ''}`;
 		if (message !== st.said) log(message);
 		st.said = message;
 	} catch (err) {
