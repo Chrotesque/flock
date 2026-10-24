@@ -9,7 +9,8 @@
 	import { general } from '$lib/stores/general.svelte';
 	import { formatSchedule, formatBytes, formatDuration, firstLine } from '$lib/format';
 	import { portal } from '$lib/portal';
-	import { loadPreviewServer, toInstant } from '$lib/repo';
+	import { loadPreviewServer, loadStoredPlayer, toInstant } from '$lib/repo';
+	import { mixedContent } from '$lib/storedcopy';
 	import { previewCheckUrl, previewVideoUrl, previewProblem, type PreviewSource } from '$lib/preview';
 	import { accounts } from '$lib/stores/accounts.svelte';
 	import {
@@ -85,7 +86,10 @@
 	 * about here too, for a caption that never passed through Details.
 	 */
 	function mentionsOf(row: PlanRow): MentionNote[] {
-		return row.platform === 'tiktok' ? mentionNotes(row.description, tiktokHandles.rows) : [];
+		if (row.platform !== 'tiktok') return [];
+		// Once per handle as written: a caption naming an account twice says so once.
+		const notes = mentionNotes(row.description, tiktokHandles.rows);
+		return notes.filter((note, i) => notes.findIndex((n) => n.mention.handle === note.mention.handle) === i);
 	}
 	let tiktokCaption = $derived(rows.find((row) => row.platform === 'tiktok')?.description ?? '');
 	$effect(() => {
@@ -166,7 +170,7 @@
 		mentionsIn([
 			...videos.map((entry) => {
 				const video = draft.videos[entry.slot];
-				return video?.nasFile?.path ?? video?.file?.name ?? '';
+				return video?.nasFile?.path ?? video?.file?.name ?? video?.kept?.path ?? video?.kept?.name ?? '';
 			}),
 			projects.byId(draft.project)?.path ?? ''
 		])
@@ -231,6 +235,54 @@
 				if (controller.signal.aborted) return;
 				streamNote = `The worker is not answering at ${server.url}, so there is nothing to play here. The file still goes out.`;
 			}
+		})();
+		return () => controller.abort();
+	});
+
+	/**
+	 * The edited upload's own video (uploadedit.ts): the file PocketBase
+	 * holds for one sent from the browser, else its NAS copy through the
+	 * publishing worker's player (storedcopy.ts), else the folder pick it was
+	 * made from through the PC's — the first that answers.
+	 */
+	let keptUrl = $state('');
+	let keptNote = $state('');
+
+	$effect(() => {
+		const kept = shownFile && !shownFile.file && !shownFile.nasFile ? shownFile.kept : null;
+		keptUrl = '';
+		keptNote = '';
+		if (!kept) return;
+		if (kept.url) {
+			keptUrl = kept.url;
+			return;
+		}
+		const controller = new AbortController();
+		void (async () => {
+			const [stored, pc] = await Promise.all([loadStoredPlayer().catch(() => null), loadPreviewServer().catch(() => null)]);
+			const tries: [string, PreviewSource, string][] = [];
+			if (stored && !mixedContent(location.protocol, stored.url)) tries.push([stored.url, 'stored', kept.job]);
+			if (pc && kept.path) tries.push([pc.url, 'nas', kept.path]);
+			let last = 'No worker is playing videos, so there is nothing to play here. The upload stays as it is.';
+			for (const [url, source, path] of tries) {
+				try {
+					const res = await fetch(previewCheckUrl(url, source, path), {
+						cache: 'no-store',
+						signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])
+					});
+					const answer: { ok?: boolean; error?: string } = await res.json();
+					if (controller.signal.aborted) return;
+					if (answer.ok) {
+						keptUrl = previewVideoUrl(url, source, path);
+						return;
+					}
+					last = previewProblem(answer.error);
+				} catch {
+					if (controller.signal.aborted) return;
+					last = `The worker is not answering at ${url}, so there is nothing to play here.`;
+				}
+			}
+			keptNote = last;
 		})();
 		return () => controller.abort();
 	});
@@ -361,11 +413,11 @@
 		</div>
 
 		{#if shownTab === 'video'}
-			{#if posterUrl || streamUrl}
+			{#if posterUrl || streamUrl || keptUrl}
 				<!-- svelte-ignore a11y_media_has_caption -->
 				<video
 					class="poster"
-					src={posterUrl || streamUrl}
+					src={posterUrl || streamUrl || keptUrl}
 					controls
 					playsinline
 					preload="metadata"
@@ -383,6 +435,8 @@
 					</svg>
 					{#if shownFile?.nasFile}
 						<p>{streamNote || 'Asking the worker for the file…'}</p>
+					{:else if shownFile?.kept}
+						<p>{keptNote || 'Asking the worker for the video…'}</p>
 					{/if}
 				</div>
 			{/if}
@@ -454,6 +508,10 @@
 						{:else}
 							uploads to the NAS on confirm
 						{/if}
+					{:else if shownFile?.kept}
+						{formatBytes(shownFile.kept.size)}
+						{#if shownFile.kept.duration}<span class="dot">·</span>{formatDuration(shownFile.kept.duration)}{/if}
+						<span class="dot">·</span>the queued upload's video, kept — nothing is sent again
 					{:else if shownFile?.nasFile}
 						{formatBytes(shownFile.nasFile.size)}
 						<span class="dot">·</span>{shownFile.nasFile.local

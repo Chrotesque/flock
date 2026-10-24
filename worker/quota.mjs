@@ -13,7 +13,7 @@
 // history (stats.mjs writes it to `youtube_quota_history`).
 
 /** The kinds of work, in the order the Dashboard lists them. */
-export const QUOTA_KINDS = ['stats', 'playlist', 'rename', 'move', 'release', 'delete', 'channel', 'other'];
+export const QUOTA_KINDS = ['stats', 'playlist', 'rename', 'edit', 'move', 'release', 'delete', 'channel', 'other'];
 
 /** The kinds that run by themselves all day; every other kind is an edit, kept as an event. */
 const BACKGROUND = ['stats', 'channel'];

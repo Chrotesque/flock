@@ -51,6 +51,7 @@ import {
 	refreshYouTubeChannels,
 	rescheduleYouTube,
 	retitleYouTube,
+	editYouTube,
 	youtubeChannels,
 	youtubeRelease
 } from './youtube.mjs';
@@ -128,6 +129,7 @@ const ADAPTERS = {
 		releaseNow: releaseYouTubeNow,
 		reschedule: rescheduleYouTube,
 		retitle: retitleYouTube,
+		retext: editYouTube,
 		release: youtubeRelease,
 		timing: 'now',
 		lead: () => 0,
@@ -1594,6 +1596,7 @@ async function requestPass(pb, config) {
 async function requestOne(pb, config, row) {
 	const step = requestStep(row, { held: inHand.has(row.id) });
 	if (step.action === 'none') return;
+	if (step.request.kind === 'edit') return editOne(pb, config, row, step);
 	const name = NAMES[row.platform] ?? row.platform;
 	const title = row.title || row.description?.slice(0, 60) || row.id;
 	const label = `${row.platform} "${title}"`;
@@ -1677,6 +1680,77 @@ async function requestOne(pb, config, row) {
 		});
 		log(`could not ${deleting ? 'delete' : 'release'} ${label}: ${why}`);
 		pb.log(`Not ${deleting ? 'deleted' : 'released'}: ${name}`, `${title}: ${why}. It stays as it was.`);
+	} finally {
+		inHand.delete(row.id);
+	}
+}
+
+/**
+ * An edit from the upload wizard (src/lib/uploadedit.ts) of a post a
+ * platform holds: YouTube's title, description, tags and playlists changed
+ * there, then the row takes the edit. Refused, the row keeps what it had and
+ * says why on the Calendar for a day; what could not be done with the
+ * playlists is said the same way, the rest of the edit kept.
+ */
+async function editOne(pb, config, row, step) {
+	const name = NAMES[row.platform] ?? row.platform;
+	const edit = step.request;
+	const title = edit.title || row.title || row.id;
+	const label = `${row.platform} "${title}"`;
+	const taken = { title: edit.title, description: edit.description, options: edit.options, request: null };
+
+	if (step.action === 'wait') {
+		if (!requestSaid.has(row.id)) log(`editing ${label} once it is no longer being published`);
+		requestSaid.add(row.id);
+		return;
+	}
+	requestSaid.delete(row.id);
+
+	if (step.action === 'drop') {
+		await pb.updateTarget(row.id, { request: null, handle: refusedHandle(row.handle, `Not edited: ${step.reason}.`) });
+		log(`not editing ${label}: ${step.reason}`);
+		pb.log(`Not edited: ${name}`, `${title}: ${step.reason}.`);
+		return;
+	}
+
+	if (step.action === 'apply') {
+		await pb.updateTarget(row.id, taken);
+		log(`${label} edited (flock still held it)`);
+		return;
+	}
+
+	const adapter = ADAPTERS[row.platform];
+	if (!adapter?.retext || !adapter.ready(config)) {
+		if (!requestSaid.has(row.id)) log(`editing ${label}: ${name} is not set up here — waiting`);
+		requestSaid.add(row.id);
+		return;
+	}
+
+	inHand.add(row.id);
+	try {
+		const done = await hb.track(`Editing on ${name}: "${title}"`, () => adapter.retext(config, row, edit, log), {
+			publishing: true
+		});
+		const missed = [...done.notAdded.map((n) => `not added to playlist "${n}"`), ...done.notLeft.map((n) => `still in playlist "${n}"`)];
+		await pb.updateTarget(row.id, {
+			...taken,
+			...(missed.length > 0 ? { handle: refusedHandle(row.handle, `Edited, but ${missed.join('; ')}.`) } : {})
+		});
+		if (done.textChanged) {
+			await keepRenamed(pb, { platform: row.platform, videoId: step.remoteId }, { title: done.snippet.title, snippet: done.snippet }).catch(
+				(err) => log(`edited, but its stats row was not updated: ${err.message.split('\n')[0]}`)
+			);
+		}
+		log(`${label} edited on ${name}${missed.length > 0 ? ` (${missed.join(', ')})` : ''}`);
+		pb.log(`Edited on ${name}`, `"${title}"${missed.length > 0 ? ` — ${missed.join('; ')}` : ''}. ${row.remote_url}`);
+	} catch (err) {
+		const why = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+		await pb.updateTarget(row.id, {
+			request: null,
+			handle: refusedHandle(row.handle, `Not edited: ${name} refused — ${why}`.slice(0, 500))
+		});
+		log(`could not edit ${label} on ${name}: ${why}`);
+		pb.log(`Not edited on ${name}`, `${title}: ${why}. It stays as it was.`);
 	} finally {
 		inHand.delete(row.id);
 	}

@@ -61,6 +61,7 @@ describe('quotaToday', () => {
 			['stats', 7800],
 			['playlist', 250],
 			['rename', 51],
+			['edit', 0],
 			['move', 0],
 			['release', 0],
 			['delete', 0],

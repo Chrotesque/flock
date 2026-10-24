@@ -11,6 +11,7 @@ import { settings } from './settings.svelte';
 import { accounts } from './accounts.svelte';
 import { takenHours } from './takenhours.svelte';
 import { DEFAULT_SCHEDULING } from '../types';
+import type { EditPost, EditState } from '../uploadedit';
 import type {
 	OptionValues,
 	PlatformId,
@@ -37,7 +38,44 @@ export interface SlotVideo {
 	 * so there is never a question of which one the job gets built from.
 	 */
 	nasFile: WatchFile | null;
+	/**
+	 * The video of the upload being edited (uploadedit.ts): already stored,
+	 * so nothing is sent for it. Picking a file or a folder pick replaces it.
+	 */
+	kept: KeptVideo | null;
 	duration: number;
+}
+
+/** An upload's own video, kept by an edit. */
+export interface KeptVideo {
+	/** The upload it is the video of. */
+	job: string;
+	name: string;
+	size: number;
+	/** Seconds, as stored with the upload; 0 when unknown. */
+	duration: number;
+	/** Sent from the browser, or picked from a folder on the LAN or the PC. */
+	source: 'browser' | 'nas' | 'local';
+	/** The file on the NAS, as typed; '' for one PocketBase holds. */
+	path: string;
+	/** Where PocketBase serves the file it holds, '' for a folder pick. */
+	url: string;
+}
+
+/**
+ * An upload opened from the Calendar to be edited (uploadedit.ts): which it
+ * is, each of its posts with why it cannot change ('' when it can), and the
+ * posts and pictures as loaded, which a save measures changes against.
+ */
+export interface EditSession {
+	job: string;
+	/** The upload's label, for the header. */
+	title: string;
+	posts: { id: string; platform: PlatformId; locked: string }[];
+	/** The posts as they stood when the edit opened, for the Review step to say what saving does. */
+	targets: EditPost[];
+	baseline: Partial<Record<PlatformId, EditState>>;
+	images: Partial<Record<ImagePlatform, File | null>>;
 }
 
 const SPLIT_KEY = 'flock.upload.split';
@@ -63,7 +101,7 @@ function emptyVideos(): Record<VideoSlot, SlotVideo> {
 	return Object.fromEntries(
 		(['all', ...PLATFORM_IDS] as VideoSlot[]).map((slot) => [
 			slot,
-			{ file: null, nasFile: null, duration: 0 }
+			{ file: null, nasFile: null, kept: null, duration: 0 }
 		])
 	) as Record<VideoSlot, SlotVideo>;
 }
@@ -214,16 +252,16 @@ class DraftStore {
 		return out;
 	}
 
-	/** Either route counts — the wizard does not care which one was used. */
+	/** Any route counts — the wizard does not care which one was used. */
 	slotHasVideo(slot: VideoSlot): boolean {
 		const video = this.videos[slot];
-		return Boolean(video.file || video.nasFile);
+		return Boolean(video.file || video.nasFile || video.kept);
 	}
 
 	/** The name to show for whichever video a slot holds. */
 	slotName(slot: VideoSlot): string {
 		const video = this.videos[slot];
-		return video.file?.name ?? video.nasFile?.name ?? '';
+		return video.file?.name ?? video.nasFile?.name ?? video.kept?.name ?? '';
 	}
 
 	/** Every slot in use has a video. */
@@ -249,7 +287,10 @@ class DraftStore {
 	chooseFile(slot: VideoSlot, file: File | null) {
 		const video = this.videos[slot];
 		video.file = file;
-		if (file) video.nasFile = null;
+		if (file) {
+			video.nasFile = null;
+			video.kept = null;
+		}
 		this.previewed[slot] = false;
 	}
 
@@ -259,9 +300,36 @@ class DraftStore {
 		this.previewed[slot] = false;
 		if (entry) {
 			video.file = null;
+			video.kept = null;
 			// A referenced file has no bytes here to read a duration out of.
 			video.duration = 0;
 		}
+	}
+
+	/** Puts an upload's own video in a slot, for an edit; null takes it out. */
+	keepVideo(slot: VideoSlot, kept: KeptVideo | null) {
+		const video = this.videos[slot];
+		video.kept = kept;
+		video.file = null;
+		video.nasFile = null;
+		video.duration = kept?.duration ?? 0;
+		this.previewed[slot] = false;
+	}
+
+	/**
+	 * The upload being edited, null for a new one. Memory only: a reload
+	 * leaves the edit, and the upload stays as it was until a save.
+	 */
+	editing = $state.raw<EditSession | null>(null);
+
+	/** Why the edit cannot change a platform's post; '' when it can, or for a new upload. */
+	editLock(platform: PlatformId): string {
+		return this.editing?.posts.find((post) => post.platform === platform)?.locked ?? '';
+	}
+
+	/** The jobs whose posts this upload's own hours may share: what it queued, and what it edits. */
+	get ownJobs(): string[] {
+		return this.editing ? [...this.queuedJobs, this.editing.job] : this.queuedJobs;
 	}
 
 	/**
@@ -437,7 +505,7 @@ class DraftStore {
 				? { platform, date: isoDate(now), time: makeTime(now.getHours(), now.getMinutes()) }
 				: { platform, ...this.scheduleFor(platform) }
 		);
-		return clashing(slots, takenHours.for(this.#brand, this.queuedJobs));
+		return clashing(slots, takenHours.for(this.#brand, this.ownJobs));
 	}
 
 	/** The platforms a taken hour holds back: none once *Override* is ticked. */
@@ -523,7 +591,7 @@ class DraftStore {
 	get hasContent(): boolean {
 		return (
 			Object.values(this.texts).some((t) => Boolean(t && (t.title.trim() || t.description.trim()))) ||
-			Object.values(this.videos).some((v) => Boolean(v.file || v.nasFile)) ||
+			Object.values(this.videos).some((v) => Boolean(v.file || v.nasFile || v.kept)) ||
 			Boolean(this.thumbnail || this.cover)
 		);
 	}
@@ -622,6 +690,7 @@ class DraftStore {
 
 	reset() {
 		this.step = 0;
+		this.editing = null;
 		this.project = null;
 		this.projectBase = '';
 		this.queued = [];

@@ -27,6 +27,7 @@ import { cleanName, readTitleRequest, type TitleRequest } from './retitle';
 import type { PlayerJob } from './storedcopy';
 import type { SlotPost } from './takenhours';
 import { needsAsking, type TikTokHandle } from './tiktokmentions';
+import type { EditStep } from './uploadedit';
 import type {
 	Account,
 	Brand,
@@ -1741,6 +1742,74 @@ export async function saveProjectDraft(
 }
 
 /** A stored project image, under the name it was picked with. */
+/** One of an upload's pictures as a file, for an edit to show and keep (uploadedit.ts). */
+export async function loadJobImage(job: UploadJob, stored: string): Promise<File | null> {
+	const res = await fetch(pb.files.getURL(job, stored));
+	if (!res.ok) return null;
+	const blob = await res.blob();
+	const ext = stored.split('.').pop()?.toLowerCase() ?? '';
+	return new File([blob], stored, { type: blob.type || IMAGE_TYPE_BY_EXT[ext] || '' });
+}
+
+/**
+ * Saves an edit of a queued upload, step by step as planEdit worked them
+ * out from rows read moments ago (uploadedit.ts). A post flock holds is
+ * rewritten here; one a platform holds gets an edit or a delete for the
+ * worker in `request`, and a new time the way the Calendar writes one.
+ * `added` carries the posts of platforms ticked on the edit.
+ */
+export async function applyEdit(jobId: string, steps: EditStep[], added: TargetPlan[]): Promise<void> {
+	assertDeviceNamed();
+	const targets = pb.collection('upload_targets');
+	const asked = { requestedAt: new Date().toISOString(), by: deviceName() };
+	for (const step of steps) {
+		switch (step.kind) {
+			case 'update':
+				await targets.update(step.id, step.patch);
+				break;
+			case 'ask':
+				await targets.update(step.id, {
+					...(step.request ? { request: { ...step.request, ...asked } } : {}),
+					...(step.at ? { scheduled_at: step.at } : {})
+				});
+				break;
+			case 'add': {
+				const plan = added.find((t) => t.platform === step.platform);
+				if (!plan) break;
+				await targets.create({
+					job: jobId,
+					platform: plan.platform,
+					account: plan.account,
+					title: plan.title,
+					description: plan.description,
+					options: plan.options,
+					scheduled_at: toInstant(plan.date, plan.time),
+					status: 'pending'
+				});
+				break;
+			}
+			case 'replace':
+			case 'remove':
+				if (step.by === 'page') await targets.delete(step.id);
+				else await targets.update(step.id, { request: { kind: 'delete', ...asked } });
+				break;
+		}
+	}
+}
+
+/**
+ * An upload's pictures replaced by an edit: a file sets one, null takes it
+ * away (the platform then picks a frame).
+ */
+export async function updateJobImages(
+	jobId: string,
+	images: Partial<Record<'cover' | 'facebook_cover' | 'tiktok_cover', File | null>>
+): Promise<void> {
+	assertDeviceNamed();
+	if (Object.keys(images).length === 0) return;
+	await pb.collection('upload_jobs').update(jobId, images);
+}
+
 export async function loadProjectImage(row: ProjectRow, field: 'thumbnail' | 'cover', name: string): Promise<File | null> {
 	const stored = row[field];
 	if (!stored) return null;

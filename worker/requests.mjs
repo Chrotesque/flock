@@ -11,6 +11,9 @@
  * - `remove`  either, for a delete: deleted on the platform, then the row
  * - `now`     flock holds it after all: its time becomes now
  * - `forget`  flock holds it after all, for a delete: the row goes
+ * - `retext`  an edit of a video YouTube holds or has put out (uploadedit.ts):
+ *             its title, description, tags and playlists changed there
+ * - `apply`   an edit, flock holding the post after all: its row takes it
  * - `wait`    being published right now: asked again on the next tick
  * - `drop`    nothing flock can do: the request is cleared, with why
  *
@@ -20,12 +23,22 @@ import { facebookVideoId, youtubeVideoId } from './moves.mjs';
 
 const NAMES = { youtube: 'YouTube', tiktok: 'TikTok', instagram: 'Instagram', facebook: 'Facebook' };
 
-/** A request as the page wrote it; null when there is none. */
+/** A request as the page wrote it; null when there is none. An edit carries what the post becomes, and what it was. */
 export function readRequest(raw) {
 	if (!raw || typeof raw !== 'object') return null;
-	if (raw.kind !== 'release' && raw.kind !== 'delete') return null;
-	const text = (key) => (typeof raw[key] === 'string' ? raw[key] : '');
-	return { kind: raw.kind, requestedAt: text('requestedAt'), by: text('by') };
+	if (raw.kind !== 'release' && raw.kind !== 'delete' && raw.kind !== 'edit') return null;
+	const text = (key, from = raw) => (typeof from?.[key] === 'string' ? from[key] : '');
+	const request = { kind: raw.kind, requestedAt: text('requestedAt'), by: text('by') };
+	if (raw.kind !== 'edit') return request;
+	const options = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+	const before = raw.before && typeof raw.before === 'object' ? raw.before : {};
+	return {
+		...request,
+		title: text('title'),
+		description: text('description'),
+		options: options(raw.options),
+		before: { title: text('title', before), description: text('description', before), options: options(before.options) }
+	};
 }
 
 export function requestStep(row, { held = false } = {}) {
@@ -33,6 +46,7 @@ export function requestStep(row, { held = false } = {}) {
 	if (!request) return { action: 'none' };
 	if (held || row.status === 'publishing') return { action: 'wait', request };
 	const name = NAMES[row.platform] ?? row.platform;
+	if (request.kind === 'edit') return editStep(row, request, name);
 	if (row.status === 'published') return { action: 'drop', request, reason: `it is out on ${name} already` };
 	const onPlatform = row.status === 'scheduled' || Boolean(row.remote_url);
 	if (!onPlatform) return { action: request.kind === 'delete' ? 'forget' : 'now', request };
@@ -45,4 +59,14 @@ export function requestStep(row, { held = false } = {}) {
 	if (!remoteId) return { action: 'drop', request, reason: `its ${name} link names no video` };
 	if (request.kind === 'delete') return { action: 'remove', request, remoteId };
 	return { action: row.platform === 'youtube' ? 'publish' : 'resend', request, remoteId };
+}
+
+/** An edit: a YouTube video's text and playlists changed there, wherever it stands; flock's own post rewritten. */
+function editStep(row, request, name) {
+	const onPlatform = row.status === 'scheduled' || row.status === 'published' || Boolean(row.remote_url);
+	if (!onPlatform) return { action: 'apply', request };
+	if (row.platform !== 'youtube') return { action: 'drop', request, reason: `flock cannot edit a ${name} post once ${name} has it` };
+	const remoteId = youtubeVideoId(row.remote_url);
+	if (!remoteId) return { action: 'drop', request, reason: `its ${name} link names no video` };
+	return { action: 'retext', request, remoteId };
 }

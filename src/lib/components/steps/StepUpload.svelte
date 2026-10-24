@@ -70,7 +70,7 @@
 
 	function onDragOver(event: DragEvent, slot: VideoSlot) {
 		const files = event.dataTransfer?.types.includes('Files') ?? false;
-		if (!carriesListed(event) && !(files && draft.videos[slot].nasFile)) return;
+		if (!carriesListed(event) && !(files && (draft.videos[slot].nasFile || draft.videos[slot].kept))) return;
 		event.preventDefault();
 		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
 		over = slot;
@@ -99,7 +99,7 @@
 			if (entry && usable(entry)) draft.chooseNasFile(slot, entry);
 			return;
 		}
-		if (!draft.videos[slot].nasFile) return;
+		if (!draft.videos[slot].nasFile && !draft.videos[slot].kept) return;
 		const file = event.dataTransfer?.files?.[0];
 		if (!file || !file.type.startsWith('video/')) return;
 		event.preventDefault();
@@ -319,7 +319,33 @@
 						{/if}
 					</header>
 
-					{#if video.nasFile}
+					{#if video.kept}
+						<!-- The edited upload's own video: stored already, so nothing
+						     goes up again unless another one is picked over it. -->
+						<div class="picked">
+							<svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+								<path
+									d="M4 6.5A2.5 2.5 0 0 1 6.5 4h7A2.5 2.5 0 0 1 16 6.5v11A2.5 2.5 0 0 1 13.5 20h-7A2.5 2.5 0 0 1 4 17.5v-11ZM16 9.5l4-2.2v9.4l-4-2.2"
+									stroke="currentColor"
+									stroke-width="1.7"
+									stroke-linejoin="round"
+								/>
+							</svg>
+							<div class="pickedmeta">
+								<p class="pickedname">{video.kept.name}</p>
+								<p class="sub">
+									{formatBytes(video.kept.size)} · the queued upload's video — kept, nothing is sent again
+								</p>
+							</div>
+							<button
+								class="btn btn-ghost sm"
+								title="Pick another video for this upload's posts: a file, or one from a folder on the right"
+								onclick={() => draft.keepVideo(entry.slot, null)}
+							>
+								Replace
+							</button>
+						</div>
+					{:else if video.nasFile}
 						<div class="picked">
 							<svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
 								<path

@@ -7,14 +7,26 @@
 	import StepConfirm from '$lib/components/steps/StepConfirm.svelte';
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
 	import PlatformSwitch from '$lib/components/PlatformSwitch.svelte';
-	import { draft, type SlotVideo, type Step, type VideoSlot } from '$lib/stores/draft.svelte';
+	import { draft, type EditSession, type SlotVideo, type Step, type VideoSlot } from '$lib/stores/draft.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { accounts } from '$lib/stores/accounts.svelte';
 	import { buildPlan, type PlanRow } from '$lib/plan';
 	import { base } from '$app/paths';
-	import { createJob, rememberTags, rememberUsedSources, toInstant } from '$lib/repo';
+	import {
+		applyEdit,
+		createJob,
+		loadUploadState,
+		rememberTags,
+		rememberUsedSources,
+		toInstant,
+		updateJobImages,
+		type TargetPlan
+	} from '$lib/repo';
+	import { planEdit, stepWords, type EditRow } from '$lib/uploadedit';
+	import { uploadEdit } from '$lib/stores/uploadedit.svelte';
+	import { logAction } from '$lib/log';
 	import { findMentions, handleKey, mentionNotes } from '$lib/tiktokmentions';
 	import { tiktokHandles } from '$lib/stores/tiktokhandles.svelte';
 	import { RECORD_VERSION, timingOfTargets, type UploadRecord } from '$lib/uploadrecord';
@@ -26,7 +38,7 @@
 	import { imageFits, type ImagePlatform } from '$lib/coverimage';
 	import DeviceGate from '$lib/components/DeviceGate.svelte';
 	import { PLATFORMS } from '$lib/platforms';
-	import type { PlatformId } from '$lib/types';
+	import type { OptionValues, PlatformId } from '$lib/types';
 	import { paste } from '$lib/stores/paste.svelte';
 	import { projects } from '$lib/stores/projects.svelte';
 	import { uploadedName } from '$lib/projects';
@@ -72,8 +84,50 @@
 		return problem ? `Facebook: ${problem}` : '';
 	});
 
+	/** The wizard's posts as an edit would save them (uploadedit.ts). */
+	function editRows(rows: PlanRow[], job: string): EditRow[] {
+		return rows.map((row) => ({
+			platform: row.platform,
+			title: row.title,
+			description: row.description,
+			options: $state.snapshot(row.options) as OptionValues,
+			at: toInstant(row.date, row.time),
+			immediate: row.immediate,
+			kept: draft.videoFor(row.platform).kept?.job === job
+		}));
+	}
+
+	/**
+	 * What saving an edit would do, worked out on the Review step against
+	 * the posts as the edit opened them — the save itself reads them again.
+	 */
+	let editPreview = $derived.by(() => {
+		const session = draft.editing;
+		if (!session || draft.step !== 3) return null;
+		const opened = session.posts.filter((post) => !post.locked).map((post) => post.platform);
+		const { steps, refused } = planEdit({
+			posts: session.targets,
+			baseline: session.baseline,
+			opened,
+			rows: editRows(plan, session.job)
+		});
+		const kept = groupsOf(plan).find((group) => group.video.kept?.job === session.job);
+		const others = groupsOf(plan).filter((group) => !group.video.kept);
+		const lines = [
+			...steps.map(stepWords),
+			...imageEdits(session, kept).words,
+			...others.map((group) => `${group.platforms.map((id) => PLATFORMS[id].label).join(', ')}: new video ${draft.slotName(group.slot)}`)
+		];
+		return { lines, refused };
+	});
+
+	/** Why an edit cannot be saved as it stands. */
+	let editHold = $derived(
+		editPreview?.refused.length ? editPreview.refused.join(' ') : editPreview && editPreview.lines.length === 0 ? 'Nothing changed yet.' : ''
+	);
+
 	/** Whatever holds the confirm tick back, TikTok's rules first. */
-	let confirmHold = $derived(tiktokHold || facebookHold);
+	let confirmHold = $derived(tiktokHold || facebookHold || editHold);
 
 	// The confirm button deliberately takes two clicks, the second within two
 	// seconds of the first: this is the point where a multi-GB upload and four
@@ -138,6 +192,8 @@
 
 	interface Group {
 		slot: VideoSlot;
+		/** The platforms the slot serves, the plan's or not. */
+		platforms: PlatformId[];
 		video: SlotVideo;
 		rows: PlanRow[];
 	}
@@ -154,7 +210,7 @@
 		facebookCover: File | null,
 		tiktokCover: File | null
 	): UploadRecord {
-		const { file, nasFile, duration } = group.video;
+		const { file, nasFile, kept, duration } = group.video;
 		const destination = general.defaultDestination;
 		const targets = group.rows.map((row) => {
 			const typed = draft.textFor(row.platform);
@@ -194,17 +250,17 @@
 			brand: brands.current?.name ?? '',
 			project: draft.project ? (projects.byId(draft.project)?.name ?? '') : '',
 			video: {
-				name: file?.name ?? nasFile?.name ?? '',
-				size: file?.size ?? nasFile?.size ?? 0,
+				name: file?.name ?? nasFile?.name ?? kept?.name ?? '',
+				size: file?.size ?? nasFile?.size ?? kept?.size ?? 0,
 				duration: Math.round(duration || 0),
-				source: file ? 'browser' : nasFile?.local ? 'local' : 'nas',
-				path: file ? '' : (nasFile?.path ?? ''),
+				source: file ? 'browser' : nasFile ? (nasFile.local ? 'local' : 'nas') : (kept?.source ?? 'nas'),
+				path: file ? '' : (nasFile?.path ?? kept?.path ?? ''),
 				previewed: Boolean(draft.previewed[group.slot])
 			},
 			others: everyGroup
 				.filter((other) => other.slot !== group.slot)
 				.map((other) => ({
-					name: other.video.file?.name ?? other.video.nasFile?.name ?? '',
+					name: other.video.file?.name ?? other.video.nasFile?.name ?? other.video.kept?.name ?? '',
 					platforms: other.rows.map((row) => row.platform)
 				})),
 			destination: destination ? { label: destination.label, path: destination.path } : null,
@@ -228,7 +284,7 @@
 			const privacy = String(row.options.privacy ?? '');
 			if (privacy && privacy !== 'Public') out.push(`Posted for ${privacy.toLowerCase()} only.`);
 			for (const note of mentionNotes(row.description, tiktokHandles.rows)) {
-				if (note.state !== 'found') out.push(note.words);
+				if (note.state !== 'found' && !out.includes(note.words)) out.push(note.words);
 			}
 		}
 		const due = row.immediate ? Date.now() : Date.parse(toInstant(row.date, row.time));
@@ -237,11 +293,214 @@
 		if (draft.overrideTaken && draft.takenPlatforms.includes(row.platform)) {
 			const at = new Date(due);
 			const posts = takenHours
-				.for(brands.currentId, draft.queuedJobs)
+				.for(brands.currentId, draft.ownJobs)
 				.get(hourKey(isoDate(at), at.getHours()));
 			if (posts) out.push(`Put in a taken hour with Override. ${takenWhy(posts)}`);
 		}
 		return out;
+	}
+
+	/**
+	 * The reel covers for a video's posts, each only for a platform on it
+	 * that it fits — the picker has already said when it does not. YouTube
+	 * gets no thumbnail any more (coverimage.ts).
+	 */
+	function coversFor(platforms: PlatformId[]) {
+		const coverFor = (platform: ImagePlatform) =>
+			platforms.includes(platform) && imageFits(draft.imageFor(platform), platform) ? draft.imageFor(platform) : null;
+		return { cover: coverFor('instagram'), facebookCover: coverFor('facebook'), tiktokCover: coverFor('tiktok') };
+	}
+
+	/** A post as its row is written. */
+	function targetPlan(row: PlanRow): TargetPlan {
+		return {
+			platform: row.platform,
+			// The brand's account, so the worker posts through exactly it.
+			account: accounts.for(row.platform)?.account_id ?? '',
+			title: row.title,
+			description: row.description,
+			options: row.options,
+			date: row.date,
+			time: row.time
+		};
+	}
+
+	/** One job per distinct video, each with the plan's posts it serves. */
+	function groupsOf(rows: PlanRow[]): Group[] {
+		return draft.slots
+			.map((entry) => ({
+				...entry,
+				video: draft.videos[entry.slot],
+				rows: rows.filter((row) => entry.platforms.includes(row.platform))
+			}))
+			.filter((group) => group.rows.length > 0);
+	}
+
+	/**
+	 * One video and its posts, written as an upload: the bytes sent (a folder
+	 * pick sends none), its rows created, its slot marked queued so a second
+	 * confirm after a failure sends only the rest. The new job's id.
+	 */
+	async function sendGroup(group: Group, everyGroup: Group[], onProgress: (fraction: number) => void): Promise<string> {
+		const { file, nasFile, duration } = group.video;
+		const label = draft.labelFor(group.platforms);
+		sending = {
+			name: file?.name ?? nasFile?.name ?? '',
+			size: file?.size ?? nasFile?.size ?? 0,
+			transfer: Boolean(file),
+			local: Boolean(nasFile?.local)
+		};
+		const { cover, facebookCover, tiktokCover } = coversFor(group.platforms);
+		const job = await createJob(
+			{
+				title: label.title,
+				description: label.description,
+				file,
+				source: nasFile,
+				thumbnail: null,
+				cover,
+				facebookCover,
+				tiktokCover,
+				duration,
+				destination: general.defaultDestination,
+				brand: brands.current ?? null,
+				targets: group.rows.map(targetPlan),
+				record: $state.snapshot(recordFor(group, everyGroup, cover, facebookCover, tiktokCover)) as UploadRecord
+			},
+			onProgress
+		);
+		draft.queued = [...draft.queued, group.slot];
+		draft.queuedJobs = [...draft.queuedJobs, job.id];
+		// So the file lists stop offering it; see loadUsedSources.
+		if (file || nasFile) {
+			rememberUsedSources([
+				file ? { name: file.name, size: file.size } : { path: nasFile!.path, name: nasFile!.name, size: nasFile!.size }
+			]);
+		}
+		return job.id;
+	}
+
+	/** What the brand's next upload remembers of this one: its tags, and the TikTok handles it names. */
+	function rememberSent() {
+		// From the plan rather than the draft, so what is stored is what
+		// actually went out — overrides and saved defaults included.
+		rememberTags(
+			brands.currentId,
+			Object.fromEntries(
+				plan
+					.map((row) => {
+						const boxes: Record<string, string[]> = {};
+						for (const key of PLATFORMS[row.platform].tagBudget?.keys ?? []) {
+							const list = row.options[key];
+							if (Array.isArray(list) && list.length > 0) boxes[key] = list as string[];
+						}
+						return [row.platform, boxes] as const;
+					})
+					.filter(([, boxes]) => Object.keys(boxes).length > 0)
+			)
+		);
+		// The TikTok handles it names come first in the @ list next time.
+		const tiktok = plan.find((row) => row.platform === 'tiktok');
+		if (tiktok) tiktokHandles.markUsed(findMentions(tiktok.description).map((m) => handleKey(m.handle)));
+	}
+
+	/** What the last save of an edit did, for the done screen. */
+	let edited = $state<{ title: string; lines: string[]; newVideo: boolean } | null>(null);
+
+	/**
+	 * The pictures an edit changed on the upload it keeps: a platform of the
+	 * kept video whose picture is not the one the edit opened with gets the
+	 * new one, or none (the platform then picks a frame).
+	 */
+	function imageEdits(session: EditSession, kept: Group | undefined): { fields: Parameters<typeof updateJobImages>[1]; words: string[] } {
+		const fields: Parameters<typeof updateJobImages>[1] = {};
+		const words: string[] = [];
+		if (!kept) return { fields, words };
+		const covers = coversFor(kept.platforms);
+		const map = [
+			['instagram', 'cover', covers.cover],
+			['facebook', 'facebook_cover', covers.facebookCover],
+			['tiktok', 'tiktok_cover', covers.tiktokCover]
+		] as const;
+		for (const [platform, field, file] of map) {
+			if (!kept.platforms.includes(platform) || draft.editLock(platform)) continue;
+			const opened = session.images[platform] ?? null;
+			if (draft.imageFor(platform) === opened) continue;
+			fields[field] = file;
+			words.push(`${PLATFORMS[platform].label}: ${file ? 'cover changed' : 'cover taken off'}`);
+		}
+		return { fields, words };
+	}
+
+	/**
+	 * Saves an edit over the upload it was opened from (uploadedit.ts). The
+	 * posts are read afresh and planned against what the edit opened with;
+	 * nothing is written while anything is refused. A post given another
+	 * video goes out with a new upload of that video, written first, so a
+	 * failure there leaves the old post where it was.
+	 */
+	async function saveEdit(session: EditSession) {
+		phase = 'uploading';
+		progress = 0;
+		failure = '';
+		const refuse = (why: string) => {
+			failure = why;
+			sending = null;
+			phase = 'error';
+		};
+		try {
+			const { job, targets } = await loadUploadState(session.job);
+			if (!job) return refuse('This upload is gone — it was deleted since the edit opened.');
+			const everyGroup = groupsOf(plan);
+			const keptGroup = everyGroup.find((group) => group.video.kept?.job === session.job);
+			const rows = editRows(plan, session.job);
+			const opened = session.posts.filter((post) => !post.locked).map((post) => post.platform);
+			const { steps, refused } = planEdit({ posts: targets, baseline: session.baseline, opened, rows });
+			if (refused.length > 0) return refuse(`Nothing saved. ${refused.join(' ')}`);
+			const newGroups = everyGroup.filter((group) => !group.video.kept && !draft.queued.includes(group.slot));
+			const images = imageEdits(session, keptGroup);
+			if (steps.length === 0 && newGroups.length === 0 && images.words.length === 0) {
+				return refuse('Nothing changed, so there is nothing to save.');
+			}
+
+			await takenHours.refresh();
+			const taken = draft.takenHold.filter((id) => rows.some((row) => row.platform === id));
+			if (taken.length > 0) return refuse(`${takenWords(taken)} Not saved — move ${taken.length === 1 ? 'it' : 'them'} on the Schedule step.`);
+
+			// Another video first: its upload carries the posts given it.
+			const total = newGroups.reduce((sum, g) => sum + (g.video.file?.size ?? 0), 0);
+			let sent = 0;
+			for (const group of newGroups) {
+				const size = group.video.file?.size ?? 0;
+				await sendGroup(group, everyGroup, (fraction) => (progress = total > 0 ? (sent + fraction * size) / total : fraction));
+				sent += size;
+			}
+			sending = null;
+
+			const added = plan.filter((row) => steps.some((step) => step.kind === 'add' && step.platform === row.platform));
+			await applyEdit(session.job, steps, added.map(targetPlan));
+			await updateJobImages(session.job, images.fields);
+			rememberSent();
+
+			const lines = [
+				...steps.map(stepWords),
+				...images.words,
+				...newGroups.map((group) => `${group.platforms.map((id) => PLATFORMS[id].label).join(', ')}: new video ${draft.slotName(group.slot)}`)
+			];
+			const record = keptGroup ? recordOf(keptGroup, everyGroup) : undefined;
+			logAction('upload', `Edited "${session.title}"`, lines.join('; '), { job: session.job, data: record });
+			edited = { title: session.title, lines, newVideo: newGroups.length > 0 };
+			phase = 'done';
+			void videoTodo.refresh();
+		} catch (err) {
+			refuse(err instanceof Error ? err.message : String(err));
+		}
+	}
+
+	/** A group's record, its covers as they go out. */
+	function recordOf(group: Group, everyGroup: Group[]): UploadRecord {
+		const { cover, facebookCover, tiktokCover } = coversFor(group.platforms);
+		return $state.snapshot(recordFor(group, everyGroup, cover, facebookCover, tiktokCover)) as UploadRecord;
 	}
 
 	async function confirm() {
@@ -252,6 +511,7 @@
 		}
 		disarm();
 		if (!draft.hasVideo) return;
+		if (draft.editing) return saveEdit(draft.editing);
 
 		phase = 'uploading';
 		progress = 0;
@@ -260,13 +520,7 @@
 		// One job per distinct video, each carrying the targets it serves. The
 		// worker publishes a target from its own job's file, so it needs no idea
 		// that the platforms were ever split.
-		const everyGroup = draft.slots
-			.map((entry) => ({
-				...entry,
-				video: draft.videos[entry.slot],
-				rows: plan.filter((row) => entry.platforms.includes(row.platform))
-			}))
-			.filter((group) => group.rows.length > 0);
+		const everyGroup = groupsOf(plan);
 		const groups = everyGroup.filter((group) => !draft.queued.includes(group.slot));
 
 		// The hours read afresh: another machine may have taken one since the
@@ -286,84 +540,14 @@
 
 		try {
 			for (const group of groups) {
-				const { file, nasFile, duration } = group.video;
-				const size = file?.size ?? 0;
-				const label = draft.labelFor(group.platforms);
-				sending = {
-					name: file?.name ?? nasFile?.name ?? '',
-					size: file?.size ?? nasFile?.size ?? 0,
-					transfer: Boolean(file),
-					local: Boolean(nasFile?.local)
-				};
-				// The reel covers, each sent only to a platform on this video
-				// that it fits — the picker has already said when it does not.
-				// YouTube gets no thumbnail any more (coverimage.ts).
-				const coverFor = (platform: ImagePlatform) =>
-					group.platforms.includes(platform) && imageFits(draft.imageFor(platform), platform)
-						? draft.imageFor(platform)
-						: null;
-				const cover = coverFor('instagram');
-				const facebookCover = coverFor('facebook');
-				const tiktokCover = coverFor('tiktok');
-				const job = await createJob(
-					{
-						title: label.title,
-						description: label.description,
-						file,
-						source: nasFile,
-						thumbnail: null,
-						cover,
-						facebookCover,
-						tiktokCover,
-						duration,
-						destination: general.defaultDestination,
-						brand: brands.current ?? null,
-						targets: group.rows.map((row) => ({
-							platform: row.platform,
-							// The brand's account, so the worker posts through exactly it.
-							account: accounts.for(row.platform)?.account_id ?? '',
-							title: row.title,
-							description: row.description,
-							options: row.options,
-							date: row.date,
-							time: row.time
-						})),
-						record: $state.snapshot(recordFor(group, everyGroup, cover, facebookCover, tiktokCover)) as UploadRecord
-					},
-					(fraction) => (progress = total > 0 ? (sent + fraction * size) / total : fraction)
+				const size = group.video.file?.size ?? 0;
+				jobs.push(
+					await sendGroup(group, everyGroup, (fraction) => (progress = total > 0 ? (sent + fraction * size) / total : fraction))
 				);
 				sent += size;
-				jobs.push(job.id);
-				draft.queued = [...draft.queued, group.slot];
-				draft.queuedJobs = [...draft.queuedJobs, job.id];
-				// So the file lists stop offering it; see loadUsedSources.
-				rememberUsedSources([
-					file
-						? { name: file.name, size: file.size }
-						: { path: nasFile!.path, name: nasFile!.name, size: nasFile!.size }
-				]);
 			}
 			sending = null;
-			// Remembered from the plan rather than the draft, so what is stored is
-			// what actually went out — overrides and saved defaults included.
-			rememberTags(
-				brands.currentId,
-				Object.fromEntries(
-					plan
-						.map((row) => {
-							const boxes: Record<string, string[]> = {};
-							for (const key of PLATFORMS[row.platform].tagBudget?.keys ?? []) {
-								const list = row.options[key];
-								if (Array.isArray(list) && list.length > 0) boxes[key] = list as string[];
-							}
-							return [row.platform, boxes] as const;
-						})
-						.filter(([, boxes]) => Object.keys(boxes).length > 0)
-				)
-			);
-			// The TikTok handles it names come first in the @ list next time.
-			const tiktok = plan.find((row) => row.platform === 'tiktok');
-			if (tiktok) tiktokHandles.markUsed(findMentions(tiktok.description).map((m) => handleKey(m.handle)));
+			rememberSent();
 			phase = 'done';
 			// The YouTube placeholder in To finish, now rather than on the next poll.
 			void videoTodo.refresh();
@@ -384,6 +568,7 @@
 	function startOver() {
 		paste.cancel();
 		draft.reset();
+		edited = null;
 		phase = 'idle';
 		disarm();
 		progress = 0;
@@ -409,6 +594,10 @@
 			}
 			if (draft.queued.length > 0 && phase !== 'done') {
 				paste.refuse('Part of this upload is already queued. Confirm the rest or start over, then paste again.');
+				return;
+			}
+			if (draft.editing && phase !== 'done') {
+				paste.refuse('An upload is open for editing. Save it or leave the edit, then paste again.');
 				return;
 			}
 			if (phase === 'done') startOver();
@@ -446,6 +635,35 @@
 	});
 
 	/**
+	 * A queued upload to edit, from the Calendar's right-click menu
+	 * (uploadedit.svelte.ts): refused while an upload is being sent, after a
+	 * finished one a new start, and otherwise over the draft — the menu asked
+	 * first when that would lose an upload being composed.
+	 */
+	$effect(() => {
+		if (!uploadEdit.pending) return;
+		untrack(() => {
+			const job = uploadEdit.take();
+			if (!job) return;
+			if (phase === 'uploading') {
+				paste.refuse('An upload is being sent. Open the edit once it has finished.');
+				return;
+			}
+			if (phase === 'done') startOver();
+			if (phase === 'error') {
+				phase = 'idle';
+				failure = '';
+			}
+			void uploadEdit.enter(job);
+		});
+	});
+
+	/** Leaves an edit unsaved: the upload stays as it was, and the wizard is empty again. */
+	function leaveEdit() {
+		startOver();
+	}
+
+	/**
 	 * Every change to a project's draft goes onto its row (projects store),
 	 * so it can be picked up again after a restart. The snapshot reads every
 	 * field it keeps, which is what makes them all dependencies; the save is
@@ -467,7 +685,44 @@
 
 <div class="page">
 <DeviceGate what="Uploading">
-		{#if phase === 'done'}
+		{#if phase === 'done' && edited}
+			<section class="card result">
+				<div class="tick">
+					<svg viewBox="0 0 24 24" width="26" height="26" fill="none">
+						<path
+							d="M4 12.5 9.5 18 20 6.5"
+							stroke="currentColor"
+							stroke-width="2.4"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					</svg>
+				</div>
+				<h2>Saved</h2>
+				<p class="forbrand">{edited.title}</p>
+				<ul class="editlines">
+					{#each edited.lines as line (line)}
+						<li>{line}</li>
+					{/each}
+				</ul>
+				{#if edited.lines.some((line) => line.includes('the worker'))}
+					<p class="caveat">
+						What a platform already holds changes once the worker has told it — within seconds while it runs.
+						The Calendar shows the post as busy until then.
+					</p>
+				{/if}
+				{#if edited.newVideo}
+					<p class="caveat">
+						The new video went in as an upload of its own. The old one stays stored on the NAS until it is deleted
+						under Dashboard → Stored on the NAS.
+					</p>
+				{/if}
+				<div class="resultbuttons">
+					<a class="btn" href="{base}/calendar">Back to the Calendar</a>
+					<button class="btn btn-primary" onclick={startOver}>New upload</button>
+				</div>
+			</section>
+		{:else if phase === 'done'}
 			<section class="card result">
 				<div class="tick">
 					<svg viewBox="0 0 24 24" width="26" height="26" fill="none">
@@ -524,6 +779,13 @@
 			<header class="head">
 				<!-- No step title: the stepper names the step. -->
 				<div class="titling">
+					{#if draft.editing}
+						<p class="projectline editline">
+							Editing <strong>{draft.editing.title}</strong>
+							<span class="saved">· saved over the queued upload when confirmed</span>
+							<button class="relink" onclick={leaveEdit} disabled={phase === 'uploading'}>Leave the edit</button>
+						</p>
+					{/if}
 					{#if project}
 						<p class="projectline">
 							Project <strong>{project.name}</strong>
@@ -544,7 +806,10 @@
 									class:on={brand.id === brands.currentId}
 									role="radio"
 									aria-checked={brand.id === brands.currentId}
-									disabled={phase === 'uploading'}
+									disabled={phase === 'uploading' || (Boolean(draft.editing) && brand.id !== brands.currentId)}
+									title={draft.editing && brand.id !== brands.currentId
+										? "An edit stays on its upload's brand; move it to another from its overview in the Log."
+										: ''}
 									onclick={() => brands.select(brand.id)}
 								>
 									{brand.name}
@@ -619,8 +884,16 @@
 							class:armed
 							onclick={confirm}
 							disabled={phase === 'uploading' || plan.length === 0 || Boolean(confirmHold)}
-							aria-label={armed ? 'Click again within two seconds to upload' : 'Upload and schedule'}
-							title={armed ? 'Click again within two seconds to upload' : 'Upload and schedule'}
+							aria-label={armed
+								? `Click again within two seconds to ${draft.editing ? 'save' : 'upload'}`
+								: draft.editing
+									? 'Save the changes'
+									: 'Upload and schedule'}
+							title={armed
+								? `Click again within two seconds to ${draft.editing ? 'save' : 'upload'}`
+								: draft.editing
+									? 'Save the changes'
+									: 'Upload and schedule'}
 						>
 							{#if phase === 'uploading'}
 								<span class="pct">{Math.round(progress * 100)}%</span>
@@ -668,6 +941,17 @@
 							{takenWords(draft.takenHold)} Hover a striped hour to see which, or tick Override.
 						</span>
 					{/if}
+				</div>
+			{/if}
+
+			{#if editPreview && editPreview.lines.length > 0 && editPreview.refused.length === 0 && phase !== 'uploading'}
+				<div class="editplan">
+					<span class="editplanhead">Saving this edit</span>
+					<ul>
+						{#each editPreview.lines as line (line)}
+							<li>{line}</li>
+						{/each}
+					</ul>
 				</div>
 			{/if}
 
@@ -1010,6 +1294,60 @@
 
 	.result .btn {
 		margin-top: 20px;
+	}
+
+	/* What an edit changed, one line a post. */
+	.editlines {
+		list-style: none;
+		display: grid;
+		gap: 5px;
+		margin: 18px 0 0;
+		padding: 0;
+		font-size: 12.5px;
+		color: var(--text-dim);
+	}
+
+	/* On an edit's Review step: what saving it will do, post by post. */
+	.editplan {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 14px;
+		margin: -8px 0 16px;
+		padding: 9px 13px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border);
+		background: var(--accent-grad-soft);
+		font-size: 12px;
+		color: var(--text-dim);
+	}
+
+	.editplanhead {
+		font-weight: 600;
+		color: var(--text);
+	}
+
+	.editplan ul {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 14px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.resultbuttons {
+		display: flex;
+		justify-content: center;
+		gap: 10px;
+	}
+
+	.editline strong {
+		color: var(--pink-soft);
+	}
+
+	.editline .relink {
+		margin-left: 6px;
 	}
 
 	@media (max-width: 1100px) {

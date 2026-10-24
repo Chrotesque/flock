@@ -23,8 +23,9 @@ export type ActionPost = Pick<UploadTarget, 'platform' | 'status' | 'scheduled_a
 	request?: unknown;
 };
 
+/** What the worker is asked to do: a release or delete from here, or an edit (uploadedit.ts). */
 export interface PostRequest {
-	kind: PostAction;
+	kind: PostAction | 'edit';
 	requestedAt: string;
 	by: string;
 }
@@ -35,7 +36,7 @@ const SOON_MS = 2 * 60_000;
 export function readRequest(raw: unknown): PostRequest | null {
 	if (!raw || typeof raw !== 'object') return null;
 	const r = raw as Record<string, unknown>;
-	if (r.kind !== 'release' && r.kind !== 'delete') return null;
+	if (r.kind !== 'release' && r.kind !== 'delete' && r.kind !== 'edit') return null;
 	const text = (key: string) => (typeof r[key] === 'string' ? (r[key] as string) : '');
 	return { kind: r.kind, requestedAt: text('requestedAt'), by: text('by') };
 }

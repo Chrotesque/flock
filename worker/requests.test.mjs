@@ -43,3 +43,45 @@ test('a post in hand waits; one out already, or with no video named, is dropped'
 	assert.match(requestStep(row({ remote_url: 'https://www.youtube.com/' })).reason, /names no video/);
 	assert.match(requestStep(row({ platform: 'instagram', remote_url: 'https://www.instagram.com/reel/x/' })).reason, /cannot change/);
 });
+
+const edit = {
+	kind: 'edit',
+	requestedAt: '2026-10-24T08:00:00.000Z',
+	by: 'Studio PC',
+	title: 'Owls at dusk',
+	description: 'New words',
+	options: { tags: ['owls'], playlists: ['Night'] },
+	before: { title: 'Owls', description: 'Old words', options: { tags: [], playlists: ['Birds'] } }
+};
+
+test('an edit reads with what the post becomes and what it was', () => {
+	assert.deepEqual(readRequest(edit), edit);
+	assert.deepEqual(readRequest({ kind: 'edit' }), {
+		kind: 'edit',
+		requestedAt: '',
+		by: '',
+		title: '',
+		description: '',
+		options: {},
+		before: { title: '', description: '', options: {} }
+	});
+});
+
+test("an edit of a YouTube video is YouTube's to change, held or out already", () => {
+	assert.deepEqual(requestStep(row({ request: edit })), { action: 'retext', request: edit, remoteId: 'Ab3dE6gH9jK' });
+	assert.equal(requestStep(row({ request: edit, status: 'published' })).action, 'retext');
+});
+
+test('an edit of a post flock holds after all goes on its row; one in hand waits', () => {
+	assert.equal(requestStep(row({ request: edit, status: 'pending', remote_url: '' })).action, 'apply');
+	assert.equal(requestStep(row({ request: edit, status: 'publishing' })).action, 'wait');
+});
+
+test('an edit of a post another platform holds is dropped, with why', () => {
+	const reel = { platform: 'facebook', remote_url: 'https://www.facebook.com/reel/2229/', handle: { videoId: '2229' }, request: edit };
+	assert.deepEqual(requestStep(row(reel)), {
+		action: 'drop',
+		request: edit,
+		reason: 'flock cannot edit a Facebook post once Facebook has it'
+	});
+});

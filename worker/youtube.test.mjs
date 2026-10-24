@@ -1,12 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+	editedSnippet,
 	isShortVideo,
 	isoSeconds,
+	playlistChanges,
 	playlistNames,
 	processingState,
 	publicPatch,
 	scopeCanEdit,
+	snippetHolds,
 	statusPatch,
 	studioUrl
 } from './youtube.mjs';
@@ -109,4 +112,44 @@ test('statusPatch sends the status back whole, with only the time changed', () =
 test('publicPatch puts a held video out now: public, its time left out', () => {
 	const read = { privacyStatus: 'private', publishAt: '2026-11-01T17:00:00Z', license: 'youtube', embeddable: true, madeForKids: false };
 	assert.deepEqual(publicPatch(read), { license: 'youtube', embeddable: true, privacyStatus: 'public' });
+});
+
+const read = {
+	title: 'Owls',
+	description: 'Old words',
+	tags: ['owls'],
+	categoryId: '20',
+	defaultLanguage: 'en-US',
+	thumbnails: { default: {} },
+	channelId: 'UC1'
+};
+
+test("an edit's snippet keeps what YouTube had beside the new title, description and tags", () => {
+	assert.deepEqual(editedSnippet(read, { title: 'Owls at dusk', description: 'New words', tags: ['owls', 'dusk'] }), {
+		title: 'Owls at dusk',
+		description: 'New words',
+		tags: ['owls', 'dusk'],
+		categoryId: '20',
+		defaultLanguage: 'en-US'
+	});
+	const long = editedSnippet(read, { title: 'x'.repeat(120), description: '', tags: undefined });
+	assert.equal(long.title.length, 100);
+	assert.deepEqual(long.tags, []);
+	assert.equal(editedSnippet(read, { title: '', description: '' }).title, 'Untitled');
+});
+
+test('a snippet that holds the edit already is left alone, tidied line ends and tag case aside', () => {
+	assert.equal(snippetHolds(read, { title: 'Owls', description: 'Old words', tags: ['OWLS'] }), true);
+	assert.equal(snippetHolds({ ...read, description: 'a\r\nb  ' }, { title: 'Owls', description: 'a\nb', tags: ['owls'] }), true);
+	assert.equal(snippetHolds(read, { title: 'Owls', description: 'Old words', tags: [] }), false);
+	assert.equal(snippetHolds(read, { title: 'Owls!', description: 'Old words', tags: ['owls'] }), false);
+});
+
+test('an edit joins the playlists newly named and leaves those dropped, case aside', () => {
+	assert.deepEqual(playlistChanges({ playlists: ['Birds', 'Night'] }, { playlists: ['night', 'Cozy'] }), {
+		add: ['Cozy'],
+		remove: ['Birds']
+	});
+	assert.deepEqual(playlistChanges({ playlist: 'Birds' }, { playlists: ['Birds'] }), { add: [], remove: [] });
+	assert.deepEqual(playlistChanges(undefined, { playlists: ['Birds'] }), { add: ['Birds'], remove: [] });
 });

@@ -781,6 +781,113 @@ export async function retitleYouTube(config, channelId, videoId, title) {
 }
 
 /**
+ * What goes back as `snippet` for an edit (uploadedit.ts): as `snippetPatch`,
+ * the snippet as read written back whole, with the title, description and
+ * tags the edit gives — cut to YouTube's lengths as an upload is.
+ */
+export function editedSnippet(snippet, { title, description, tags }) {
+	return {
+		...snippetPatch(snippet, (title || 'Untitled').slice(0, 100)),
+		description: (description || '').slice(0, 5000),
+		tags: Array.isArray(tags) ? tags : []
+	};
+}
+
+/**
+ * Whether YouTube's snippet already holds what an edit gives — line ends
+ * and trailing space aside, which YouTube may tidy, and tags case aside.
+ */
+export function snippetHolds(snippet, { title, description, tags }) {
+	const text = (value) => String(value ?? '').replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').trim();
+	const list = (value) => JSON.stringify((Array.isArray(value) ? value : []).map((t) => String(t).toLowerCase()));
+	return (
+		sameTitle(snippet?.title, (title || 'Untitled').slice(0, 100)) &&
+		text(snippet?.description) === text((description || '').slice(0, 5000)) &&
+		list(snippet?.tags) === list(tags)
+	);
+}
+
+/**
+ * The playlists an edit adds the video to and takes it out of, compared
+ * case aside, as the adds always were.
+ */
+export function playlistChanges(before, after) {
+	const had = playlistNames(before);
+	const wanted = playlistNames(after);
+	const lower = (list) => list.map((name) => name.toLowerCase());
+	return {
+		add: wanted.filter((name) => !lower(had).includes(name.toLowerCase())),
+		remove: had.filter((name) => !lower(wanted).includes(name.toLowerCase()))
+	};
+}
+
+/**
+ * Takes the video out of each named playlist: its entries found
+ * (playlistItems.list, 1 unit) and deleted (50 each). The names it could not
+ * take it out of come back; a refusal of the grant itself is thrown.
+ */
+async function removeFromPlaylists(token, videoId, names, log) {
+	const list = await listPlaylists(token);
+	const missed = [];
+	for (const name of names) {
+		const match = list.find((p) => (p.snippet?.title ?? '').trim().toLowerCase() === name.toLowerCase());
+		if (!match) {
+			log(`playlist "${name}" not found on the channel — nothing to take the video out of`);
+			continue;
+		}
+		try {
+			const items = await api(
+				token,
+				`/playlistItems?part=id&maxResults=50&playlistId=${encodeURIComponent(match.id)}&videoId=${encodeURIComponent(videoId)}`,
+				{ kind: 'playlist' }
+			);
+			for (const item of items?.items ?? []) {
+				await api(token, `/playlistItems?id=${encodeURIComponent(item.id)}`, { kind: 'playlist', method: 'DELETE' });
+			}
+			log(`taken out of playlist "${match.snippet.title}"`);
+		} catch (err) {
+			if (grantRefused(err)) throw err;
+			log(`playlist "${match.snippet.title}" could not be left: ${err.message}`);
+			missed.push(name);
+		}
+	}
+	return missed;
+}
+
+/**
+ * Edits a video on the channel a post went out on, as an edit in the upload
+ * wizard asked (requests.mjs `retext`): its title, description and tags —
+ * 51 units, the snippet read and written back whole, skipped when YouTube
+ * holds them already — then the playlists it joins or leaves. What could not
+ * be done with the playlists comes back with the snippet YouTube answered.
+ */
+export async function editYouTube(config, row, edit, log = () => {}) {
+	const { channelId, videoId } = postVideo(row);
+	const { token } = await editingToken(config, channelId, 'editing');
+	const read = await api(token, `/videos?part=snippet&id=${encodeURIComponent(videoId)}`, { kind: 'edit' });
+	const snippet = read?.items?.[0]?.snippet;
+	if (!snippet) throw new Error('YouTube no longer has the video');
+	const text = { title: edit.title, description: edit.description, tags: edit.options?.tags };
+	let answered = snippet;
+	if (!snippetHolds(snippet, text)) {
+		const body = await api(token, '/videos?part=snippet', {
+			kind: 'edit',
+			method: 'PUT',
+			body: JSON.stringify({ id: videoId, snippet: editedSnippet(snippet, text) })
+		});
+		// The title is what proves it, as for a rename: YouTube may tidy the rest.
+		if (!sameTitle(body?.snippet?.title, (text.title || 'Untitled').slice(0, 100))) {
+			throw new Error(`YouTube answered with ${body?.snippet?.title ? `"${body.snippet.title}"` : 'no title'}`);
+		}
+		answered = body.snippet;
+	}
+	const { add, remove } = playlistChanges(edit.before?.options, edit.options);
+	const notAdded = add.length > 0 ? await addToPlaylists(token, videoId, add, log) : [];
+	const notLeft = remove.length > 0 ? await removeFromPlaylists(token, videoId, remove, log) : [];
+	return { snippet: answered, textChanged: answered !== snippet, notAdded, notLeft };
+}
+
+/**
  * The time YouTube holds a post's video for, or that it is out — for an
  * upload from before flock kept that (reschedule.mjs `learn`). 1 unit; any
  * grant that reads the channel will do.

@@ -4,39 +4,73 @@
 	import { PLATFORMS } from '$lib/platforms';
 	import { dayLabel, MONTH_NAMES } from '$lib/format';
 	import { actionSplit, platformList, type ActionPost, type PostAction } from '$lib/postactions';
+	import { editHold } from '$lib/uploadedit';
+	import { draft } from '$lib/stores/draft.svelte';
 	import PlatformIcon from './PlatformIcon.svelte';
 	import ConfirmButton from './ConfirmButton.svelte';
 
 	/**
 	 * The Calendar's right-click menu in Edit mode, for a whole upload
-	 * wherever it was clicked (the user's layout, 22 Oct 2026): release all
-	 * of it at once, or the platforms ticked, and the same for deleting. Each
-	 * button takes three presses within two seconds apiece. A post the action
-	 * cannot take is left out of "all", says why, and cannot be ticked
-	 * (postactions.ts). Closes on a press elsewhere, Esc or a scroll; stays
-	 * open on an error.
+	 * wherever it was clicked (the user's layout, 22 Oct 2026): edit it in
+	 * the upload wizard (uploadedit.ts), release all of it at once, or the
+	 * platforms ticked, and the same for deleting. Release and delete take
+	 * three presses within two seconds apiece. A post the action cannot take
+	 * is left out of "all", says why, and cannot be ticked (postactions.ts).
+	 * Closes on a press elsewhere, Esc or a scroll; stays open on an error.
 	 */
 	type Post = ActionPost & { id: string; date: string; time: string };
 
 	let {
+		job,
 		posts,
 		x,
 		y,
 		onact,
+		onedit,
 		close
 	}: {
+		/** The upload. */
+		job: string;
 		/** Every post of the upload, in display order. */
 		posts: Post[];
 		x: number;
 		y: number;
 		onact: (action: PostAction, ids: string[]) => Promise<void>;
+		/** Opens the upload in the wizard to edit it. */
+		onedit: () => void;
 		close: () => void;
 	} = $props();
+
+	const now = Date.now();
+
+	// What an edit could change: the posts still flock's, or YouTube's to retext.
+	const editLocked = $derived(
+		posts
+			.map((post) => ({ post, hold: editHold(post, now) }))
+			.filter(({ hold }) => 'refused' in hold)
+			.map(({ post, hold }) => ({ post, why: 'refused' in hold ? hold.refused : '' }))
+	);
+	const editable = $derived(posts.length - editLocked.length);
+	// An upload being composed (and not this one's edit) would be lost: one more press.
+	const replaces = $derived(draft.hasContent && draft.editing?.job !== job);
+
+	function editNote(): string {
+		if (editable === 0) return editLocked.length === 1 ? editLocked[0].why : 'Nothing in it can change any more — hover an icon below for why.';
+		const parts: string[] = [];
+		if (editLocked.length > 0) {
+			parts.push(
+				editLocked.length === 1
+					? `${PLATFORMS[editLocked[0].post.platform].label} stays as it is: ${editLocked[0].why}`
+					: `${platformList(editLocked.map((entry) => entry.post))} stay as they are.`
+			);
+		}
+		if (replaces) parts.push('Replaces the upload being composed.');
+		return parts.join(' ');
+	}
 
 	let node = $state<HTMLElement | null>(null);
 	let height = $state(0);
 	let error = $state('');
-	const now = Date.now();
 
 	const SECTIONS: { action: PostAction; all: string; each: string; verb: string; busy: string }[] = [
 		{ action: 'release', all: 'Release all (!) immediately', each: 'Release individual platform:', verb: 'Release', busy: 'Releasing…' },
@@ -132,6 +166,23 @@
 		<span class="what">{posts.length === 1 ? '1 post' : `${posts.length} posts`} of this upload</span>
 	</div>
 
+	<section class="block">
+		<ConfirmButton
+			label="Edit this upload"
+			busyLabel="Opening…"
+			confirmations={replaces ? 1 : 0}
+			disabled={editable === 0}
+			title="Opens it in Upload, filled in; confirming there saves over it"
+			onconfirm={() => {
+				onedit();
+				close();
+			}}
+		/>
+		{#if editNote()}
+			<p class="why">{editNote()}</p>
+		{/if}
+	</section>
+
 	{#each SECTIONS as section (section.action)}
 		{@const { ready, left: out } = split[section.action]}
 		{@const chosen = picked[section.action]}
@@ -183,7 +234,7 @@
 	{/each}
 
 	{#if error}<p class="error">{error}</p>{/if}
-	<p class="hint">Press three times, each within two seconds. Neither can be taken back.</p>
+	<p class="hint">Release and delete: press three times, each within two seconds. Neither can be taken back.</p>
 </div>
 
 <style>

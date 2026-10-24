@@ -23,6 +23,7 @@ export const KINDS: { kind: string; label: string; cost: string }[] = [
 	{ kind: 'stats', label: 'Reading the stats', cost: '1 unit a read' },
 	{ kind: 'playlist', label: 'Adding a video to a playlist', cost: '50 units' },
 	{ kind: 'rename', label: 'Renaming a video', cost: '51 units' },
+	{ kind: 'edit', label: 'Editing a queued video', cost: '51 units' },
 	{ kind: 'move', label: 'Calendar move', cost: '51 units' },
 	{ kind: 'release', label: 'Releasing now', cost: '51 units' },
 	{ kind: 'delete', label: 'Deleting a video', cost: '50 units' },

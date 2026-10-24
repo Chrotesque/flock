@@ -6,6 +6,9 @@
 	import PostActionsMenu from '$lib/components/PostActionsMenu.svelte';
 	import { actOnPosts, listTargets, rescheduleTargets, subscribeTargets, toInstant } from '$lib/repo';
 	import { readRequest, type PostAction } from '$lib/postactions';
+	import { uploadEdit } from '$lib/stores/uploadedit.svelte';
+	import { goto } from '$app/navigation';
+	import { base } from '$app/paths';
 	import { MoveRefused, isMoving, landReason, lockReason, moveRefusal } from '$lib/reschedule';
 	import { isPlatformId, PLATFORMS, PLATFORM_IDS } from '$lib/platforms';
 	import { addDays, dayStart, isoDate, makeTime, minuteOf } from '$lib/format';
@@ -150,6 +153,12 @@
 		void load();
 	}
 
+	/** The upload, opened in the wizard to be edited (uploadedit.svelte.ts). */
+	function editUpload(job: string) {
+		uploadEdit.offer(job);
+		void goto(`${base}/upload`);
+	}
+
 	/** What may still move goes; the rest shakes when pressed and says why. */
 	function canMove(entry: Entry): boolean {
 		return editing && !lockReason(entry);
@@ -290,6 +299,7 @@
 		const request = readRequest(entry.request);
 		if (request?.kind === 'release') return { note: `Releasing: the worker is putting it out on ${label} now.`, noteKind: 'busy' };
 		if (request?.kind === 'delete') return { note: `Deleting: the worker is deleting it from ${label}.`, noteKind: 'busy' };
+		if (request?.kind === 'edit') return { note: `Editing: the worker is changing it on ${label}.`, noteKind: 'busy' };
 		if (isMoving(entry)) return { note: 'Moving: the worker is telling the platform the new time.', noteKind: 'busy' };
 		const refused = moveRefusal(entry);
 		if (refused) return { note: refused, noteKind: 'warn' };
@@ -320,8 +330,8 @@
 				<p class="banner editing">
 					<strong>EDITING SCHEDULE</strong> — Drag an icon to move that platform's post, or a
 					box's grip (left edge) to move the whole upload — at least 15 minutes ahead; YouTube and
-					Facebook are told by the worker within seconds. Right-click a post or a box to release it at
-					once or delete it. A post that can no longer move shakes and says why.
+					Facebook are told by the worker within seconds. Right-click a post or a box to edit the upload
+					in Upload, release it at once or delete it. A post that can no longer move shakes and says why.
 				</p>
 			{/if}
 
@@ -363,10 +373,12 @@
 
 {#if menu && menuPosts.length > 0}
 	<PostActionsMenu
+		job={menu.job}
 		posts={menuPosts}
 		x={menu.x}
 		y={menu.y}
 		onact={act}
+		onedit={() => editUpload(menu!.job)}
 		close={() => (menu = null)}
 	/>
 {/if}

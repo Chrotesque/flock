@@ -23,12 +23,17 @@
 	let items = $derived(
 		settings.ordered.map((entry) => {
 			const platform = entry.platform;
-			const offered = accounts.offer(platform).offered;
+			const label = PLATFORMS[platform].label;
+			// No account for the brand, or — while an upload is edited — a post
+			// that cannot change any more: either way the platform is locked.
+			const why = !accounts.offer(platform).offered ? noAccount(label) : draft.editLock(platform);
+			const offered = !why;
 			const on = offered && draft.isSelected(platform);
 			return {
 				platform,
-				label: PLATFORMS[platform].label,
+				label,
 				offered,
+				why,
 				on,
 				complete: on && draft.isComplete(platform)
 			};
@@ -62,7 +67,7 @@
 	}
 
 	function hint(item: (typeof items)[number]): string {
-		if (!item.offered) return noAccount(item.label);
+		if (!item.offered) return item.why;
 		if (!item.on) return `${item.label} is off for this upload. Click to turn it on and write for it.`;
 		return item.complete ? `${item.label}: done` : `${item.label}: still to write`;
 	}
@@ -84,7 +89,7 @@
 			class:locked={!item.offered}
 			class:keep={keepsColour(item.platform)}
 		>
-			<span class="controls" title={item.offered ? '' : noAccount(item.label)}>
+			<span class="controls" title={item.why}>
 				<Checkbox
 					checked={item.on}
 					disabled={!item.offered}
@@ -96,7 +101,7 @@
 					disabled={!item.offered}
 					onclick={() => openModal(item.platform)}
 					aria-label="{item.label} options for this upload"
-					title={item.offered ? `${item.label} options for this upload` : noAccount(item.label)}
+					title={item.offered ? `${item.label} options for this upload` : item.why}
 				>
 					<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
 						<path

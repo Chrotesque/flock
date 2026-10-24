@@ -720,6 +720,16 @@ worker. A post that can no longer move, because it is out or
 about to go out, shakes and says why. With several brands, buttons on top show
 one brand or all.
 
+The same menu's *Edit this upload* opens it in Upload with everything filled
+in — each post's text as typed, its options, time and cover, and the video
+already stored — and confirming there saves over it; Review lists what saving
+will change first. A post flock still holds (Instagram and TikTok until just
+before their time) changes completely, a different video included. A YouTube
+video already uploaded takes a new title, description, tags and playlists
+from the worker. A post that is out, or about to go out, opens locked and
+says why. TikTok's audience and the other choices it wants made by hand are
+picked again.
+
 **Log** lists every change with its time and the machine that made it. Filter
 by category, search, or click a machine to see only its entries. It cannot be
 edited or cleared. Its *Worker* tab shows the worker's output live, kept for 14

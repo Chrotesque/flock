@@ -267,6 +267,11 @@ const BOX_LABELS: Record<string, string> = {
 	tags: 'Tags as sent'
 };
 
+/** An option key in the words the screens use for it: the registry's, a per-upload box's, else the key. */
+export function optionName(platform: PlatformId, key: string): string {
+	return PLATFORMS[platform]?.fields.find((f) => f.key === key)?.label ?? BOX_LABELS[key] ?? key;
+}
+
 const TIKTOK_UNMADE: OptionValues = {
 	privacy: '',
 	allowComments: false,
