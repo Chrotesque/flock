@@ -9,7 +9,6 @@ import {
 	rateOf,
 	rateWords,
 	readRatioPlatforms,
-	shortTitle,
 	slotPlatforms,
 	standing,
 	toggleRatioPlatform,
@@ -87,17 +86,6 @@ describe('per view', () => {
 	});
 });
 
-describe('shortTitle', () => {
-	it('keeps the first 20 characters and ends in ...', () => {
-		expect(shortTitle("I'm the worst airport security officer ever")).toBe("I'm the worst airpor...");
-		expect(shortTitle('Exactly twenty chars')).toBe('Exactly twenty chars');
-	});
-
-	it('never cuts a character in two, nor leaves a space before the dots', () => {
-		expect(shortTitle('🔴 Surprise! Missed me? Again')).toBe('🔴 Surprise! Missed m...');
-		expect(shortTitle('Nineteen characters and more')).toBe('Nineteen characters...');
-	});
-});
 
 describe('engagement rate by views', () => {
 	it('counts likes and comments as engagements, only where both were read', () => {

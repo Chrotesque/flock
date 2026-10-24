@@ -219,19 +219,25 @@ export function ratioOff(id: ColumnId, size: ListSize): boolean {
 }
 
 /**
+ * The least Ratio View's title column gets: about two lines for a long
+ * title. Past that, a narrow window scrolls the list sideways.
+ */
+export const RATIO_TITLE_MIN = '300px';
+
+/**
  * Ratio View's grid at a size: a track per platform in each column
  * (`slots`, each as wide as its widest number in any row, so every
  * platform's numbers line up down the list), the title taking what is
- * left but never less than itself, and a 1px track for each line
- * (RATIO_LINES) that has a column after it at this size.
+ * left — at least RATIO_TITLE_MIN, wrapping when it is longer than its
+ * room — and a 1px track for each line (RATIO_LINES) that has a column
+ * after it at this size.
  */
 export function ratioTemplate(ids: ColumnId[], slots: Partial<Record<ColumnId, number>>, size: ListSize): string {
 	const shown = ids.filter((id) => !ratioOff(id, size));
 	return shown
 		.flatMap((id, i) => {
 			if (id === 'thumb') return ['var(--thumbcol)'];
-			// At least as wide as the shortened title (the list does not let its meta line widen it).
-			if (id === 'video') return ['minmax(max-content, 1fr)'];
+			if (id === 'video') return [`minmax(${RATIO_TITLE_MIN}, 1fr)`];
 			const tracks = `repeat(${Math.max(1, slots[id] ?? 1)}, max-content)`;
 			return RATIO_LINES.includes(id) && i < shown.length - 1 ? [tracks, '1px'] : [tracks];
 		})

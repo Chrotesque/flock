@@ -111,13 +111,13 @@ describe('the grid', () => {
 		const ids = ratioColumns(DEFAULT_COLUMNS);
 		const slots = { usual: 4, likes: 4, comments: 4, skip: 2 };
 		expect(ratioTemplate(ids, slots, 'wide')).toBe(
-			'var(--thumbcol) minmax(max-content, 1fr) repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(2, max-content)'
+			'var(--thumbcol) minmax(300px, 1fr) repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(2, max-content)'
 		);
 		// No line after the last column.
 		expect(ratioTemplate(ids, slots, 'mid')).toBe(
-			'var(--thumbcol) minmax(max-content, 1fr) repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(4, max-content)'
+			'var(--thumbcol) minmax(300px, 1fr) repeat(4, max-content) 1px repeat(4, max-content) 1px repeat(4, max-content)'
 		);
-		expect(ratioTemplate(ids, { usual: 0 }, 'narrow')).toBe('var(--thumbcol) minmax(max-content, 1fr) repeat(1, max-content) 1px repeat(1, max-content)');
+		expect(ratioTemplate(ids, { usual: 0 }, 'narrow')).toBe('var(--thumbcol) minmax(300px, 1fr) repeat(1, max-content) 1px repeat(1, max-content)');
 		expect(ratioOff('skip', 'mid')).toBe(true);
 		expect(ratioOff('engaged', 'wide')).toBe(true);
 		expect(ratioOff('video', 'narrow')).toBe(false);

@@ -55,12 +55,6 @@ export function percentWords(rate: number, locale?: string): string {
 	return `${new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(rate)}%`;
 }
 
-/** Ratio View's title: its first 20 characters, then "..." — the room goes to the platforms' numbers. */
-export function shortTitle(title: string, max = 20): string {
-	const chars = Array.from(title.trim());
-	return chars.length > max ? `${chars.slice(0, max).join('').trimEnd()}...` : chars.join('');
-}
-
 /** The platforms shown that any of the videos is on, in display order: a slot each in every row. */
 export function slotPlatforms(releases: Pick<Release, 'posts'>[], platforms: StatPlatform[] = STAT_PLATFORMS): StatPlatform[] {
 	return STAT_PLATFORMS.filter((p) => platforms.includes(p) && releases.some((r) => r.posts[p]));

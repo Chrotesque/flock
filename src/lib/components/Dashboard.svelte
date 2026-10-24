@@ -49,7 +49,6 @@
 		rateOf,
 		rateWords,
 		readRatioPlatforms,
-		shortTitle,
 		slotPlatforms,
 		standing,
 		toggleRatioPlatform,
@@ -1409,7 +1408,7 @@
 		{@const visibility = visibilityOf(r, view.platforms)}
 		{@const note = renameNote(r)}
 		<span class="vid {cellOf(col)}">
-			<span class="vtitle" title={ratioView ? r.title : undefined}>{ratioView ? shortTitle(r.title) : r.title}</span>
+			<span class="vtitle">{r.title}</span>
 			<span class="vmeta">
 				{#if note.waiting.length > 0}
 					<span
@@ -3361,8 +3360,14 @@
 		padding-left: 0;
 	}
 
-	/* The title's column is as wide as the shortened title; its meta line
-	   fills that and is cut, rather than widening it. */
+	/* The title's column takes what the platforms' numbers leave: a title
+	   longer than that wraps rather than being cut, and the meta line fills
+	   the column and is cut, rather than widening it. */
+	.ratio .vtitle {
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+
 	.ratio .vmeta {
 		width: 0;
 		min-width: 100%;
