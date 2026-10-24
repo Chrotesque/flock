@@ -880,8 +880,8 @@ export function ratioOf(judgements: Judgement[]): number | null {
  * Newest first, or most first — the skip rate fewest first, so the best is
  * on top either way — or, `reversed`, the other way round. A missing number
  * sorts last both ways, and ties newest first. `ratio` is views over usual;
- * `likeRate` and `commentRate` the likes and comments per view (Extended
- * Stats, extendedstats.ts).
+ * `likeRate` and `commentRate` the likes and comments per view (Ratio View,
+ * ratioview.ts).
  */
 export function sortRows<
 	T extends {

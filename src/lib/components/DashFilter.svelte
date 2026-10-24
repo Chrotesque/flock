@@ -19,14 +19,16 @@
 	 * what is shown, which opens into the choices — the timeframe, platforms
 	 * (all of them together is the combined view), kinds and visibility. The
 	 * page's numbers and its list all follow it — but for the platforms while
-	 * the Dashboard's Extended Stats shows one alone (`override`): they stay
-	 * as chosen, greyed, and cannot be changed until it is switched off.
+	 * the Dashboard's Ratio View shows every one side by side (`overridden`):
+	 * they stay as chosen, greyed, and cannot be changed until it is off.
 	 */
 	let {
 		filter = $bindable(),
 		counts,
-		override = null
-	}: { filter: DashFilter; counts: FilterCounts; override?: StatPlatform | null } = $props();
+		overridden = false
+	}: { filter: DashFilter; counts: FilterCounts; overridden?: boolean } = $props();
+
+	const NOT_IN_EFFECT = 'Not in effect: Ratio View shows every platform side by side';
 
 	let open = $state(false);
 	let root = $state<HTMLElement | null>(null);
@@ -98,11 +100,11 @@
 	<button class="bar" aria-expanded={open} aria-controls="dashboard-filter" onclick={() => (open = !open)}>
 		<span
 			class="part platforms"
-			class:unused={override}
-			title={override ? `Not in effect: Extended Stats shows ${PLATFORMS[override].label} alone` : undefined}
+			class:unused={overridden}
+			title={overridden ? NOT_IN_EFFECT : undefined}
 		>
 			{#each filter.platforms as p (p)}
-				<PlatformIcon platform={p} size={14} dim={Boolean(override)} />
+				<PlatformIcon platform={p} size={14} dim={overridden} />
 			{/each}
 			<span class="plabel">{combined ? 'Combined' : PLATFORMS[filter.platforms[0]].label}</span>
 		</span>
@@ -135,15 +137,13 @@
 				</div>
 			</section>
 
-			<section class:unused={override}>
+			<section class:unused={overridden}>
 				<h3>
 					Platforms
-					<button class="link" class:on={combined && !override} onclick={combine} disabled={combined || Boolean(override)}
-						>Combined</button
-					>
+					<button class="link" class:on={combined && !overridden} onclick={combine} disabled={combined || overridden}>Combined</button>
 				</h3>
-				{#if override}
-					<p class="note">Not in effect: Extended Stats shows {PLATFORMS[override].label} alone. Switch it off to choose here.</p>
+				{#if overridden}
+					<p class="note">{NOT_IN_EFFECT}. Switch it off to choose here.</p>
 				{/if}
 				<div class="chips">
 					{#each ALL_PLATFORMS as p (p)}
@@ -155,18 +155,18 @@
 									class:on={filter.platforms.includes(p)}
 									aria-pressed={filter.platforms.includes(p)}
 									onclick={() => togglePlatform(p)}
-									disabled={Boolean(override)}
-									title={override
-										? 'Not in effect while Extended Stats is on'
+									disabled={overridden}
+									title={overridden
+										? 'Not in effect while Ratio View is on'
 										: filter.platforms.includes(p) && filter.platforms.length === 1
 											? 'At least one platform stays chosen'
 											: undefined}
 								>
-									<PlatformIcon platform={p} size={14} dim={Boolean(override)} />
+									<PlatformIcon platform={p} size={14} dim={overridden} />
 									<span class="name">{PLATFORMS[p].label}</span>
 									<span class="count">{counts.platforms[p]}</span>
 								</button>
-								{#if !override && !(filter.platforms.length === 1 && filter.platforms[0] === p)}
+								{#if !overridden && !(filter.platforms.length === 1 && filter.platforms[0] === p)}
 									<button class="only" onclick={() => onlyPlatform(p)} title="Show {PLATFORMS[p].label} alone">only</button>
 								{/if}
 							</span>
@@ -304,7 +304,7 @@
 		flex: none;
 	}
 
-	/* Set aside by Extended Stats: the choice struck through, the marks greyed
+	/* Set aside by Ratio View: the choice struck through, the marks greyed
 	   only where their brands allow it (PlatformIcon's `dim`). */
 	.platforms.unused .plabel {
 		color: var(--text-faint);
@@ -463,7 +463,7 @@
 		opacity: 0.75;
 	}
 
-	/* The platforms while Extended Stats is on: kept as chosen, greyed, not to be changed. */
+	/* The platforms while Ratio View is on: kept as chosen, greyed, not to be changed. */
 	.note {
 		margin: -3px 0 9px;
 		font-size: 11px;

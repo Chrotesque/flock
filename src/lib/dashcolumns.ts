@@ -4,8 +4,8 @@
  * (shared by every browser). The thumbnail and the video's title always lead
  * — the title cannot be hidden, the thumbnail can; everything after them
  * moves and hides freely. The Jestr column exists only with the Jestr
- * integration on. Extended Stats (extendedstats.ts) draws a set of its own,
- * with the likes and comments per view, which Settings does not offer.
+ * integration on. Ratio View (ratioview.ts) draws a set of its own, every
+ * platform side by side in each column, which Settings does not arrange.
  */
 
 export type ColumnId =
@@ -18,9 +18,7 @@ export type ColumnId =
 	| 'comments'
 	| 'skip'
 	| 'curve'
-	| 'usual'
-	| 'likeRate'
-	| 'commentRate';
+	| 'usual';
 
 export interface DashColumn {
 	id: ColumnId;
@@ -69,9 +67,6 @@ export const COLUMNS: Record<ColumnId, ColumnDef> = {
 		mid: null,
 		narrow: null
 	},
-	// Extended Stats' own, never in a stored layout (not in COLUMN_ORDER).
-	likeRate: { label: 'Like ratio', about: 'Likes per view, in percent', width: 'content', mid: null, narrow: null },
-	commentRate: { label: 'Comment ratio', about: 'Comments per view, in percent', width: 'content', mid: null, narrow: null },
 	curve: { label: 'From release', about: 'Views from release, the usual for its kind dashed', width: 156, mid: 132, narrow: null },
 	usual: {
 		label: 'vs usual',
@@ -86,8 +81,6 @@ export const COLUMN_ORDER: ColumnId[] = ['thumb', 'video', 'jestr', 'followers',
 
 export const DEFAULT_COLUMNS: DashColumn[] = COLUMN_ORDER.map((id) => ({ id, on: true }));
 
-/** What Extended Stats shows after the title, in this order whatever the layout: no Jestr, and the ratios beside their counters. */
-export const EXTENDED_COLUMNS: ColumnId[] = ['views', 'likes', 'likeRate', 'comments', 'commentRate', 'followers', 'skip', 'curve', 'usual'];
 
 const isColumn = (id: unknown): id is ColumnId => typeof id === 'string' && (COLUMN_ORDER as string[]).includes(id);
 const FIXED = COLUMN_ORDER.filter((id) => COLUMNS[id].fixed);
@@ -152,12 +145,6 @@ export function shownColumns(columns: DashColumn[], options: { jestr: boolean })
 	return columns.filter((c) => c.on && available(c.id, options)).map((c) => c.id);
 }
 
-/** The columns Extended Stats draws: the thumbnail as the layout has it, the title, then its own set. */
-export function extendedColumns(columns: DashColumn[]): ColumnId[] {
-	const thumb = columns.find((c) => c.id === 'thumb')?.on !== false;
-	return [...(thumb ? (['thumb'] as ColumnId[]) : []), 'video', ...EXTENDED_COLUMNS];
-}
-
 export type ListSize = 'wide' | 'mid' | 'narrow';
 
 /** The columns drawn at a size: the narrower layouts leave some out. */
@@ -189,4 +176,51 @@ export function columnWords(columns: DashColumn[]): string {
 	const shown = columns.filter((c) => c.on).map((c) => COLUMNS[c.id].label);
 	const hidden = columns.filter((c) => !c.on).map((c) => COLUMNS[c.id].label);
 	return `${shown.join(', ')}${hidden.length ? ` (hidden: ${hidden.join(', ')})` : ''}`;
+}
+
+/* ---- Ratio View (ratioview.ts) ---- */
+
+/**
+ * What Ratio View shows after the title, whatever the layout: no Jestr,
+ * followers or curve. Likes and comments carry their share of the views;
+ * the views, the benchmark, have a line after them.
+ */
+export const RATIO_COLUMNS: ColumnId[] = ['views', 'likes', 'comments', 'skip', 'usual'];
+
+/** Which of them the narrower lists keep: the views and the ratios first. */
+const RATIO_AT: Record<ListSize, ColumnId[]> = {
+	wide: RATIO_COLUMNS,
+	mid: ['views', 'likes', 'comments'],
+	narrow: ['views', 'likes']
+};
+
+/** The columns Ratio View draws: the thumbnail as the layout has it, the title, then its own set. */
+export function ratioColumns(columns: DashColumn[]): ColumnId[] {
+	const thumb = columns.find((c) => c.id === 'thumb')?.on !== false;
+	return [...(thumb ? (['thumb'] as ColumnId[]) : []), 'video', ...RATIO_COLUMNS];
+}
+
+/** Whether Ratio View leaves a column out at a size; the thumbnail and the title stay. */
+export function ratioOff(id: ColumnId, size: ListSize): boolean {
+	return id !== 'thumb' && id !== 'video' && !RATIO_AT[size].includes(id);
+}
+
+/**
+ * Ratio View's grid at a size: a track per platform in each column
+ * (`slots`, each as wide as its widest number in any row, so every
+ * platform's numbers line up down the list), the title taking what is
+ * left but never less than itself, and a 1px track for the line after the
+ * views.
+ */
+export function ratioTemplate(ids: ColumnId[], slots: Partial<Record<ColumnId, number>>, size: ListSize): string {
+	return ids
+		.filter((id) => !ratioOff(id, size))
+		.flatMap((id) => {
+			if (id === 'thumb') return ['var(--thumbcol)'];
+			// At least as wide as the shortened title (the list does not let its meta line widen it).
+			if (id === 'video') return ['minmax(max-content, 1fr)'];
+			const tracks = `repeat(${Math.max(1, slots[id] ?? 1)}, max-content)`;
+			return id === 'views' ? [tracks, '1px'] : [tracks];
+		})
+		.join(' ');
 }
