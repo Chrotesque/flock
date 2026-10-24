@@ -6,17 +6,22 @@
 	import TimingChip from '$lib/components/TimingChip.svelte';
 	import { toneOf, depthOf } from '$lib/workerlog';
 	import { actionWords, wordKey } from '$lib/logwords';
+	import { CHANGES } from '$lib/changelog';
 	import type { LogCategory, LogEntry, WorkerLine } from '$lib/types';
 
-	type Tab = LogCategory | 'all' | 'worker';
+	type Tab = LogCategory | 'all' | 'worker' | 'update';
 
 	const CATEGORIES: { id: Tab; label: string }[] = [
 		{ id: 'all', label: 'Everything' },
 		{ id: 'upload', label: 'Uploads' },
 		{ id: 'calendar', label: 'Calendar' },
 		{ id: 'settings', label: 'Settings' },
-		{ id: 'worker', label: 'Worker' }
+		{ id: 'worker', label: 'Worker' },
+		{ id: 'update', label: 'Update' }
 	];
+
+	/** What changed in each version (changelog.ts), as rows the day grouping and the word bar take. */
+	const UPDATES = CHANGES.map((change, i) => ({ id: `${change.version}:${i}`, created: change.at, action: change.line, version: change.version }));
 
 	/** Lines kept in memory while the page is open and realtime keeps adding. */
 	const WORKER_MAX = 3000;
@@ -80,7 +85,8 @@
 		upload: entries.filter((e) => e.category === 'upload').length,
 		calendar: entries.filter((e) => e.category === 'calendar').length,
 		settings: entries.filter((e) => e.category === 'settings').length,
-		worker: workerLines.length
+		worker: workerLines.length,
+		update: UPDATES.length
 	});
 
 	let visibleWorker = $derived.by(() => {
@@ -95,8 +101,11 @@
 		category === 'all' ? entries : entries.filter((entry) => entry.category === category)
 	);
 
+	/** The tab's actions: the log's, or on Update what changed. */
+	let tabActions = $derived(category === 'update' ? UPDATES.map((row) => row.action) : inCategory.map((entry) => entry.action));
+
 	/** The first words of the tab's actions, for the bar under the tabs. */
-	let words = $derived(actionWords(inCategory.map((entry) => entry.action)));
+	let words = $derived(actionWords(tabActions));
 
 	/** A word the tab no longer has (a refresh) filters nothing. */
 	let activeWord = $derived(word && words.some((w) => w.key === word) ? word : null);
@@ -121,6 +130,16 @@
 	});
 
 	let days = $derived(byDay(visible));
+
+	let visibleUpdates = $derived.by(() => {
+		const needle = query.trim().toLowerCase();
+		return UPDATES.filter((row) => {
+			if (activeWord && wordKey(row.action) !== activeWord) return false;
+			return !needle || row.action.toLowerCase().includes(needle) || row.version.includes(needle);
+		});
+	});
+
+	let updateDays = $derived(byDay(visibleUpdates));
 
 	/** Grouped by calendar day, so a long list stays scannable. */
 	function byDay<T extends { created: string }>(list: T[]) {
@@ -182,7 +201,9 @@
 			<p>
 				{category === 'worker'
 					? 'What the worker printed, live, kept for 14 days.'
-					: 'Every change made through flock, and which machine made it.'}
+					: category === 'update'
+						? 'What changed in flock itself, and the version it came with.'
+						: 'Every change made through flock, and which machine made it.'}
 			</p>
 		</div>
 		<button class="btn sm" onclick={load} disabled={loading}>Refresh</button>
@@ -212,7 +233,11 @@
 				class="input"
 				type="search"
 				bind:value={query}
-				placeholder={category === 'worker' ? 'Search the worker’s lines…' : 'Search actions, details, device…'}
+				placeholder={category === 'worker'
+					? 'Search the worker’s lines…'
+					: category === 'update'
+						? 'Search changes or a version…'
+						: 'Search actions, details, device…'}
 			/>
 			{#if query}
 				<button class="clearq" onclick={() => (query = '')} aria-label="Clear search">×</button>
@@ -224,7 +249,7 @@
 		<div class="words" role="group" aria-label="Show only actions starting with">
 			<button class:active={!activeWord} aria-pressed={!activeWord} onclick={() => (word = null)}>
 				All
-				<span class="count">{inCategory.length}</span>
+				<span class="count">{tabActions.length}</span>
 			</button>
 			{#each words as item (item.key)}
 				<button
@@ -274,6 +299,35 @@
 			<p class="foot">
 				Showing {visibleWorker.length} of {workerLines.length} lines, newest first. A line the
 				worker repeats (the watch-folder count) is kept once an hour.
+			</p>
+		{/if}
+	{:else if category === 'update'}
+		{#if visibleUpdates.length === 0}
+			<p class="banner">No changes match that filter.</p>
+		{:else}
+			<div class="log">
+				{#each updateDays as day (day.key)}
+					<section class="day">
+						<h2>{day.label}</h2>
+						<ul>
+							{#each day.rows as row (row.id)}
+								<li class="change">
+									<span class="stamp">
+										<span class="date">{dateOf(row)}</span>
+										<span class="time">{timeOf(row)}</span>
+									</span>
+									<span class="cat version">v{row.version}</span>
+									<span class="what"><span class="action">{row.action}</span></span>
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/each}
+			</div>
+
+			<p class="foot">
+				Showing {visibleUpdates.length} of {UPDATES.length} changes, newest first. The ones up to
+				v0.18.10 were written afterwards from flock's history, dated when each was made.
 			</p>
 		{/if}
 	{:else if error}
@@ -603,6 +657,16 @@
 	.cat.settings {
 		background: rgba(52, 211, 153, 0.14);
 		color: var(--ok);
+	}
+
+	/* The Update tab's version, in place of a category. */
+	.cat.version {
+		background: var(--bg-elev);
+		color: var(--text-dim);
+		font-family: var(--mono);
+		font-weight: 600;
+		letter-spacing: 0;
+		text-transform: none;
 	}
 
 	.what {

@@ -1,7 +1,8 @@
 import { base } from '$app/paths';
 import { dev, version } from '$app/environment';
 import { newChanges, updateFrom, type Update } from '../appupdate';
-import { CHANGES, VERSION, type Change } from '../version';
+import { CHANGES, type Change } from '../changelog';
+import { VERSION } from '../version';
 
 /** How often an open page asks whether a newer flock is deployed, besides whenever it comes back into view. */
 const EVERY_MS = 5 * 60_000;

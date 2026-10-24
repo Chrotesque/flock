@@ -8,7 +8,7 @@
  * asks the server it was loaded from.
  */
 
-import type { Change } from './version';
+import type { Change } from './changelog';
 
 export interface Build {
 	version: string;

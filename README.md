@@ -768,7 +768,9 @@ picked again.
 **Log** lists every change with its time and the machine that made it. Filter
 by category, search, or click a machine to see only its entries. It cannot be
 edited or cleared. Its *Worker* tab shows the worker's output live, kept for 14
-days: the place to look when a post did not come out as asked.
+days: the place to look when a post did not come out as asked. Its *Update*
+tab lists what changed in flock itself, one short line per change with its
+date and version, filterable by Added, Changed, Fixed and Removed.
 
 Each upload in the Log says, per post, whether it was sent to go out
 *Immediately* or *Scheduled* for a slot. Click it to open its overview. It

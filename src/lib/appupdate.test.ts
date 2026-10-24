@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { changeLines, compareVersions, newChanges, readBuild, updateFrom } from './appupdate';
-import { CHANGES, VERSION } from './version';
+import { CHANGES } from './changelog';
+import { firstWord } from './logwords';
+import { VERSION } from './version';
 
 describe('readBuild', () => {
 	it('reads a build’s version and when it was built', () => {
@@ -48,16 +50,17 @@ describe('updateFrom', () => {
 
 describe('newChanges', () => {
 	const mine = [
-		{ version: '0.18.10', line: 'Added: Update > What Changed' },
-		{ version: '0.18.9', line: 'Changed: Ratio View > Heatmap' }
+		{ at: '2026-10-25T00:15:00+02:00', version: '0.18.10', line: 'Added: Update > What Changed' },
+		{ at: '2026-10-24T23:51:00+02:00', version: '0.18.9', line: 'Changed: Ratio View > Heatmap' }
 	];
+	const at = '2026-10-26T12:00:00+01:00';
 
 	it('gives the deployed lines this page does not carry, newest first', () => {
 		const deployed = {
 			version: '0.18.12',
 			changes: [
-				{ version: '0.18.12', line: 'Fixed: Calendar > Drag' },
-				{ version: '0.18.11', line: 'Added: Log > Sub Filtering' },
+				{ at, version: '0.18.12', line: 'Fixed: Calendar > Drag' },
+				{ at, version: '0.18.11', line: 'Added: Log > Sub Filtering' },
 				...mine
 			]
 		};
@@ -65,12 +68,12 @@ describe('newChanges', () => {
 	});
 
 	it('gives a line added on a redeploy of the same version', () => {
-		const deployed = { changes: [{ version: '0.18.10', line: 'Fixed: Update > Width' }, ...mine] };
-		expect(newChanges('0.18.10', mine, deployed)).toEqual([{ version: '0.18.10', line: 'Fixed: Update > Width' }]);
+		const deployed = { changes: [{ at, version: '0.18.10', line: 'Fixed: Update > Width' }, ...mine] };
+		expect(newChanges('0.18.10', mine, deployed)).toEqual([{ at, version: '0.18.10', line: 'Fixed: Update > Width' }]);
 	});
 
 	it('leaves out lines older than this page, reworded ones too', () => {
-		const deployed = { changes: [{ version: '0.18.9', line: 'Changed: Ratio View > Heat Map' }, mine[0]] };
+		const deployed = { changes: [{ at, version: '0.18.9', line: 'Changed: Ratio View > Heat Map' }, mine[0]] };
 		expect(newChanges('0.18.10', mine, deployed)).toEqual([]);
 	});
 
@@ -83,7 +86,8 @@ describe('newChanges', () => {
 });
 
 describe('changeLines', () => {
-	const at = (n: number) => Array.from({ length: n }, (_, i) => ({ version: `0.18.${20 - i}`, line: `Line ${i + 1}` }));
+	const at = (n: number) =>
+		Array.from({ length: n }, (_, i) => ({ at: '2026-10-26T12:00:00+01:00', version: `0.18.${20 - i}`, line: `Line ${i + 1}` }));
 
 	it('shows up to two lines as they are', () => {
 		expect(changeLines([])).toEqual([]);
@@ -98,14 +102,20 @@ describe('changeLines', () => {
 });
 
 describe('CHANGES', () => {
-	it('says what this version changed, in short lines, newest first', () => {
+	it('says what this version changed, in short dated lines, newest first', () => {
 		expect(CHANGES[0]?.version).toBe(VERSION);
-		expect(CHANGES.filter((c) => c.version === VERSION).length).toBeLessThanOrEqual(2);
 		for (const c of CHANGES) {
 			expect(readBuild(c.version)).not.toBeNull();
+			expect(c.at).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$/);
+			expect(c.line).toMatch(/^(Added|Changed|Fixed|Removed): \S/);
+			// The Log's word bar reads the kind; a lower-case word after the colon would pass for a brand.
+			expect(['Added', 'Changed', 'Fixed', 'Removed']).toContain(firstWord(c.line));
 			// About what fits the rail at 11px; a longer one is cut there (the tooltip has it whole).
 			expect(c.line.length).toBeLessThanOrEqual(28);
 		}
-		for (let i = 1; i < CHANGES.length; i++) expect(compareVersions(CHANGES[i - 1].version, CHANGES[i].version)).toBeGreaterThanOrEqual(0);
+		for (let i = 1; i < CHANGES.length; i++) {
+			expect(compareVersions(CHANGES[i - 1].version, CHANGES[i].version)).toBeGreaterThanOrEqual(0);
+			expect(Date.parse(CHANGES[i - 1].at)).toBeGreaterThanOrEqual(Date.parse(CHANGES[i].at));
+		}
 	});
 });
