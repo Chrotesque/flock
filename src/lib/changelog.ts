@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-10-26T21:05:00+01:00', version: '0.19.2', line: 'Added: Dashboard > Search' },
 	{ at: '2026-10-25T00:34:44+02:00', version: '0.19.1', line: 'Changed: Ratio View > Titles' },
 	{ at: '2026-10-25T00:25:15+02:00', version: '0.19.0', line: 'Added: Log > Update Tab' },
 	{ at: '2026-10-25T00:15:47+02:00', version: '0.18.10', line: 'Added: Update > What Changed' },

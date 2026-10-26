@@ -45,7 +45,9 @@
 
 	function onKey(event: KeyboardEvent) {
 		if (document.fullscreenElement || Date.now() - leftFullscreen < 500) return;
-		// A dialog over it (the rename) takes Escape for itself.
+		// A dialog over it (the rename) takes Escape for itself, as does a
+		// field inside that used it already (the title search).
+		if (event.defaultPrevented) return;
 		if (event.key === 'Escape' && dashboard.open && !document.querySelector('[aria-modal="true"]')) {
 			dashboard.close();
 			document.querySelector<HTMLElement>('[aria-controls="dashboard"]')?.focus();

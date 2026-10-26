@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { base } from '$app/paths';
 	import PlatformIcon from './PlatformIcon.svelte';
 	import DashFilter from './DashFilter.svelte';
@@ -73,6 +73,7 @@
 	} from '$lib/repo';
 	import { UPLOADS_A_DAY, quotaToday, refreshDue, stopToday, stopWords, type QuotaRow } from '$lib/youtubequota';
 	import { formatBytes, formatDuration, shortCount } from '$lib/format';
+	import { matchesTitle, searchWords, titleParts } from '$lib/titlesearch';
 	import { KIND_LABELS } from '$lib/videokind';
 	import { TREND, changeWords } from '$lib/trend';
 	import { reelFacts, youtubeFacts, type FactGroup } from '$lib/videofacts';
@@ -488,8 +489,47 @@
 		) as Record<StatPlatform, Usual>;
 	});
 
+	/* ---- the title search beside Total (titlesearch.ts) ---- */
+
+	// Not kept: it narrows the list for a look, and goes with the overlay.
+	let titleQuery = $state('');
+	let searchOpen = $state(false);
+	let searchInput = $state<HTMLInputElement | null>(null);
+	const words = $derived(searchWords(titleQuery));
+	// Only the list and its totals follow it: the usual, the peers and the
+	// periods stay those of the filter, so a search never moves a verdict.
+	const searched = $derived(words.length === 0 ? inViewList : inViewList.filter((r) => matchesTitle(r.title, words)));
+
+	async function openSearch() {
+		searchOpen = true;
+		await tick();
+		searchInput?.focus();
+	}
+
+	function clearSearch() {
+		titleQuery = '';
+		searchInput?.focus();
+	}
+
+	// Escape clears and closes it, and is not the overlay's (DashboardOverlay
+	// leaves an Escape taken here alone); the next one closes the Dashboard.
+	function onSearchKey(event: KeyboardEvent) {
+		if (event.key !== 'Escape') return;
+		event.preventDefault();
+		event.stopPropagation();
+		titleQuery = '';
+		searchOpen = false;
+	}
+
+	function onSearchBlur() {
+		if (!titleQuery.trim()) {
+			titleQuery = '';
+			searchOpen = false;
+		}
+	}
+
 	const rows = $derived.by(() => {
-		const list: Row[] = inViewList.map((release) => {
+		const list: Row[] = searched.map((release) => {
 			const posts = view.platforms.map((p) => release.posts[p]).filter((p): p is Post => Boolean(p));
 			const peersOf = (post: Post) => groups.get(`${post.platform}:${release.kind}`) ?? [];
 			const judgements = posts.map((post) => judge(post, peersOf(post), now));
@@ -558,6 +598,8 @@
 	// The list's count, without the videos shown only while editing.
 	const editOnly = $derived(rows.filter((row) => onlyWhileEditing(row.release)).length);
 	const counted = $derived(rows.length - editOnly);
+	// What the list would count without the search: "3 of 58 videos".
+	const unsearched = $derived(words.length === 0 ? counted : inViewList.filter((r) => !onlyWhileEditing(r)).length);
 	const campaignCount = $derived(
 		rows.filter((row) => campaigns.has(row.release.key) && !onlyWhileEditing(row.release)).length
 	);
@@ -1349,12 +1391,47 @@
 	{/if}
 {/snippet}
 
+<!-- A magnifier beside Total (and Your usual): pressed, a field for a word or
+     two of a title; open while it holds any. -->
+{#snippet titleSearch()}
+	{#if searchOpen || titleQuery}
+		<span class="tsearch">
+			<svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true">
+				<circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.6" />
+				<path d="m10.6 10.6 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+			</svg>
+			<input
+				bind:this={searchInput}
+				bind:value={titleQuery}
+				type="search"
+				placeholder="Search the titles…"
+				aria-label="Search the titles"
+				spellcheck="false"
+				autocomplete="off"
+				onkeydown={onSearchKey}
+				onblur={onSearchBlur}
+			/>
+			{#if titleQuery}
+				<button class="tclear" onclick={clearSearch} aria-label="Clear the search" title="Clear the search">×</button>
+			{/if}
+		</span>
+	{:else}
+		<button class="tsearchbtn" onclick={openSearch} title="Search the titles" aria-label="Search the titles">
+			<svg viewBox="0 0 16 16" width="13" height="13" fill="none" aria-hidden="true">
+				<circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.6" />
+				<path d="m10.6 10.6 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+			</svg>
+		</button>
+	{/if}
+{/snippet}
+
 {#snippet totalCell(col: ColumnId)}
 	{#if col === 'video'}
 		<span class="vid {cellOf(col)}">
-			<span class="vtitle">Total</span>
+			<span class="vhead"><span class="vtitle">Total</span>{@render titleSearch()}</span>
 			<span class="vmeta"
-				>{counted} {counted === 1 ? 'video' : 'videos'}{#if editOnly}&nbsp;· {editOnly} hidden{/if}</span
+				>{#if words.length > 0}{counted} of {unsearched}{:else}{counted}{/if}
+				{unsearched === 1 ? 'video' : 'videos'}{#if editOnly}&nbsp;· {editOnly} hidden{/if}</span
 			>
 		</span>
 	{:else if col === 'jestr'}
@@ -1408,7 +1485,10 @@
 		{@const visibility = visibilityOf(r, view.platforms)}
 		{@const note = renameNote(r)}
 		<span class="vid {cellOf(col)}">
-			<span class="vtitle">{r.title}</span>
+			<span class="vtitle"
+				>{#if words.length > 0}{#each titleParts(r.title, words) as part, i (i)}{#if part.hit}<mark>{part.text}</mark
+						>{:else}{part.text}{/if}{/each}{:else}{r.title}{/if}</span
+			>
 			<span class="vmeta">
 				{#if note.waiting.length > 0}
 					<span
@@ -1567,8 +1647,11 @@
 		<span class={cellOf(col)}></span>
 	{:else if col === 'video'}
 		<span class="vid {cellOf(col)}">
-			<span class="vtitle">Your usual</span>
-			<span class="vmeta">middle of {MIN_VIEWS}+ views</span>
+			<span class="vhead"><span class="vtitle">Your usual</span>{@render titleSearch()}</span>
+			<span class="vmeta"
+				>{#if words.length > 0}{counted} of {unsearched} {unsearched === 1 ? 'video' : 'videos'}<span class="dot">·</span
+					>{/if}middle of {MIN_VIEWS}+ views</span
+			>
 		</span>
 	{:else if isRatioCol(col)}
 		<span class="pcells {cellOf(col)}" style:grid-column="span {spanOf(col)}">
@@ -2073,7 +2156,9 @@
 					? 'No videos read yet. They appear once the worker has read the channel.'
 					: spanned.length === 0
 						? `Nothing went out in the last ${filter.days} days. Choose a longer timeframe in the filter.`
-						: 'Nothing to show with these choices.'}
+						: words.length > 0 && inViewList.length > 0
+							? `No title in view holds “${titleQuery.trim()}”.`
+							: 'Nothing to show with these choices.'}
 			</p>
 		{:else if !loaded}
 			<p class="empty">Reading…</p>
@@ -3242,6 +3327,99 @@
 		white-space: nowrap;
 		font-size: 13px;
 		font-weight: 570;
+	}
+
+	/* Total's line, with the title search beside it. */
+	.vhead {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
+
+	.vhead .vtitle {
+		flex: none;
+	}
+
+	.tsearchbtn {
+		display: grid;
+		place-items: center;
+		width: 22px;
+		height: 22px;
+		border-radius: 6px;
+		color: var(--text-faint);
+		transition: color 0.15s, background 0.15s;
+	}
+
+	.tsearchbtn:hover {
+		color: var(--text);
+		background: var(--surface-3);
+	}
+
+	.tsearch {
+		position: relative;
+		display: flex;
+		align-items: center;
+		flex: 0 1 260px;
+		min-width: 0;
+		color: var(--text-faint);
+	}
+
+	.tsearch svg {
+		position: absolute;
+		left: 8px;
+		pointer-events: none;
+	}
+
+	.tsearch input {
+		width: 100%;
+		height: 24px;
+		padding: 0 24px 0 25px;
+		font-size: 12px;
+		font-weight: 450;
+		color: var(--text);
+		background: var(--bg-elev);
+		border: 1px solid var(--border-strong);
+		border-radius: 6px;
+	}
+
+	.tsearch input:focus {
+		outline: none;
+		border-color: var(--pink);
+		box-shadow: 0 0 0 3px rgba(255, 77, 158, 0.14);
+	}
+
+	.tsearch input::placeholder {
+		color: var(--text-faint);
+	}
+
+	.tsearch input::-webkit-search-cancel-button {
+		display: none;
+	}
+
+	.tclear {
+		position: absolute;
+		right: 3px;
+		width: 18px;
+		height: 18px;
+		border-radius: 4px;
+		display: grid;
+		place-items: center;
+		font-size: 14px;
+		line-height: 1;
+		color: var(--text-faint);
+	}
+
+	.tclear:hover {
+		color: var(--text);
+		background: var(--surface-3);
+	}
+
+	/* What the search matched in a title. */
+	.vtitle mark {
+		color: inherit;
+		background: rgba(255, 77, 158, 0.28);
+		border-radius: 2px;
 	}
 
 	.vmeta {
