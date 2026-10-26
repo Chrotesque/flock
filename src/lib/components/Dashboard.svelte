@@ -1392,7 +1392,8 @@
 {/snippet}
 
 <!-- A magnifier beside Total (and Your usual): pressed, a field for a word or
-     two of a title; open while it holds any. -->
+     two of a title; open while it holds any. Closed, the button takes the
+     field's room, so a press anywhere there opens it, and a hover outlines it. -->
 {#snippet titleSearch()}
 	{#if searchOpen || titleQuery}
 		<span class="tsearch">
@@ -1417,10 +1418,11 @@
 		</span>
 	{:else}
 		<button class="tsearchbtn" onclick={openSearch} title="Search the titles" aria-label="Search the titles">
-			<svg viewBox="0 0 16 16" width="13" height="13" fill="none" aria-hidden="true">
+			<svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true">
 				<circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.6" />
 				<path d="m10.6 10.6 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
 			</svg>
+			<span class="tsearchhint" aria-hidden="true">Search the titles…</span>
 		</button>
 	{/if}
 {/snippet}
@@ -3341,19 +3343,49 @@
 		flex: none;
 	}
 
+	/* The field's size and its icon's place, so opening it moves nothing. */
 	.tsearchbtn {
-		display: grid;
-		place-items: center;
-		width: 22px;
-		height: 22px;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex: 0 1 260px;
+		min-width: 0;
+		height: 24px;
+		padding: 0 7px;
+		border: 1px solid transparent;
 		border-radius: 6px;
+		font-size: 12px;
+		font-weight: 450;
 		color: var(--text-faint);
-		transition: color 0.15s, background 0.15s;
+		transition: color 0.15s, background 0.15s, border-color 0.15s;
 	}
 
-	.tsearchbtn:hover {
+	.tsearchbtn svg {
+		flex: none;
+	}
+
+	.tsearchbtn:hover,
+	.tsearchbtn:focus-visible {
+		background: var(--bg-elev);
+		border-color: var(--border-strong);
+	}
+
+	.tsearchbtn:hover svg,
+	.tsearchbtn:focus-visible svg {
 		color: var(--text);
-		background: var(--surface-3);
+	}
+
+	.tsearchhint {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		opacity: 0;
+		transition: opacity 0.15s;
+	}
+
+	.tsearchbtn:hover .tsearchhint,
+	.tsearchbtn:focus-visible .tsearchhint {
+		opacity: 1;
 	}
 
 	.tsearch {
