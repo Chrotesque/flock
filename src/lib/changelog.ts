@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-10-30T19:06:15+01:00', version: '0.19.5', line: 'Added: Jestr > November' },
 	{ at: '2026-10-30T01:16:28+01:00', version: '0.19.4', line: 'Added: Schedule > Legend' },
 	{ at: '2026-10-26T21:13:04+01:00', version: '0.19.3', line: 'Changed: Dashboard > Search' },
 	{ at: '2026-10-26T21:05:00+01:00', version: '0.19.2', line: 'Added: Dashboard > Search' },
