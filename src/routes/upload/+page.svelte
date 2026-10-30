@@ -45,7 +45,7 @@
 	import { uploadedName } from '$lib/projects';
 	import { videoTodo } from '$lib/stores/videotodo.svelte';
 	import { takenHours } from '$lib/stores/takenhours.svelte';
-	import { hourKey, takenWhy } from '$lib/takenhours';
+	import { hourKey, takenLines } from '$lib/takenhours';
 	import { onDestroy } from 'svelte';
 	import { appUpdate } from '$lib/stores/appupdate.svelte';
 
@@ -321,7 +321,7 @@
 			const posts = takenHours
 				.for(brands.currentId, draft.ownJobs)
 				.get(hourKey(isoDate(at), at.getHours()));
-			if (posts) out.push(`Put in a taken hour with Override. ${takenWhy(posts)}`);
+			if (posts) out.push(`Put in a taken hour with Override, beside ${takenLines(posts).join('; ')}.`);
 		}
 		return out;
 	}

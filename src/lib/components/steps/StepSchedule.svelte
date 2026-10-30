@@ -88,6 +88,7 @@
 		offscreen={jumpTo_}
 		toolbar={tip}
 		start={override}
+		center={legend}
 	/>
 
 	{#if offWeek.length > 0}
@@ -224,11 +225,15 @@
 	</span>
 {/snippet}
 
+{#snippet legend()}
+	<span class="legend" title="Hours another video of {brands.current?.name ?? 'this brand'} goes out in">
+		<span class="swatch" class:overridden={draft.overrideTaken} aria-hidden="true"></span>
+		Already occupied, use Override to re-use.
+	</span>
+{/snippet}
+
 {#snippet tip()}
-	<p class="tip">
-		Drag an icon to another day or hour, then pick the minutes. Hover one to read it. Striped hours are
-		taken by another video of {brands.current?.name ?? 'this brand'}.
-	</p>
+	<p class="tip">Drag an icon to another day or hour, then pick the minutes. Hover one to read it.</p>
 	<DaysSelect {days} />
 {/snippet}
 
@@ -246,6 +251,32 @@
 		margin: 0;
 		font-size: 11.5px;
 		color: var(--text-faint);
+	}
+
+	/* The taken hours' key, between Override and the tip. */
+	.legend {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		font-size: 11.5px;
+		color: var(--text-dim);
+		white-space: nowrap;
+	}
+
+	/* The grid's own stripes (WeekCalendar's `.cell.blocked`), at half
+	   strength while Override is ticked as the hours then are. */
+	.swatch {
+		flex: none;
+		width: 26px;
+		height: 14px;
+		border-radius: 3px;
+		border: 1px solid var(--border);
+		background-color: var(--surface);
+		background-image: repeating-linear-gradient(-45deg, #431a33 0 5px, transparent 5px 10px);
+	}
+
+	.swatch.overridden {
+		background-image: repeating-linear-gradient(-45deg, rgba(67, 26, 51, 0.5) 0 5px, transparent 5px 10px);
 	}
 
 	/* Sized by the grid's `--marker`, so four fit beside each other on a day. */

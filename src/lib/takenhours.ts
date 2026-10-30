@@ -1,4 +1,5 @@
 import { hourOf, isoDate, makeTime } from './format';
+import { productLabel } from './product';
 import type { PlatformId } from './types';
 
 /**
@@ -20,6 +21,8 @@ export interface SlotPost {
 	description: string;
 	/** The job's brand id. */
 	brand: string;
+	/** The job's product name as stored; '' for none. */
+	product: string;
 }
 
 /** The grid's key for an hour: the local date and the hour of the day. */
@@ -59,34 +62,43 @@ export function takenHours(
 	return taken;
 }
 
-/** What a video is called here: a title, else its caption's first line, cut short. */
+/** What a video is called here: a title, else its caption's first line, cut short; '' for neither. */
 function nameOf(posts: SlotPost[]): string {
 	const text =
 		posts.find((post) => post.title.trim())?.title ??
 		posts.map((post) => post.description.split('\n')[0]).find((line) => line.trim()) ??
 		'';
 	const name = text.trim();
-	if (!name) return 'a video';
-	return `“${name.length > 40 ? `${name.slice(0, 39).trimEnd()}…` : name}”`;
+	return name.length > 40 ? `${name.slice(0, 39).trimEnd()}…` : name;
 }
 
-/** Why an hour is taken, in words: each video in it with the time it goes out. */
-export function takenWhy(posts: SlotPost[]): string {
+/**
+ * The videos an hour is taken by, one line each in the order they go out:
+ * "Product – Caption… – 18:30" (the user's wording, 30 Oct 2026). The
+ * product is shown as the Calendar shows it; a part a video lacks is left
+ * out.
+ */
+export function takenLines(posts: SlotPost[]): string[] {
 	const byJob = new Map<string, SlotPost[]>();
 	for (const post of posts) {
 		const list = byJob.get(post.job);
 		if (list) list.push(post);
 		else byJob.set(post.job, [post]);
 	}
-	const videos = [...byJob.values()]
+	return [...byJob.values()]
 		.map((list) => ({ list, at: Math.min(...list.map((post) => Date.parse(post.scheduled_at))) }))
 		.sort((a, b) => a.at - b.at)
-		.map(({ list, at }, index) => {
+		.map(({ list, at }) => {
 			const when = new Date(at);
-			const time = makeTime(when.getHours(), when.getMinutes());
-			return index === 0 ? `${nameOf(list)} goes out at ${time}` : `${nameOf(list)} at ${time}`;
+			const product = productLabel(list.find((post) => post.product?.trim())?.product ?? '');
+			const parts = [product, nameOf(list)].filter(Boolean);
+			return [...(parts.length ? parts : ['A video']), makeTime(when.getHours(), when.getMinutes())].join(' – ');
 		});
-	return `This hour is taken: ${videos.join(', ')}.`;
+}
+
+/** A taken hour's label: a line per video in it. */
+export function takenWhy(posts: SlotPost[]): string {
+	return takenLines(posts).join('\n');
 }
 
 /** A platform's slot in the upload being made; an immediate one is now. */

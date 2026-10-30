@@ -357,7 +357,8 @@
 		notice = rect
 			? {
 					text,
-					x: Math.min(window.innerWidth - 140, Math.max(140, rect.left + rect.width / 2)),
+					// Half the note's widest (340px), so it never leaves the window.
+					x: Math.min(window.innerWidth - 180, Math.max(180, rect.left + rect.width / 2)),
 					y: rect.top < 90 ? rect.bottom + 8 : rect.top - 8,
 					below: rect.top < 90
 				}
@@ -1645,7 +1646,7 @@
 	.notice {
 		position: fixed;
 		z-index: 1001;
-		max-width: 260px;
+		max-width: 340px;
 		transform: translate(-50%, -100%);
 		padding: 6px 10px;
 		border-radius: 8px;
@@ -1655,6 +1656,7 @@
 		font-size: 11.5px;
 		line-height: 1.4;
 		color: var(--warn);
+		white-space: pre-line;
 		pointer-events: none;
 		animation: quartersin 0.12s ease;
 	}
@@ -1729,10 +1731,12 @@
 		color: var(--warn);
 	}
 
+	/* A taken hour's reason is a line per video in it. */
 	.landwhy {
 		margin-top: 2px;
 		font-size: 11px;
 		color: var(--warn);
+		white-space: pre-line;
 	}
 
 	/* Above the card's hover tooltip (40), which can open over it. */

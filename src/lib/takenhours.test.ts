@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clashing, hourKey, takenHours, takenWhy, type SlotPost } from './takenhours';
+import { clashing, hourKey, takenHours, takenLines, takenWhy, type SlotPost } from './takenhours';
 
 // Local times throughout, so the tests hold in any time zone.
 const at = (day: number, hour: number, minute = 0) => new Date(2026, 9, day, hour, minute).toISOString();
@@ -14,6 +14,7 @@ const post = (over: Partial<SlotPost> = {}): SlotPost => ({
 	title: 'LANTERN FIELD',
 	description: '',
 	brand: 'b1',
+	product: '',
 	...over
 });
 
@@ -50,21 +51,26 @@ describe('takenHours', () => {
 });
 
 describe('takenWhy', () => {
-	it('names the video and when it goes out', () => {
-		expect(takenWhy([post(), post({ id: 't2', platform: 'instagram', scheduled_at: at(23, 18, 45) })])).toBe(
-			'This hour is taken: “LANTERN FIELD” goes out at 18:30.'
-		);
+	it('names the product, the video and when it goes out', () => {
+		const posts = [
+			post({ product: 'OWL TOWER: NIGHT SHIFT' }),
+			post({ id: 't2', platform: 'instagram', scheduled_at: at(23, 18, 45), product: 'OWL TOWER: NIGHT SHIFT' })
+		];
+		expect(takenWhy(posts)).toBe('Owl Tower – LANTERN FIELD – 18:30');
 	});
 
-	it('lists several videos by time, a caption standing in for a missing title', () => {
+	it('gives each video a line by time, a caption standing in for a missing title', () => {
 		const posts = [
 			post({ job: 'j2', scheduled_at: at(23, 18, 50), title: '', description: 'Sponsored – a long first line of a caption here\nmore' }),
 			post()
 		];
-		expect(takenWhy(posts)).toBe(
-			'This hour is taken: “LANTERN FIELD” goes out at 18:30, “Sponsored – a long first line of a capt…” at 18:50.'
-		);
-		expect(takenWhy([post({ title: '', description: '' })])).toBe('This hour is taken: a video goes out at 18:30.');
+		expect(takenWhy(posts)).toBe('LANTERN FIELD – 18:30\nSponsored – a long first line of a capt… – 18:50');
+		expect(takenLines(posts)).toHaveLength(2);
+	});
+
+	it('leaves out what a video lacks', () => {
+		expect(takenWhy([post({ title: '', product: 'Paper Moon' })])).toBe('Paper Moon – 18:30');
+		expect(takenWhy([post({ title: '', description: '' })])).toBe('A video – 18:30');
 	});
 });
 

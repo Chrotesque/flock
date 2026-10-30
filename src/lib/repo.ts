@@ -1220,13 +1220,17 @@ export async function listTargets(jobId?: string): Promise<UploadTarget[]> {
  * out here already.
  */
 export async function loadTakenPosts(since: Date): Promise<SlotPost[]> {
-	type Row = Omit<SlotPost, 'brand'> & { expand?: { job?: { brand?: string } } };
+	type Row = Omit<SlotPost, 'brand' | 'product'> & { expand?: { job?: { brand?: string; product?: string } } };
 	const rows = await pb.collection('upload_targets').getFullList<Row>({
 		filter: pb.filter("scheduled_at >= {:since} && status != 'cancelled'", { since }),
 		expand: 'job',
-		fields: 'id,job,platform,status,scheduled_at,title,description,expand.job.brand'
+		fields: 'id,job,platform,status,scheduled_at,title,description,expand.job.brand,expand.job.product'
 	});
-	return rows.map(({ expand, ...row }) => ({ ...row, brand: expand?.job?.brand ?? '' }));
+	return rows.map(({ expand, ...row }) => ({
+		...row,
+		brand: expand?.job?.brand ?? '',
+		product: expand?.job?.product ?? ''
+	}));
 }
 
 /* ------------------------------------------------------------------ */
