@@ -737,10 +737,11 @@ When each platform was last read, and today's YouTube quota, sit behind the
 
 **On a phone** (a screen up to 640 pixels wide) flock is the Dashboard alone:
 the filter is the funnel, the brand one button, and the list keeps the date
-and the totals, with the product and title on a line above. Tap a total for
-each platform's part. Once you scroll, the column names stick to the top as
-icons. Ratio View, editing, the periods, Jestr, the curve and *vs usual* are
-left out there.
+and the totals, with the product and title on a line above and every other
+video a shade lighter. Tap a total for each platform's part. Each column has
+an icon for its name (an eye for views, a thumb for likes), which stays at the
+top as you scroll. Ratio View, editing, the periods, Jestr, the curve and
+*vs usual* are left out there.
 
 **Calendar** shows every release on a grid of all 24 hours, starting two days
 before today: 14 days, or 7 to 14 from *Show N days*. Each upload is one small

@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-10-31T17:27:06+01:00', version: '0.20.1', line: 'Changed: Phone > Icons, Rows' },
 	{ at: '2026-10-31T17:20:00+01:00', version: '0.20.0', line: 'Added: Phone Layout' },
 	{ at: '2026-10-31T15:41:03+01:00', version: '0.19.6', line: 'Fixed: Instagram > Failed' },
 	{ at: '2026-10-30T19:06:15+01:00', version: '0.19.5', line: 'Added: Jestr > November' },

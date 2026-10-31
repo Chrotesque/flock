@@ -669,7 +669,7 @@
 		new Map(dashData.targets.filter((t) => t.product?.trim()).map((t) => [t.job, productLabel(t.product ?? '')]))
 	);
 
-	/** The header's marks once it sticks to the top on a phone: in place of the words. */
+	/** The header's marks on a phone, in place of the words. */
 	const HEAD_ICONS: Partial<Record<ColumnId | 'date', string>> = {
 		date: 'M3 5.2A1.7 1.7 0 0 1 4.7 3.5h6.6A1.7 1.7 0 0 1 13 5.2v6.6a1.7 1.7 0 0 1-1.7 1.7H4.7A1.7 1.7 0 0 1 3 11.8ZM3 6.8h10M5.8 2.3v2.2M10.2 2.3v2.2',
 		followers: 'M6.3 7.6a2.4 2.4 0 1 0 0-4.8 2.4 2.4 0 0 0 0 4.8ZM1.8 13.4c.4-2.4 2.2-3.8 4.5-3.8s4.1 1.4 4.5 3.8M12.6 5.4v4M10.6 7.4h4',
@@ -681,7 +681,7 @@
 	};
 
 	// The list's header sticks to the top on a phone once scrolled past, and
-	// then says what each column is with a mark rather than a word.
+	// then draws a line under itself.
 	let listEl = $state<HTMLElement | null>(null);
 	let stuck = $state(false);
 
@@ -1544,8 +1544,9 @@
 		style:grid-column={span > 1 ? `span ${span}` : undefined}
 		onclick={() => sortBy(key)}
 		title={about ? `${about}\n\n${sortTitle(key, label)}` : sortTitle(key, label)}
+		aria-label={icon ? label : undefined}
 	>
-		<!-- On a phone, once the header sticks to the top, the mark stands in for the word. -->
+		<!-- On a phone the mark stands in for the word. -->
 		<span class="hname">{label}</span>{#if icon}<svg class="hicon" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"
 				><path d={icon} /></svg
 			>{/if}{#if sort === key}<span class="arrow" aria-hidden="true">{reversed ? '↑' : '↓'}</span>{/if}
@@ -3528,7 +3529,7 @@
 
 	/* A group's colour (a local scope's, see devtest.ts) washes its rows. */
 	.item.tinted > .line > .row {
-		background: color-mix(in srgb, var(--tint) 13%, transparent);
+		background: color-mix(in srgb, var(--tint) 13%, var(--rowbg, transparent));
 	}
 
 	.item.tinted > .line > button.row:hover,
@@ -4695,7 +4696,7 @@
 			font-weight: 500;
 		}
 		/* A sum is a tap target: at least a thumb's width, its column no
-		   narrower — and room for the header's word over it. */
+		   narrower. */
 		.row > .num {
 			min-width: 40px;
 		}
@@ -4710,10 +4711,9 @@
 			font-weight: 650;
 		}
 
-		/* The header: words while it sits above the list, marks once it sticks to
-		   the top. Neither sets a column's width — the numbers do — so nothing
-		   moves when it sticks: a word wider than its column is centred over it
-		   and runs out into the gaps either side. */
+		/* The header: a mark over each column (an eye for views, a thumb for
+		   likes…), the word in its tooltip. It sticks to the top once
+		   scrolled past. The marks set no column's width — the numbers do. */
 		.row.cols {
 			position: sticky;
 			top: 0;
@@ -4732,10 +4732,7 @@
 			justify-content: center;
 			width: 0;
 			min-width: 100%;
-			font-size: 9.5px;
-			font-weight: 550;
-			letter-spacing: 0;
-			text-transform: none;
+			font-size: 11px;
 		}
 		.row.cols > .colhead.left {
 			justify-content: flex-start;
@@ -4751,14 +4748,25 @@
 			stroke-linecap: round;
 			stroke-linejoin: round;
 		}
-		.stuck .row.cols .hname {
+		.row.cols .hname {
 			display: none;
 		}
-		.stuck .row.cols .hicon {
+		.row.cols .hicon {
 			display: block;
+			flex: none;
 		}
-		.stuck .row.cols .arrow {
+		.row.cols .arrow {
 			margin-left: 1px;
+		}
+
+		/* Every other video a shade lighter, to keep the two lines of one
+		   apart from the next (hovered or open, a row's own background still
+		   wins). */
+		.item:nth-child(odd of .item) {
+			--rowbg: color-mix(in srgb, var(--surface) 97%, #fff);
+		}
+		.row {
+			background: var(--rowbg, none);
 		}
 
 		.details {
