@@ -106,11 +106,11 @@ describe('the grid', () => {
 
 	it('leaves a phone the date and the counts, whatever the layout', () => {
 		const shown = shownColumns(moveBefore(DEFAULT_COLUMNS, 'usual', 'followers'), { jestr: true });
-		expect(phoneTemplate(shown)).toBe('minmax(0, 1fr) max-content max-content max-content max-content max-content max-content');
-		expect(phoneTemplate(shownColumns(setShown(DEFAULT_COLUMNS, 'skip', false), { jestr: false }))).toBe(
-			'minmax(0, 1fr) max-content max-content max-content max-content max-content'
+		expect(phoneTemplate(shown)).toBe('minmax(0, 1fr) max-content max-content max-content max-content');
+		expect(phoneTemplate(shownColumns(setShown(DEFAULT_COLUMNS, 'likes', false), { jestr: false }))).toBe(
+			'minmax(0, 1fr) max-content max-content max-content'
 		);
-		expect(['thumb', 'jestr', 'curve', 'usual'].every((id) => phoneOff(id as ColumnId))).toBe(true);
+		expect(['thumb', 'jestr', 'curve', 'usual', 'skip', 'engaged'].every((id) => phoneOff(id as ColumnId))).toBe(true);
 		expect(phoneOff('video')).toBe(false);
 	});
 

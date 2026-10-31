@@ -190,10 +190,10 @@ export function columnWords(columns: DashColumn[]): string {
 
 /**
  * What a phone's list leaves out, whatever the layout: the thumbnail goes up
- * onto the title's own line above the numbers, and Jestr, the curve and vs
- * usual do not fit beside them.
+ * onto the title's own line above the numbers, and Jestr, the curve, vs
+ * usual, Skipped and Engaged do not fit beside them.
  */
-const PHONE_OFF: ColumnId[] = ['thumb', 'jestr', 'curve', 'usual'];
+const PHONE_OFF: ColumnId[] = ['thumb', 'jestr', 'curve', 'usual', 'skip', 'engaged'];
 
 export function phoneOff(id: ColumnId): boolean {
 	return PHONE_OFF.includes(id);

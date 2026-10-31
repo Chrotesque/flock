@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-10-31T18:24:32+01:00', version: '0.20.4', line: 'Changed: Phone > Lines' },
 	{ at: '2026-10-31T18:16:27+01:00', version: '0.20.3', line: 'Changed: Phone > Product' },
 	{ at: '2026-10-31T18:13:54+01:00', version: '0.20.2', line: 'Changed: Phone > Columns' },
 	{ at: '2026-10-31T17:27:06+01:00', version: '0.20.1', line: 'Changed: Phone > Icons, Rows' },

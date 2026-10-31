@@ -2297,10 +2297,8 @@
 						<span
 							class="mdate cell"
 							title="{new Date(r.at).toLocaleString()} · {span(now - r.at)} ago{r.group ? ` · ${r.group}` : ''}"
-							><span class="mdtext"
-								>{released(r.at)}{#if visibility !== 'public'}<span class="priv {visibility}"> · {visibility}</span
-									>{/if}{#if r.hidden}<span class="hid"> · hidden</span>{/if}</span
-							></span
+							>{released(r.at)}{#if visibility !== 'public'}<span class="priv {visibility}"> · {visibility}</span
+								>{/if}{#if r.hidden}<span class="hid"> · hidden</span>{/if}</span
 						>
 						{#each columns as col (col)}{@render (ratioView ? ratioCell : rowCell)(col, row)}{/each}
 					</button>
@@ -4629,12 +4627,13 @@
 			margin-inline: -10px;
 			padding: 7px 10px;
 			row-gap: 4px;
-			/* Holds the column stripes (below): over the row's own
-			   background, under its words, and no taller than the row. */
+			/* Holds the lines between columns (below): under the row's
+			   words, and no taller than the row. */
 			isolation: isolate;
 			overflow: clip;
 		}
 		.row > .phoneoff,
+		.row.total > .phoneoff,
 		button.row > .c-video,
 		.row.cols > .c-video,
 		.parts,
@@ -4646,14 +4645,10 @@
 		.mdate {
 			display: block;
 			min-width: 0;
-			font-size: 11.5px;
-			color: var(--text-faint);
-		}
-		/* Cut inside the cell, so the cell itself lets its column's stripe out. */
-		.mdtext {
-			display: block;
 			overflow: hidden;
 			text-overflow: ellipsis;
+			font-size: 11.5px;
+			color: var(--text-faint);
 		}
 		.row > .mline,
 		.row.total > .c-video {
@@ -4726,29 +4721,29 @@
 			justify-content: center;
 		}
 
-		/* Every other column a shade lighter (the first, the third…), from the
-		   header down through every row, so a number is easily told to its
-		   column. Drawn in each row, behind the cell and half the gaps either
-		   side; the first and last reach the row's edges. */
+		/* A line between two columns, so a number is easily told to its
+		   column: down the whole header, and in a row down its numbers only,
+		   never through the name above them. Drawn by the column to its
+		   right, in the middle of the gap. */
 		.row > :not(.mline, .c-video, .phoneoff) {
 			position: relative;
 		}
-		.row > :nth-child(odd of :not(.mline, .c-video, .phoneoff))::before {
+		.row > :not(.mline, .c-video, .phoneoff)::before {
 			content: '';
 			position: absolute;
 			z-index: -1;
-			top: -100px;
+			top: -2px;
 			bottom: -100px;
 			left: -3px;
-			right: -3px;
-			background: rgb(255 255 255 / 3%);
+			width: 1px;
+			background: var(--border);
 			pointer-events: none;
 		}
-		.row > :nth-child(1 of :not(.mline, .c-video, .phoneoff))::before {
-			left: -10px;
+		.row.cols > :not(.mline, .c-video, .phoneoff)::before {
+			top: -100px;
 		}
-		.row > :nth-last-child(1 of :not(.mline, .c-video, .phoneoff))::before {
-			right: -10px;
+		.row > :nth-child(1 of :not(.mline, .c-video, .phoneoff))::before {
+			content: none;
 		}
 		.cell {
 			font-size: 12px;
@@ -4789,6 +4784,7 @@
 		}
 		.row.cols > .mdate {
 			display: flex;
+			overflow: visible;
 		}
 		.hicon {
 			fill: none;
