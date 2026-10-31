@@ -97,7 +97,20 @@
 	<svg class="funnel" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
 		<path d="M4 5h16l-6 7.5V19l-4-2v-4.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
 	</svg>
-	<button class="bar" aria-expanded={open} aria-controls="dashboard-filter" onclick={() => (open = !open)}>
+	<button
+		class="bar"
+		aria-expanded={open}
+		aria-controls="dashboard-filter"
+		aria-label="Filter: {combined ? 'Combined' : PLATFORMS[filter.platforms[0]].label}, last {filter.days} days, {kindWords}, {visibilityWords}"
+		onclick={() => (open = !open)}
+	>
+		<!-- A phone's whole bar: the funnel, with a dot while anything differs from the default. -->
+		<span class="phonefunnel" aria-hidden="true">
+			<svg viewBox="0 0 24 24" width="17" height="17">
+				<path d="M4 5h16l-6 7.5V19l-4-2v-4.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+			</svg>
+			{#if changed}<i class="changed"></i>{/if}
+		</span>
 		<span
 			class="part platforms"
 			class:unused={overridden}
@@ -579,6 +592,53 @@
 		.bar .part:not(.platforms, .days),
 		.bar .sep:not(.keep) {
 			display: none;
+		}
+	}
+
+	.phonefunnel {
+		display: none;
+	}
+
+	/* A phone (stores/phone.svelte.ts): the bar is the funnel alone, the
+	   choices are in the panel it opens, across the screen. */
+	@media (max-width: 640px) {
+		.funnel,
+		.bar .part,
+		.bar .sep,
+		.bar .chev {
+			display: none;
+		}
+		.bar {
+			width: 34px;
+			height: 34px;
+			padding: 0;
+			justify-content: center;
+		}
+		.phonefunnel {
+			position: relative;
+			display: grid;
+			color: var(--text-dim);
+		}
+		.open .phonefunnel {
+			color: var(--pink-soft);
+		}
+		.changed {
+			position: absolute;
+			top: -3px;
+			right: -4px;
+			width: 7px;
+			height: 7px;
+			border-radius: 50%;
+			background: var(--pink);
+			box-shadow: 0 0 0 2px var(--surface);
+		}
+		.panel {
+			width: calc(100vw - 16px);
+			padding: 14px 14px 12px;
+		}
+		.timeframe {
+			flex-wrap: wrap;
+			gap: 8px;
 		}
 	}
 </style>

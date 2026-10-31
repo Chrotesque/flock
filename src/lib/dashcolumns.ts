@@ -186,6 +186,30 @@ export function columnWords(columns: DashColumn[]): string {
 	return `${shown.join(', ')}${hidden.length ? ` (hidden: ${hidden.join(', ')})` : ''}`;
 }
 
+/* ---- on a phone (stores/phone.svelte.ts) ---- */
+
+/**
+ * What a phone's list leaves out, whatever the layout: the thumbnail goes up
+ * onto the title's own line above the numbers, and Jestr, the curve and vs
+ * usual do not fit beside them.
+ */
+const PHONE_OFF: ColumnId[] = ['thumb', 'jestr', 'curve', 'usual'];
+
+export function phoneOff(id: ColumnId): boolean {
+	return PHONE_OFF.includes(id);
+}
+
+/**
+ * A phone's grid: the release date where the title stands elsewhere (the
+ * title has the line above), then each count as wide as its widest number.
+ */
+export function phoneTemplate(ids: ColumnId[]): string {
+	return ids
+		.filter((id) => !phoneOff(id))
+		.map((id) => (id === 'video' ? 'minmax(0, 1fr)' : 'max-content'))
+		.join(' ');
+}
+
 /* ---- Ratio View (ratioview.ts) ---- */
 
 /**

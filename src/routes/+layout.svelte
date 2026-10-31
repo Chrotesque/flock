@@ -25,6 +25,7 @@
 	import { CELEBRATE_MARK, CELEBRATE_PLACE, TODO_MARKS } from '$lib/todoicon';
 	import { wobble } from '$lib/wobble';
 	import { appUpdate } from '$lib/stores/appupdate.svelte';
+	import { phone } from '$lib/stores/phone.svelte';
 	import { changeLines } from '$lib/appupdate';
 	import { VERSION } from '$lib/version';
 
@@ -220,11 +221,19 @@
 		return path.startsWith(href);
 	}
 
-	/** The Dashboard link spreads it from its own height, like the To finish tile. */
+	/**
+	 * The Dashboard link spreads it from its own height, like the To finish
+	 * tile. On a phone it is the only link, and only opens: closed, the page
+	 * under it is one no phone layout was made for.
+	 */
 	function toggleDashboard(event: MouseEvent) {
+		todoPanel.close();
+		if (phone.current) {
+			dashboard.show();
+			return;
+		}
 		const link = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		const top = content?.getBoundingClientRect().top ?? 0;
-		todoPanel.close();
 		dashboard.toggle(link.top + link.height / 2 - top);
 	}
 
@@ -1479,6 +1488,38 @@
 		}
 		main {
 			padding: 22px 18px 50px;
+		}
+	}
+
+	/* A phone (stores/phone.svelte.ts, the same 640px): flock is the
+	   Dashboard. The bar holds the logo, as far from the left as from the
+	   top, and the Dashboard link at the right; nothing else. The shell is
+	   the screen's height, so the Dashboard over the content area scrolls
+	   inside it and its list's header can stick to its top. */
+	@media (max-width: 640px) {
+		.shell {
+			grid-template-rows: auto minmax(0, 1fr);
+			height: 100vh;
+			height: 100dvh;
+		}
+		aside {
+			position: static;
+			flex-wrap: nowrap;
+			justify-content: space-between;
+			padding: 12px;
+		}
+		nav:not(.utility, .local) > a,
+		.local,
+		.lower,
+		.utility,
+		.navlink .chev {
+			display: none;
+		}
+		nav {
+			margin-left: auto;
+		}
+		.navlink {
+			padding: 8px 12px;
 		}
 	}
 </style>

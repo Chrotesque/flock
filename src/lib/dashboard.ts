@@ -41,6 +41,8 @@ export interface DashTarget {
 	jobError: string;
 	/** The job's brand id. */
 	brand?: string;
+	/** The job's product name as stored (the game); '' for none. */
+	product?: string;
 	/** The `accounts.account_id` it goes out as; '' for the platform's only account. */
 	account?: string;
 	/** When the row last changed. */

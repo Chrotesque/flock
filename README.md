@@ -735,6 +735,13 @@ TikTok's numbers are read once its accounts are signed in with
 When each platform was last read, and today's YouTube quota, sit behind the
 ⓘ at the top right.
 
+**On a phone** (a screen up to 640 pixels wide) flock is the Dashboard alone:
+the filter is the funnel, the brand one button, and the list keeps the date
+and the totals, with the product and title on a line above. Tap a total for
+each platform's part. Once you scroll, the column names stick to the top as
+icons. Ratio View, editing, the periods, Jestr, the curve and *vs usual* are
+left out there.
+
 **Calendar** shows every release on a grid of all 24 hours, starting two days
 before today: 14 days, or 7 to 14 from *Show N days*. Each upload is one small
 box of its platforms' icons in its hour, past ones without a fill, and the

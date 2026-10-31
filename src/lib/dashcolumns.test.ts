@@ -11,9 +11,12 @@ import {
 	gridTemplate,
 	moveBefore,
 	moveBy,
+	phoneOff,
+	phoneTemplate,
 	readColumns,
 	setShown,
 	shownColumns,
+	type ColumnId,
 	type DashColumn
 } from './dashcolumns';
 
@@ -99,6 +102,16 @@ describe('the grid', () => {
 		expect(gridTemplate(shown, 'mid')).toBe('var(--thumbcol) minmax(0, 1fr) 84px 104px 132px 112px');
 		expect(columnsAt(shown, 'mid')).toEqual(['thumb', 'video', 'followers', 'views', 'curve', 'usual']);
 		expect(gridTemplate(shown, 'narrow')).toBe('var(--thumbcol) minmax(0, 1fr) 96px 76px');
+	});
+
+	it('leaves a phone the date and the counts, whatever the layout', () => {
+		const shown = shownColumns(moveBefore(DEFAULT_COLUMNS, 'usual', 'followers'), { jestr: true });
+		expect(phoneTemplate(shown)).toBe('minmax(0, 1fr) max-content max-content max-content max-content max-content max-content');
+		expect(phoneTemplate(shownColumns(setShown(DEFAULT_COLUMNS, 'skip', false), { jestr: false }))).toBe(
+			'minmax(0, 1fr) max-content max-content max-content max-content max-content'
+		);
+		expect(['thumb', 'jestr', 'curve', 'usual'].every((id) => phoneOff(id as ColumnId))).toBe(true);
+		expect(phoneOff('video')).toBe(false);
 	});
 
 	it('draws the Ratio View set whatever the layout, the thumbnail as the layout has it', () => {

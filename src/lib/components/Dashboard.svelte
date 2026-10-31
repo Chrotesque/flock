@@ -15,6 +15,8 @@
 	import { jestrCampaigns } from '$lib/stores/jestrcampaigns.svelte';
 	import { hiddenVideos } from '$lib/stores/hiddenvideos.svelte';
 	import { titleRequests } from '$lib/stores/titlerequests.svelte';
+	import { phone } from '$lib/stores/phone.svelte';
+	import { productLabel } from '$lib/product';
 	import { flaggedPosts, isCampaign, type CampaignPosts } from '$lib/jestrcampaign';
 	import { releasesWithHidden } from '$lib/hiddenvideos';
 	import { newestByPost, renameChoices, renameNotes, type RenameChoice } from '$lib/retitle';
@@ -34,6 +36,8 @@
 		COLUMNS,
 		RATIO_LINES,
 		gridTemplate,
+		phoneOff,
+		phoneTemplate,
 		ratioColumns,
 		ratioOff,
 		ratioTemplate,
@@ -177,18 +181,21 @@
 	/* Ratio View (ratioview.ts): every platform side by side, each with its
 	 * own views and its likes and comments against them — no sums in the rows.
 	 * While it is on, the filter's platforms are not in effect: `view` is the
-	 * filter as every number on the page applies it. */
-	let ratioView = $state(readPref(RATIO_KEY) === '1');
+	 * filter as every number on the page applies it. A phone has none: its
+	 * switch is not there, and a choice kept in this browser waits until the
+	 * window is wider again. */
+	let ratioChosen = $state(readPref(RATIO_KEY) === '1');
+	const ratioView = $derived(ratioChosen && !phone.current);
 	// The platforms it shows, picked beside its switch: every one to begin with.
 	let ratioPlatforms = $state<StatPlatform[]>(readRatioPlatforms(parsed(readPref(RATIO_PLATFORMS_KEY))));
-	$effect(() => writePref(RATIO_KEY, ratioView ? '1' : '0'));
+	$effect(() => writePref(RATIO_KEY, ratioChosen ? '1' : '0'));
 	$effect(() => writePref(RATIO_PLATFORMS_KEY, JSON.stringify(ratioPlatforms)));
 	const view = $derived(viewFilter(filter, ratioView, ratioPlatforms));
 
 	function toggleRatioView() {
-		ratioView = !ratioView;
+		ratioChosen = !ratioChosen;
 		// Its headers' sorts go with it, so the list goes back to newest first.
-		if (!ratioView && RATIO_SORTS.includes(sort)) {
+		if (!ratioChosen && RATIO_SORTS.includes(sort)) {
 			sort = 'date';
 			reversed = false;
 		}
@@ -640,12 +647,195 @@
 					size
 				)
 			: gridTemplate(columns, size);
-	const grids = $derived({ wide: templateAt('wide'), mid: templateAt('mid'), narrow: templateAt('narrow') });
-	/** A cell's classes: its column, whether it is sized to its content, and whether the narrower lists leave it out. */
+	const grids = $derived({
+		wide: templateAt('wide'),
+		mid: templateAt('mid'),
+		narrow: templateAt('narrow'),
+		// Never Ratio View's: a phone has none.
+		phone: phoneTemplate(columns)
+	});
+	/** A cell's classes: its column, whether it is sized to its content, and whether the narrower lists or a phone leave it out. */
 	function cellOf(col: ColumnId): string {
 		if (ratioView) return `c-${col}${ratioOff(col, 'mid') ? ' midoff' : ''}${ratioOff(col, 'narrow') ? ' narrowoff' : ''}`;
 		const def = COLUMNS[col];
-		return `c-${col}${def.width === 'content' ? ' fit' : ''}${def.mid === null ? ' midoff' : ''}${def.narrow === null ? ' narrowoff' : ''}`;
+		return `c-${col}${def.width === 'content' ? ' fit' : ''}${def.mid === null ? ' midoff' : ''}${def.narrow === null ? ' narrowoff' : ''}${phoneOff(col) ? ' phoneoff' : ''}`;
+	}
+
+	/* ---- on a phone (stores/phone.svelte.ts) ---- */
+
+	// Each flock upload's product (the game), as the Calendar shows it: a
+	// phone's row leads its title with it.
+	const products = $derived(
+		new Map(dashData.targets.filter((t) => t.product?.trim()).map((t) => [t.job, productLabel(t.product ?? '')]))
+	);
+
+	/** The header's marks once it sticks to the top on a phone: in place of the words. */
+	const HEAD_ICONS: Partial<Record<ColumnId | 'date', string>> = {
+		date: 'M3 5.2A1.7 1.7 0 0 1 4.7 3.5h6.6A1.7 1.7 0 0 1 13 5.2v6.6a1.7 1.7 0 0 1-1.7 1.7H4.7A1.7 1.7 0 0 1 3 11.8ZM3 6.8h10M5.8 2.3v2.2M10.2 2.3v2.2',
+		followers: 'M6.3 7.6a2.4 2.4 0 1 0 0-4.8 2.4 2.4 0 0 0 0 4.8ZM1.8 13.4c.4-2.4 2.2-3.8 4.5-3.8s4.1 1.4 4.5 3.8M12.6 5.4v4M10.6 7.4h4',
+		views: 'M1.6 8S4 3.8 8 3.8 14.4 8 14.4 8 12 12.2 8 12.2 1.6 8 1.6 8ZM8 10.1a2.1 2.1 0 1 0 0-4.2 2.1 2.1 0 0 0 0 4.2Z',
+		likes: 'M5.2 7 7.6 2.3c.9 0 1.6.8 1.5 1.7L8.8 6h3.6a1.4 1.4 0 0 1 1.4 1.7l-1 4.6a1.4 1.4 0 0 1-1.4 1.1H5.2ZM5.2 7H2.6v6.4h2.6',
+		comments: 'M2.5 4.2A1.7 1.7 0 0 1 4.2 2.5h7.6a1.7 1.7 0 0 1 1.7 1.7v5.2a1.7 1.7 0 0 1-1.7 1.7H7l-3 2.4v-2.4h0a1.7 1.7 0 0 1-1.5-1.7Z',
+		skip: 'M2.8 3.6 8.4 8l-5.6 4.4ZM8.4 3.6 14 8l-5.6 4.4ZM14 3.4v9.2',
+		engaged: 'M8 13.6S2.2 10.2 2.2 6.1A3 3 0 0 1 8 4.6a3 3 0 0 1 5.8 1.5c0 4.1-5.8 7.5-5.8 7.5Z'
+	};
+
+	// The list's header sticks to the top on a phone once scrolled past, and
+	// then says what each column is with a mark rather than a word.
+	let listEl = $state<HTMLElement | null>(null);
+	let stuck = $state(false);
+
+	/**
+	 * On a phone a row shows only the sums: a tap on one opens what each
+	 * platform holds of it (`cell`), a tap anywhere else in the row opens the
+	 * row. `at` is where the popup stands, from the tapped number's box.
+	 */
+	type CellCol = 'followers' | 'views' | 'likes' | 'comments' | 'skip' | 'engaged';
+	const CELL_COLS: CellCol[] = ['followers', 'views', 'likes', 'comments', 'skip', 'engaged'];
+	const CELL_WORDS: Record<CellCol, string> = {
+		followers: 'Followers',
+		views: 'Views',
+		likes: 'Likes',
+		comments: 'Comments',
+		skip: 'Skipped',
+		engaged: 'Engaged'
+	};
+	// The total row's key: no release key has brackets.
+	const TOTAL = '(total)';
+	const DELTAS: Record<Counter, 'dViews' | 'dLikes' | 'dComments' | 'dFollowers'> = {
+		views: 'dViews',
+		likes: 'dLikes',
+		comments: 'dComments',
+		followers: 'dFollowers'
+	};
+	let cell = $state<{ key: string; col: CellCol; at: Record<'top' | 'bottom' | 'left', string> } | null>(null);
+	/** The popup's width: known before it is drawn, so it can be kept inside the screen. */
+	const POP_WIDTH = 220;
+
+	$effect(() => {
+		if (!phone.current) {
+			stuck = false;
+			cell = null;
+			return;
+		}
+		const list = listEl;
+		const scroller = list?.closest<HTMLElement>('#dashboard');
+		if (!list || !scroller) return;
+		const onScroll = () => {
+			stuck = list.getBoundingClientRect().top < scroller.getBoundingClientRect().top - 1;
+			cell = null;
+		};
+		// Before the row's own click, which would open the row. A tap that only
+		// closed the popup does nothing else.
+		const onTap = (event: MouseEvent) => {
+			const target = (event.target as HTMLElement).closest<HTMLElement>('[data-col]');
+			const key = target?.closest<HTMLElement>('[data-key]')?.dataset.key;
+			const col = target?.dataset.col as CellCol | undefined;
+			const onSum = Boolean(target && key && col && CELL_COLS.includes(col));
+			if (!onSum && Date.now() - dismissedAt > 600) return;
+			event.preventDefault();
+			event.stopPropagation();
+			if (onSum) openCell(target!, key!, col!);
+		};
+		onScroll();
+		scroller.addEventListener('scroll', onScroll, { passive: true });
+		list.addEventListener('click', onTap, true);
+		return () => {
+			scroller.removeEventListener('scroll', onScroll);
+			list.removeEventListener('click', onTap, true);
+		};
+	});
+
+	function openCell(target: HTMLElement, key: string, col: CellCol) {
+		if (cell?.key === key && cell.col === col) {
+			cell = null;
+			return;
+		}
+		const box = target.getBoundingClientRect();
+		const below = box.bottom + 220 < innerHeight;
+		cell = {
+			key,
+			col,
+			at: {
+				top: below ? `${box.bottom + 6}px` : '',
+				bottom: below ? '' : `${innerHeight - box.top + 6}px`,
+				// Its right edge under the number's, 8px inside the screen either way.
+				left: `${Math.max(8, Math.min(box.right - POP_WIDTH, innerWidth - POP_WIDTH - 8))}px`
+			}
+		};
+	}
+
+	// When a press last closed the popup: its click is not passed on to the row.
+	let dismissedAt = 0;
+
+	function onWindowPointer(event: PointerEvent) {
+		const target = event.target as HTMLElement;
+		if (cell && !target.closest('.cellpop, [data-col]')) {
+			cell = null;
+			dismissedAt = Date.now();
+		}
+	}
+
+	// Escape closes the popup, not the Dashboard (DashboardOverlay leaves a taken one alone).
+	function onWindowKey(event: KeyboardEvent) {
+		if (event.key !== 'Escape' || !cell) return;
+		event.preventDefault();
+		cell = null;
+	}
+
+	/** One platform's part of a sum, or of the total row's sum. */
+	function cellPart(posts: Post[], col: CellCol, p: StatPlatform): string {
+		const mine = posts.filter((post) => post.platform === p);
+		if (col === 'skip') {
+			const rate = pooledSkipRate(mine);
+			return rate === null ? '—' : skipShown(rate);
+		}
+		if (col === 'engaged') return percent(engagedRate(mine));
+		const known = mine.map((post) => post[col]).filter((n): n is number => n != null);
+		return known.length === 0 ? '—' : whole.format(known.reduce((a, b) => a + b, 0));
+	}
+
+	/** What the open popup says: the column, its sum, and each platform's part. */
+	const cellInfo = $derived.by(() => {
+		if (!cell) return null;
+		const col = cell.col;
+		const counted = rows.filter((row) => !onlyWhileEditing(row.release));
+		const row = cell.key === TOTAL ? null : rows.find((r) => r.release.key === cell!.key);
+		if (cell.key !== TOTAL && !row) return null;
+		const posts = row
+			? col === 'skip'
+				? skipPosts(row.release, view.platforms)
+				: row.posts
+			: counted.flatMap((r) => (col === 'skip' ? skipPosts(r.release, view.platforms) : r.posts));
+		const platforms = (col === 'skip' ? skipInView : view.platforms).filter((p) => posts.some((post) => post.platform === p));
+		let sum: string;
+		let change = 0;
+		if (col === 'skip') {
+			const rate = row ? row.skip : pooledSkip;
+			sum = rate === null ? '—' : skipShown(rate);
+		} else if (col === 'engaged') {
+			sum = percent(row ? row.engagedRate : engagedTotal);
+		} else {
+			const value = row ? row[col] : totals[col];
+			sum = value == null ? '—' : whole.format(value);
+			change = row ? row.delta[col] : totals[DELTAS[col]];
+		}
+		return {
+			label: CELL_WORDS[col],
+			title: row ? row.release.title : 'Every video in the list',
+			sum,
+			change,
+			lines: platforms.map((p) => ({ platform: p, value: cellPart(posts, col, p) }))
+		};
+	});
+
+	/** The brand picker of a phone, one button for the chips: a scope's value is `scope:` and its label. */
+	function pickBrand(event: Event) {
+		const value = (event.currentTarget as HTMLSelectElement).value;
+		const chosen = value.startsWith('scope:') ? devtestDashboardScopes.find((s) => `scope:${s.label}` === value) : null;
+		for (const s of devtestDashboardScopes) if (s !== chosen) s.release();
+		if (chosen) chosen.select();
+		else brands.select(value);
 	}
 
 	/* ---- followers (followers.ts) ---- */
@@ -1322,16 +1512,16 @@
 	}
 </script>
 
-{#snippet counter(value: number | null, change: number, cls: string)}
-	<span class="num cell {cls}" class:up={change > 0} class:down={change < 0} title={exact(value)}>
+{#snippet counter(value: number | null, change: number, cls: string, col: Counter)}
+	<span class="num cell {cls}" class:up={change > 0} class:down={change < 0} title={exact(value)} data-col={col}>
 		{count(value)}{#if change}<span class="delta">{change > 0 ? '+' : ''}{count(change)}</span>{/if}
 	</span>
 {/snippet}
 
-<!-- A counter over the platforms in view, and each platform's own under it. -->
+<!-- A counter over the platforms in view, and each platform's own under it (on a phone, a tap on it). -->
 {#snippet stacked(row: Row, key: Counter, cls: string, main = false, title = '')}
 	{@const change = row.delta[key]}
-	<span class="num cell stack {cls}" class:main class:up={change > 0} class:down={change < 0} title={title || undefined}>
+	<span class="num cell stack {cls}" class:main class:up={change > 0} class:down={change < 0} title={title || undefined} data-col={key}>
 		<span title={exact(row[key])}>{count(row[key])}{#if change}<span class="delta">{change > 0 ? '+' : ''}{count(change)}</span>{/if}</span>
 		{#if multi && row.posts.length > 1}
 			<span class="parts">
@@ -1347,7 +1537,7 @@
 	</span>
 {/snippet}
 
-{#snippet sortHead(key: SortKey, label: string, cls = '', about = '', span = 1)}
+{#snippet sortHead(key: SortKey, label: string, cls = '', about = '', span = 1, icon = '')}
 	<button
 		class="colhead {cls}"
 		class:on={sort === key}
@@ -1355,7 +1545,10 @@
 		onclick={() => sortBy(key)}
 		title={about ? `${about}\n\n${sortTitle(key, label)}` : sortTitle(key, label)}
 	>
-		{label}{#if sort === key}<span class="arrow" aria-hidden="true">{reversed ? '↑' : '↓'}</span>{/if}
+		<!-- On a phone, once the header sticks to the top, the mark stands in for the word. -->
+		<span class="hname">{label}</span>{#if icon}<svg class="hicon" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"
+				><path d={icon} /></svg
+			>{/if}{#if sort === key}<span class="arrow" aria-hidden="true">{reversed ? '↑' : '↓'}</span>{/if}
 	</button>
 {/snippet}
 
@@ -1368,17 +1561,17 @@
 	{:else if col === 'jestr'}
 		<span class="colhead plain jcell {cellOf(col)}" title="Jestr campaign videos">Jestr</span>
 	{:else if col === 'followers'}
-		{@render sortHead('followers', 'Followers', cellOf(col), followersAbout)}
+		{@render sortHead('followers', 'Followers', cellOf(col), followersAbout, 1, HEAD_ICONS.followers)}
 	{:else if col === 'views'}
-		{@render sortHead('views', 'Views', cellOf(col))}
+		{@render sortHead('views', 'Views', cellOf(col), '', 1, HEAD_ICONS.views)}
 	{:else if col === 'likes'}
-		{@render sortHead('likes', 'Likes', cellOf(col))}
+		{@render sortHead('likes', 'Likes', cellOf(col), '', 1, HEAD_ICONS.likes)}
 	{:else if col === 'comments'}
-		{@render sortHead('comments', 'Comments', cellOf(col))}
+		{@render sortHead('comments', 'Comments', cellOf(col), '', 1, HEAD_ICONS.comments)}
 	{:else if col === 'skip'}
-		{@render sortHead('skip', 'Skipped', cellOf(col), skipAbout)}
+		{@render sortHead('skip', 'Skipped', cellOf(col), skipAbout, 1, HEAD_ICONS.skip)}
 	{:else if col === 'engaged'}
-		{@render sortHead('engagedRate', 'Engaged', cellOf(col), ENGAGED_ABOUT)}
+		{@render sortHead('engagedRate', 'Engaged', cellOf(col), ENGAGED_ABOUT, 1, HEAD_ICONS.engaged)}
 	{:else if col === 'curve'}
 		<span class="colhead {cellOf(col)}" title="Views from release, up to its first week; dashed: the usual for its kind">From release</span>
 	{:else if col === 'usual'}
@@ -1439,15 +1632,16 @@
 	{:else if col === 'jestr'}
 		<span class="jcell num cell {cellOf(col)}" title="Jestr campaign videos among them">{campaignCount}</span>
 	{:else if col === 'followers'}
-		{@render counter(totals.followers, totals.dFollowers, cellOf(col))}
+		{@render counter(totals.followers, totals.dFollowers, cellOf(col), col)}
 	{:else if col === 'views'}
-		{@render counter(totals.views, totals.dViews, cellOf(col))}
+		{@render counter(totals.views, totals.dViews, cellOf(col), col)}
 	{:else if col === 'likes'}
-		{@render counter(totals.likes, totals.dLikes, cellOf(col))}
+		{@render counter(totals.likes, totals.dLikes, cellOf(col), col)}
 	{:else if col === 'comments'}
-		{@render counter(totals.comments, totals.dComments, cellOf(col))}
+		{@render counter(totals.comments, totals.dComments, cellOf(col), col)}
 	{:else if col === 'skip'}
 		<span
+			data-col="skip"
 			class="num cell skip {cellOf(col)}"
 			title={pooledSkip === null
 				? 'No skip rate among the videos in view'
@@ -1458,6 +1652,7 @@
 		>
 	{:else if col === 'engaged'}
 		<span
+			data-col="engaged"
 			class="num cell eng {cellOf(col)}"
 			class:none={engagedTotal === null}
 			title={engagedTotal === null
@@ -1550,7 +1745,7 @@
 	{:else if col === 'skip'}
 		<!-- One platform: its rate behind its dot; two: the rate over both, each under it as the counters have. -->
 		{@const posts = skipPosts(r, view.platforms)}
-		<span class="num cell stack skip {cellOf(col)}" class:none={row.skip === null} title={skipTitle(r)}>
+		<span class="num cell stack skip {cellOf(col)}" class:none={row.skip === null} title={skipTitle(r)} data-col="skip">
 			{#if posts.length > 1}
 				<span>{row.skip === null ? '—' : skipShown(row.skip)}</span>
 				<span class="parts">
@@ -1568,7 +1763,7 @@
 		</span>
 	{:else if col === 'engaged'}
 		<!-- Every platform in view together, and each one under it behind its square, as the counters have. -->
-		<span class="num cell stack eng {cellOf(col)}" class:none={row.engagedRate === null} title={engagedRows(row)}>
+		<span class="num cell stack eng {cellOf(col)}" class:none={row.engagedRate === null} title={engagedRows(row)} data-col="engaged">
 			<span>{percent(row.engagedRate)}</span>
 			{#if multi && row.posts.length > 1}
 				<span class="parts">
@@ -1745,6 +1940,21 @@
 					>
 				{/each}
 			</div>
+			<!-- A phone's one button for the chips: the phone's own picker opens on it. -->
+			<label class="brandpick">
+				<span class="hidden">Brand in view</span>
+				<select value={scope ? `scope:${scope.label}` : brands.currentId} onchange={pickBrand}>
+					{#each devtestDashboardScopes as s (s.label)}
+						<option value="scope:{s.label}">{s.label}</option>
+					{/each}
+					{#each brands.ordered as brand (brand.id)}
+						<option value={brand.id}>{brand.name}</option>
+					{/each}
+				</select>
+				<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+					<path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+				</svg>
+			</label>
 			{#if scope?.BrandMenu && brandMenu}
 				{@const id = brandMenu.brand}
 				<scope.BrandMenu
@@ -2021,20 +2231,29 @@
 
 	<!-- The cells follow the layout set under Settings → Dashboard (dashcolumns.ts);
 	     each carries its column's class, so the narrower lists can leave some out. -->
+	<!-- On a phone (`.mline`, `.mdate`, drawn only there) a row is two lines: the
+	     thumbnail, product and title across the whole width, and under them the
+	     release date where the title column stands, beside the sums. -->
 	<section
 		class="card list"
 		class:ratio={ratioView}
 		class:editing
+		class:stuck
 		class:nothumb={!columns.includes('thumb')}
 		aria-label="Every video"
+		bind:this={listEl}
 		style:--cols={grids.wide}
 		style:--cols-mid={grids.mid}
 		style:--cols-narrow={grids.narrow}
+		style:--cols-phone={grids.phone}
 	>
 		<div class="row cols">
+			{@render sortHead('date', 'Video', 'left mdate', '', 1, HEAD_ICONS.date)}
 			{#each columns as col (col)}{@render (ratioView ? ratioHead : headCell)(col)}{/each}
 		</div>
-		<div class="row total">
+		<!-- On a phone, Total, its search and the count take the first line, the sums the second. -->
+		<div class="row total" data-key={TOTAL}>
+			<span class="mdate" aria-hidden="true"></span>
 			{#each columns as col (col)}{@render (ratioView ? ratioUsual : totalCell)(col)}{/each}
 		</div>
 
@@ -2042,7 +2261,16 @@
 			{@const r = row.release}
 			{@const campaign = campaigns.has(r.key)}
 			{@const marking = editing && marksJestr}
-			<div class="item" class:open={openKey === r.key} class:tinted={Boolean(r.tint)} class:hiddenvideo={r.hidden} style:--tint={r.tint}>
+			{@const product = r.job ? products.get(r.job) : undefined}
+			{@const visibility = visibilityOf(r, view.platforms)}
+			<div
+				class="item"
+				class:open={openKey === r.key}
+				class:tinted={Boolean(r.tint)}
+				class:hiddenvideo={r.hidden}
+				style:--tint={r.tint}
+				data-key={r.key}
+			>
 				<!-- The pencil and the eye sit over the row, not in it: a button cannot hold another. -->
 				<div class="line">
 					<button
@@ -2052,6 +2280,24 @@
 						aria-pressed={marking && markable(r) ? campaign : undefined}
 						aria-disabled={marking && !markable(r) ? true : undefined}
 					>
+						<span class="mline">
+							{#if r.thumb && !deadThumbs.has(r.thumb)}
+								<img class="mthumb" src={r.thumb} alt="" loading="lazy" onerror={() => markDead(r.thumb)} />
+							{/if}
+							<span class="mtext"
+								>{#if product}<span class="mproduct">{product}</span>{/if}<span class="vtitle"
+									>{#if words.length > 0}{#each titleParts(r.title, words) as part, i (i)}{#if part.hit}<mark
+												>{part.text}</mark
+											>{:else}{part.text}{/if}{/each}{:else}{r.title}{/if}</span
+								></span
+							>
+						</span>
+						<span
+							class="mdate cell"
+							title="{new Date(r.at).toLocaleString()} · {span(now - r.at)} ago{r.group ? ` · ${r.group}` : ''}"
+							>{released(r.at)}{#if visibility !== 'public'}<span class="priv {visibility}"> · {visibility}</span
+								>{/if}{#if r.hidden}<span class="hid"> · hidden</span>{/if}</span
+						>
 						{#each columns as col (col)}{@render (ratioView ? ratioCell : rowCell)(col, row)}{/each}
 					</button>
 					{#if editing}
@@ -2237,7 +2483,42 @@
 		flock's estimate: each rise is credited to the videos gaining views at the time. TikTok lists public videos only. One
 		channel at a time; nothing is added up across channels.
 	</p>
+
+	<!-- A phone's tap on a sum: each platform's part of it, under the number. -->
+	{#if cell && cellInfo}
+		<div
+			class="cellpop"
+			role="dialog"
+			aria-label="{cellInfo.label} by platform"
+			style:top={cell.at.top || undefined}
+			style:bottom={cell.at.bottom || undefined}
+			style:left={cell.at.left}
+			style:width="{POP_WIDTH}px"
+		>
+			<p class="cptitle">{cellInfo.title}</p>
+			<p class="cphead">
+				<span>{cellInfo.label}</span>
+				<strong>{cellInfo.sum}</strong>
+			</p>
+			{#if cellInfo.change}
+				<p class="cpchange" class:down={cellInfo.change < 0}>
+					{cellInfo.change > 0 ? '+' : ''}{whole.format(cellInfo.change)} since opened
+				</p>
+			{/if}
+			{#each cellInfo.lines as line (line.platform)}
+				<p class="cpline">
+					<i style:background={PLATFORM_COLOURS[line.platform]}></i>
+					<span class="cpname">{PLATFORMS[line.platform].label}</span>
+					<span class="cpval">{line.value}</span>
+				</p>
+			{:else}
+				<p class="cpline none">No platform in view has it</p>
+			{/each}
+		</div>
+	{/if}
 </div>
+
+<svelte:window onpointerdown={onWindowPointer} onkeydown={onWindowKey} />
 
 {#if renaming}
 	<RenameDialog
@@ -4125,10 +4406,6 @@
 		.row > .fit {
 			padding-left: 0;
 		}
-		/* Likes, comments and the skip rate go; an opened row still lists them. */
-		.row > .midoff {
-			display: none;
-		}
 		.details {
 			padding-left: 16px;
 		}
@@ -4161,9 +4438,6 @@
 			left: auto;
 			right: 0;
 		}
-		.row > .narrowoff {
-			display: none;
-		}
 		.list {
 			--thumbcol: 48px;
 			grid-template-columns: var(--cols-narrow);
@@ -4171,6 +4445,326 @@
 		.thumb {
 			width: 48px;
 			height: 27px;
+		}
+	}
+
+	/* Likes, comments and the skip rate go below 1200px, more below 760px; an
+	   opened row still lists them. Not on a phone, which has its own set. */
+	@media (min-width: 641px) and (max-width: 1200px) {
+		/* The total row's too, which `.row.total .skip` would otherwise show. */
+		.row > .midoff,
+		.row.total > .midoff {
+			display: none;
+		}
+	}
+
+	@media (min-width: 641px) and (max-width: 760px) {
+		.row > .narrowoff,
+		.row.total > .narrowoff {
+			display: none;
+		}
+	}
+
+	/* ---- on a phone (stores/phone.svelte.ts, the same 640px) ---- */
+
+	/* Drawn only on a phone: a row's first line and its date, the header's
+	   marks, the one brand button, the popup a tapped sum opens. */
+	.mline,
+	.mdate,
+	.hicon,
+	.brandpick {
+		display: none;
+	}
+
+	.cellpop {
+		position: fixed;
+		z-index: 40;
+		display: grid;
+		gap: 5px;
+		padding: 10px 12px 11px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius);
+		background: var(--surface);
+		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+		font-size: 12.5px;
+		color: var(--text-dim);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.cellpop p {
+		margin: 0;
+	}
+
+	.cptitle {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 11px;
+		color: var(--text-faint);
+	}
+
+	.cphead {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 16px;
+		padding-bottom: 5px;
+		border-bottom: 1px solid var(--border);
+		font-weight: 600;
+		color: var(--text);
+	}
+
+	.cphead strong {
+		font-size: 15px;
+	}
+
+	.cpchange {
+		margin-top: -3px !important;
+		text-align: right;
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--ok);
+	}
+
+	.cpchange.down {
+		color: var(--danger);
+	}
+
+	.cpline {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.cpline i {
+		width: 8px;
+		height: 8px;
+	}
+
+	.cpname {
+		flex: 1;
+	}
+
+	.cpval {
+		color: var(--text);
+		font-weight: 560;
+	}
+
+	.cpline.none {
+		color: var(--text-faint);
+	}
+
+	@media (max-width: 640px) {
+		/* The overlay has no padding on top on a phone, so the list's header sticks to its very edge. */
+		.page {
+			padding-top: 12px;
+		}
+		/* The toolbar: the filter's funnel, one brand button, then the status and Refresh at the right. */
+		.toolbar {
+			flex-wrap: nowrap;
+			gap: 8px;
+			margin-bottom: 10px;
+		}
+		.brands,
+		.ratiobox,
+		.edit,
+		.periods {
+			display: none;
+		}
+		.aside {
+			margin-left: auto;
+			gap: 4px;
+		}
+		.icon {
+			width: 34px;
+			height: 34px;
+		}
+		.pop {
+			left: auto;
+			right: -38px;
+			min-width: 0;
+			width: calc(100vw - 16px);
+		}
+		.brandpick {
+			position: relative;
+			display: flex;
+			align-items: center;
+			min-width: 0;
+		}
+		.brandpick select {
+			appearance: none;
+			height: 34px;
+			min-width: 0;
+			max-width: 100%;
+			padding: 0 30px 0 13px;
+			border-radius: 999px;
+			border: 1px solid var(--pink);
+			background: var(--accent-grad-soft), var(--bg-elev);
+			color: var(--text);
+			font: inherit;
+			font-size: 13px;
+			font-weight: 600;
+			text-overflow: ellipsis;
+		}
+		.brandpick svg {
+			position: absolute;
+			right: 12px;
+			color: var(--pink-soft);
+			pointer-events: none;
+		}
+
+		/* The list: the date and the sums on the grid, each row's title on a line of its own above them. */
+		.list {
+			grid-template-columns: var(--cols-phone);
+			column-gap: 6px;
+			padding: 0 10px;
+			/* clip, not hidden: no scroll container, so the header sticks to the Dashboard's. */
+			overflow: clip;
+		}
+		.row {
+			margin-inline: -10px;
+			padding: 7px 10px;
+			row-gap: 4px;
+		}
+		.row > .phoneoff,
+		button.row > .c-video,
+		.row.cols > .c-video,
+		.parts,
+		.delta,
+		.rename,
+		.eye {
+			display: none;
+		}
+		.mdate {
+			display: block;
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			font-size: 11.5px;
+			color: var(--text-faint);
+		}
+		.row > .mline,
+		.row.total > .c-video {
+			grid-row: 1;
+			grid-column: 1 / -1;
+		}
+		button.row > :not(.mline),
+		.row.total > :not(.c-video) {
+			grid-row: 2;
+		}
+		.row.total > .c-video {
+			flex-direction: row;
+			align-items: center;
+			gap: 10px;
+		}
+		.row.total .vhead {
+			flex: 1;
+		}
+		.row.total .vmeta {
+			flex: none;
+			font-size: 11.5px;
+			color: var(--text-dim);
+		}
+		.mline {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			min-width: 0;
+		}
+		.mthumb {
+			flex: none;
+			width: 36px;
+			height: 20px;
+			object-fit: cover;
+			border-radius: 4px;
+			background: var(--surface-3);
+		}
+		.mtext {
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+			font-size: 13px;
+		}
+		.mproduct {
+			margin-right: 7px;
+			font-weight: 700;
+			color: var(--pink-soft);
+		}
+		.mtext .vtitle {
+			font-weight: 500;
+		}
+		/* A sum is a tap target: at least a thumb's width, its column no
+		   narrower — and room for the header's word over it. */
+		.row > .num {
+			min-width: 40px;
+		}
+		.cell {
+			font-size: 12px;
+		}
+		/* Which platform is in the popup now. */
+		.skip i {
+			display: none;
+		}
+		.stack.main {
+			font-weight: 650;
+		}
+
+		/* The header: words while it sits above the list, marks once it sticks to
+		   the top. Neither sets a column's width — the numbers do — so nothing
+		   moves when it sticks: a word wider than its column is centred over it
+		   and runs out into the gaps either side. */
+		.row.cols {
+			position: sticky;
+			top: 0;
+			z-index: 4;
+			padding-top: 9px;
+			padding-bottom: 7px;
+			background: var(--surface);
+		}
+		.stuck .row.cols {
+			border-bottom: 1px solid var(--border-strong);
+			box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+		}
+		.row.cols > .colhead:not(.phoneoff, .c-video) {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 0;
+			min-width: 100%;
+			font-size: 9.5px;
+			font-weight: 550;
+			letter-spacing: 0;
+			text-transform: none;
+		}
+		.row.cols > .colhead.left {
+			justify-content: flex-start;
+		}
+		.row.cols > .mdate {
+			display: flex;
+			overflow: visible;
+		}
+		.hicon {
+			fill: none;
+			stroke: currentColor;
+			stroke-width: 1.4;
+			stroke-linecap: round;
+			stroke-linejoin: round;
+		}
+		.stuck .row.cols .hname {
+			display: none;
+		}
+		.stuck .row.cols .hicon {
+			display: block;
+		}
+		.stuck .row.cols .arrow {
+			margin-left: 1px;
+		}
+
+		.details {
+			margin-inline: -10px;
+			padding: 10px 10px 16px;
+			grid-template-columns: minmax(0, 1fr);
 		}
 	}
 </style>

@@ -5,6 +5,7 @@
 	import { page } from '$app/state';
 	import { dashboard } from '$lib/stores/dashboard.svelte';
 	import { todoPanel } from '$lib/stores/todopanel.svelte';
+	import { phone } from '$lib/stores/phone.svelte';
 	import Dashboard from './Dashboard.svelte';
 
 	/**
@@ -18,10 +19,16 @@
 	let panel = $state<HTMLElement | null>(null);
 
 	// Going anywhere means wanting to see that page — unless the address asks
-	// for the dashboard, which then opens and leaves the address.
-	afterNavigate(() => {
+	// for the dashboard, which then opens and leaves the address. On a phone
+	// flock is the dashboard, so a page loaded there (a reload included,
+	// whose address no longer asks) opens it too; a link followed still
+	// shows its page.
+	afterNavigate((navigation) => {
 		if (!page.url.searchParams.has('dashboard')) {
-			dashboard.close();
+			if (phone.current && navigation.type === 'enter') {
+				todoPanel.close();
+				dashboard.show();
+			} else dashboard.close();
 			return;
 		}
 		todoPanel.close();
@@ -103,6 +110,15 @@
 	@media (max-width: 860px) {
 		.dashboard {
 			padding: 22px 18px 50px;
+		}
+	}
+
+	/* A phone (stores/phone.svelte.ts): every pixel across goes to the list.
+	   No padding on top, where the list's header sticks: a sticky header
+	   stops at the padding's edge. The Dashboard keeps that room itself. */
+	@media (max-width: 640px) {
+		.dashboard {
+			padding: 0 8px 40px;
 		}
 	}
 </style>
