@@ -737,8 +737,8 @@ When each platform was last read, and today's YouTube quota, sit behind the
 
 **On a phone** (a screen up to 640 pixels wide) flock is the Dashboard alone:
 the filter is the funnel, the brand one button, and the list keeps the date
-and the totals, with the product and title on a line above and every other
-column a shade lighter. Tap a total for each platform's part. Each column has
+and the totals, with the product name on a line above (the title for a video
+that has none) and every other column a shade lighter. Tap a total for each platform's part. Each column has
 an icon for its name (an eye for views, a thumb for likes) centred over its
 numbers, which stays at the top as you scroll. Ratio View, editing, the periods, Jestr, the curve and
 *vs usual* are left out there.

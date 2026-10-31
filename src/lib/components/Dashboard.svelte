@@ -2285,12 +2285,13 @@
 							{#if r.thumb && !deadThumbs.has(r.thumb)}
 								<img class="mthumb" src={r.thumb} alt="" loading="lazy" onerror={() => markDead(r.thumb)} />
 							{/if}
+							<!-- The product alone; a video with none (not through flock) shows its title. -->
 							<span class="mtext"
-								>{#if product}<span class="mproduct">{product}</span>{/if}<span class="vtitle"
-									>{#if words.length > 0}{#each titleParts(r.title, words) as part, i (i)}{#if part.hit}<mark
-												>{part.text}</mark
-											>{:else}{part.text}{/if}{/each}{:else}{r.title}{/if}</span
-								></span
+								>{#if product}<span class="mproduct">{product}</span>{:else}<span class="vtitle"
+										>{#if words.length > 0}{#each titleParts(r.title, words) as part, i (i)}{#if part.hit}<mark
+													>{part.text}</mark
+												>{:else}{part.text}{/if}{/each}{:else}{r.title}{/if}</span
+									>{/if}</span
 							>
 						</span>
 						<span
@@ -4698,7 +4699,6 @@
 			font-size: 13px;
 		}
 		.mproduct {
-			margin-right: 7px;
 			font-weight: 700;
 			color: var(--pink-soft);
 		}
