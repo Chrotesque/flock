@@ -2296,8 +2296,10 @@
 						<span
 							class="mdate cell"
 							title="{new Date(r.at).toLocaleString()} · {span(now - r.at)} ago{r.group ? ` · ${r.group}` : ''}"
-							>{released(r.at)}{#if visibility !== 'public'}<span class="priv {visibility}"> · {visibility}</span
-								>{/if}{#if r.hidden}<span class="hid"> · hidden</span>{/if}</span
+							><span class="mdtext"
+								>{released(r.at)}{#if visibility !== 'public'}<span class="priv {visibility}"> · {visibility}</span
+									>{/if}{#if r.hidden}<span class="hid"> · hidden</span>{/if}</span
+							></span
 						>
 						{#each columns as col (col)}{@render (ratioView ? ratioCell : rowCell)(col, row)}{/each}
 					</button>
@@ -3529,7 +3531,7 @@
 
 	/* A group's colour (a local scope's, see devtest.ts) washes its rows. */
 	.item.tinted > .line > .row {
-		background: color-mix(in srgb, var(--tint) 13%, var(--rowbg, transparent));
+		background: color-mix(in srgb, var(--tint) 13%, transparent);
 	}
 
 	.item.tinted > .line > button.row:hover,
@@ -4626,6 +4628,10 @@
 			margin-inline: -10px;
 			padding: 7px 10px;
 			row-gap: 4px;
+			/* Holds the column stripes (below): over the row's own
+			   background, under its words, and no taller than the row. */
+			isolation: isolate;
+			overflow: clip;
 		}
 		.row > .phoneoff,
 		button.row > .c-video,
@@ -4639,10 +4645,14 @@
 		.mdate {
 			display: block;
 			min-width: 0;
-			overflow: hidden;
-			text-overflow: ellipsis;
 			font-size: 11.5px;
 			color: var(--text-faint);
+		}
+		/* Cut inside the cell, so the cell itself lets its column's stripe out. */
+		.mdtext {
+			display: block;
+			overflow: hidden;
+			text-overflow: ellipsis;
 		}
 		.row > .mline,
 		.row.total > .c-video {
@@ -4696,9 +4706,49 @@
 			font-weight: 500;
 		}
 		/* A sum is a tap target: at least a thumb's width, its column no
-		   narrower. */
+		   narrower. Every column's value sits in its middle, under the mark. */
 		.row > .num {
 			min-width: 40px;
+		}
+		.row > .fit {
+			padding-left: 0;
+		}
+		.num,
+		.row > .mdate,
+		.row.cols > .colhead.left {
+			text-align: center;
+		}
+		.stack {
+			align-items: center;
+		}
+		.row.total .skip,
+		.skip .one {
+			justify-content: center;
+		}
+
+		/* Every other column a shade lighter (the first, the third…), from the
+		   header down through every row, so a number is easily told to its
+		   column. Drawn in each row, behind the cell and half the gaps either
+		   side; the first and last reach the row's edges. */
+		.row > :not(.mline, .c-video, .phoneoff) {
+			position: relative;
+		}
+		.row > :nth-child(odd of :not(.mline, .c-video, .phoneoff))::before {
+			content: '';
+			position: absolute;
+			z-index: -1;
+			top: -100px;
+			bottom: -100px;
+			left: -3px;
+			right: -3px;
+			background: rgb(255 255 255 / 3%);
+			pointer-events: none;
+		}
+		.row > :nth-child(1 of :not(.mline, .c-video, .phoneoff))::before {
+			left: -10px;
+		}
+		.row > :nth-last-child(1 of :not(.mline, .c-video, .phoneoff))::before {
+			right: -10px;
 		}
 		.cell {
 			font-size: 12px;
@@ -4735,11 +4785,10 @@
 			font-size: 11px;
 		}
 		.row.cols > .colhead.left {
-			justify-content: flex-start;
+			justify-content: center;
 		}
 		.row.cols > .mdate {
 			display: flex;
-			overflow: visible;
 		}
 		.hicon {
 			fill: none;
@@ -4755,18 +4804,11 @@
 			display: block;
 			flex: none;
 		}
+		/* The sort arrow beside the mark, not pushing it off the middle. */
 		.row.cols .arrow {
-			margin-left: 1px;
-		}
-
-		/* Every other video a shade lighter, to keep the two lines of one
-		   apart from the next (hovered or open, a row's own background still
-		   wins). */
-		.item:nth-child(odd of .item) {
-			--rowbg: color-mix(in srgb, var(--surface) 97%, #fff);
-		}
-		.row {
-			background: var(--rowbg, none);
+			position: absolute;
+			left: calc(50% + 9px);
+			margin: 0;
 		}
 
 		.details {
