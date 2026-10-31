@@ -100,7 +100,12 @@ export function decide({ handle, probe, alive, now, slotAt, seen }) {
 /** How long a platform still at work on a post, or one that cannot be asked, is waited for. */
 export const CONFIRM_MS = 30 * 60_000;
 
-/** How long a reel Facebook was told to publish may read as missing before that is believed. */
+/**
+ * How long a reel Facebook was told to publish may read as missing, or one
+ * Instagram was told to publish as unpublished, before that is believed: on
+ * 31 Oct 2026 Instagram published a reel, answered the call with error 2 and
+ * still read its container as FINISHED when it was asked straight after.
+ */
 export const GONE_GRACE_MS = 5 * 60_000;
 
 /**
@@ -130,6 +135,10 @@ export function afterFailure({ handle, probe, failedAt, now }) {
 		case 'gone':
 			return handle.finished && waited < GONE_GRACE_MS
 				? { action: 'wait', reason: 'Facebook does not show the reel yet, minutes after it was told to publish it' }
+				: { action: 'fail' };
+		case 'ready':
+			return handle.publishCalled && waited < GONE_GRACE_MS
+				? { action: 'wait', reason: 'Instagram does not show the reel as published yet, moments after it was told to publish it' }
 				: { action: 'fail' };
 		default:
 			// Uploading, incomplete, or processed and never published: nothing went out.

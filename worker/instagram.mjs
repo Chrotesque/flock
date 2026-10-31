@@ -643,6 +643,7 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 	// with nothing once they are in, with the error when another container may
 	// get past it, and throws anything else.
 	let container;
+	let handle;
 	const sendToContainer = async () => {
 		try {
 			container = await createContainer();
@@ -654,13 +655,14 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 		}
 		try {
 			// Recorded before a byte goes up, or nothing does — see orphans.mjs.
-			await saveHandle({
+			handle = {
 				kind: 'instagram-container',
 				containerId: container.id,
 				// So a worker taking over asks with this account's token.
 				account: ig.igUserId,
 				...(hosted ? { coverPhotoId: hosted.id } : {})
-			});
+			};
+			await saveHandle(handle);
 		} catch (err) {
 			video.stream.destroy();
 			throw err;
@@ -718,6 +720,12 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 	if (stillWanted && !(await stillWanted())) {
 		throw Object.assign(new Error('Moved to another account while it was held; not posted here.'), { moved: true });
 	}
+
+	// Instagram can publish the reel and still answer the call with an error,
+	// its container reading unpublished for a while after (31 Oct 2026). The
+	// handle says the call was made, so that read is not believed at once
+	// (orphans.mjs). A failed or slow save costs only that, never the minute.
+	await Promise.race([saveHandle({ ...handle, publishCalled: true }).catch(() => {}), sleep(3_000)]);
 
 	let published;
 	try {

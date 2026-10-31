@@ -101,6 +101,19 @@ test("a reel Facebook was told to publish is not believed gone at once", () => {
 	assert.equal(afterFailure({ handle: handle('instagram'), probe: gone, failedAt: now, now }).action, 'fail');
 });
 
+test('a reel Instagram was told to publish is not believed unpublished at once', () => {
+	const ready = { state: 'ready' };
+	const told = handle('instagram-container', { publishCalled: true });
+	assert.equal(afterFailure({ handle: told, probe: ready, failedAt: now, now }).action, 'wait');
+	assert.equal(afterFailure({ handle: told, probe: ready, failedAt: now - GONE_GRACE_MS + 1_000, now }).action, 'wait');
+	assert.equal(afterFailure({ handle: told, probe: ready, failedAt: now - GONE_GRACE_MS, now }).action, 'fail');
+	// Published after all: recorded on the next ask, however soon.
+	const done = { state: 'done', result: { url: 'https://www.instagram.com/papermoon/' } };
+	assert.equal(afterFailure({ handle: told, probe: done, failedAt: now - 15_000, now }).action, 'finish');
+	// Refused before the publish call: nothing went out.
+	assert.equal(afterFailure({ handle: handle('instagram-container'), probe: ready, failedAt: now, now }).action, 'fail');
+});
+
 test('a failed publish that never went out is failed', () => {
 	for (const state of ['uploading', 'incomplete', 'ready']) {
 		assert.equal(afterFailure({ handle: handle('instagram'), probe: { state }, failedAt: now, now }).action, 'fail');
