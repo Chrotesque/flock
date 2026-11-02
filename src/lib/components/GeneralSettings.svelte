@@ -2,6 +2,8 @@
 	import { general } from '$lib/stores/general.svelte';
 	import DeviceInfo from './DeviceInfo.svelte';
 	import FolderList from './FolderList.svelte';
+	import ServerInfo from './ServerInfo.svelte';
+	import { SITE_COPY } from '$lib/pb';
 
 	// App-wide settings. Anything that is not tied to one platform lands here:
 	// where finished videos go on the NAS, and where flock looks for videos.
@@ -129,6 +131,22 @@
 			empty="No project folders yet. Local or on the network, like the watch folders."
 		/>
 	</section>
+
+	{#if SITE_COPY}
+		<section>
+			<div class="subhead">
+				<div>
+					<h4>Server</h4>
+					<p>
+						This copy of flock comes from its website and keeps nothing itself: it shows the flock
+						server named here, which this browser remembers.
+					</p>
+				</div>
+			</div>
+
+			<ServerInfo />
+		</section>
+	{/if}
 
 	<section>
 		<div class="subhead">

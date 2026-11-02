@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-02T20:59:10+01:00', version: '0.20.9', line: 'Added: Website > Open Flock' },
 	{ at: '2026-11-01T17:19:26+01:00', version: '0.20.8', line: 'Added: Jestr > Avg Ahead' },
 	{ at: '2026-11-01T17:04:51+01:00', version: '0.20.7', line: 'Added: Jestr > With It' },
 	{ at: '2026-11-01T16:55:24+01:00', version: '0.20.6', line: 'Added: Jestr > Avg Without' },

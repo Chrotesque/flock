@@ -9,6 +9,8 @@
 	import { attention } from '$lib/stores/attention.svelte';
 	import { celebrations } from '$lib/stores/celebrations.svelte';
 	import PasteNotice from '$lib/components/PasteNotice.svelte';
+	import ServerSetup from '$lib/components/ServerSetup.svelte';
+	import { NEEDS_SERVER } from '$lib/pb';
 	import DashboardOverlay from '$lib/components/DashboardOverlay.svelte';
 	import TodoPanel from '$lib/components/TodoPanel.svelte';
 	import { dashboard } from '$lib/stores/dashboard.svelte';
@@ -33,6 +35,8 @@
 	const SITE_URL = 'https://flock-scheduler.netlify.app/';
 
 	onMount(() => {
+		// The website's copy with no server named has nowhere to read from yet.
+		if (NEEDS_SERVER) return;
 		void general.load();
 		workers.start();
 		const stopProjects = projects.start();
@@ -116,6 +120,7 @@
 	 * from script would raise. The upload page takes the block from there.
 	 */
 	function onPaste(event: ClipboardEvent) {
+		if (NEEDS_SERVER) return;
 		const result = readFlockPaste(event.clipboardData?.getData('text/plain') ?? '', Date.now(), devtestPasteKeys);
 		if (!result) return;
 		event.preventDefault();
@@ -248,232 +253,32 @@
 	}
 </script>
 
-<div class="shell">
-	<aside>
-		<nav>
-			<!-- Not a route: the dashboard opens over whatever page is showing. -->
-			<button
-				class="navlink"
-				class:active={dashboard.open}
-				aria-expanded={dashboard.open}
-				aria-controls="dashboard"
-				onclick={toggleDashboard}
-			>
-				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
-					<path d={DASHBOARD_ICON} stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
-				</svg>
-				<span class="text">
-					Dashboard
-					<em>Analytics & Dashboard</em>
-				</span>
-				<!-- Out towards the page while closed, back towards the link while open. -->
-				<svg class="chev" viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
-					<path
-						d={dashboard.open ? 'M10 3.5 5.5 8l4.5 4.5' : 'M6 3.5 10.5 8 6 12.5'}
-						stroke="currentColor"
-						stroke-width="1.8"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					/>
-				</svg>
-			</button>
-			{#each links as link (link.href)}
-				<!-- The page stays lit under the dashboard: both are, while it is open. -->
-				<a href="{base}{link.href}" class="navlink" class:active={isActive(link.href)}>
+<!-- The website's copy with no server named yet asks for one, and starts nothing else. -->
+{#if NEEDS_SERVER}
+	<ServerSetup />
+{:else}
+	<div class="shell">
+		<aside>
+			<nav>
+				<!-- Not a route: the dashboard opens over whatever page is showing. -->
+				<button
+					class="navlink"
+					class:active={dashboard.open}
+					aria-expanded={dashboard.open}
+					aria-controls="dashboard"
+					onclick={toggleDashboard}
+				>
 					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
-						<path
-							d={link.icon}
-							stroke="currentColor"
-							stroke-width="1.7"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-						/>
+						<path d={DASHBOARD_ICON} stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
 					</svg>
 					<span class="text">
-						{link.label}
-						<em>{link.hint}</em>
+						Dashboard
+						<em>Analytics & Dashboard</em>
 					</span>
-				</a>
-			{/each}
-		</nav>
-
-		<!-- Pages a local-devtest module brings (devtest.ts): not in flock's
-		     repository, so a build without the folder has none of these. -->
-		{#if localPages.length > 0}
-			<nav class="local" aria-label="Local pages">
-				{#each localPages as local (local.id)}
-					<a
-						href="{base}/devtest?page={encodeURIComponent(local.id)}"
-						class="navlink"
-						class:active={isLocalActive(local.id)}
-					>
-						<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
-							<path
-								d={local.icon ?? DEVTEST_ICON}
-								stroke="currentColor"
-								stroke-width="1.7"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							/>
-						</svg>
-						<span class="text">
-							{local.label}
-							<em>{local.hint ?? 'Local only'}</em>
-						</span>
-					</a>
-				{/each}
-			</nav>
-		{/if}
-
-		<!-- Project folders that hold a flock JSON file and have not been sent
-		     yet, right under Upload: one press opens the upload, filled from
-		     the file the first time and as it was left after that. -->
-		{#if projects.listed.length > 0}
-			<section class="projects" aria-label="New projects">
-				<p class="todohead">New projects <span class="count">{projects.listed.length}</span></p>
-				<ul>
-					{#each projects.listed as row (row.id)}
-						{@const started = projectState(row) === 'started'}
-						<li class:current={draft.project === row.id}>
-							<button
-								class="ptitle"
-								class:armed={armedProject === row.id}
-								title={armedProject === row.id
-									? 'Press again: the upload open now belongs to no project and would be replaced'
-									: `${row.name} — in ${folderName(row.root)}${started ? ', started' : ''}`}
-								onclick={() => openProject(row.id)}
-							>
-								{armedProject === row.id ? 'Press again to replace' : row.name}
-							</button>
-							<span class="pbadge" class:new={!started}>{started ? 'Started' : 'New'}</span>
-						</li>
-					{/each}
-				</ul>
-			</section>
-		{/if}
-
-		<!-- What needs attention and videos with something left to do by hand
-		     — set in Studio, linked on Jestr — as one icon centred in the free
-		     stretch between the main links and the worker: a muted green box
-		     with a check cut out when nothing needs doing, a yellow-to-pink
-		     outline round an exclamation mark when something does, filled red
-		     with the mark cut out, slowly pulsing, when a post did not go out,
-		     filled purple with a back arrow while open. The list itself opens
-		     over the content area (TodoPanel). Rules in attention.ts and
-		     videotodo.ts; the marks in todoicon.ts, which TodoIcon draws small
-		     where Settings → Other explains them (and can hide it). -->
-		{#if general.value.showTodo}
-			<section class="todo" aria-label="To finish">
-				<button
-					id="todo-tile"
-					class="tile"
-					class:open={todoPanel.open}
-					class:failed={postFailed && !todoPanel.open}
-					class:gold
-					class:due={needsDoing && !postFailed && !gold}
-					onclick={toggleTodo}
-					aria-expanded={todoPanel.open}
-					aria-controls="todo-panel"
-					aria-label={todoLabel}
-					title={todoPanel.open
-						? 'Close To finish (Esc)'
-						: postFailed
-							? 'To finish: a post did not go out'
-							: gold
-								? 'To finish: a video is doing far better than usual'
-								: needsDoing
-									? 'To finish: something needs doing'
-									: 'To finish: nothing to do right now'}
-				>
-					<span class="tileart">
-						<!-- Gold, the whole box wobbles and throws sparks off its edges (wobble.ts). -->
-						<span class="tilebox" use:wobble={{ active: gold, strength: 0.35, sparks: 9, from: 58, to: 102, thick: 2.2, long: 9 }}>
-							<svg class="tileicon" viewBox="0 0 48 48" width="128" height="128" fill="none" aria-hidden="true">
-								<defs>
-									<!-- In the icon's own units: an exclamation mark is a
-									     line with no width, which a box-relative gradient
-									     would not paint at all. -->
-									<linearGradient id="todo-due" gradientUnits="userSpaceOnUse" x1="4" y1="44" x2="44" y2="4">
-										<stop offset="0" style="stop-color: var(--warn)" />
-										<stop offset="1" style="stop-color: var(--pink)" />
-									</linearGradient>
-								</defs>
-								{#if todoPanel.open}
-									<!-- Open: filled purple, the way back cut out of it. -->
-									<rect class="box open" x="4" y="4" width="40" height="40" rx="11" />
-									<path class="neg back" d={TODO_MARKS.back} stroke-linecap="round" stroke-linejoin="round" />
-								{:else if postFailed}
-									<!-- A post did not go out: filled red, the exclamation
-									     mark cut out of it. -->
-									<rect class="box failed" x="4" y="4" width="40" height="40" rx="11" />
-									<path class="neg bang" d={TODO_MARKS.bang} stroke-linecap="round" />
-								{:else if gold}
-									<!-- A submission doing far better than usual: filled gold,
-									     the medal cut out of it. -->
-									<rect class="box gold" x="4" y="4" width="40" height="40" rx="11" />
-									<g transform={CELEBRATE_PLACE}>
-										{#each CELEBRATE_MARK as d (d)}
-											<path class="neg medal" {d} stroke-linecap="round" stroke-linejoin="round" />
-										{/each}
-									</g>
-								{:else if needsDoing}
-									<!-- Something to do: the colour on the border, a thick
-									     exclamation mark in the middle. -->
-									<rect class="box due" x="5.5" y="5.5" width="37" height="37" rx="10" stroke="url(#todo-due)" />
-									<path class="bangmark" d={TODO_MARKS.bang} stroke="url(#todo-due)" stroke-linecap="round" />
-								{:else}
-									<!-- Nothing to do: muted green, the check cut out of it. -->
-									<rect class="box idle" x="4" y="4" width="40" height="40" rx="11" />
-									<path class="neg" d={TODO_MARKS.check} stroke-linecap="round" stroke-linejoin="round" />
-								{/if}
-							</svg>
-						</span>
-						<!-- Where it opens, shown on hover; open, the box itself points back. -->
-						<svg class="tilearrow" viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
-							<path d="M9 5.5l6.5 6.5L9 18.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
-						</svg>
-					</span>
-					<span class="tilecount" aria-hidden="true">{todoCount}</span>
-				</button>
-			</section>
-		{/if}
-
-		<div class="lower">
-			{#if needsDevice}
-				<a class="alert" href="{base}/settings" title="This device has no name yet">
-					<span class="bang">!</span>
-					<span class="alerttext">Name this device</span>
-				</a>
-			{/if}
-
-			{#if devtest.length > 0}
-				<a class="devtest" href="{base}/settings?section=devtest" title="Settings → DevTest">
-					<span class="devtesthead">DevTest</span>
-					{#each devtest as line (line)}
-						<span class="devtestline">{line}</span>
-					{/each}
-				</a>
-			{/if}
-
-			{#if appUpdate.available}
-				<!-- Slides in from the rail's left edge: a tab whose left side stays behind the edge. -->
-				<button
-					class="update"
-					class:armed={updateArmed}
-					class:waiting={appUpdate.uploading}
-					aria-disabled={appUpdate.uploading}
-					onclick={reloadForUpdate}
-					title={updateWords.title}
-				>
-					<span class="updatetext">
-						<span class="updatehead">Update available!</span>
-						{#each updateWords.lines as line, i (i)}
-							<span class="updateline">{line}</span>
-						{/each}
-					</span>
-					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+					<!-- Out towards the page while closed, back towards the link while open. -->
+					<svg class="chev" viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
 						<path
-							d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"
+							d={dashboard.open ? 'M10 3.5 5.5 8l4.5 4.5' : 'M6 3.5 10.5 8 6 12.5'}
 							stroke="currentColor"
 							stroke-width="1.8"
 							stroke-linecap="round"
@@ -481,67 +286,272 @@
 						/>
 					</svg>
 				</button>
+				{#each links as link (link.href)}
+					<!-- The page stays lit under the dashboard: both are, while it is open. -->
+					<a href="{base}{link.href}" class="navlink" class:active={isActive(link.href)}>
+						<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+							<path
+								d={link.icon}
+								stroke="currentColor"
+								stroke-width="1.7"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+						<span class="text">
+							{link.label}
+							<em>{link.hint}</em>
+						</span>
+					</a>
+				{/each}
+			</nav>
+
+			<!-- Pages a local-devtest module brings (devtest.ts): not in flock's
+			     repository, so a build without the folder has none of these. -->
+			{#if localPages.length > 0}
+				<nav class="local" aria-label="Local pages">
+					{#each localPages as local (local.id)}
+						<a
+							href="{base}/devtest?page={encodeURIComponent(local.id)}"
+							class="navlink"
+							class:active={isLocalActive(local.id)}
+						>
+							<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+								<path
+									d={local.icon ?? DEVTEST_ICON}
+									stroke="currentColor"
+									stroke-width="1.7"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+							</svg>
+							<span class="text">
+								{local.label}
+								<em>{local.hint ?? 'Local only'}</em>
+							</span>
+						</a>
+					{/each}
+				</nav>
 			{/if}
 
-			<section class="worker" aria-label="Worker status">
-				<div class="workerhead">
-					<span class="workername">Worker</span>
-					<span class="dots">
-						{#each workers.view.dots as dot (dot.role)}
-							<span class="dot {dot.state}" title={dot.title} aria-label={dot.title}></span>
+			<!-- Project folders that hold a flock JSON file and have not been sent
+			     yet, right under Upload: one press opens the upload, filled from
+			     the file the first time and as it was left after that. -->
+			{#if projects.listed.length > 0}
+				<section class="projects" aria-label="New projects">
+					<p class="todohead">New projects <span class="count">{projects.listed.length}</span></p>
+					<ul>
+						{#each projects.listed as row (row.id)}
+							{@const started = projectState(row) === 'started'}
+							<li class:current={draft.project === row.id}>
+								<button
+									class="ptitle"
+									class:armed={armedProject === row.id}
+									title={armedProject === row.id
+										? 'Press again: the upload open now belongs to no project and would be replaced'
+										: `${row.name} — in ${folderName(row.root)}${started ? ', started' : ''}`}
+									onclick={() => openProject(row.id)}
+								>
+									{armedProject === row.id ? 'Press again to replace' : row.name}
+								</button>
+								<span class="pbadge" class:new={!started}>{started ? 'Started' : 'New'}</span>
+							</li>
 						{/each}
-					</span>
-				</div>
-				{#each workers.view.lines as line, i (i)}
-					<p class="doing" title={line.text}>
-						{line.text}{#if line.until && at(line.until)}<span class="until"> · out at {at(line.until)}</span>{/if}
-					</p>
+					</ul>
+				</section>
+			{/if}
+
+			<!-- What needs attention and videos with something left to do by hand
+			     — set in Studio, linked on Jestr — as one icon centred in the free
+			     stretch between the main links and the worker: a muted green box
+			     with a check cut out when nothing needs doing, a yellow-to-pink
+			     outline round an exclamation mark when something does, filled red
+			     with the mark cut out, slowly pulsing, when a post did not go out,
+			     filled purple with a back arrow while open. The list itself opens
+			     over the content area (TodoPanel). Rules in attention.ts and
+			     videotodo.ts; the marks in todoicon.ts, which TodoIcon draws small
+			     where Settings → Other explains them (and can hide it). -->
+			{#if general.value.showTodo}
+				<section class="todo" aria-label="To finish">
+					<button
+						id="todo-tile"
+						class="tile"
+						class:open={todoPanel.open}
+						class:failed={postFailed && !todoPanel.open}
+						class:gold
+						class:due={needsDoing && !postFailed && !gold}
+						onclick={toggleTodo}
+						aria-expanded={todoPanel.open}
+						aria-controls="todo-panel"
+						aria-label={todoLabel}
+						title={todoPanel.open
+							? 'Close To finish (Esc)'
+							: postFailed
+								? 'To finish: a post did not go out'
+								: gold
+									? 'To finish: a video is doing far better than usual'
+									: needsDoing
+										? 'To finish: something needs doing'
+										: 'To finish: nothing to do right now'}
+					>
+						<span class="tileart">
+							<!-- Gold, the whole box wobbles and throws sparks off its edges (wobble.ts). -->
+							<span class="tilebox" use:wobble={{ active: gold, strength: 0.35, sparks: 9, from: 58, to: 102, thick: 2.2, long: 9 }}>
+								<svg class="tileicon" viewBox="0 0 48 48" width="128" height="128" fill="none" aria-hidden="true">
+									<defs>
+										<!-- In the icon's own units: an exclamation mark is a
+										     line with no width, which a box-relative gradient
+										     would not paint at all. -->
+										<linearGradient id="todo-due" gradientUnits="userSpaceOnUse" x1="4" y1="44" x2="44" y2="4">
+											<stop offset="0" style="stop-color: var(--warn)" />
+											<stop offset="1" style="stop-color: var(--pink)" />
+										</linearGradient>
+									</defs>
+									{#if todoPanel.open}
+										<!-- Open: filled purple, the way back cut out of it. -->
+										<rect class="box open" x="4" y="4" width="40" height="40" rx="11" />
+										<path class="neg back" d={TODO_MARKS.back} stroke-linecap="round" stroke-linejoin="round" />
+									{:else if postFailed}
+										<!-- A post did not go out: filled red, the exclamation
+										     mark cut out of it. -->
+										<rect class="box failed" x="4" y="4" width="40" height="40" rx="11" />
+										<path class="neg bang" d={TODO_MARKS.bang} stroke-linecap="round" />
+									{:else if gold}
+										<!-- A submission doing far better than usual: filled gold,
+										     the medal cut out of it. -->
+										<rect class="box gold" x="4" y="4" width="40" height="40" rx="11" />
+										<g transform={CELEBRATE_PLACE}>
+											{#each CELEBRATE_MARK as d (d)}
+												<path class="neg medal" {d} stroke-linecap="round" stroke-linejoin="round" />
+											{/each}
+										</g>
+									{:else if needsDoing}
+										<!-- Something to do: the colour on the border, a thick
+										     exclamation mark in the middle. -->
+										<rect class="box due" x="5.5" y="5.5" width="37" height="37" rx="10" stroke="url(#todo-due)" />
+										<path class="bangmark" d={TODO_MARKS.bang} stroke="url(#todo-due)" stroke-linecap="round" />
+									{:else}
+										<!-- Nothing to do: muted green, the check cut out of it. -->
+										<rect class="box idle" x="4" y="4" width="40" height="40" rx="11" />
+										<path class="neg" d={TODO_MARKS.check} stroke-linecap="round" stroke-linejoin="round" />
+									{/if}
+								</svg>
+							</span>
+							<!-- Where it opens, shown on hover; open, the box itself points back. -->
+							<svg class="tilearrow" viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+								<path d="M9 5.5l6.5 6.5L9 18.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
+							</svg>
+						</span>
+						<span class="tilecount" aria-hidden="true">{todoCount}</span>
+					</button>
+				</section>
+			{/if}
+
+			<div class="lower">
+				{#if needsDevice}
+					<a class="alert" href="{base}/settings" title="This device has no name yet">
+						<span class="bang">!</span>
+						<span class="alerttext">Name this device</span>
+					</a>
+				{/if}
+
+				{#if devtest.length > 0}
+					<a class="devtest" href="{base}/settings?section=devtest" title="Settings → DevTest">
+						<span class="devtesthead">DevTest</span>
+						{#each devtest as line (line)}
+							<span class="devtestline">{line}</span>
+						{/each}
+					</a>
+				{/if}
+
+				{#if appUpdate.available}
+					<!-- Slides in from the rail's left edge: a tab whose left side stays behind the edge. -->
+					<button
+						class="update"
+						class:armed={updateArmed}
+						class:waiting={appUpdate.uploading}
+						aria-disabled={appUpdate.uploading}
+						onclick={reloadForUpdate}
+						title={updateWords.title}
+					>
+						<span class="updatetext">
+							<span class="updatehead">Update available!</span>
+							{#each updateWords.lines as line, i (i)}
+								<span class="updateline">{line}</span>
+							{/each}
+						</span>
+						<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+							<path
+								d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"
+								stroke="currentColor"
+								stroke-width="1.8"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+					</button>
+				{/if}
+
+				<section class="worker" aria-label="Worker status">
+					<div class="workerhead">
+						<span class="workername">Worker</span>
+						<span class="dots">
+							{#each workers.view.dots as dot (dot.role)}
+								<span class="dot {dot.state}" title={dot.title} aria-label={dot.title}></span>
+							{/each}
+						</span>
+					</div>
+					{#each workers.view.lines as line, i (i)}
+						<p class="doing" title={line.text}>
+							{line.text}{#if line.until && at(line.until)}<span class="until"> · out at {at(line.until)}</span>{/if}
+						</p>
+					{/each}
+				</section>
+			</div>
+
+			<nav class="utility">
+				{#each utilities as link (link.href)}
+					<a href="{base}{link.href}" class="navlink" class:active={isActive(link.href)}>
+						<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+							<path
+								d={link.icon}
+								stroke="currentColor"
+								stroke-width="1.7"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+						<span class="text">{link.label}</span>
+					</a>
 				{/each}
-			</section>
-		</div>
+			</nav>
 
-		<nav class="utility">
-			{#each utilities as link (link.href)}
-				<a href="{base}{link.href}" class="navlink" class:active={isActive(link.href)}>
-					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
-						<path
-							d={link.icon}
-							stroke="currentColor"
-							stroke-width="1.7"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-						/>
-					</svg>
-					<span class="text">{link.label}</span>
+			<div class="foot">
+				<!-- flock's website, in a new tab: inside Nexus's frame the app must stay where it is. -->
+				<a class="brand" href={SITE_URL} target="_blank" rel="noopener" title="flock's website — opens in a new tab">
+					<span class="mark">
+						<strong>flock</strong>
+						<img src="{base}/flock.png" alt="" width="68" height="68" />
+					</span>
+					<em>multi-platform publishing</em>
 				</a>
-			{/each}
-		</nav>
+			</div>
+		</aside>
 
-		<div class="foot">
-			<!-- flock's website, in a new tab: inside Nexus's frame the app must stay where it is. -->
-			<a class="brand" href={SITE_URL} target="_blank" rel="noopener" title="flock's website — opens in a new tab">
-				<span class="mark">
-					<strong>flock</strong>
-					<img src="{base}/flock.png" alt="" width="68" height="68" />
-				</span>
-				<em>multi-platform publishing</em>
-			</a>
+		<!-- The content area, clipped: the dashboard covers it (DashboardOverlay),
+		     as does the To finish panel the sidebar tile opens (TodoPanel). -->
+		<div class="content" bind:this={content}>
+			<main class="scroll" inert={dashboard.open || todoPanel.open}>
+				{@render children()}
+			</main>
+			<TodoPanel />
+			<DashboardOverlay />
 		</div>
-	</aside>
-
-	<!-- The content area, clipped: the dashboard covers it (DashboardOverlay),
-	     as does the To finish panel the sidebar tile opens (TodoPanel). -->
-	<div class="content" bind:this={content}>
-		<main class="scroll" inert={dashboard.open || todoPanel.open}>
-			{@render children()}
-		</main>
-		<TodoPanel />
-		<DashboardOverlay />
 	</div>
-</div>
+	<PasteNotice />
+{/if}
 
 <svelte:document onpaste={onPaste} />
-<PasteNotice />
 
 <style>
 	.shell {

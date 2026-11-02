@@ -25,6 +25,9 @@ worker/.tiktok-demo-read.*
 
 # The zipped site folder made for uploading to the static host
 site/*.zip
+# flock's own page for the website and the clean copy it is built in (pnpm build:site)
+site/app/
+/.site-build/
 
 # local-devtest: this machine's own test extensions (see src/lib/devtest.ts)
 src/local-devtest/

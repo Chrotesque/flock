@@ -14,6 +14,8 @@ process.env.FLOCK_BUILT_AT ||= String(Date.now());
 const config = {
 	preprocess: vitePreprocess(),
 	kit: {
+		// The copy for flock's website (scripts/build-site.mjs) lives under its /app/.
+		paths: { base: process.env.VITE_FLOCK_SITE === '1' ? '/app' : '' },
 		version: { name: `${VERSION}+${process.env.FLOCK_BUILT_AT}` },
 		adapter: adapter({
 			pages: 'build',

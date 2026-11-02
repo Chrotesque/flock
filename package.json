@@ -29,6 +29,7 @@
 		"worker:instagram": "node worker/index.mjs --instagram",
 		"worker:facebook": "node worker/index.mjs --facebook",
 		"build:worker": "node scripts/build-worker.mjs",
+		"build:site": "node scripts/build-site.mjs",
 		"deploy:worker": "node scripts/deploy-worker.mjs",
 		"deploy:worker:dry": "node scripts/deploy-worker.mjs --dry",
 		"tiktok:demo": "node scripts/tiktok-demo.mjs"

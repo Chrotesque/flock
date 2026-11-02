@@ -1,0 +1,3 @@
+# flock's own page under /app/ (pnpm build:site): an address under it with no
+# file of its own is still the page, which finds its way from there.
+/app/*  /app/index.html  200

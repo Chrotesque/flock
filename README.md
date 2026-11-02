@@ -80,6 +80,16 @@ straight away, with no restart.
 > Point it only at a `pb_public` that belongs to flock. `pnpm deploy:dry` shows
 > what would change.
 
+**From flock's website.** The same page also opens at
+<https://flock-scheduler.netlify.app/app/>. It asks once for your server's
+address (the one flock opens at), keeps it in that browser, and talks only to
+that server. The browser has to reach the server over https, and it needs a
+name again there, since to the browser it is a new site. *Change…* under
+Settings → Storage and defaults names another server.
+
+`pnpm build:site` builds that copy into `site/app/` and zips `site/` into
+`site/site.zip`, ready to upload to a static host.
+
 **Showing flock inside another site (iframe):**
 
 1. Copy `pb_hooks/strip_xframe.pb.js` into PocketBase's `pb_hooks/` folder (a

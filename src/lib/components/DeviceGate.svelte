@@ -1,7 +1,9 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import DeviceSetup from './DeviceSetup.svelte';
+	import ServerInfo from './ServerInfo.svelte';
 	import { device } from '$lib/stores/device.svelte';
+	import { SITE_COPY } from '$lib/pb';
 
 	/**
 	 * Covers a page until this browser has been named.
@@ -46,6 +48,10 @@
 				</p>
 
 				<DeviceSetup />
+				<!-- The website's copy: a wrong server can be changed without naming the browser for it. -->
+				{#if SITE_COPY}
+					<ServerInfo compact />
+				{/if}
 			</div>
 		</div>
 	</div>
