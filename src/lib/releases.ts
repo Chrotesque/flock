@@ -891,7 +891,18 @@ export function periodStats(
 	return keys.map((key) => statsOfPeriod(releases, filter, key, now, followers));
 }
 
-/** One period's numbers (periodStats). */
+/**
+ * Where the filter's date range cuts the period numbers, in ms (end
+ * exclusive); everything with no range. The last N days leave them alone.
+ */
+function rangeCut(filter: DashFilter, now: number): [number, number] {
+	return filter.range ? timeframeBounds(filter, now) : [-Infinity, Infinity];
+}
+
+/**
+ * One period's numbers (periodStats). With a date range in the filter the
+ * period is cut to it — a lifetime is the range itself.
+ */
 export function statsOfPeriod(
 	releases: Release[],
 	filter: DashFilter,
@@ -899,9 +910,11 @@ export function statsOfPeriod(
 	now: Date,
 	followers: FollowerState[] = []
 ): PeriodStats {
-	const end = now.getTime();
-	const from = periodStart(key, now);
-	const start = from.getTime();
+	const nowMs = now.getTime();
+	const [rangeFrom, rangeTo] = rangeCut(filter, nowMs);
+	const end = Math.min(nowMs, rangeTo - 1);
+	const start = Math.max(periodStart(key, now).getTime(), rangeFrom);
+	const from = new Date(start);
 	const stats: PeriodStats = {
 		key,
 		label: PERIOD_LABELS[key],
@@ -919,6 +932,8 @@ export function statsOfPeriod(
 			facebook: { views: 0, likes: 0, gained: 0, followers: null }
 		}
 	};
+	// A range that ends before the period starts leaves nothing in it.
+	if (start > end) return stats;
 	for (const r of releases) {
 		const posts = filter.platforms.map((p) => r.posts[p]).filter((p): p is Post => Boolean(p));
 		if (posts.length === 0) continue;
@@ -938,7 +953,9 @@ export function statsOfPeriod(
 				stats.partly = true;
 				before = post.samples[0]?.[1] ?? views;
 			}
-			const gained = Math.max(0, views - before);
+			// A range ending before now counts the views up to its last day.
+			const after = end >= nowMs ? views : (viewsAt(post, end) ?? before);
+			const gained = Math.max(0, after - before);
 			stats.gained += gained;
 			stats.byPlatform[post.platform].gained += gained;
 		}
@@ -948,7 +965,7 @@ export function statsOfPeriod(
 		stats.byPlatform[p].followers = sumGains(
 			followers
 				.filter((s) => s.platform === p)
-				.map((s) => (key === 'lifetime' ? lifetimeGain(s, end) : gainedBetween(s, start, end)))
+				.map((s) => (key === 'lifetime' && !filter.range ? lifetimeGain(s, end) : gainedBetween(s, start, end)))
 		);
 	}
 	stats.followers = sumGains(filter.platforms.map((p) => stats.byPlatform[p].followers));
@@ -970,8 +987,10 @@ export interface PeriodAverage {
 	periods: number;
 	/** Where the whole periods start; null with none. */
 	from: Date | null;
-	/** Where they end: the running period's start, or now for a lifetime. */
+	/** Where they end: the running period's start, or now for a lifetime — or where the date range ends. */
 	to: Date;
+	/** Whether the filter's date range cut them. */
+	ranged: boolean;
 	/** Public videos out a period (a lifetime: all of them, not divided). */
 	released: number;
 	/** The views those videos have now, a period (a lifetime: a video). */
@@ -988,7 +1007,9 @@ export interface PeriodAverage {
  * follows, over every whole period since the first public video in view,
  * divided by how many there were. A lifetime's average is a video's. A
  * follower record that starts later counts over the stretch it covers, scaled
- * to a period, and says `partly`.
+ * to a period, and says `partly`. With a date range in the filter only whole
+ * periods inside it count (a range shorter than one has none); one starting
+ * at or before the first video counts from that video's period, as without.
  */
 export function periodAverage(
 	releases: Release[],
@@ -997,19 +1018,24 @@ export function periodAverage(
 	now: Date,
 	followers: FollowerState[] = []
 ): PeriodAverage {
-	const end = now.getTime();
+	const nowMs = now.getTime();
+	const [rangeFrom, rangeTo] = rangeCut(filter, nowMs);
+	const end = Math.min(nowMs, rangeTo - 1);
 	const out: { first: number; posts: Post[] }[] = [];
+	let firstEver = Infinity;
 	for (const r of releases) {
 		const posts = filter.platforms.map((p) => r.posts[p]).filter((p): p is Post => Boolean(p));
 		if (posts.length === 0 || visibilityOf(r, filter.platforms) !== 'public') continue;
 		const first = Math.min(...posts.map((p) => p.at));
-		if (first <= end) out.push({ first, posts });
+		firstEver = Math.min(firstEver, first);
+		if (first <= end && first >= rangeFrom) out.push({ first, posts });
 	}
 	const avg: PeriodAverage = {
 		key,
+		ranged: Boolean(filter.range),
 		periods: 0,
 		from: null,
-		to: key === 'lifetime' ? now : periodStart(key, now),
+		to: key === 'lifetime' ? new Date(Math.min(nowMs, rangeTo)) : new Date(Math.min(periodStart(key, now).getTime(), rangeTo)),
 		released: 0,
 		views: 0,
 		likes: 0,
@@ -1021,16 +1047,29 @@ export function periodAverage(
 			facebook: { views: 0, likes: 0, followers: null }
 		}
 	};
-	const to = avg.to.getTime();
+	const limit = avg.to.getTime();
 	const earliest = Math.min(...out.map((o) => o.first));
-	let from = to;
+	let from = limit;
+	let to = limit;
 	if (key === 'lifetime') {
 		avg.periods = out.length;
-		if (out.length > 0) avg.from = new Date(earliest);
-	} else if (out.length > 0 && earliest < to) {
-		avg.from = periodStart(key, new Date(earliest));
-		from = avg.from.getTime();
-		for (let t = avg.from; t.getTime() < to; t = nextPeriodStart(key, t)) avg.periods += 1;
+		if (out.length > 0) avg.from = new Date(filter.range ? rangeFrom : earliest);
+		from = filter.range ? rangeFrom : -Infinity;
+	} else if (out.length > 0) {
+		// From the first video's period; a range starting later, from its first whole period.
+		let start = periodStart(key, new Date(earliest));
+		if (rangeFrom > firstEver && start.getTime() < rangeFrom) start = nextPeriodStart(key, start);
+		let t = start;
+		while (nextPeriodStart(key, t).getTime() <= limit) {
+			t = nextPeriodStart(key, t);
+			avg.periods += 1;
+		}
+		if (avg.periods > 0) {
+			avg.from = start;
+			from = start.getTime();
+			to = t.getTime();
+			avg.to = t;
+		}
 	}
 	if (avg.periods === 0) return avg;
 	const n = avg.periods;
@@ -1056,8 +1095,8 @@ export function periodAverage(
 				.filter((s) => s.platform === p)
 				.map((s): FollowerGain | null => {
 					if (key === 'lifetime') {
-						const gain = lifetimeGain(s, to);
-						return gain && { gained: gain.gained / n, partly: false };
+						const gain = filter.range ? gainedBetween(s, from, to) : lifetimeGain(s, to);
+						return gain && { gained: gain.gained / n, partly: gain.partly };
 					}
 					const read = Date.parse(String(s.history[0]?.[0] ?? '').replace(' ', 'T'));
 					if (!Number.isFinite(read)) return null;

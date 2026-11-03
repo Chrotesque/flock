@@ -111,6 +111,7 @@
 		peerGroups,
 		PERIOD_LABELS,
 		inTimeframe,
+		periodStart,
 		periodAverage,
 		statsOfPeriod,
 		timeframeWords,
@@ -1313,16 +1314,20 @@
 	function averageNote(a: PeriodAverage, perVideo: boolean): string {
 		const [one, many] = PERIOD_UNIT[a.key];
 		const videos = (n: number) => `${whole.format(n)} ${n === 1 ? 'video' : 'videos'}`;
-		if (a.key === 'lifetime') return a.periods ? `Over the ${videos(a.periods)} out, shared over them.` : 'No video out yet.';
+		const where = a.ranged ? ` in the timeframe (${timeframeWords(filter)})` : '';
+		if (a.key === 'lifetime') return a.periods ? `Over the ${videos(a.periods)} out${where}, shared over them.` : `No video out${where || ' yet'}.`;
 		const running = a.key === 'today' ? 'today is' : `this ${one} is`;
-		if (!a.periods || !a.from) return `Not a whole ${one} since the first video yet: ${running} left out until it is over.`;
-		const since = a.from.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-		const span = `the ${whole.format(a.periods)} whole ${a.periods === 1 ? one : many} since ${since}`;
-		if (perVideo)
-			return a.released
-				? `Over the ${videos(a.released)} out in ${span}, shared over them; ${running} left out until it is over.`
-				: `No video went out in ${span}.`;
-		return `Over ${span}; ${running} left out until it is over.`;
+		// The running period is left out; a range ending earlier ends the periods there instead.
+		const tail = a.to.getTime() === periodStart(a.key, nowDate).getTime() ? `; ${running} left out until it is over.` : '.';
+		if (!a.periods || !a.from)
+			return a.ranged
+				? `No whole ${one}${where}, so nothing to average.`
+				: `Not a whole ${one} since the first video yet: ${running} left out until it is over.`;
+		const day = (d: Date) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+		const last = new Date(a.to.getTime() - 1);
+		const span = `the ${whole.format(a.periods)} whole ${a.periods === 1 ? one : many} ${a.ranged ? `from ${day(a.from)} to ${day(last)}` : `since ${day(a.from)}`}`;
+		if (perVideo) return a.released ? `Over the ${videos(a.released)} out in ${span}, shared over them${tail}` : `No video went out in ${span}.`;
+		return `Over ${span}${tail}`;
 	}
 	// A platform whose views are read for none of the videos (Facebook without
 	// read_insights) says so, rather than +0.
@@ -2308,7 +2313,9 @@
 									<strong>+{whole.format(period.gained)}</strong> views gained{period.partly ? ' (at least)' : ''}
 								</p>
 								<p class="pnote">
-									{#if period.key === 'lifetime'}
+									{#if period.key === 'lifetime' && filter.range}
+										Every view of the videos out in the timeframe ({timeframeWords(filter)}).
+									{:else if period.key === 'lifetime'}
 										Every view of every video in view, since each went out.
 									{:else}
 										Views every video in view gained since the start of the period{period.partly
@@ -2364,7 +2371,7 @@
 									{/if}
 								</p>
 								<p class="pnote">
-									{period.key === 'lifetime'
+									{period.key === 'lifetime' && !filter.range
 										? "The accounts' counts now: everyone who follows them."
 										: "How far the accounts' counts moved since the start of the period: followers won less followers lost."}
 								</p>
@@ -2452,7 +2459,9 @@
 									{/if}
 								</p>
 								<p class="pnote">
-									{a.key === 'lifetime'
+									{a.key === 'lifetime' && a.ranged
+										? "How far the accounts' counts moved in the timeframe, shared over the videos out in it."
+										: a.key === 'lifetime'
 										? "The accounts' counts now, shared over the videos out."
 										: perVideo
 											? "How far the accounts' counts moved over the same whole periods, shared over the videos that went out in them. A count flock began reading later is scaled up from what it read."

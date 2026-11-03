@@ -739,6 +739,41 @@ describe('periodAverage', () => {
 		);
 	});
 
+	it('follows a date range: whole periods inside it, a lifetime as the range', () => {
+		const ranged = (from: string, to: string | 'today') => ({ ...DEFAULT_FILTER, range: { from, to } });
+		// From the 2nd: the week of 28 Sep is not whole inside it, so only the week of 5 Oct counts.
+		const week = periodAverage(releases, ranged('2026-10-02', 'today'), 'week', now, [youtube]);
+		expect(week.ranged).toBe(true);
+		expect(week.periods).toBe(1);
+		expect(week.from).toEqual(new Date(2026, 9, 5));
+		expect(week.views).toBe(300);
+		// Starting at or before the first video counts from its period, as with no range.
+		expect(periodAverage(releases, ranged('2026-09-01', 'today'), 'week', now).periods).toBe(2);
+		// Three days hold no whole week.
+		expect(periodAverage(releases, ranged('2026-10-12', 'today'), 'week', now).periods).toBe(0);
+		// A range ending on the 11th: its last whole week ends there.
+		const ended = periodAverage(releases, ranged('2026-09-01', '2026-10-11'), 'week', now);
+		expect(ended.periods).toBe(2);
+		expect(ended.to).toEqual(new Date(2026, 9, 12));
+		// A lifetime is the range: its videos, shared.
+		const life = videoAverage(releases, ranged('2026-10-05', 'today'), 'lifetime', now);
+		expect(life.released).toBe(2);
+		expect(life.views).toBe(175);
+	});
+
+	it('cuts plain periods to a date range', () => {
+		const ranged = { ...DEFAULT_FILTER, range: { from: '2026-10-05', to: '2026-10-10' } };
+		const [month, , , lifetime] = periodStats(releases, ranged, now, [youtube], ['month', 'year', 'week', 'lifetime']);
+		expect(month.from).toEqual(new Date(2026, 9, 5));
+		expect(month.released).toBe(1);
+		expect(month.views).toBe(300);
+		expect(lifetime.released).toBe(1);
+		// The followers moved from 100 to 120 on the 8th, inside the range.
+		expect(lifetime.followers).toEqual({ gained: 20, partly: false });
+		// This week starts on the 12th, after the range: nothing.
+		expect(periodStats(releases, ranged, now, [], ['week'])[0].released).toBe(0);
+	});
+
 	it('counts days by the calendar', () => {
 		const days = periodAverage(releases, DEFAULT_FILTER, 'today', now);
 		// 1 Oct to 13 Oct, today left out.

@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-03T15:30:00+01:00', version: '0.21.3', line: 'Changed: Dashboard > Boxes' },
 	{ at: '2026-11-03T15:05:00+01:00', version: '0.21.2', line: 'Changed: Dashboard > Labels' },
 	{ at: '2026-11-03T14:09:00+01:00', version: '0.21.1', line: 'Added: Filter > Date Range' },
 	{ at: '2026-11-03T13:48:00+01:00', version: '0.21.0', line: 'Added: Dashboard > Averages' },
