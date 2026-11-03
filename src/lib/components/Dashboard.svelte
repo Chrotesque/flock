@@ -2294,7 +2294,7 @@
 					<div class="trio">
 						<div>
 							<span class="bignum accent">{short(period.released)}</span>
-							<span class="unit">{period.released === 1 ? 'video out' : 'videos out'}</span>
+							<span class="unit">{period.released === 1 ? 'video' : 'videos'}</span>
 						</div>
 						<!-- The views' gains and each platform's share, on hover or focus. -->
 						<div class="hold">
@@ -2388,13 +2388,13 @@
 						{#if !perVideo}
 							<div>
 								<span class="bignum accent" class:faint={empty}>{empty ? '—' : avg(a.released)}</span>
-								<span class="unit">{avg(a.released) === '1' ? 'video' : 'videos'} {per}</span>
+								<span class="unit">{avg(a.released) === '1' ? 'video' : 'videos'}</span>
 							</div>
 						{/if}
 						<div class="hold">
 							<button class="holdnum" aria-describedby="views-{i}">
 								<span class="bignum" class:faint={empty}>{empty ? '—' : avg(a.views)}</span>
-								<span class="unit">views {per}</span>
+								<span class="unit">views</span>
 							</button>
 							<div class="ppop" id="views-{i}" role="tooltip">
 								{#if !empty}
@@ -2417,7 +2417,7 @@
 						<div class="hold">
 							<button class="holdnum" aria-describedby="likes-{i}">
 								<span class="bignum" class:faint={empty}>{empty ? '—' : avg(a.likes)}</span>
-								<span class="unit">likes {per}</span>
+								<span class="unit">likes</span>
 							</button>
 							<div class="ppop" id="likes-{i}" role="tooltip">
 								{#if !empty}
@@ -2440,7 +2440,7 @@
 								<span class="bignum" class:faint={!a.followers || empty}
 									>{a.followers && !empty ? signedAvg(a.followers.gained) : '—'}</span
 								>
-								<span class="unit">follows {per}</span>
+								<span class="unit">follows</span>
 							</button>
 							<div class="ppop" id="followers-{i}" role="tooltip">
 								<p class="gained">
