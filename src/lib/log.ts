@@ -2,123 +2,65 @@ import { pb } from './pb';
 import type { LogCategory, LogEntry, WorkerLine } from './types';
 import { userKey, type User } from './users';
 
-const DEVICE_KEY = 'flock.device';
-
 /**
- * Whose this browser is (users.ts), by user id. The device row's `user` is
- * the truth — the users store writes it here on every load — and this copy
- * is what lets a write check it at once, before anything has loaded.
- */
-const USER_KEY = 'flock.user';
-
-/**
- * A browser cannot read the machine's hostname — there is no API for it. So the
- * device name is set once per browser and kept in localStorage; the fallback is
- * a guess from the user agent, which is enough to tell two machines apart until
- * one is named properly in Settings.
- */
-function guessDevice(): string {
-	if (typeof navigator === 'undefined') return 'Unknown device';
-	const ua = navigator.userAgent;
-	if (/Windows/i.test(ua)) return 'Windows device';
-	if (/Macintosh|Mac OS/i.test(ua)) return 'Mac';
-	if (/Android/i.test(ua)) return 'Android device';
-	if (/iPhone|iPad/i.test(ua)) return 'iOS device';
-	if (/Linux/i.test(ua)) return 'Linux device';
-	return 'Unknown device';
-}
-
-export function deviceName(): string {
-	if (typeof localStorage === 'undefined') return guessDevice();
-	try {
-		return localStorage.getItem(DEVICE_KEY)?.trim() || guessDevice();
-	} catch {
-		// Private windows and blocked site data both throw here.
-		return guessDevice();
-	}
-}
-
-/** Whether this browser has already been named. */
-export function isDeviceNamed(): boolean {
-	if (typeof localStorage === 'undefined') return false;
-	try {
-		return Boolean(localStorage.getItem(DEVICE_KEY)?.trim());
-	} catch {
-		return false;
-	}
-}
-
-/**
- * Claims a name for this browser, once and for good.
+ * Who is using this browser: a profile (users.ts), chosen at the gate and
+ * switched in Settings → Profiles. No logins — a profile is a name, and the
+ * browser keeps its id and name here. The id is what writes check; the name
+ * is what every Log row is signed with, kept here so a row written before the
+ * profiles have loaded is still signed.
  *
- * Permanent by design: the log attributes past actions to this name, and
- * letting it change later would silently rewrite what every existing entry
- * means.
- *
- * The name is registered in the `devices` collection first. Its unique index is
- * what enforces uniqueness — checking for a clash and then writing would let two
- * machines claim the same name in the gap.
+ * The id key is the one 0.20.10's users used, so a browser that picked a user
+ * then keeps it as its profile.
  */
-export async function claimDeviceName(
-	name: string,
-	user = ''
-): Promise<{ ok: true } | { ok: false; reason: string }> {
-	const trimmed = name.trim();
-	if (!trimmed) return { ok: false, reason: 'Enter a name for this device.' };
-	if (isDeviceNamed()) return { ok: false, reason: 'This browser already has a name.' };
+const PROFILE_KEY = 'flock.user';
+const PROFILE_NAME_KEY = 'flock.user.name';
+/** What browsers were named before profiles: only a signature until the profile's name is known. */
+const OLD_DEVICE_KEY = 'flock.device';
 
-	const key = trimmed.toLowerCase();
-
-	try {
-		await pb.collection('devices').create({ name: trimmed, key, ...(user ? { user } : {}) });
-	} catch (err) {
-		// The SDK reports every rejection as "Failed to create record", so ask
-		// what actually happened rather than pattern-matching that string. The
-		// unique index still does the enforcing — this only picks the message.
-		const taken = await pb
-			.collection('devices')
-			.getFirstListItem(pb.filter('key={:key}', { key }))
-			.catch(() => null);
-
-		if (taken) {
-			return { ok: false, reason: `"${trimmed}" is already used by another machine.` };
-		}
-		const message = err instanceof Error ? err.message : String(err);
-		return { ok: false, reason: `Could not register the name — ${message}` };
-	}
-
-	try {
-		localStorage.setItem(DEVICE_KEY, trimmed);
-		if (user) localStorage.setItem(USER_KEY, user);
-	} catch {
-		return { ok: false, reason: 'This browser refused to store the name (private window?).' };
-	}
-	return { ok: true };
-}
-
-/** This browser's user id, '' while it has none. */
-export function currentUserId(): string {
+function read(key: string): string {
 	if (typeof localStorage === 'undefined') return '';
 	try {
-		return localStorage.getItem(USER_KEY)?.trim() ?? '';
+		return localStorage.getItem(key)?.trim() ?? '';
 	} catch {
+		// Private windows and blocked site data both throw here.
 		return '';
 	}
 }
 
-/** Writes down whose this browser is, or with '' that it is nobody's (its user was deleted). */
-export function rememberUser(id: string): void {
+/** This browser's profile id, '' while it has none. */
+export function currentUserId(): string {
+	return read(PROFILE_KEY);
+}
+
+/** The name this browser signs the Log with: its profile's. */
+export function deviceName(): string {
+	return read(PROFILE_NAME_KEY) || read(OLD_DEVICE_KEY) || 'Nobody yet';
+}
+
+/** Whether this browser has a profile. */
+export function isDeviceNamed(): boolean {
+	return Boolean(currentUserId());
+}
+
+/** Writes down this browser's profile, or with null that it has none (its profile was deleted). */
+export function rememberUser(user: Pick<User, 'id' | 'name'> | null): void {
 	try {
-		if (id) localStorage.setItem(USER_KEY, id);
-		else localStorage.removeItem(USER_KEY);
+		if (user) {
+			localStorage.setItem(PROFILE_KEY, user.id);
+			localStorage.setItem(PROFILE_NAME_KEY, user.name);
+		} else {
+			localStorage.removeItem(PROFILE_KEY);
+			localStorage.removeItem(PROFILE_NAME_KEY);
+		}
 	} catch {
 		// a private window: asked again on the next visit
 	}
 }
 
 /**
- * Makes a user. Not behind `assertDeviceNamed`, like `claimDeviceName`: a
- * new browser makes its user in the same box that names it.
+ * Makes a profile. Not behind `assertDeviceNamed`: the gate makes one for a
+ * browser that has none. The unique index on `key` refuses a name taken
+ * already — checking first and then writing would leave a gap.
  */
 export async function createUser(name: string): Promise<User> {
 	const clean = name.trim();
@@ -126,54 +68,25 @@ export async function createUser(name: string): Promise<User> {
 	try {
 		return (await pb.collection('profiles').create({ name: clean, key })) as unknown as User;
 	} catch (err) {
-		// As for a device: ask what happened rather than read the SDK's message.
+		// The SDK reports every rejection alike, so ask what happened.
 		const taken = await pb
 			.collection('profiles')
 			.getFirstListItem(pb.filter('key={:key}', { key }))
 			.catch(() => null);
-		if (taken) throw new Error(`"${clean}" is a user already — pick it instead.`);
-		throw new Error(`Could not make the user — ${err instanceof Error ? err.message : String(err)}`);
+		if (taken) throw new Error(`"${clean}" is a profile already — pick it instead.`);
+		throw new Error(`Could not make the profile — ${err instanceof Error ? err.message : String(err)}`);
 	}
 }
 
 /**
- * Says whose this named browser is: its device row gets the user (and is
- * made, under the browser's name, if this server has none — a browser that
- * changed servers on the website's copy).
- */
-export async function assignDeviceUser(user: string): Promise<void> {
-	if (!isDeviceNamed()) throw new Error('Name this device first.');
-	const name = deviceName();
-	const key = name.toLowerCase();
-	const row = await pb
-		.collection('devices')
-		.getFirstListItem(pb.filter('key={:key}', { key }))
-		.catch(() => null);
-	if (row) await pb.collection('devices').update(row.id, { user });
-	else {
-		try {
-			await pb.collection('devices').create({ name, key, user });
-		} catch {
-			throw new Error(`"${name}" is another machine's name on this server.`);
-		}
-	}
-	rememberUser(user);
-}
-
-/**
- * Throws unless this browser has been named and says whose it is.
+ * Throws unless this browser has a profile.
  *
  * Called at the top of every write, so the rule survives the UI: disabling an
  * overlay or re-enabling a button in devtools still cannot get a change past
  * this, because the block is in the code that talks to PocketBase.
  */
 export function assertDeviceNamed(): void {
-	if (!isDeviceNamed()) {
-		throw new Error('Name this device in Settings before making changes.');
-	}
-	if (!currentUserId()) {
-		throw new Error('Say whose this browser is before making changes.');
-	}
+	if (!currentUserId()) throw new Error('Choose a profile before making changes.');
 }
 
 /**

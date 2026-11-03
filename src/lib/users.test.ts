@@ -1,35 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import {
 	copyRefusal,
-	deleteRefusal,
-	devicesWithoutUser,
 	personalPart,
 	sharedPart,
 	userKey,
 	userLines,
 	userNameProblem,
-	userOfDevice,
 	userSettingKey,
 	withPersonal,
-	type DeviceRow,
 	type User
 } from './users';
 
 const sam: User = { id: 'u1', name: 'Sam', key: 'sam' };
 const kim: User = { id: 'u2', name: 'Kim', key: 'kim' };
 
-const devices: DeviceRow[] = [
-	{ id: 'd1', name: 'Studio PC', key: 'studio pc', user: 'u1', created: '2026-09-01 10:00:00.000Z' },
-	{ id: 'd2', name: 'Laptop', key: 'laptop', user: 'u2', created: '2026-09-02 10:00:00.000Z' },
-	{ id: 'd3', name: 'Old PC', key: 'old pc', user: '', created: '2026-08-01 10:00:00.000Z' },
-	{ id: 'd4', name: 'Gone', key: 'gone', user: 'u9', created: '2026-08-02 10:00:00.000Z' },
-	{ id: 'd5', name: 'Nexus', key: 'nexus', user: 'u1', created: '2026-08-15 10:00:00.000Z' }
-];
 
 describe('userNameProblem', () => {
-	it('wants a name that is no user yet, case aside', () => {
+	it('wants a name that is no profile yet, case aside', () => {
 		expect(userNameProblem('  ', [sam])).toMatch(/Enter/);
-		expect(userNameProblem('sAM ', [sam])).toMatch(/is a user already/);
+		expect(userNameProblem('sAM ', [sam])).toMatch(/is a profile already/);
 		expect(userNameProblem('x'.repeat(61), [])).toMatch(/at most 60/);
 		expect(userNameProblem('Alex', [sam, kim])).toBe('');
 		expect(userKey('  Alex ')).toBe('alex');
@@ -73,49 +62,21 @@ describe('withPersonal / sharedPart', () => {
 	});
 });
 
-describe('userOfDevice', () => {
-	it('is the device row’s user while that user exists', () => {
-		expect(userOfDevice('Studio PC', devices, [sam, kim])).toBe('u1');
-		expect(userOfDevice(' studio pc ', devices, [sam, kim])).toBe('u1');
-	});
-
-	it('is nobody for a browser with no user, a deleted one, or no row', () => {
-		expect(userOfDevice('Old PC', devices, [sam, kim])).toBe('');
-		expect(userOfDevice('Gone', devices, [sam, kim])).toBe('');
-		expect(userOfDevice('Elsewhere', devices, [sam, kim])).toBe('');
-	});
-});
-
 describe('userLines', () => {
-	it('lists you first, then by name, each with their browsers oldest first', () => {
-		expect(userLines([sam, kim], devices, 'u2')).toEqual([
-			{ user: kim, devices: ['Laptop'], you: true },
-			{ user: sam, devices: ['Nexus', 'Studio PC'], you: false }
-		]);
-	});
-
-	it('lists a user with no browser too', () => {
+	it('lists yours first, then by name', () => {
 		const alex: User = { id: 'u3', name: 'Alex', key: 'alex' };
-		expect(userLines([sam, alex], devices, 'u1').map((l) => [l.user.name, l.devices])).toEqual([
-			['Sam', ['Nexus', 'Studio PC']],
-			['Alex', []]
+		expect(userLines([sam, kim, alex], 'u2')).toEqual([
+			{ user: kim, you: true },
+			{ user: alex, you: false },
+			{ user: sam, you: false }
 		]);
-	});
-
-	it('names the browsers that belong to nobody', () => {
-		expect(devicesWithoutUser(devices, [sam, kim])).toEqual(['Old PC', 'Gone']);
 	});
 });
 
-describe('refusals', () => {
-	it('never deletes the user this browser is', () => {
-		expect(deleteRefusal('u1', 'u1')).toMatch(/This is you/);
-		expect(deleteRefusal('u2', 'u1')).toBe('');
-	});
-
-	it('copies only another user’s settings, to a browser that has a user', () => {
+describe('copyRefusal', () => {
+	it('copies only another profile’s settings, to a browser that has a profile', () => {
 		expect(copyRefusal('u1', 'u1')).toMatch(/your own/);
-		expect(copyRefusal('u2', '')).toMatch(/no user/);
+		expect(copyRefusal('u2', '')).toMatch(/no profile/);
 		expect(copyRefusal('u2', 'u1')).toBe('');
 	});
 });

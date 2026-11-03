@@ -1,19 +1,17 @@
-import { assignDeviceUser, createUser, currentUserId, deviceName, logAction, rememberUser } from '../log';
-import { copyUserSettings, deleteUser, listDevices, listUsers, subscribeUsers } from '../repo';
-import { userLines, userOfDevice, type DeviceRow, type User } from '../users';
+import { createUser, currentUserId, deviceName, logAction, rememberUser } from '../log';
+import { copyUserSettings, deleteUser, listUsers, subscribeUsers } from '../repo';
+import { userLines, type User } from '../users';
 import { device } from './device.svelte';
 import { general } from './general.svelte';
 import { hiddenVideos } from './hiddenvideos.svelte';
 
 /**
- * The users (users.ts) and their browsers, live, and whose this browser is.
- * The device row's `user` decides that; each load writes it into the
- * browser's own copy (`flock.user`), so a user deleted from another browser
- * puts this one back behind the gate.
+ * The profiles (users.ts), live, and which one this browser is on. A browser
+ * whose profile was deleted elsewhere is put back behind the gate on the next
+ * load; a profile renamed elsewhere signs the Log with its new name.
  */
 class UsersStore {
 	list = $state<User[]>([]);
-	devices = $state<DeviceRow[]>([]);
 	loaded = $state(false);
 	error = $state('');
 
@@ -22,16 +20,16 @@ class UsersStore {
 	#reading: Promise<void> | null = null;
 	#again = false;
 
-	/** This browser's user, while it has one. */
+	/** This browser's profile, while it has one. */
 	get current(): User | null {
 		return this.list.find((u) => u.id === device.user) ?? null;
 	}
 
 	get lines() {
-		return userLines(this.list, this.devices, device.user);
+		return userLines(this.list, device.user);
 	}
 
-	/** Reads both lists; a read asked for mid-read runs once more after. */
+	/** Reads the list; a read asked for mid-read runs once more after. */
 	async load(): Promise<void> {
 		if (this.#reading) {
 			this.#again = true;
@@ -41,9 +39,7 @@ class UsersStore {
 			do {
 				this.#again = false;
 				try {
-					const [users, devices] = await Promise.all([listUsers(), listDevices()]);
-					this.list = users;
-					this.devices = devices;
+					this.list = await listUsers();
 					this.loaded = true;
 					this.error = '';
 					this.#follow();
@@ -59,7 +55,7 @@ class UsersStore {
 		}
 	}
 
-	/** Loads and follows the lists while anything needs them. Returns the stop. */
+	/** Loads and follows the list while anything needs it. Returns the stop. */
 	start(): () => void {
 		this.#started += 1;
 		if (this.#started === 1) {
@@ -75,57 +71,51 @@ class UsersStore {
 		};
 	}
 
-	/** Writes down whose this browser is as its device row says, and re-reads what is the user's own when that changed. */
+	/** Keeps this browser's copy of its profile in step with the list: gone, or renamed. */
 	#follow() {
-		if (!device.named) return;
-		const id = userOfDevice(deviceName(), this.devices, this.list);
-		if (id === currentUserId()) return;
-		rememberUser(id);
-		this.#changed();
+		const id = currentUserId();
+		if (!id) return;
+		const mine = this.list.find((u) => u.id === id);
+		if (!mine) {
+			rememberUser(null);
+			this.#changed();
+		} else if (mine.name !== deviceName()) rememberUser(mine);
 	}
 
-	/** This browser's user changed: what is theirs is read again. */
+	/** This browser's profile changed: what is its own is read again. */
 	#changed() {
 		device.refresh();
 		void general.load(true);
 		void hiddenVideos.load(true);
 	}
 
-	/**
-	 * Makes a user, for the gate; a name taken already throws with a sentence.
-	 * Logged by the gate once the browser has its name, which the row carries.
-	 */
-	async create(name: string): Promise<User> {
+	/** This browser uses `user` from now on — at the gate, or switched in Settings. */
+	async use(user: User): Promise<void> {
+		const was = this.current?.name ?? '';
+		rememberUser(user);
+		this.#changed();
+		if (was !== user.name) logAction('settings', was ? `Switched from ${was} to ${user.name}` : `Chose the profile ${user.name}`);
+	}
+
+	/** Makes a profile and uses it; a name taken already throws with a sentence. */
+	async createAndUse(name: string): Promise<User> {
 		const user = await createUser(name);
+		// Written down before anything else is awaited: a page left now keeps it.
+		rememberUser(user);
+		this.#changed();
+		logAction('settings', `Added the profile ${user.name}`);
 		await this.load();
 		return user;
 	}
 
-	/** This named browser is this user's from now on; `isNew` when the gate just made them. */
-	async join(user: User, isNew = false): Promise<void> {
-		await assignDeviceUser(user.id);
-		this.#changed();
-		if (isNew) logAction('settings', `Added user ${user.name}`);
-		logAction('settings', `Gave this browser to ${user.name}`, deviceName());
-		await this.load();
-	}
-
-	/** A browser just named with its user (`claimDeviceName`): the rest of what `join` does. */
-	async named(user: User, isNew: boolean): Promise<void> {
-		this.#changed();
-		if (isNew) logAction('settings', `Added user ${user.name}`);
-		await this.load();
-	}
-
-	/** Gives this browser's user another's own settings in place of theirs. */
+	/** Gives this browser's profile another's own settings in place of its own. */
 	async copyFrom(user: User): Promise<void> {
 		await copyUserSettings(user, device.user);
 		this.#changed();
 	}
 
 	async remove(user: User): Promise<void> {
-		const line = this.lines.find((l) => l.user.id === user.id);
-		await deleteUser(user, line?.devices ?? []);
+		await deleteUser(user);
 		await this.load();
 	}
 }

@@ -6,8 +6,7 @@
 	import { SITE_COPY } from '$lib/pb';
 
 	/**
-	 * Covers a page until this browser has been named and says whose it is
-	 * (users.ts).
+	 * Covers a page until this browser has a profile (users.ts).
 	 *
 	 * This is the *visible* half of the rule only. Hiding an overlay or
 	 * re-enabling a control in devtools gets you back to the page but not past
@@ -17,7 +16,6 @@
 	let { children, what }: { children: Snippet; what: string } = $props();
 
 	let ready = $derived(device.ready);
-	let named = $derived(device.named);
 </script>
 
 {#if ready}
@@ -43,22 +41,14 @@
 					</svg>
 				</div>
 
-				{#if named}
-					<h2>Whose browser is this?</h2>
-					<p>
-						{what} is locked until this browser says whose it is. flock has users now, with no
-						logins: each has their own settings, and this browser shows its user's.
-					</p>
-				{:else}
-					<h2>Name this device first</h2>
-					<p>
-						{what} is locked until this browser has a name and a user. The Log records which machine
-						made every change, and it cannot do that for an unnamed one.
-					</p>
-				{/if}
+				<h2>Who's using this browser?</h2>
+				<p>
+					{what} is locked until this browser has a profile. The Log signs every change with it,
+					and each profile keeps its own settings. No password — just pick one.
+				</p>
 
 				<DeviceSetup />
-				<!-- The website's copy: a wrong server can be changed without naming the browser for it. -->
+				<!-- The website's copy: a wrong server can be changed without picking a profile on it. -->
 				{#if SITE_COPY}
 					<ServerInfo compact />
 				{/if}

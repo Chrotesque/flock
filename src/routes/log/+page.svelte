@@ -392,7 +392,7 @@
 		</div>
 
 		<p class="foot">
-			Showing {visible.length} of {entries.length}. This browser logs as
+			Showing {visible.length} of {entries.length}. This browser signs as
 			<strong>{deviceName()}</strong>. Entries cannot be edited or removed.
 		</p>
 	{/if}

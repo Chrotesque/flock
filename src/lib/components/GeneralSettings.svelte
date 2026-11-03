@@ -151,12 +151,10 @@
 	<section>
 		<div class="subhead">
 			<div>
-				<h4>This device</h4>
+				<h4>This browser's profile</h4>
 				<p>
-					The name this browser records in the Log. Browsers cannot read the machine's hostname, so
-					it is chosen once when flock first opens and stored on this device only. Names are unique
-					across every machine, and cannot be changed afterwards — the Log already attributes past
-					entries to this one.
+					The profile this browser signs the Log with and takes its own settings from. Switch it,
+					copy another's settings or delete one under Profiles.
 				</p>
 			</div>
 		</div>

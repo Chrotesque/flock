@@ -456,10 +456,10 @@
 					<a
 						class="alert"
 						href="{base}/settings"
-						title={device.named ? 'This browser does not say whose it is yet' : 'This device has no name yet'}
+						title="This browser has no profile yet"
 					>
 						<span class="bang">!</span>
-						<span class="alerttext">{device.named ? 'Choose a user' : 'Name this device'}</span>
+						<span class="alerttext">Pick a profile</span>
 					</a>
 				{/if}
 

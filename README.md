@@ -84,7 +84,7 @@ straight away, with no restart.
 <https://flock-scheduler.netlify.app/app/>. It asks once for your server's
 address (the one flock opens at), keeps it in that browser, and talks only to
 that server. The browser has to reach the server over https, and it needs a
-name again there, since to the browser it is a new site. *Change…* under
+profile picked again there, since to the browser it is a new site. *Change…* under
 Settings → Storage and defaults names another server.
 
 `pnpm build:site` builds that copy into `site/app/` and zips `site/` into
@@ -461,13 +461,12 @@ Then restart the container.
 
 ### First start
 
-**Name the browser and say whose it is.** Nothing can be uploaded or changed
-until you do: the Log records which machine made each change. The name is
-unique across your machines and cannot be changed later. Each browser needs
-its own; opening flock from another address counts as another browser. In the
-same box, pick your user or add a new one. There are no logins: each user has
-their own Dashboard columns, *To finish* Indicator, time zones and hidden
-videos, while brands, uploads and folders are shared by everyone.
+**Pick a profile.** Nothing can be uploaded or changed until this browser is
+on one: the Log signs every change with the profile's name. There are no
+logins — pick an existing profile or add one; a profile can be a person or a
+machine. Each has its own Dashboard columns, *To finish* Indicator, time zones
+and hidden videos, while brands, uploads and folders are shared by everyone.
+Opening flock from another address counts as another browser.
 
 ### Brands and accounts
 
@@ -889,9 +888,10 @@ open the list over the page.
 - *Other:* YouTube's official branding, whether the *To finish* Indicator
   shows (each of its states is drawn there with what it means), and extra time
   zones for the calendar.
-- *Users:* who uses flock and their browsers. *Copy to me* replaces your own
-  settings with another user's; *Delete* removes a user, whose browsers are
-  then asked whose they are. Both take three presses.
+- *Profiles:* *Switch* puts this browser on another profile. *Copy to me*
+  replaces your profile's settings with another's; *Delete* removes a profile,
+  whose browsers are then asked for one again. Copy and Delete take three
+  presses.
 
 **The brand in view** has:
 

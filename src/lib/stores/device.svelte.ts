@@ -1,25 +1,23 @@
-import { currentUserId, isDeviceNamed } from '../log';
+import { currentUserId } from '../log';
 
 /**
- * Whether this browser has been named, and whose it is, as reactive state.
+ * This browser's profile (users.ts), as reactive state.
  *
- * localStorage is not reactive, so a plain `isDeviceNamed()` call only
- * re-evaluates when something else happens to invalidate — which left the
- * sidebar warning up after the name was set until the next navigation. Anything
- * that reflects the named state reads this instead.
+ * localStorage is not reactive, so a plain `currentUserId()` call only
+ * re-evaluates when something else happens to invalidate — which once left the
+ * sidebar warning up after the gate was passed until the next navigation.
+ * Anything that reflects it reads this instead.
  */
 class DeviceState {
-	named = $state(isDeviceNamed());
-	/** The user's id (users.ts), '' while the browser has none. */
+	/** The profile's id, '' while the browser has none. */
 	user = $state(currentUserId());
 
-	/** Named and someone's: what every page waits for. */
+	/** Has a profile: what every page waits for. */
 	get ready(): boolean {
-		return this.named && Boolean(this.user);
+		return Boolean(this.user);
 	}
 
 	refresh() {
-		this.named = isDeviceNamed();
 		this.user = currentUserId();
 	}
 }

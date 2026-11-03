@@ -43,7 +43,7 @@
 
 	type Section = 'general' | 'brands' | 'templates' | 'dashboard' | 'other' | 'users' | 'devtest' | PlatformId;
 
-	// Two people, for the Users section.
+	// Two people, for the Profiles section.
 	const USERS_ICON =
 		'M9 11a3.25 3.25 0 1 0 0-6.5A3.25 3.25 0 0 0 9 11ZM3.5 19.5c0-3.04 2.46-5.5 5.5-5.5s5.5 2.46 5.5 5.5M15.5 4.7a3.25 3.25 0 0 1 0 6.1M17.5 14.3c1.8.8 3 2.6 3 4.7';
 
@@ -288,10 +288,10 @@
 									</svg>
 								</span>
 								<span class="who">
-									<span class="name">Users</span>
+									<span class="name">Profiles</span>
 									<span class="sub">
 										{users.current ? `you are ${users.current.name}` : ''}{users.list.length
-											? ` · ${users.list.length} ${users.list.length === 1 ? 'user' : 'users'}`
+											? ` · ${users.list.length} ${users.list.length === 1 ? 'profile' : 'profiles'}`
 											: ''}
 									</span>
 								</span>
@@ -497,7 +497,7 @@
 							/>
 							<p class="otherhint">
 								The box in the sidebar; the number under it counts what is on the list. Off, it is
-								hidden on every browser of yours — other users keep their own — and nothing on the
+								hidden for your profile — other profiles keep their own — and nothing on the
 								list is lost.
 							</p>
 							<!-- The sidebar box's states, drawn small (TodoIcon). -->
@@ -522,7 +522,7 @@
 									<h2>Dashboard</h2>
 									<p>
 										The columns of the Dashboard's list of videos: which are shown, and in what order.
-										Yours alone; other users keep their own.
+										Your profile's alone; other profiles keep their own.
 									</p>
 								</div>
 							</div>
@@ -550,8 +550,8 @@
 									</svg>
 								</span>
 								<div>
-									<h2>Users</h2>
-									<p>Who uses flock. Each user has their own settings, with no logins: a browser says whose it is once, when it is named.</p>
+									<h2>Profiles</h2>
+									<p>Who is using flock, with no logins. Each browser is on one profile and can switch any time; each profile has its own settings.</p>
 								</div>
 							</div>
 						</header>

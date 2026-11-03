@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-03T06:15:00+01:00', version: '0.20.11', line: 'Changed: Settings > Profiles' },
 	{ at: '2026-11-03T01:46:15+01:00', version: '0.20.10', line: 'Added: Settings > Users' },
 	{ at: '2026-11-02T20:59:10+01:00', version: '0.20.9', line: 'Added: Website > Open Flock' },
 	{ at: '2026-11-01T17:19:26+01:00', version: '0.20.8', line: 'Added: Jestr > Avg Ahead' },
