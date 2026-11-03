@@ -1,5 +1,5 @@
-import { dayStart, startOfWeek } from './format';
-import { gainedBetween, sumGains, type FollowerGain, type FollowerState } from './followers';
+import { startOfWeek } from './format';
+import { countAt, gainedBetween, sumGains, type FollowerGain, type FollowerState } from './followers';
 import { kindOf, KIND_ORDER, SHORT_MAX_SECONDS, type VideoKind } from './videokind';
 import type { PlatformId } from './types';
 
@@ -743,7 +743,7 @@ export function curve(post: Post, peers: Post[], now: number, steps = 24): Curve
 
 /* ---- the period numbers ---- */
 
-export type PeriodKey = 'today' | 'week' | 'month' | 'quarter' | 'year';
+export type PeriodKey = 'week' | 'month' | 'quarter' | 'year' | 'lifetime';
 
 export interface PeriodStats {
 	key: PeriodKey;
@@ -762,14 +762,17 @@ export interface PeriodStats {
 	byPlatform: Record<StatPlatform, { views: number; gained: number; followers: FollowerGain | null }>;
 }
 
-/** Where each period starts: today, this week (Monday), month, quarter and year, on the local clock. */
+/**
+ * Where each period starts: this week (Monday), month, quarter and year, on
+ * the local clock, then lifetime — every video the brand ever put out.
+ */
 export function periodStarts(now: Date): [PeriodKey, string, Date][] {
 	return [
-		['today', 'Today', dayStart(now)],
 		['week', 'This week', startOfWeek(now)],
 		['month', 'This month', new Date(now.getFullYear(), now.getMonth(), 1)],
 		['quarter', 'This quarter', new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)],
-		['year', 'This year', new Date(now.getFullYear(), 0, 1)]
+		['year', 'This year', new Date(now.getFullYear(), 0, 1)],
+		['lifetime', 'Lifetime', new Date(0)]
 	];
 }
 
@@ -822,13 +825,21 @@ export function periodStats(releases: Release[], filter: DashFilter, now: Date, 
 			}
 		}
 		for (const p of filter.platforms) {
+			// Over a lifetime every account started at none, so what it gained is its count now.
 			stats.byPlatform[p].followers = sumGains(
-				followers.filter((s) => s.platform === p).map((s) => gainedBetween(s, start, end))
+				followers
+					.filter((s) => s.platform === p)
+					.map((s) => (key === 'lifetime' ? lifetimeGain(s, end) : gainedBetween(s, start, end)))
 			);
 		}
 		stats.followers = sumGains(filter.platforms.map((p) => stats.byPlatform[p].followers));
 		return stats;
 	});
+}
+
+function lifetimeGain(state: FollowerState, at: number): FollowerGain | null {
+	const count = countAt(state, at);
+	return count === null ? null : { gained: count, partly: false };
 }
 
 /* ---- sorting ---- */

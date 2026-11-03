@@ -1220,8 +1220,8 @@
 	/* ---- the period numbers and what is coming ---- */
 
 	const nowDate = $derived(new Date(now));
-	// The periods run up to a year, past the list's timeframe, so they count
-	// every video the filter's other choices keep.
+	// The periods run up to the brand's lifetime, past the list's timeframe, so
+	// they count every video the filter's other choices keep.
 	const periods = $derived(periodStats(releases.filter((r) => inView(r, view)), view, nowDate, followersInView));
 	// A platform whose views are read for none of the videos (Facebook without
 	// read_insights) says so, rather than +0.
@@ -2147,9 +2147,13 @@
 								<strong>+{whole.format(period.gained)}</strong> views gained{period.partly ? ' (at least)' : ''}
 							</p>
 							<p class="pnote">
-								Views every video in view gained since the start of the period{period.partly
-									? '. Some were not read yet at its start, so they count from when flock first read them.'
-									: '.'}
+								{#if period.key === 'lifetime'}
+									Every view of every video in view, since each went out.
+								{:else}
+									Views every video in view gained since the start of the period{period.partly
+										? '. Some were not read yet at its start, so they count from when flock first read them.'
+										: '.'}
+								{/if}
 							</p>
 							{#each view.platforms as p (p)}
 								<p class="pline">
@@ -2181,7 +2185,11 @@
 									No follower counts read yet
 								{/if}
 							</p>
-							<p class="pnote">How far the accounts' counts moved since the start of the period: followers won less followers lost.</p>
+							<p class="pnote">
+								{period.key === 'lifetime'
+									? "The accounts' counts now: everyone who follows them."
+									: "How far the accounts' counts moved since the start of the period: followers won less followers lost."}
+							</p>
 							{#each view.platforms as p (p)}
 								{@const gain = period.byPlatform[p].followers}
 								<p class="pline">

@@ -296,8 +296,8 @@ describe('buildReleases with Facebook reels', () => {
 		const [a] = buildReleases([video('aaaaaaaaaaa', T0)], [reel('R1', T0)], [], [fbReel('F1', T0, { views: 7, likes: 1 })]);
 		expect(sumOf(a, ['youtube', 'instagram', 'facebook'], 'views')).toBe(157);
 		expect(sumOf(a, ['facebook'], 'likes')).toBe(1);
-		const [today] = periodStats([a], DEFAULT_FILTER, new Date(T0 + H));
-		expect(today.byPlatform.facebook.views).toBe(7);
+		const lifetime = periodStats([a], DEFAULT_FILTER, new Date(T0 + H)).at(-1)!;
+		expect(lifetime.byPlatform.facebook.views).toBe(7);
 	});
 });
 
@@ -360,8 +360,8 @@ describe('buildReleases with TikTok videos', () => {
 	it('adds TikTok up with the others, in the periods too', () => {
 		const [a] = buildReleases([video('aaaaaaaaaaa', T0)], [], [], [], [ttVideo('71', T0, { views: 9 })]);
 		expect(sumOf(a, ['youtube', 'tiktok'], 'views')).toBe(109);
-		const [today] = periodStats([a], DEFAULT_FILTER, new Date(T0 + H));
-		expect(today.byPlatform.tiktok.views).toBe(9);
+		const lifetime = periodStats([a], DEFAULT_FILTER, new Date(T0 + H)).at(-1)!;
+		expect(lifetime.byPlatform.tiktok.views).toBe(9);
 		expect(filterCounts([a], DEFAULT_FILTER).platforms.tiktok).toBe(1);
 	});
 });
@@ -593,25 +593,27 @@ describe('periodStats', () => {
 			[reel('R1', today + 30 * 60_000, { views: 40, history: history(today, [[H, 40]]) })],
 			[]
 		);
-		const [day, week, month] = periodStats(releases, DEFAULT_FILTER, now);
-		expect(day.released).toBe(1);
-		expect(day.views).toBe(340);
-		expect(day.byPlatform.instagram.views).toBe(40);
-		// Since midnight: a 300 and its reel 40; b stood at 1000 from yesterday evening.
-		expect(day.gained).toBe(340);
-		expect(day.partly).toBe(false);
+		const [week, month, , , lifetime] = periodStats(releases, DEFAULT_FILTER, now);
 		expect(week.released).toBe(1);
-		// Since Monday b also moved from 800 to 1000.
+		expect(week.views).toBe(340);
+		expect(week.byPlatform.instagram.views).toBe(40);
+		// Since Monday: a 300 and its reel 40, and b moved from 800 to 1000.
 		expect(week.gained).toBe(540);
+		expect(week.partly).toBe(false);
 		expect(month.released).toBe(2);
 		expect(month.views).toBe(1340);
+		// A lifetime gained every view, read from release or not.
+		expect(lifetime.released).toBe(2);
+		expect(lifetime.views).toBe(1340);
+		expect(lifetime.gained).toBe(1340);
+		expect(lifetime.partly).toBe(false);
 	});
 
-	it('runs from today to this year, quarters on the calendar', () => {
+	it('runs from this week to this year, quarters on the calendar, then lifetime', () => {
 		const periods = periodStats([], DEFAULT_FILTER, new Date(2026, 10, 3, 12, 0));
-		expect(periods.map((p) => p.key)).toEqual(['today', 'week', 'month', 'quarter', 'year']);
-		expect(periods[3].from).toEqual(new Date(2026, 9, 1));
-		expect(periods[4].from).toEqual(new Date(2026, 0, 1));
+		expect(periods.map((p) => p.key)).toEqual(['week', 'month', 'quarter', 'year', 'lifetime']);
+		expect(periods[2].from).toEqual(new Date(2026, 9, 1));
+		expect(periods[3].from).toEqual(new Date(2026, 0, 1));
 	});
 
 	it("adds up the accounts' follower moves over the platforms in view", () => {
@@ -633,20 +635,22 @@ describe('periodStats', () => {
 			analyticsThrough: ''
 		});
 		const followers = [
-			// Since midnight +3, since Monday the 12th +5.
 			state('youtube', [[at(11, 9), 700], [at(13, 9), 702], [at(14, 9), 705]]),
-			// First read this morning: counts from there, partly.
 			state('instagram', [[at(14, 7), 50], [at(14, 10), 49]]),
 			state('facebook', [[at(1, 0), 1016]])
 		];
-		const [day, week] = periodStats([], DEFAULT_FILTER, now, followers);
-		expect(day.byPlatform.youtube.followers).toEqual({ gained: 3, partly: false });
-		expect(day.byPlatform.instagram.followers).toEqual({ gained: -1, partly: true });
-		expect(day.byPlatform.facebook.followers).toEqual({ gained: 0, partly: false });
-		expect(day.followers).toEqual({ gained: 2, partly: true });
+		const [week, , , , lifetime] = periodStats([], DEFAULT_FILTER, now, followers);
+		// Since Monday the 12th +5.
 		expect(week.byPlatform.youtube.followers).toEqual({ gained: 5, partly: false });
+		// First read this morning: counts from there, partly.
+		expect(week.byPlatform.instagram.followers).toEqual({ gained: -1, partly: true });
+		expect(week.byPlatform.facebook.followers).toEqual({ gained: 0, partly: false });
+		expect(week.followers).toEqual({ gained: 4, partly: true });
+		// A lifetime's follows are the counts now.
+		expect(lifetime.byPlatform.youtube.followers).toEqual({ gained: 705, partly: false });
+		expect(lifetime.followers).toEqual({ gained: 705 + 49 + 1016, partly: false });
 		const ytOnly = periodStats([], { ...DEFAULT_FILTER, platforms: ['youtube'] }, now, followers);
-		expect(ytOnly[0].followers).toEqual({ gained: 3, partly: false });
+		expect(ytOnly[0].followers).toEqual({ gained: 5, partly: false });
 		expect(periodStats([], DEFAULT_FILTER, now)[0].followers).toBeNull();
 	});
 });
