@@ -1,7 +1,15 @@
 import { pb } from './pb';
 import type { LogCategory, LogEntry, WorkerLine } from './types';
+import { userKey, type User } from './users';
 
 const DEVICE_KEY = 'flock.device';
+
+/**
+ * Whose this browser is (users.ts), by user id. The device row's `user` is
+ * the truth — the users store writes it here on every load — and this copy
+ * is what lets a write check it at once, before anything has loaded.
+ */
+const USER_KEY = 'flock.user';
 
 /**
  * A browser cannot read the machine's hostname — there is no API for it. So the
@@ -52,7 +60,8 @@ export function isDeviceNamed(): boolean {
  * machines claim the same name in the gap.
  */
 export async function claimDeviceName(
-	name: string
+	name: string,
+	user = ''
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
 	const trimmed = name.trim();
 	if (!trimmed) return { ok: false, reason: 'Enter a name for this device.' };
@@ -61,7 +70,7 @@ export async function claimDeviceName(
 	const key = trimmed.toLowerCase();
 
 	try {
-		await pb.collection('devices').create({ name: trimmed, key });
+		await pb.collection('devices').create({ name: trimmed, key, ...(user ? { user } : {}) });
 	} catch (err) {
 		// The SDK reports every rejection as "Failed to create record", so ask
 		// what actually happened rather than pattern-matching that string. The
@@ -80,14 +89,79 @@ export async function claimDeviceName(
 
 	try {
 		localStorage.setItem(DEVICE_KEY, trimmed);
+		if (user) localStorage.setItem(USER_KEY, user);
 	} catch {
 		return { ok: false, reason: 'This browser refused to store the name (private window?).' };
 	}
 	return { ok: true };
 }
 
+/** This browser's user id, '' while it has none. */
+export function currentUserId(): string {
+	if (typeof localStorage === 'undefined') return '';
+	try {
+		return localStorage.getItem(USER_KEY)?.trim() ?? '';
+	} catch {
+		return '';
+	}
+}
+
+/** Writes down whose this browser is, or with '' that it is nobody's (its user was deleted). */
+export function rememberUser(id: string): void {
+	try {
+		if (id) localStorage.setItem(USER_KEY, id);
+		else localStorage.removeItem(USER_KEY);
+	} catch {
+		// a private window: asked again on the next visit
+	}
+}
+
 /**
- * Throws unless this browser has been named.
+ * Makes a user. Not behind `assertDeviceNamed`, like `claimDeviceName`: a
+ * new browser makes its user in the same box that names it.
+ */
+export async function createUser(name: string): Promise<User> {
+	const clean = name.trim();
+	const key = userKey(clean);
+	try {
+		return (await pb.collection('users').create({ name: clean, key })) as unknown as User;
+	} catch (err) {
+		// As for a device: ask what happened rather than read the SDK's message.
+		const taken = await pb
+			.collection('users')
+			.getFirstListItem(pb.filter('key={:key}', { key }))
+			.catch(() => null);
+		if (taken) throw new Error(`"${clean}" is a user already — pick it instead.`);
+		throw new Error(`Could not make the user — ${err instanceof Error ? err.message : String(err)}`);
+	}
+}
+
+/**
+ * Says whose this named browser is: its device row gets the user (and is
+ * made, under the browser's name, if this server has none — a browser that
+ * changed servers on the website's copy).
+ */
+export async function assignDeviceUser(user: string): Promise<void> {
+	if (!isDeviceNamed()) throw new Error('Name this device first.');
+	const name = deviceName();
+	const key = name.toLowerCase();
+	const row = await pb
+		.collection('devices')
+		.getFirstListItem(pb.filter('key={:key}', { key }))
+		.catch(() => null);
+	if (row) await pb.collection('devices').update(row.id, { user });
+	else {
+		try {
+			await pb.collection('devices').create({ name, key, user });
+		} catch {
+			throw new Error(`"${name}" is another machine's name on this server.`);
+		}
+	}
+	rememberUser(user);
+}
+
+/**
+ * Throws unless this browser has been named and says whose it is.
  *
  * Called at the top of every write, so the rule survives the UI: disabling an
  * overlay or re-enabling a button in devtools still cannot get a change past
@@ -96,6 +170,9 @@ export async function claimDeviceName(
 export function assertDeviceNamed(): void {
 	if (!isDeviceNamed()) {
 		throw new Error('Name this device in Settings before making changes.');
+	}
+	if (!currentUserId()) {
+		throw new Error('Say whose this browser is before making changes.');
 	}
 }
 

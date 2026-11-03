@@ -125,7 +125,7 @@ class VideoTodoStore {
 		try {
 			const read = await this.#readState();
 			const state = read.state;
-			if (!read.complete && device.named) await setSetting(TODO_KEY, state).catch(() => {});
+			if (!read.complete && device.ready) await setSetting(TODO_KEY, state).catch(() => {});
 			const [stats, uploads, reels] = await Promise.all([
 				loadTodoStats(state.since),
 				loadTodoUploads(state.since),

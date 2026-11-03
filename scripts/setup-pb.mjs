@@ -474,6 +474,22 @@ const collections = [
 		]
 	},
 	{
+		// The people using flock (users.ts). No logins: a browser is named once
+		// and says whose it is, and each user's own settings live in
+		// `app_settings` under keys ending in the user's id. Declared before
+		// `devices`, whose relation names it.
+		name: 'users',
+		type: 'base',
+		...RULES,
+		fields: [
+			{ type: 'text', name: 'name', required: true, max: 60 },
+			// Lower-cased form, so "Aya" and "aya" collide — devices.key's trick.
+			{ type: 'text', name: 'key', required: true, max: 60 },
+			...stamps
+		],
+		indexes: ['CREATE UNIQUE INDEX `idx_users_key` ON `users` (`key`)']
+	},
+	{
 		// Claimed device names. A browser writes one row here when it is named;
 		// the unique index on `key` is what actually prevents two machines
 		// sharing a name, since a check-then-write would race.
@@ -484,6 +500,10 @@ const collections = [
 			{ type: 'text', name: 'name', required: true, max: 120 },
 			// Lower-cased form, so "Studio PC" and "studio pc" collide.
 			{ type: 'text', name: 'key', required: true, max: 120 },
+			// Whose browser it is. Not cascading: deleting a user empties it, and
+			// the browser is asked again on its next visit — its name stays, as
+			// the Log's rows name it.
+			{ type: 'relation', name: 'user', collection: 'users', maxSelect: 1, cascadeDelete: false },
 			...stamps
 		],
 		indexes: ['CREATE UNIQUE INDEX `idx_devices_key` ON `devices` (`key`)']

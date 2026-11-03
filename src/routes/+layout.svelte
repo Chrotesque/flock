@@ -5,6 +5,7 @@
 	import { device } from '$lib/stores/device.svelte';
 	import { workers } from '$lib/stores/workers.svelte';
 	import { general } from '$lib/stores/general.svelte';
+	import { users } from '$lib/stores/users.svelte';
 	import { videoTodo } from '$lib/stores/videotodo.svelte';
 	import { attention } from '$lib/stores/attention.svelte';
 	import { celebrations } from '$lib/stores/celebrations.svelte';
@@ -38,6 +39,8 @@
 		// The website's copy with no server named has nowhere to read from yet.
 		if (NEEDS_SERVER) return;
 		void general.load();
+		// Whose this browser is, followed live: a user deleted elsewhere puts it back behind the gate.
+		const stopUsers = users.start();
 		workers.start();
 		const stopProjects = projects.start();
 		const stopTodo = videoTodo.start();
@@ -46,6 +49,7 @@
 		const stopDevtest = startDevtest();
 		const stopUpdate = appUpdate.start();
 		return () => {
+			stopUsers();
 			stopUpdate();
 			stopProjects();
 			stopTodo();
@@ -182,7 +186,7 @@
 			: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	}
 
-	let needsDevice = $derived(!device.named);
+	let needsDevice = $derived(!device.ready);
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -449,9 +453,13 @@
 
 			<div class="lower">
 				{#if needsDevice}
-					<a class="alert" href="{base}/settings" title="This device has no name yet">
+					<a
+						class="alert"
+						href="{base}/settings"
+						title={device.named ? 'This browser does not say whose it is yet' : 'This device has no name yet'}
+					>
 						<span class="bang">!</span>
-						<span class="alerttext">Name this device</span>
+						<span class="alerttext">{device.named ? 'Choose a user' : 'Name this device'}</span>
 					</a>
 				{/if}
 

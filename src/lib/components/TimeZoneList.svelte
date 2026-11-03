@@ -14,8 +14,8 @@
 		<button class="btn sm" onclick={() => general.addTimeZone()}>Add</button>
 	</div>
 	<p class="hint">
-		Offered in the calendar's time-zone dropdown beside US West and US East. The zone is an
-		IANA name such as <code>Asia/Tokyo</code>.
+		Offered in the calendar's time-zone dropdown beside US West and US East, for you alone. The
+		zone is an IANA name such as <code>Asia/Tokyo</code>.
 	</p>
 
 	{#each general.value.timeZones as tz (tz.id)}

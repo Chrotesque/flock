@@ -12,6 +12,8 @@
 	import TemplateEditor from '$lib/components/TemplateEditor.svelte';
 	import BrandEditor from '$lib/components/BrandEditor.svelte';
 	import DashColumnsEditor from '$lib/components/DashColumnsEditor.svelte';
+	import UserSettings from '$lib/components/UserSettings.svelte';
+	import { users } from '$lib/stores/users.svelte';
 	import { shownColumns } from '$lib/dashcolumns';
 	import { PLATFORMS, isPlatformId } from '$lib/platforms';
 	import { settings } from '$lib/stores/settings.svelte';
@@ -39,10 +41,14 @@
 	// Fresh, so an account the worker has just listed can be chosen at once.
 	accounts.load(true);
 
-	type Section = 'general' | 'brands' | 'templates' | 'dashboard' | 'other' | 'devtest' | PlatformId;
+	type Section = 'general' | 'brands' | 'templates' | 'dashboard' | 'other' | 'users' | 'devtest' | PlatformId;
+
+	// Two people, for the Users section.
+	const USERS_ICON =
+		'M9 11a3.25 3.25 0 1 0 0-6.5A3.25 3.25 0 0 0 9 11ZM3.5 19.5c0-3.04 2.46-5.5 5.5-5.5s5.5 2.46 5.5 5.5M15.5 4.7a3.25 3.25 0 0 1 0 6.1M17.5 14.3c1.8.8 3 2.6 3 4.7';
 
 	// The list's table icon, for the Dashboard section.
-	const COLUMNS_ICON = 'M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13ZM4 9.5h16M9.5 9.5V20M14.5 9.5V20';
+	const COLUMNS_ICON ='M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13ZM4 9.5h16M9.5 9.5V20M14.5 9.5V20';
 	const shownCount = $derived(shownColumns(general.value.dashboardColumns, { jestr: general.value.jestrIntegration }).length);
 
 	// The DevTest section lists only while a local-devtest module has settings;
@@ -143,6 +149,7 @@
 				section === 'other' ||
 				section === 'brands' ||
 				section === 'dashboard' ||
+				section === 'users' ||
 				(section === 'devtest' && devtestSettings.length > 0)
 			) {
 				active = section;
@@ -269,6 +276,23 @@
 										{general.value.complianceBranding ? 'compliance on' : 'compliance off'}{general.value.showTodo
 											? ''
 											: ' · To finish hidden'}
+									</span>
+								</span>
+							</button>
+						</li>
+						<li class:active={active === 'users'}>
+							<button class="pick" onclick={() => (active = 'users')}>
+								<span class="ic">
+									<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+										<path d={USERS_ICON} stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+									</svg>
+								</span>
+								<span class="who">
+									<span class="name">Users</span>
+									<span class="sub">
+										{users.current ? `you are ${users.current.name}` : ''}{users.list.length
+											? ` · ${users.list.length} ${users.list.length === 1 ? 'user' : 'users'}`
+											: ''}
 									</span>
 								</span>
 							</button>
@@ -473,7 +497,8 @@
 							/>
 							<p class="otherhint">
 								The box in the sidebar; the number under it counts what is on the list. Off, it is
-								hidden on every computer, and nothing on the list is lost.
+								hidden on every browser of yours — other users keep their own — and nothing on the
+								list is lost.
 							</p>
 							<!-- The sidebar box's states, drawn small (TodoIcon). -->
 							<ul class="todolegend">
@@ -495,7 +520,10 @@
 								</span>
 								<div>
 									<h2>Dashboard</h2>
-									<p>The columns of the Dashboard's list of videos: which are shown, and in what order.</p>
+									<p>
+										The columns of the Dashboard's list of videos: which are shown, and in what order.
+										Yours alone; other users keep their own.
+									</p>
 								</div>
 							</div>
 						</header>
@@ -513,6 +541,22 @@
 								{/if}
 							</section>
 						{/each}
+					{:else if active === 'users'}
+						<header class="panelhead">
+							<div class="ident">
+								<span class="ic big">
+									<svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+										<path d={USERS_ICON} stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+									</svg>
+								</span>
+								<div>
+									<h2>Users</h2>
+									<p>Who uses flock. Each user has their own settings, with no logins: a browser says whose it is once, when it is named.</p>
+								</div>
+							</div>
+						</header>
+
+						<UserSettings />
 					{:else if active === 'devtest'}
 						<header class="panelhead">
 							<div class="ident">

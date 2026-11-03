@@ -3,7 +3,20 @@ import { PLATFORMS, PLATFORM_IDS, isPlatformId } from './platforms';
 import { MoveRefused, landReason, lockReason } from './reschedule';
 import { actionPlan, groupRefusal, type PostAction } from './postactions';
 import { DEFAULT_SCHEDULING } from './types';
-import { logAction, assertDeviceNamed, deviceName } from './log';
+import { logAction, assertDeviceNamed, currentUserId, deviceName } from './log';
+import {
+	PERSONAL_WORDS,
+	USER_AREAS,
+	copyRefusal,
+	deleteRefusal,
+	personalPart,
+	userSettingKey,
+	withPersonal,
+	type DeviceRow,
+	type User,
+	type UserArea
+} from './users';
+import { readHidden } from './hiddenvideos';
 import { MOVING, canMove, planMove, readMove, type MoveRequest, type MoveStep } from './brandmove';
 import { newId } from './id';
 import { firstLine, formatSchedule } from './format';
@@ -367,13 +380,72 @@ export async function setSetting(key: string, value: unknown): Promise<void> {
 }
 
 /** The row under a key, or null — where `getSetting` only has the value. */
-async function findSetting(key: string): Promise<{ id: string; value: unknown } | null> {
+export async function findSetting(key: string): Promise<{ id: string; value: unknown } | null> {
 	try {
 		const row = await pb.collection('app_settings').getFirstListItem(`key="${key}"`);
 		return { id: row.id, value: row.value };
 	} catch {
 		return null;
 	}
+}
+
+/* ------------------------------------------------------------------ */
+/* users                                                                */
+/* ------------------------------------------------------------------ */
+
+export async function listUsers(): Promise<User[]> {
+	return (await pb.collection('users').getFullList({ sort: 'name' })) as unknown as User[];
+}
+
+export async function listDevices(): Promise<DeviceRow[]> {
+	const rows = await pb.collection('devices').getFullList({ fields: 'id,name,key,user,created', sort: 'created' });
+	return rows.map((r) => ({ id: r.id, name: r.name, key: r.key, user: r.user ?? '', created: r.created }));
+}
+
+/** The users and their browsers as they change, for the Users tab and the gate. Returns the unsubscribe. */
+export function subscribeUsers(onChange: () => void): () => void {
+	const subs = (['users', 'devices'] as const).map((name) => pb.collection(name).subscribe('*', onChange));
+	for (const sub of subs) sub.catch(() => {});
+	return () => {
+		for (const sub of subs) void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
+	};
+}
+
+/**
+ * What a user's area holds as they read it: their own row, else what a user
+ * without one reads — the settings everyone shared before users existed.
+ */
+async function userArea(area: UserArea, userId: string): Promise<unknown> {
+	const own = (await findSetting(userSettingKey(area, userId)))?.value;
+	// Every personal key, the shared row's where theirs holds none.
+	if (area === 'user_prefs') return personalPart(withPersonal(await getSetting<unknown>('general', {}), own));
+	return readHidden(own ?? (await getSetting<unknown>(area, null)));
+}
+
+/** Gives this browser's user another user's own settings, every area, in place of theirs. */
+export async function copyUserSettings(from: User, to: string): Promise<void> {
+	assertDeviceNamed();
+	const refused = copyRefusal(from.id, to);
+	if (refused) throw new Error(refused);
+	for (const area of USER_AREAS) await setSetting(userSettingKey(area, to), await userArea(area, from.id));
+	logAction('settings', `Copied the settings of ${from.name}`, PERSONAL_WORDS.join('; '));
+}
+
+/**
+ * Deletes a user and their own settings. Their browsers keep their names —
+ * the Log's rows name them — and PocketBase empties their `user`, so each is
+ * asked whose it is on its next visit. Never this browser's own user.
+ */
+export async function deleteUser(user: User, devices: string[]): Promise<void> {
+	assertDeviceNamed();
+	const refused = deleteRefusal(user.id, currentUserId());
+	if (refused) throw new Error(refused);
+	for (const area of USER_AREAS) {
+		const row = await findSetting(userSettingKey(area, user.id));
+		if (row) await pb.collection('app_settings').delete(row.id);
+	}
+	await pb.collection('users').delete(user.id);
+	logAction('settings', `Deleted user ${user.name}`, devices.length ? `Browsers: ${devices.join(', ')}` : 'No browsers');
 }
 
 /**

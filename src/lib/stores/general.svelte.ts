@@ -1,6 +1,7 @@
 import { newId } from '../id';
 import { getSetting, setSetting } from '../repo';
-import { logAction } from '../log';
+import { currentUserId, logAction } from '../log';
+import { personalPart, sharedPart, userSettingKey, withPersonal } from '../users';
 import { settle, LOG_SETTLE_MS } from '../settle';
 import type { GeneralSettings, NasDestination, WatchFolder } from '../types';
 import type { TimeZoneChoice } from '../timezones';
@@ -44,6 +45,10 @@ export const DEFAULT_GENERAL: GeneralSettings = {
  * `app_settings`. Deliberately one row rather than a column per setting: this
  * section is where half-formed ideas land, and most of them will be renamed or
  * deleted before any of it is settled enough to deserve a schema.
+ *
+ * Except `PERSONAL_KEYS` (users.ts), which are each user's own, under
+ * `user_prefs:<user id>`: the store reads and writes them there for this
+ * browser's user, so its callers need not know which is which.
  */
 class GeneralStore {
 	value = $state<GeneralSettings>({ ...DEFAULT_GENERAL });
@@ -59,11 +64,22 @@ class GeneralStore {
 	#logged: GeneralSettings | null = null;
 	#logSettle = settle(LOG_SETTLE_MS);
 
+	/** The shared row as read, whose personal keys are written back unchanged (users.ts `sharedPart`). */
+	#stored: unknown = {};
+	/** What each row last held, so a save writes only the row that changed. */
+	#written = { shared: '', personal: '' };
+
 	async load(force = false) {
 		if (this.#loaded && !force) return;
 		this.loading = true;
 		try {
-			const stored = await getSetting<Partial<GeneralSettings>>(GENERAL_KEY, {});
+			const shared = await getSetting<unknown>(GENERAL_KEY, {});
+			// This browser's user's own keys over the shared row (users.ts);
+			// a user with no row yet reads the shared ones.
+			const user = currentUserId();
+			const own = user ? await getSetting<unknown>(userSettingKey('user_prefs', user), null) : null;
+			const stored = withPersonal(shared, own) as Partial<GeneralSettings>;
+			this.#stored = shared;
 			// Rebuilt field by field rather than spread, so a key added to
 			// DEFAULT_GENERAL later cannot come back undefined and a key since
 			// removed (defaultReleaseTime, now per-platform) is not carried
@@ -85,6 +101,7 @@ class GeneralStore {
 			};
 			this.#loaded = true;
 			this.#logged = $state.snapshot(this.value);
+			this.#written = this.#parts(this.#logged);
 			this.error = null;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);
@@ -239,14 +256,35 @@ class GeneralStore {
 		}
 	}
 
+	/** The two rows a state is written as, as JSON: the shared one and this user's own. */
+	#parts(value: GeneralSettings) {
+		return {
+			shared: JSON.stringify(this.#sharedRow(value)),
+			personal: JSON.stringify(personalPart(value))
+		};
+	}
+
+	#sharedRow(value: GeneralSettings): Record<string, unknown> {
+		// Plus the two keys a worker from before the merge reads — see
+		// legacyWatchKeys. Load ignores them.
+		const row = { ...value, ...legacyWatchKeys(value.watchFolders, value.importFolderId) };
+		return sharedPart(row, this.#stored);
+	}
+
 	async saveNow() {
 		this.saving = true;
 		try {
 			const value = $state.snapshot(this.value) as GeneralSettings;
-			// Plus the two keys a worker from before the merge reads — see
-			// legacyWatchKeys. Load ignores them.
-			const written = { ...value, ...legacyWatchKeys(value.watchFolders, value.importFolderId) };
-			await setSetting(GENERAL_KEY, written);
+			const parts = this.#parts(value);
+			if (parts.shared !== this.#written.shared) {
+				await setSetting(GENERAL_KEY, this.#sharedRow(value));
+				this.#written.shared = parts.shared;
+			}
+			const user = currentUserId();
+			if (user && parts.personal !== this.#written.personal) {
+				await setSetting(userSettingKey('user_prefs', user), personalPart(value));
+				this.#written.personal = parts.personal;
+			}
 			this.error = null;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : String(err);

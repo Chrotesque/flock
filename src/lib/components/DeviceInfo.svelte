@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { deviceName } from '$lib/log';
 	import { device } from '$lib/stores/device.svelte';
+	import { users } from '$lib/stores/users.svelte';
 
 	// Display only. Naming happens in the gate that covers every page until it
 	// is done, so offering the form again here would be an option that can never
@@ -21,6 +23,9 @@
 		</svg>
 		<span class="devicename">{name}</span>
 		<span class="lockhint">Set — this cannot be changed.</span>
+		{#if users.current}
+			<a class="user" href="{base}/settings?section=users">{users.current.name}'s browser</a>
+		{/if}
 	</div>
 {:else}
 	<p class="pending">
@@ -48,6 +53,17 @@
 
 	.lockhint {
 		font-size: 11.5px;
+	}
+
+	.user {
+		margin-left: auto;
+		font-size: 12px;
+		color: var(--text-dim);
+		text-decoration: none;
+	}
+
+	.user:hover {
+		color: var(--pink-soft);
 	}
 
 	.pending {
