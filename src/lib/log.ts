@@ -124,11 +124,11 @@ export async function createUser(name: string): Promise<User> {
 	const clean = name.trim();
 	const key = userKey(clean);
 	try {
-		return (await pb.collection('users').create({ name: clean, key })) as unknown as User;
+		return (await pb.collection('profiles').create({ name: clean, key })) as unknown as User;
 	} catch (err) {
 		// As for a device: ask what happened rather than read the SDK's message.
 		const taken = await pb
-			.collection('users')
+			.collection('profiles')
 			.getFirstListItem(pb.filter('key={:key}', { key }))
 			.catch(() => null);
 		if (taken) throw new Error(`"${clean}" is a user already — pick it instead.`);

@@ -478,7 +478,7 @@ const collections = [
 		// and says whose it is, and each user's own settings live in
 		// `app_settings` under keys ending in the user's id. Declared before
 		// `devices`, whose relation names it.
-		name: 'users',
+		name: 'profiles',
 		type: 'base',
 		...RULES,
 		fields: [
@@ -487,7 +487,7 @@ const collections = [
 			{ type: 'text', name: 'key', required: true, max: 60 },
 			...stamps
 		],
-		indexes: ['CREATE UNIQUE INDEX `idx_users_key` ON `users` (`key`)']
+		indexes: ['CREATE UNIQUE INDEX `idx_profiles_key` ON `profiles` (`key`)']
 	},
 	{
 		// Claimed device names. A browser writes one row here when it is named;
@@ -503,7 +503,7 @@ const collections = [
 			// Whose browser it is. Not cascading: deleting a user empties it, and
 			// the browser is asked again on its next visit — its name stays, as
 			// the Log's rows name it.
-			{ type: 'relation', name: 'user', collection: 'users', maxSelect: 1, cascadeDelete: false },
+			{ type: 'relation', name: 'user', collection: 'profiles', maxSelect: 1, cascadeDelete: false },
 			...stamps
 		],
 		indexes: ['CREATE UNIQUE INDEX `idx_devices_key` ON `devices` (`key`)']

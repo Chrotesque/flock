@@ -394,7 +394,7 @@ export async function findSetting(key: string): Promise<{ id: string; value: unk
 /* ------------------------------------------------------------------ */
 
 export async function listUsers(): Promise<User[]> {
-	return (await pb.collection('users').getFullList({ sort: 'name' })) as unknown as User[];
+	return (await pb.collection('profiles').getFullList({ sort: 'name' })) as unknown as User[];
 }
 
 export async function listDevices(): Promise<DeviceRow[]> {
@@ -404,7 +404,7 @@ export async function listDevices(): Promise<DeviceRow[]> {
 
 /** The users and their browsers as they change, for the Users tab and the gate. Returns the unsubscribe. */
 export function subscribeUsers(onChange: () => void): () => void {
-	const subs = (['users', 'devices'] as const).map((name) => pb.collection(name).subscribe('*', onChange));
+	const subs = (['profiles', 'devices'] as const).map((name) => pb.collection(name).subscribe('*', onChange));
 	for (const sub of subs) sub.catch(() => {});
 	return () => {
 		for (const sub of subs) void sub.then((unsubscribe) => unsubscribe()).catch(() => {});
@@ -444,7 +444,7 @@ export async function deleteUser(user: User, devices: string[]): Promise<void> {
 		const row = await findSetting(userSettingKey(area, user.id));
 		if (row) await pb.collection('app_settings').delete(row.id);
 	}
-	await pb.collection('users').delete(user.id);
+	await pb.collection('profiles').delete(user.id);
 	logAction('settings', `Deleted user ${user.name}`, devices.length ? `Browsers: ${devices.join(', ')}` : 'No browsers');
 }
 
