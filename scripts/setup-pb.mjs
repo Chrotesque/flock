@@ -483,7 +483,7 @@ const collections = [
 		...RULES,
 		fields: [
 			{ type: 'text', name: 'name', required: true, max: 60 },
-			// Lower-cased form, so "Aya" and "aya" collide — devices.key's trick.
+			// Lower-cased form, so "Sam" and "sam" collide — devices.key's trick.
 			{ type: 'text', name: 'key', required: true, max: 60 },
 			...stamps
 		],
