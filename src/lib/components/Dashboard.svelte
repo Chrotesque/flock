@@ -76,7 +76,18 @@
 		toDashboardVideo
 	} from '$lib/repo';
 	import { UPLOADS_A_DAY, quotaToday, refreshDue, stopToday, stopWords, type QuotaRow } from '$lib/youtubequota';
-	import { formatBytes, formatDuration, shortCount } from '$lib/format';
+	import { averageCount, formatBytes, formatDuration, shortCount } from '$lib/format';
+	import {
+		AVERAGE_PER,
+		AVERAGE_LABELS,
+		MIN_BOXES,
+		addBox,
+		boxLabel,
+		canAddBox,
+		chooseBox,
+		sameBox,
+		type BoxChoice
+	} from '$lib/periodboxes';
 	import { matchesTitle, searchWords, titleParts } from '$lib/titlesearch';
 	import { KIND_LABELS } from '$lib/videokind';
 	import { TREND, changeWords } from '$lib/trend';
@@ -95,7 +106,12 @@
 		isStatPlatform,
 		judge,
 		peerGroups,
-		periodStats,
+		PERIOD_KEYS,
+		PERIOD_LABELS,
+		periodAverage,
+		statsOfPeriod,
+		type PeriodAverage,
+		type PeriodStats,
 		overallOf,
 		readFilter,
 		sortRows,
@@ -770,6 +786,7 @@
 
 	function onWindowPointer(event: PointerEvent) {
 		const target = event.target as HTMLElement;
+		if (boxMenu !== null && !target.closest('.pmenu, .pick, .addbox')) boxMenu = null;
 		if (cell && !target.closest('.cellpop, [data-col]')) {
 			cell = null;
 			dismissedAt = Date.now();
@@ -1222,7 +1239,69 @@
 	const nowDate = $derived(new Date(now));
 	// The periods run up to the brand's lifetime, past the list's timeframe, so
 	// they count every video the filter's other choices keep.
-	const periods = $derived(periodStats(releases.filter((r) => inView(r, view)), view, nowDate, followersInView));
+	const periodReleases = $derived(releases.filter((r) => inView(r, view)));
+	/** The strip's boxes, as this profile chose them (periodboxes.ts). */
+	const boxes = $derived(general.value.dashboardPeriods);
+	const boxNumbers = $derived(
+		boxes.map((box): { plain: PeriodStats } | { average: PeriodAverage } | null =>
+			!box
+				? null
+				: box.kind === 'plain'
+					? { plain: statsOfPeriod(periodReleases, view, box.period, nowDate, followersInView) }
+					: { average: periodAverage(periodReleases, view, box.period, nowDate, followersInView) }
+		)
+	);
+	/** The box whose menu is open, by its place in the strip. */
+	let boxMenu = $state<number | null>(null);
+	/** The pointer near the strip's right edge, or the + focused: the last box makes room for the +. */
+	let nearAdd = $state(false);
+
+	function pickBox(index: number, choice: BoxChoice) {
+		general.setDashboardPeriods(chooseBox(boxes, index, choice));
+		boxMenu = null;
+	}
+
+	/** Adds an empty box at the end and opens its menu. */
+	function addPeriodBox() {
+		const next = addBox(boxes);
+		if (next === boxes) return;
+		general.setDashboardPeriods(next);
+		boxMenu = next.length - 1;
+		nearAdd = false;
+	}
+
+	// Escape closes a box's menu, not the Dashboard: caught on the menu and its
+	// heading, before DashboardOverlay's window listener sees it.
+	function onBoxMenuKey(event: KeyboardEvent) {
+		if (event.key !== 'Escape' || boxMenu === null) return;
+		event.preventDefault();
+		boxMenu = null;
+	}
+
+	function onStripPointer(event: PointerEvent) {
+		const strip = event.currentTarget as HTMLElement;
+		nearAdd = canAddBox(boxes) && event.clientX > strip.getBoundingClientRect().right - 90;
+	}
+
+	const PERIOD_UNIT: Record<PeriodAverage['key'], [string, string]> = {
+		today: ['day', 'days'],
+		week: ['week', 'weeks'],
+		month: ['month', 'months'],
+		quarter: ['quarter', 'quarters'],
+		year: ['year', 'years'],
+		lifetime: ['video', 'videos']
+	};
+
+	/** What an average box's numbers are over, for its popups. */
+	function averageNote(a: PeriodAverage): string {
+		const [one, many] = PERIOD_UNIT[a.key];
+		if (a.key === 'lifetime')
+			return a.periods ? `Every view of the ${whole.format(a.periods)} ${a.periods === 1 ? one : many} out, shared over them.` : 'No video out yet.';
+		const running = a.key === 'today' ? 'today is' : `this ${one} is`;
+		if (!a.periods || !a.from) return `Not a whole ${one} since the first video yet: ${running} left out until it is over.`;
+		const since = a.from.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+		return `Over the ${whole.format(a.periods)} whole ${a.periods === 1 ? one : many} since ${since}; ${running} left out until it is over.`;
+	}
 	// A platform whose views are read for none of the videos (Facebook without
 	// read_insights) says so, rather than +0.
 	const viewsUnread = $derived(
@@ -1368,6 +1447,14 @@
 	const big = (n: number) => (n >= 100_000 ? compact.format(n) : whole.format(n));
 	/** The period boxes' numbers: 999, then 1k, 1.2k, 85.8k, 102k (shortCount); the popups have them exact. */
 	const short = (n: number) => shortCount(n);
+	/** An average box's numbers: 1.4, then as `short`; the popups have one decimal. */
+	const avg = (n: number) => averageCount(n);
+	const avgExact = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+	const signedAvg = (n: number) => (avg(n) === '0' ? '0' : n > 0 ? `+${avg(n)}` : `−${avg(-n)}`);
+	const signedAvgExact = (n: number) => {
+		const text = avgExact.format(Math.abs(n));
+		return text === '0' ? '0' : n > 0 ? `+${text}` : `−${text}`;
+	};
 	/** The list's counts, shortened the same way; `exact` puts the whole figure on hover. */
 	const count = (n: number | null | undefined) => (n == null ? '—' : shortCount(n));
 	const exact = (n: number | null | undefined) => (n != null && Math.abs(n) >= 1000 ? whole.format(n) : undefined);
@@ -2126,83 +2213,227 @@
 		<p class="banner bad">Could not reach PocketBase — {error}</p>
 	{/if}
 
-	<section class="card periods" aria-label="Numbers by period">
-		{#each periods as period (period.key)}
-			<div class="period">
-				<h2>{period.label}</h2>
-				<div class="trio">
-					<div>
-						<span class="bignum accent">{short(period.released)}</span>
-						<span class="unit">{period.released === 1 ? 'video out' : 'videos out'}</span>
-					</div>
-					<!-- The views' gains and each platform's share, on hover or focus. -->
-					<div class="hold">
-						<button class="holdnum" aria-describedby="views-{period.key}">
-							<span class="bignum">{short(period.views)}</span>
-							<span class="unit">views on them</span>
+	<!-- The period boxes, 3 to 5, each chosen from its heading (periodboxes.ts). Near the strip's right edge
+	     the last box makes room for a + that adds one, while fewer than 5. -->
+	<section
+		class="card periods"
+		class:adding={nearAdd && canAddBox(boxes)}
+		aria-label="Numbers by period"
+		style:--boxes={boxes.length}
+		style:--boxes-narrow={Math.min(boxes.length, 3)}
+		onpointermove={onStripPointer}
+		onpointerleave={() => (nearAdd = false)}
+	>
+		{#each boxes as choice, i (i)}
+			{@const nums = boxNumbers[i]}
+			<div class="period" class:none={!choice}>
+				<div class="phead">
+					<h2>
+						<button
+							class="pick"
+							type="button"
+							aria-haspopup="menu"
+							aria-expanded={boxMenu === i}
+							title="Choose what this box shows"
+							onclick={() => (boxMenu = boxMenu === i ? null : i)}
+							onkeydown={onBoxMenuKey}
+						>
+							{boxLabel(choice)}
+							<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" /></svg>
 						</button>
-						<div class="ppop" id="views-{period.key}" role="tooltip">
-							<p class="gained"><strong class="exact">{whole.format(period.views)}</strong> views on the videos out</p>
-							<p class="gained">
-								<strong>+{whole.format(period.gained)}</strong> views gained{period.partly ? ' (at least)' : ''}
-							</p>
-							<p class="pnote">
-								{#if period.key === 'lifetime'}
-									Every view of every video in view, since each went out.
-								{:else}
-									Views every video in view gained since the start of the period{period.partly
-										? '. Some were not read yet at its start, so they count from when flock first read them.'
-										: '.'}
-								{/if}
-							</p>
-							{#each view.platforms as p (p)}
-								<p class="pline">
-									<i style:background={PLATFORM_COLOURS[p]}></i>
-									<span class="pname">{PLATFORMS[p].label}</span>
-									{#if viewsUnread.has(p)}
-										<span class="pval">views not read yet</span>
+					</h2>
+					{#if boxMenu === i}
+						<div class="pmenu" role="menu" aria-label="What this box shows" tabindex="-1" onkeydown={onBoxMenuKey}>
+							<button
+								type="button"
+								role="menuitemradio"
+								aria-checked={choice === null}
+								title={boxes.length > MIN_BOXES ? 'Takes this box away' : 'Leaves this box empty: the strip keeps at least 3'}
+								onclick={() => pickBox(i, null)}>None</button
+							>
+							<hr />
+							<p class="pmhead">Plain stats</p>
+							{#each PERIOD_KEYS as key (key)}
+								{@const plain = { kind: 'plain', period: key } as BoxChoice}
+								<button type="button" role="menuitemradio" aria-checked={sameBox(choice, plain)} onclick={() => pickBox(i, plain)}
+									>{PERIOD_LABELS[key]}</button
+								>
+							{/each}
+							<hr />
+							<p class="pmhead">Averages</p>
+							{#each PERIOD_KEYS as key (key)}
+								{@const average = { kind: 'average', period: key } as BoxChoice}
+								<button
+									type="button"
+									role="menuitemradio"
+									aria-checked={sameBox(choice, average)}
+									onclick={() => pickBox(i, average)}>{AVERAGE_LABELS[key]}</button
+								>
+							{/each}
+						</div>
+					{/if}
+				</div>
+				{#if nums && 'plain' in nums}
+					{@const period = nums.plain}
+					<div class="trio">
+						<div>
+							<span class="bignum accent">{short(period.released)}</span>
+							<span class="unit">{period.released === 1 ? 'video out' : 'videos out'}</span>
+						</div>
+						<!-- The views' gains and each platform's share, on hover or focus. -->
+						<div class="hold">
+							<button class="holdnum" aria-describedby="views-{i}">
+								<span class="bignum">{short(period.views)}</span>
+								<span class="unit">views</span>
+							</button>
+							<div class="ppop" id="views-{i}" role="tooltip">
+								<p class="gained"><strong class="exact">{whole.format(period.views)}</strong> views on the videos out</p>
+								<p class="gained">
+									<strong>+{whole.format(period.gained)}</strong> views gained{period.partly ? ' (at least)' : ''}
+								</p>
+								<p class="pnote">
+									{#if period.key === 'lifetime'}
+										Every view of every video in view, since each went out.
 									{:else}
-										<span class="pval">{whole.format(period.byPlatform[p].views)} on the videos out</span>
-										<strong>+{whole.format(period.byPlatform[p].gained)}</strong>
+										Views every video in view gained since the start of the period{period.partly
+											? '. Some were not read yet at its start, so they count from when flock first read them.'
+											: '.'}
 									{/if}
 								</p>
-							{/each}
+								{#each view.platforms as p (p)}
+									<p class="pline">
+										<i style:background={PLATFORM_COLOURS[p]}></i>
+										<span class="pname">{PLATFORMS[p].label}</span>
+										{#if viewsUnread.has(p)}
+											<span class="pval">views not read yet</span>
+										{:else}
+											<span class="pval">{whole.format(period.byPlatform[p].views)} on the videos out</span>
+											<strong>+{whole.format(period.byPlatform[p].gained)}</strong>
+										{/if}
+									</p>
+								{/each}
+							</div>
 						</div>
-					</div>
-					<div class="hold">
-						<button class="holdnum" aria-describedby="followers-{period.key}">
-							<span class="bignum" class:faint={!period.followers}
-								>{period.followers ? signedShort(period.followers.gained) : '—'}</span
-							>
-							<span class="unit">follows</span>
-						</button>
-						<div class="ppop" id="followers-{period.key}" role="tooltip">
-							<p class="gained">
-								{#if period.followers}
-									<strong class:down={period.followers.gained < 0}>{signed(period.followers.gained)}</strong> followers and
-									subscribers{period.followers.partly ? ' (since flock began reading them)' : ''}
-								{:else}
-									No follower counts read yet
-								{/if}
-							</p>
-							<p class="pnote">
-								{period.key === 'lifetime'
-									? "The accounts' counts now: everyone who follows them."
-									: "How far the accounts' counts moved since the start of the period: followers won less followers lost."}
-							</p>
-							{#each view.platforms as p (p)}
-								{@const gain = period.byPlatform[p].followers}
-								<p class="pline">
-									<i style:background={PLATFORM_COLOURS[p]}></i>
-									<span class="pname">{PLATFORMS[p].label}</span>
-									<span class="pval">{gainWords(gain, p)}</span>
+						<div class="hold">
+							<button class="holdnum" aria-describedby="followers-{i}">
+								<span class="bignum" class:faint={!period.followers}
+									>{period.followers ? signedShort(period.followers.gained) : '—'}</span
+								>
+								<span class="unit">follows</span>
+							</button>
+							<div class="ppop" id="followers-{i}" role="tooltip">
+								<p class="gained">
+									{#if period.followers}
+										<strong class:down={period.followers.gained < 0}>{signed(period.followers.gained)}</strong> followers and
+										subscribers{period.followers.partly ? ' (since flock began reading them)' : ''}
+									{:else}
+										No follower counts read yet
+									{/if}
 								</p>
-							{/each}
+								<p class="pnote">
+									{period.key === 'lifetime'
+										? "The accounts' counts now: everyone who follows them."
+										: "How far the accounts' counts moved since the start of the period: followers won less followers lost."}
+								</p>
+								{#each view.platforms as p (p)}
+									{@const gain = period.byPlatform[p].followers}
+									<p class="pline">
+										<i style:background={PLATFORM_COLOURS[p]}></i>
+										<span class="pname">{PLATFORMS[p].label}</span>
+										<span class="pval">{gainWords(gain, p)}</span>
+									</p>
+								{/each}
+							</div>
 						</div>
 					</div>
-				</div>
+				{:else if nums && 'average' in nums}
+					{@const a = nums.average}
+					{@const per = AVERAGE_PER[a.key]}
+					{@const life = a.key === 'lifetime'}
+					<div class="trio">
+						<div>
+							<span class="bignum accent" class:faint={!a.periods}
+								>{!a.periods ? '—' : life ? short(a.released) : avg(a.released)}</span
+							>
+							<span class="unit"
+								>{life ? (a.released === 1 ? 'video out' : 'videos out') : `${avg(a.released) === '1' ? 'video' : 'videos'} ${per}`}</span
+							>
+						</div>
+						<div class="hold">
+							<button class="holdnum" aria-describedby="views-{i}">
+								<span class="bignum" class:faint={!a.periods}>{a.periods ? avg(a.views) : '—'}</span>
+								<span class="unit">views {per}</span>
+							</button>
+							<div class="ppop" id="views-{i}" role="tooltip">
+								{#if a.periods}
+									<p class="gained"><strong class="exact">{avgExact.format(a.views)}</strong> views {per} on the videos out</p>
+								{/if}
+								<p class="pnote">{averageNote(a)}</p>
+								{#if a.periods}
+									{#each view.platforms as p (p)}
+										<p class="pline">
+											<i style:background={PLATFORM_COLOURS[p]}></i>
+											<span class="pname">{PLATFORMS[p].label}</span>
+											<span class="pval"
+												>{viewsUnread.has(p) ? 'views not read yet' : `${avgExact.format(a.byPlatform[p].views)} ${per}`}</span
+											>
+										</p>
+									{/each}
+								{/if}
+							</div>
+						</div>
+						<div class="hold">
+							<button class="holdnum" aria-describedby="followers-{i}">
+								<span class="bignum" class:faint={!a.followers}>{a.followers ? signedAvg(a.followers.gained) : '—'}</span>
+								<span class="unit">follows {per}</span>
+							</button>
+							<div class="ppop" id="followers-{i}" role="tooltip">
+								<p class="gained">
+									{#if a.followers}
+										<strong class:down={a.followers.gained < 0}>{signedAvgExact(a.followers.gained)}</strong> followers and
+										subscribers {per}{a.followers.partly ? ' (over the stretch flock read them)' : ''}
+									{:else}
+										No follower counts read for it yet
+									{/if}
+								</p>
+								<p class="pnote">
+									{life
+										? "The accounts' counts now, shared over the videos out."
+										: `How far the accounts' counts moved ${per}, on average over the same whole periods: followers won less followers lost. A count flock began reading later is scaled up from what it read.`}
+								</p>
+								{#each view.platforms as p (p)}
+									{@const gain = a.byPlatform[p].followers}
+									<p class="pline">
+										<i style:background={PLATFORM_COLOURS[p]}></i>
+										<span class="pname">{PLATFORMS[p].label}</span>
+										<span class="pval"
+											>{gain
+												? `${signedAvgExact(gain.gained)} ${per}${gain.partly ? ' (scaled from what flock read)' : ''}`
+												: 'not read yet'}</span
+										>
+									</p>
+								{/each}
+							</div>
+						</div>
+					</div>
+				{:else}
+					<p class="pempty">Nothing here yet — choose what this box shows from its heading.</p>
+				{/if}
 			</div>
 		{/each}
+		{#if canAddBox(boxes)}
+			<button
+				class="addbox"
+				type="button"
+				aria-label="Add a box"
+				title="Add a box"
+				onfocus={() => (nearAdd = true)}
+				onblur={() => (nearAdd = false)}
+				onclick={addPeriodBox}
+			>
+				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
+			</button>
+		{/if}
 	</section>
 
 	{#if noChannel}
@@ -3111,11 +3342,171 @@
 	}
 
 	.periods {
+		position: relative;
 		display: grid;
-		grid-template-columns: repeat(5, minmax(0, 1fr));
+		grid-template-columns: repeat(var(--boxes, 5), minmax(0, 1fr));
 		margin-bottom: 14px;
 		padding: 14px 0;
 		container-type: inline-size;
+		transition: padding-right 0.22s ease;
+	}
+
+	/* Near the right edge the last box draws back and shows the +. */
+	.periods.adding {
+		padding-right: 54px;
+	}
+
+	.addbox {
+		position: absolute;
+		top: 50%;
+		right: 11px;
+		display: grid;
+		place-items: center;
+		width: 32px;
+		height: 32px;
+		margin-top: -16px;
+		padding: 0;
+		border: 1px dashed var(--border-strong);
+		border-radius: 50%;
+		background: var(--surface-2);
+		color: var(--text-dim);
+		cursor: pointer;
+		opacity: 0;
+		pointer-events: none;
+		transform: scale(0.7);
+		transition:
+			opacity 0.18s,
+			transform 0.18s,
+			color 0.12s,
+			border-color 0.12s;
+	}
+
+	.periods.adding .addbox {
+		opacity: 1;
+		pointer-events: auto;
+		transform: none;
+	}
+
+	.addbox:hover,
+	.addbox:focus-visible {
+		border-style: solid;
+		border-color: var(--pink);
+		color: var(--text);
+	}
+
+	.addbox svg {
+		width: 14px;
+		height: 14px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.8;
+		stroke-linecap: round;
+	}
+
+	/* A box's heading is its menu: what it shows, chosen there. */
+	.phead {
+		position: relative;
+	}
+
+	.pick {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 0;
+		border: 0;
+		background: none;
+		color: inherit;
+		font: inherit;
+		letter-spacing: inherit;
+		text-transform: inherit;
+		cursor: pointer;
+	}
+
+	.pick:hover,
+	.pick:focus-visible,
+	.pick[aria-expanded='true'] {
+		color: var(--text);
+	}
+
+	.pick svg {
+		width: 9px;
+		height: 9px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.6;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		transition: transform 0.15s;
+	}
+
+	.pick[aria-expanded='true'] svg {
+		transform: rotate(180deg);
+	}
+
+	.pmenu {
+		position: absolute;
+		top: calc(100% + 2px);
+		left: -8px;
+		z-index: 40;
+		display: grid;
+		min-width: 180px;
+		padding: 6px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius);
+		background: var(--surface);
+		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+	}
+
+	.pmenu button {
+		position: relative;
+		padding: 5px 10px 5px 26px;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--text-dim);
+		font: inherit;
+		font-size: 12.5px;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.pmenu button:hover,
+	.pmenu button:focus-visible {
+		background: var(--surface-2);
+		color: var(--text);
+	}
+
+	.pmenu button[aria-checked='true'] {
+		color: var(--text);
+	}
+
+	.pmenu button[aria-checked='true']::before {
+		content: '✓';
+		position: absolute;
+		left: 9px;
+		color: var(--pink);
+	}
+
+	.pmenu hr {
+		margin: 5px 2px;
+		border: 0;
+		border-top: 1px solid var(--border);
+	}
+
+	.pmhead {
+		margin: 2px 10px 3px;
+		font-size: 10.5px;
+		font-weight: 650;
+		letter-spacing: 0.09em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.pempty {
+		margin: 4px 0 0;
+		font-size: 12px;
+		line-height: 1.45;
+		color: var(--text-faint);
 	}
 
 	/* Each box sizes its numbers to itself, so five of them never crowd. */
@@ -3203,7 +3594,7 @@
 	}
 
 	/* The last boxes open theirs leftwards, so they stay on screen. */
-	.period:nth-last-child(-n + 2) .ppop {
+	.period:nth-last-child(-n + 2 of .period) .ppop {
 		left: auto;
 		right: 0;
 	}
@@ -4391,7 +4782,7 @@
 	/* Five boxes need about 230px each; below that they go three to a row. */
 	@media (max-width: 1440px) {
 		.periods {
-			grid-template-columns: repeat(3, minmax(0, 1fr));
+			grid-template-columns: repeat(var(--boxes-narrow, 3), minmax(0, 1fr));
 			row-gap: 14px;
 		}
 		.period:nth-child(3n + 1) {

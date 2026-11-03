@@ -35,7 +35,14 @@ export function userNameProblem(name: string, users: User[]): string {
 }
 
 /** The general settings that are each profile's own; every other key stays shared. */
-export const PERSONAL_KEYS = ['showTodo', 'todoBrands', 'timeZones', 'dashboardColumns', 'jestrIntegration'] as const;
+export const PERSONAL_KEYS = [
+	'showTodo',
+	'todoBrands',
+	'timeZones',
+	'dashboardColumns',
+	'dashboardPeriods',
+	'jestrIntegration'
+] as const;
 
 export type PersonalKey = (typeof PERSONAL_KEYS)[number];
 
@@ -50,7 +57,7 @@ export function userSettingKey(area: UserArea, userId: string): string {
 
 /** What a profile has of its own, in words: the Profiles tab's list, and what a copy copies. */
 export const PERSONAL_WORDS = [
-	"The Dashboard's columns",
+	"The Dashboard's columns and period boxes",
 	'The To finish indicator, and the brands it follows',
 	'Extra time zones',
 	'The Jestr integration',

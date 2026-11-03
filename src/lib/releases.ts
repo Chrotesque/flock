@@ -1,4 +1,4 @@
-import { startOfWeek } from './format';
+import { dayStart, startOfWeek } from './format';
 import { countAt, gainedBetween, sumGains, type FollowerGain, type FollowerState } from './followers';
 import { kindOf, KIND_ORDER, SHORT_MAX_SECONDS, type VideoKind } from './videokind';
 import type { PlatformId } from './types';
@@ -743,7 +743,54 @@ export function curve(post: Post, peers: Post[], now: number, steps = 24): Curve
 
 /* ---- the period numbers ---- */
 
-export type PeriodKey = 'week' | 'month' | 'quarter' | 'year' | 'lifetime';
+/** The stretches a period box can show (periodboxes.ts): the day, week, month, quarter and year running, and the brand's lifetime. */
+export type PeriodKey = 'today' | 'week' | 'month' | 'quarter' | 'year' | 'lifetime';
+
+export const PERIOD_KEYS: PeriodKey[] = ['today', 'week', 'month', 'quarter', 'year', 'lifetime'];
+
+export const PERIOD_LABELS: Record<PeriodKey, string> = {
+	today: 'Today',
+	week: 'This week',
+	month: 'This month',
+	quarter: 'This quarter',
+	year: 'This year',
+	lifetime: 'Lifetime'
+};
+
+/** Where the period running at `now` started, on the local clock (a week on Monday); a lifetime at the epoch. */
+export function periodStart(key: PeriodKey, now: Date): Date {
+	switch (key) {
+		case 'today':
+			return dayStart(now);
+		case 'week':
+			return startOfWeek(now);
+		case 'month':
+			return new Date(now.getFullYear(), now.getMonth(), 1);
+		case 'quarter':
+			return new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+		case 'year':
+			return new Date(now.getFullYear(), 0, 1);
+		case 'lifetime':
+			return new Date(0);
+	}
+}
+
+/** The start of the period after the one starting at `from`, by the calendar, so a daylight-saving day is still one day. */
+export function nextPeriodStart(key: Exclude<PeriodKey, 'lifetime'>, from: Date): Date {
+	const [y, m, d] = [from.getFullYear(), from.getMonth(), from.getDate()];
+	switch (key) {
+		case 'today':
+			return new Date(y, m, d + 1);
+		case 'week':
+			return new Date(y, m, d + 7);
+		case 'month':
+			return new Date(y, m + 1, 1);
+		case 'quarter':
+			return new Date(y, m + 3, 1);
+		case 'year':
+			return new Date(y + 1, 0, 1);
+	}
+}
 
 export interface PeriodStats {
 	key: PeriodKey;
@@ -762,19 +809,8 @@ export interface PeriodStats {
 	byPlatform: Record<StatPlatform, { views: number; gained: number; followers: FollowerGain | null }>;
 }
 
-/**
- * Where each period starts: this week (Monday), month, quarter and year, on
- * the local clock, then lifetime — every video the brand ever put out.
- */
-export function periodStarts(now: Date): [PeriodKey, string, Date][] {
-	return [
-		['week', 'This week', startOfWeek(now)],
-		['month', 'This month', new Date(now.getFullYear(), now.getMonth(), 1)],
-		['quarter', 'This quarter', new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)],
-		['year', 'This year', new Date(now.getFullYear(), 0, 1)],
-		['lifetime', 'Lifetime', new Date(0)]
-	];
-}
+/** The periods the strip shows until its boxes are chosen. */
+export const DEFAULT_PERIODS: PeriodKey[] = ['week', 'month', 'quarter', 'year', 'lifetime'];
 
 /**
  * The numbers of each period. `followers` are the follower records of the
@@ -782,64 +818,186 @@ export function periodStarts(now: Date): [PeriodKey, string, Date][] {
  * account and Page whose videos are counted — and their counts' move over the
  * period is the followers gained.
  */
-export function periodStats(releases: Release[], filter: DashFilter, now: Date, followers: FollowerState[] = []): PeriodStats[] {
+export function periodStats(
+	releases: Release[],
+	filter: DashFilter,
+	now: Date,
+	followers: FollowerState[] = [],
+	keys: PeriodKey[] = DEFAULT_PERIODS
+): PeriodStats[] {
+	return keys.map((key) => statsOfPeriod(releases, filter, key, now, followers));
+}
+
+/** One period's numbers (periodStats). */
+export function statsOfPeriod(
+	releases: Release[],
+	filter: DashFilter,
+	key: PeriodKey,
+	now: Date,
+	followers: FollowerState[] = []
+): PeriodStats {
 	const end = now.getTime();
-	return periodStarts(now).map(([key, label, from]) => {
-		const start = from.getTime();
-		const stats: PeriodStats = {
-			key,
-			label,
-			from,
-			released: 0,
-			views: 0,
-			gained: 0,
-			partly: false,
-			followers: null,
-			byPlatform: {
-				youtube: { views: 0, gained: 0, followers: null },
-				instagram: { views: 0, gained: 0, followers: null },
-				tiktok: { views: 0, gained: 0, followers: null },
-				facebook: { views: 0, gained: 0, followers: null }
-			}
-		};
-		for (const r of releases) {
-			const posts = filter.platforms.map((p) => r.posts[p]).filter((p): p is Post => Boolean(p));
-			if (posts.length === 0) continue;
-			const first = Math.min(...posts.map((p) => p.at));
-			const out = visibilityOf(r, filter.platforms) === 'public' && first >= start && first <= end;
-			if (out) stats.released += 1;
-			for (const post of posts) {
-				const views = post.views ?? 0;
-				if (out) {
-					stats.views += views;
-					stats.byPlatform[post.platform].views += views;
-				}
-				let before = viewsAt(post, start);
-				if (before === null) {
-					stats.partly = true;
-					before = post.samples[0]?.[1] ?? views;
-				}
-				const gained = Math.max(0, views - before);
-				stats.gained += gained;
-				stats.byPlatform[post.platform].gained += gained;
-			}
+	const from = periodStart(key, now);
+	const start = from.getTime();
+	const stats: PeriodStats = {
+		key,
+		label: PERIOD_LABELS[key],
+		from,
+		released: 0,
+		views: 0,
+		gained: 0,
+		partly: false,
+		followers: null,
+		byPlatform: {
+			youtube: { views: 0, gained: 0, followers: null },
+			instagram: { views: 0, gained: 0, followers: null },
+			tiktok: { views: 0, gained: 0, followers: null },
+			facebook: { views: 0, gained: 0, followers: null }
 		}
-		for (const p of filter.platforms) {
-			// Over a lifetime every account started at none, so what it gained is its count now.
-			stats.byPlatform[p].followers = sumGains(
-				followers
-					.filter((s) => s.platform === p)
-					.map((s) => (key === 'lifetime' ? lifetimeGain(s, end) : gainedBetween(s, start, end)))
-			);
+	};
+	for (const r of releases) {
+		const posts = filter.platforms.map((p) => r.posts[p]).filter((p): p is Post => Boolean(p));
+		if (posts.length === 0) continue;
+		const first = Math.min(...posts.map((p) => p.at));
+		const out = visibilityOf(r, filter.platforms) === 'public' && first >= start && first <= end;
+		if (out) stats.released += 1;
+		for (const post of posts) {
+			const views = post.views ?? 0;
+			if (out) {
+				stats.views += views;
+				stats.byPlatform[post.platform].views += views;
+			}
+			let before = viewsAt(post, start);
+			if (before === null) {
+				stats.partly = true;
+				before = post.samples[0]?.[1] ?? views;
+			}
+			const gained = Math.max(0, views - before);
+			stats.gained += gained;
+			stats.byPlatform[post.platform].gained += gained;
 		}
-		stats.followers = sumGains(filter.platforms.map((p) => stats.byPlatform[p].followers));
-		return stats;
-	});
+	}
+	for (const p of filter.platforms) {
+		// Over a lifetime every account started at none, so what it gained is its count now.
+		stats.byPlatform[p].followers = sumGains(
+			followers
+				.filter((s) => s.platform === p)
+				.map((s) => (key === 'lifetime' ? lifetimeGain(s, end) : gainedBetween(s, start, end)))
+		);
+	}
+	stats.followers = sumGains(filter.platforms.map((p) => stats.byPlatform[p].followers));
+	return stats;
 }
 
 function lifetimeGain(state: FollowerState, at: number): FollowerGain | null {
 	const count = countAt(state, at);
 	return count === null ? null : { gained: count, partly: false };
+}
+
+export interface PeriodAverage {
+	key: PeriodKey;
+	/**
+	 * What the numbers are divided by: the whole periods from the one the
+	 * first public video in view went out in up to the one running (left out,
+	 * since it is not over); for a lifetime, the public videos out.
+	 */
+	periods: number;
+	/** Where the whole periods start; null with none. */
+	from: Date | null;
+	/** Where they end: the running period's start, or now for a lifetime. */
+	to: Date;
+	/** Public videos out a period (a lifetime: all of them, not divided). */
+	released: number;
+	/** The views those videos have now, a period (a lifetime: a video). */
+	views: number;
+	/** The accounts' follower move a period (a lifetime: a video); null when none was read. */
+	followers: FollowerGain | null;
+	byPlatform: Record<StatPlatform, { views: number; followers: FollowerGain | null }>;
+}
+
+/**
+ * The numbers of an average period: the videos out, the views on them and the
+ * follows, over every whole period since the first public video in view,
+ * divided by how many there were. A lifetime's average is a video's. A
+ * follower record that starts later counts over the stretch it covers, scaled
+ * to a period, and says `partly`.
+ */
+export function periodAverage(
+	releases: Release[],
+	filter: DashFilter,
+	key: PeriodKey,
+	now: Date,
+	followers: FollowerState[] = []
+): PeriodAverage {
+	const end = now.getTime();
+	const out: { first: number; posts: Post[] }[] = [];
+	for (const r of releases) {
+		const posts = filter.platforms.map((p) => r.posts[p]).filter((p): p is Post => Boolean(p));
+		if (posts.length === 0 || visibilityOf(r, filter.platforms) !== 'public') continue;
+		const first = Math.min(...posts.map((p) => p.at));
+		if (first <= end) out.push({ first, posts });
+	}
+	const avg: PeriodAverage = {
+		key,
+		periods: 0,
+		from: null,
+		to: key === 'lifetime' ? now : periodStart(key, now),
+		released: 0,
+		views: 0,
+		followers: null,
+		byPlatform: {
+			youtube: { views: 0, followers: null },
+			instagram: { views: 0, followers: null },
+			tiktok: { views: 0, followers: null },
+			facebook: { views: 0, followers: null }
+		}
+	};
+	const to = avg.to.getTime();
+	const earliest = Math.min(...out.map((o) => o.first));
+	let from = to;
+	if (key === 'lifetime') {
+		avg.periods = out.length;
+		if (out.length > 0) avg.from = new Date(earliest);
+	} else if (out.length > 0 && earliest < to) {
+		avg.from = periodStart(key, new Date(earliest));
+		from = avg.from.getTime();
+		for (let t = avg.from; t.getTime() < to; t = nextPeriodStart(key, t)) avg.periods += 1;
+	}
+	if (avg.periods === 0) return avg;
+	const n = avg.periods;
+	for (const o of out) {
+		if (key !== 'lifetime' && (o.first < from || o.first >= to)) continue;
+		avg.released += 1;
+		for (const post of o.posts) {
+			const views = post.views ?? 0;
+			avg.views += views;
+			avg.byPlatform[post.platform].views += views;
+		}
+	}
+	if (key !== 'lifetime') avg.released /= n;
+	avg.views /= n;
+	for (const p of filter.platforms) {
+		avg.byPlatform[p].views /= n;
+		avg.byPlatform[p].followers = sumGains(
+			followers
+				.filter((s) => s.platform === p)
+				.map((s): FollowerGain | null => {
+					if (key === 'lifetime') {
+						const gain = lifetimeGain(s, to);
+						return gain && { gained: gain.gained / n, partly: false };
+					}
+					const read = Date.parse(String(s.history[0]?.[0] ?? '').replace(' ', 'T'));
+					if (!Number.isFinite(read)) return null;
+					const since = Math.max(from, read);
+					if (since >= to) return null;
+					const gain = gainedBetween(s, since, to);
+					if (!gain) return null;
+					return { gained: (gain.gained * (to - from)) / (to - since) / n, partly: since > from };
+				})
+		);
+	}
+	avg.followers = sumGains(filter.platforms.map((p) => avg.byPlatform[p].followers));
+	return avg;
 }
 
 /* ---- sorting ---- */

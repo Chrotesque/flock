@@ -11,6 +11,7 @@ import {
 	inView,
 	judge,
 	peerGroups,
+	periodAverage,
 	periodStats,
 	pooledSkipRate,
 	overallOf,
@@ -652,6 +653,76 @@ describe('periodStats', () => {
 		const ytOnly = periodStats([], { ...DEFAULT_FILTER, platforms: ['youtube'] }, now, followers);
 		expect(ytOnly[0].followers).toEqual({ gained: 5, partly: false });
 		expect(periodStats([], DEFAULT_FILTER, now)[0].followers).toBeNull();
+	});
+});
+
+describe('periodAverage', () => {
+	const now = new Date(2026, 9, 14, 12, 0); // Wednesday 14 Oct, local
+	const day = (m: number, d: number) => new Date(2026, m, d, 10, 0).getTime();
+	const releases = buildReleases(
+		[
+			video('aaaaaaaaaaa', day(9, 1), { views: 100 }),
+			video('bbbbbbbbbbb', day(9, 6), { views: 300 }),
+			// This week: not a whole one yet, so left out of the week's average.
+			video('ccccccccccc', day(9, 13), { views: 50 })
+		],
+		[],
+		[]
+	);
+	const youtube = {
+		platform: 'youtube' as const,
+		account: 'yt',
+		name: 'yt',
+		count: 120,
+		at: iso(now.getTime()),
+		since: iso(day(8, 30)),
+		history: [
+			[iso(day(8, 30)), 100],
+			[iso(day(9, 8)), 120]
+		] as [string, number][],
+		credits: {},
+		analytics: null,
+		engaged: null,
+		monthly: null,
+		monthPart: null,
+		analyticsThrough: ''
+	};
+
+	it('averages the whole weeks since the first video, the running one left out', () => {
+		const week = periodAverage(releases, DEFAULT_FILTER, 'week', now, [youtube]);
+		// Monday 28 Sep and Monday 5 Oct.
+		expect(week.periods).toBe(2);
+		expect(week.from).toEqual(new Date(2026, 8, 28));
+		expect(week.to).toEqual(new Date(2026, 9, 12));
+		expect(week.released).toBe(1);
+		expect(week.views).toBe(200);
+		expect(week.byPlatform.youtube.views).toBe(200);
+		// Read from the 30th, 10:00: +20 over that part of the two weeks, scaled to them and halved.
+		const span = week.to.getTime() - week.from!.getTime();
+		expect(week.followers?.gained).toBeCloseTo((20 * span) / (week.to.getTime() - day(8, 30)) / 2);
+		expect(week.followers?.partly).toBe(true);
+	});
+
+	it('has nothing to average before a whole period has passed', () => {
+		const month = periodAverage(releases, DEFAULT_FILTER, 'month', now, [youtube]);
+		expect(month.periods).toBe(0);
+		expect(month.from).toBeNull();
+		expect(month.followers).toBeNull();
+	});
+
+	it('averages a lifetime over its videos, and the followers now over them too', () => {
+		const life = periodAverage(releases, DEFAULT_FILTER, 'lifetime', now, [youtube]);
+		expect(life.periods).toBe(3);
+		expect(life.released).toBe(3);
+		expect(life.views).toBe(150);
+		expect(life.followers).toEqual({ gained: 40, partly: false });
+	});
+
+	it('counts days by the calendar', () => {
+		const days = periodAverage(releases, DEFAULT_FILTER, 'today', now);
+		// 1 Oct to 13 Oct, today left out.
+		expect(days.periods).toBe(13);
+		expect(days.released).toBeCloseTo(3 / 13);
 	});
 });
 

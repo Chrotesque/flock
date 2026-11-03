@@ -1,5 +1,6 @@
 import type { TimeZoneChoice } from './timezones';
 import type { DashColumn } from './dashcolumns';
+import type { BoxChoice } from './periodboxes';
 
 export type PlatformId = 'youtube' | 'instagram' | 'tiktok' | 'facebook';
 
@@ -301,6 +302,8 @@ export interface GeneralSettings {
 	timeZones: TimeZoneChoice[];
 	/** The Dashboard list's columns, in order, each shown or not (dashcolumns.ts; Settings → Dashboard). */
 	dashboardColumns: DashColumn[];
+	/** The Dashboard's period boxes, 3 to 5, each a period's numbers, an average's or none (periodboxes.ts). */
+	dashboardPeriods: BoxChoice[];
 }
 
 export interface WatchFolder {

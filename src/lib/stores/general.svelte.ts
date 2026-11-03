@@ -6,6 +6,7 @@ import { settle, LOG_SETTLE_MS } from '../settle';
 import type { GeneralSettings, NasDestination, WatchFolder } from '../types';
 import type { TimeZoneChoice } from '../timezones';
 import { DEFAULT_COLUMNS, columnWords, readColumns, type DashColumn } from '../dashcolumns';
+import { DEFAULT_BOXES, boxWords, readBoxes, type BoxChoice } from '../periodboxes';
 import { readTodoBrands } from '../todobrands';
 import {
 	folderKind,
@@ -37,7 +38,8 @@ export const DEFAULT_GENERAL: GeneralSettings = {
 	showTodo: true,
 	todoBrands: null,
 	timeZones: [],
-	dashboardColumns: DEFAULT_COLUMNS
+	dashboardColumns: DEFAULT_COLUMNS,
+	dashboardPeriods: DEFAULT_BOXES
 };
 
 /**
@@ -97,7 +99,8 @@ class GeneralStore {
 				showTodo: stored.showTodo !== false,
 				todoBrands: readTodoBrands(stored.todoBrands),
 				timeZones: Array.isArray(stored.timeZones) ? stored.timeZones : [],
-				dashboardColumns: readColumns(stored.dashboardColumns)
+				dashboardColumns: readColumns(stored.dashboardColumns),
+				dashboardPeriods: readBoxes(stored.dashboardPeriods)
 			};
 			this.#loaded = true;
 			this.#logged = $state.snapshot(this.value);
@@ -191,6 +194,10 @@ class GeneralStore {
 		const columnsWere = columnWords(before.dashboardColumns);
 		const columnsNow = columnWords(after.dashboardColumns);
 		if (columnsWere !== columnsNow) logAction('settings', 'Changed the Dashboard columns', `${columnsWere} → ${columnsNow}`);
+
+		const boxesWere = boxWords(before.dashboardPeriods);
+		const boxesNow = boxWords(after.dashboardPeriods);
+		if (boxesWere !== boxesNow) logAction('settings', "Changed the Dashboard's period boxes", `${boxesWere} → ${boxesNow}`);
 
 		for (const key of ['watchFolders', 'projectFolders'] as const) this.#logFolders(key, before, after);
 
@@ -359,6 +366,13 @@ class GeneralStore {
 	/** The Dashboard list's columns, as Settings → Dashboard arranges them. */
 	setDashboardColumns(next: DashColumn[]) {
 		this.value.dashboardColumns = readColumns(next);
+		this.queueSave();
+		this.#queueLog();
+	}
+
+	/** The Dashboard's period boxes, as its strip arranges them (periodboxes.ts). */
+	setDashboardPeriods(next: BoxChoice[]) {
+		this.value.dashboardPeriods = readBoxes(next);
 		this.queueSave();
 		this.#queueLog();
 	}

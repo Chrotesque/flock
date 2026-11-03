@@ -100,6 +100,13 @@ export function shortCount(n: number, locale?: string): string {
 	return `${sign}${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(m)}m`;
 }
 
+/** An average in the period boxes: one decimal under 10 (1.4 videos a week), past that as shortCount. */
+export function averageCount(n: number, locale?: string): string {
+	if (Math.abs(n) >= 10) return shortCount(Math.round(n), locale);
+	const tenths = Math.round(n * 10) / 10;
+	return new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(tenths === 0 ? 0 : tenths);
+}
+
 export function formatDuration(seconds: number): string {
 	if (!Number.isFinite(seconds) || seconds <= 0) return '';
 	const total = Math.round(seconds);

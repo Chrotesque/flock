@@ -13,8 +13,20 @@ import {
 	firstLine,
 	parseTagList,
 	shortCount,
+	averageCount,
 	tagListLength
 } from './format';
+
+describe('averageCount', () => {
+	it('keeps a decimal under 10, then shortens like the counts', () => {
+		expect(averageCount(1.44, 'en-US')).toBe('1.4');
+		expect(averageCount(3, 'en-US')).toBe('3');
+		expect(averageCount(-0.04, 'en-US')).toBe('0');
+		expect(averageCount(-2.36, 'en-US')).toBe('-2.4');
+		expect(averageCount(12.6, 'en-US')).toBe('13');
+		expect(averageCount(1234.5, 'en-US')).toBe('1.2k');
+	});
+});
 
 describe('parseTagList', () => {
 	it('splits a comma-separated paste and trims each tag', () => {
