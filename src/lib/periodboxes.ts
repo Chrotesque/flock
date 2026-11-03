@@ -2,12 +2,13 @@
  * The Dashboard's strip of period boxes, as each profile chooses it
  * (`general.dashboardPeriods`): 3 to 5 boxes, each showing a period's plain
  * numbers (releases.ts `statsOfPeriod`), an average period's
- * (`periodAverage`), or nothing. Picking None for a box removes it while
+ * (`periodAverage`), an average video's by period (`videoAverage`), or
+ * nothing. Picking None for a box removes it while
  * more than 3 are left, and empties it at 3; the + adds an empty one.
  */
 import { DEFAULT_PERIODS, PERIOD_KEYS, PERIOD_LABELS, type PeriodKey } from './releases';
 
-export type BoxKind = 'plain' | 'average';
+export type BoxKind = 'plain' | 'average' | 'video';
 
 export interface PeriodBox {
 	kind: BoxKind;
@@ -22,14 +23,31 @@ export const MAX_BOXES = 5;
 
 export const DEFAULT_BOXES: BoxChoice[] = DEFAULT_PERIODS.map((period) => ({ kind: 'plain', period }));
 
-/** An average box's heading, and its entry under Averages in the menu. */
+/** The periods each kind offers, in the menu's order: a lifetime has no average period, a day's video is a week's. */
+export const KIND_PERIODS: Record<BoxKind, PeriodKey[]> = {
+	plain: PERIOD_KEYS,
+	average: ['today', 'week', 'month', 'quarter', 'year'],
+	video: ['week', 'month', 'quarter', 'year', 'lifetime']
+};
+
+/** An average box's heading, and a menu entry under Averages and Per video. */
 export const AVERAGE_LABELS: Record<PeriodKey, string> = {
 	today: 'Average day',
 	week: 'Average week',
 	month: 'Average month',
 	quarter: 'Average quarter',
 	year: 'Average year',
-	lifetime: 'Average video'
+	lifetime: 'Lifetime'
+};
+
+/** A per-video box's heading. */
+export const VIDEO_LABELS: Record<PeriodKey, string> = {
+	today: 'Video · average day',
+	week: 'Video · average week',
+	month: 'Video · average month',
+	quarter: 'Video · average quarter',
+	year: 'Video · average year',
+	lifetime: 'Video · lifetime'
 };
 
 /** What an average is per, after a number: "videos a week". */
@@ -44,14 +62,19 @@ export const AVERAGE_PER: Record<PeriodKey, string> = {
 
 export function boxLabel(choice: BoxChoice): string {
 	if (!choice) return 'None';
-	return choice.kind === 'average' ? AVERAGE_LABELS[choice.period] : PERIOD_LABELS[choice.period];
+	if (choice.kind === 'average') return AVERAGE_LABELS[choice.period];
+	if (choice.kind === 'video') return VIDEO_LABELS[choice.period];
+	return PERIOD_LABELS[choice.period];
 }
 
 function readBox(value: unknown): BoxChoice | undefined {
 	if (value === null) return null;
 	if (typeof value !== 'object') return undefined;
 	const { kind, period } = value as Record<string, unknown>;
-	if ((kind !== 'plain' && kind !== 'average') || !PERIOD_KEYS.includes(period as PeriodKey)) return undefined;
+	if ((kind !== 'plain' && kind !== 'average' && kind !== 'video') || !PERIOD_KEYS.includes(period as PeriodKey)) return undefined;
+	// 0.20.13's "Average video" was a lifetime's average: a video's.
+	if (kind === 'average' && period === 'lifetime') return { kind: 'video', period };
+	if (!KIND_PERIODS[kind].includes(period as PeriodKey)) return undefined;
 	return { kind, period: period as PeriodKey };
 }
 

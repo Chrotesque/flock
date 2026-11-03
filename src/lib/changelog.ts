@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-03T14:09:00+01:00', version: '0.21.1', line: 'Added: Filter > Date Range' },
 	{ at: '2026-11-03T13:48:00+01:00', version: '0.21.0', line: 'Added: Dashboard > Averages' },
 	{ at: '2026-11-03T13:30:00+01:00', version: '0.20.12', line: 'Added: Dashboard > Lifetime' },
 	{ at: '2026-11-03T06:15:00+01:00', version: '0.20.11', line: 'Changed: Settings > Profiles' },

@@ -11,6 +11,11 @@ describe('readBoxes', () => {
 		expect(boxWords(DEFAULT_BOXES)).toBe('This week, This month, This quarter, This year, Lifetime');
 	});
 
+	it("reads 0.20.13's Average video as a lifetime's video, and drops what a kind does not offer", () => {
+		expect(readBoxes([{ kind: 'average', period: 'lifetime' }, week, week])[0]).toEqual({ kind: 'video', period: 'lifetime' });
+		expect(readBoxes([{ kind: 'video', period: 'today' }, week, week, week])).toEqual([week, week, week]);
+	});
+
 	it('keeps 3 to 5 boxes, None among them', () => {
 		expect(readBoxes([week, null, avgDay])).toEqual([week, null, avgDay]);
 		expect(readBoxes([week])).toEqual([week, null, null]);
@@ -38,7 +43,7 @@ describe('chooseBox and addBox', () => {
 	it('names the boxes', () => {
 		expect(boxLabel(null)).toBe('None');
 		expect(boxLabel(avgDay)).toBe('Average day');
-		expect(boxLabel({ kind: 'average', period: 'lifetime' })).toBe('Average video');
+		expect(boxLabel({ kind: 'video', period: 'month' })).toBe('Video · average month');
 		expect(sameBox(week, { kind: 'plain', period: 'week' })).toBe(true);
 		expect(sameBox(week, avgDay)).toBe(false);
 		expect(sameBox(null, null)).toBe(true);

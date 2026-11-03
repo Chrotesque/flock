@@ -76,17 +76,20 @@
 		toDashboardVideo
 	} from '$lib/repo';
 	import { UPLOADS_A_DAY, quotaToday, refreshDue, stopToday, stopWords, type QuotaRow } from '$lib/youtubequota';
-	import { averageCount, formatBytes, formatDuration, shortCount } from '$lib/format';
+	import { averageCount, formatBytes, formatDuration, isoDate, shortCount } from '$lib/format';
 	import {
 		AVERAGE_PER,
 		AVERAGE_LABELS,
+		KIND_PERIODS,
 		MIN_BOXES,
+		VIDEO_LABELS,
 		addBox,
 		boxLabel,
 		canAddBox,
 		chooseBox,
 		sameBox,
-		type BoxChoice
+		type BoxChoice,
+		type BoxKind
 	} from '$lib/periodboxes';
 	import { matchesTitle, searchWords, titleParts } from '$lib/titlesearch';
 	import { KIND_LABELS } from '$lib/videokind';
@@ -106,10 +109,12 @@
 		isStatPlatform,
 		judge,
 		peerGroups,
-		PERIOD_KEYS,
 		PERIOD_LABELS,
+		inTimeframe,
 		periodAverage,
 		statsOfPeriod,
+		timeframeWords,
+		videoAverage,
 		type PeriodAverage,
 		type PeriodStats,
 		overallOf,
@@ -127,7 +132,6 @@
 		type Post,
 		type Release,
 		type SortKey,
-		inSpan,
 		pooledSkipRate,
 		SKIP_PLATFORMS,
 		skipPosts,
@@ -456,7 +460,12 @@
 	// The timeframe (the filter's days) is cut first, so every number on the
 	// page follows it: the list and its totals, the counts in the filter, the
 	// periods, and the peers "usual" is the middle of.
-	const spanned = $derived(releases.filter((r) => inSpan(r, filter.days, now)));
+	const spanned = $derived(releases.filter((r) => inTimeframe(r, filter, now)));
+	/** The first day a video went out on, of the brand in view: the earliest the timeframe can start. */
+	const firstDay = $derived.by(() => {
+		const first = Math.min(...releases.map((r) => r.at));
+		return Number.isFinite(first) ? isoDate(new Date(first)) : '';
+	});
 	const groups = $derived(peerGroups(spanned));
 	const counts = $derived(filterCounts(spanned, view));
 	// While editing, the videos hidden with the eye show too (faded), so one
@@ -1243,14 +1252,22 @@
 	/** The strip's boxes, as this profile chose them (periodboxes.ts). */
 	const boxes = $derived(general.value.dashboardPeriods);
 	const boxNumbers = $derived(
-		boxes.map((box): { plain: PeriodStats } | { average: PeriodAverage } | null =>
+		boxes.map((box): { plain: PeriodStats } | { average: PeriodAverage; perVideo: boolean } | null =>
 			!box
 				? null
 				: box.kind === 'plain'
 					? { plain: statsOfPeriod(periodReleases, view, box.period, nowDate, followersInView) }
-					: { average: periodAverage(periodReleases, view, box.period, nowDate, followersInView) }
+					: box.kind === 'video'
+						? { average: videoAverage(periodReleases, view, box.period, nowDate, followersInView), perVideo: true }
+						: { average: periodAverage(periodReleases, view, box.period, nowDate, followersInView), perVideo: false }
 		)
 	);
+	/** The menu's groups after None, each a kind of box and the periods it offers (periodboxes.ts). */
+	const MENU_GROUPS: { kind: BoxKind; title: string; labels: Record<PeriodAverage['key'], string> }[] = [
+		{ kind: 'plain', title: 'Plain stats', labels: PERIOD_LABELS },
+		{ kind: 'average', title: 'Averages', labels: AVERAGE_LABELS },
+		{ kind: 'video', title: 'Per video', labels: AVERAGE_LABELS }
+	];
 	/** The box whose menu is open, by its place in the strip. */
 	let boxMenu = $state<number | null>(null);
 	/** The pointer near the strip's right edge, or the + focused: the last box makes room for the +. */
@@ -1292,15 +1309,20 @@
 		lifetime: ['video', 'videos']
 	};
 
-	/** What an average box's numbers are over, for its popups. */
-	function averageNote(a: PeriodAverage): string {
+	/** What an average box's numbers are over, for its popups; `perVideo` shares them over the videos. */
+	function averageNote(a: PeriodAverage, perVideo: boolean): string {
 		const [one, many] = PERIOD_UNIT[a.key];
-		if (a.key === 'lifetime')
-			return a.periods ? `Every view of the ${whole.format(a.periods)} ${a.periods === 1 ? one : many} out, shared over them.` : 'No video out yet.';
+		const videos = (n: number) => `${whole.format(n)} ${n === 1 ? 'video' : 'videos'}`;
+		if (a.key === 'lifetime') return a.periods ? `Over the ${videos(a.periods)} out, shared over them.` : 'No video out yet.';
 		const running = a.key === 'today' ? 'today is' : `this ${one} is`;
 		if (!a.periods || !a.from) return `Not a whole ${one} since the first video yet: ${running} left out until it is over.`;
 		const since = a.from.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-		return `Over the ${whole.format(a.periods)} whole ${a.periods === 1 ? one : many} since ${since}; ${running} left out until it is over.`;
+		const span = `the ${whole.format(a.periods)} whole ${a.periods === 1 ? one : many} since ${since}`;
+		if (perVideo)
+			return a.released
+				? `Over the ${videos(a.released)} out in ${span}, shared over them; ${running} left out until it is over.`
+				: `No video went out in ${span}.`;
+		return `Over ${span}; ${running} left out until it is over.`;
 	}
 	// A platform whose views are read for none of the videos (Facebook without
 	// read_insights) says so, rather than +0.
@@ -1982,7 +2004,7 @@
 	<!-- One row: what is looked at, for which brand, as which accounts — and when each was read. -->
 	<h1 class="hidden">Dashboard</h1>
 	<div class="toolbar">
-		<DashFilter bind:filter {counts} overridden={ratioView} />
+		<DashFilter bind:filter {counts} overridden={ratioView} earliest={firstDay} />
 		{#if brands.multiple}
 			<div class="brands" role="radiogroup" aria-label="Brand in view">
 				{#each devtestDashboardScopes as s (s.label)}
@@ -2251,24 +2273,18 @@
 								title={boxes.length > MIN_BOXES ? 'Takes this box away' : 'Leaves this box empty: the strip keeps at least 3'}
 								onclick={() => pickBox(i, null)}>None</button
 							>
-							<hr />
-							<p class="pmhead">Plain stats</p>
-							{#each PERIOD_KEYS as key (key)}
-								{@const plain = { kind: 'plain', period: key } as BoxChoice}
-								<button type="button" role="menuitemradio" aria-checked={sameBox(choice, plain)} onclick={() => pickBox(i, plain)}
-									>{PERIOD_LABELS[key]}</button
-								>
-							{/each}
-							<hr />
-							<p class="pmhead">Averages</p>
-							{#each PERIOD_KEYS as key (key)}
-								{@const average = { kind: 'average', period: key } as BoxChoice}
-								<button
-									type="button"
-									role="menuitemradio"
-									aria-checked={sameBox(choice, average)}
-									onclick={() => pickBox(i, average)}>{AVERAGE_LABELS[key]}</button
-								>
+							{#each MENU_GROUPS as group (group.kind)}
+								<hr />
+								<p class="pmhead">{group.title}</p>
+								{#each KIND_PERIODS[group.kind] as key (key)}
+									{@const option = { kind: group.kind, period: key } as BoxChoice}
+									<button
+										type="button"
+										role="menuitemradio"
+										aria-checked={sameBox(choice, option)}
+										onclick={() => pickBox(i, option)}>{group.labels[key]}</button
+									>
+								{/each}
 							{/each}
 						</div>
 					{/if}
@@ -2315,6 +2331,23 @@
 							</div>
 						</div>
 						<div class="hold">
+							<button class="holdnum" aria-describedby="likes-{i}">
+								<span class="bignum">{short(period.likes)}</span>
+								<span class="unit">likes</span>
+							</button>
+							<div class="ppop" id="likes-{i}" role="tooltip">
+								<p class="gained"><strong class="exact">{whole.format(period.likes)}</strong> likes on the videos out</p>
+								<p class="pnote">The likes the videos that went out in the period have now.</p>
+								{#each view.platforms as p (p)}
+									<p class="pline">
+										<i style:background={PLATFORM_COLOURS[p]}></i>
+										<span class="pname">{PLATFORMS[p].label}</span>
+										<span class="pval">{whole.format(period.byPlatform[p].likes)}</span>
+									</p>
+								{/each}
+							</div>
+						</div>
+						<div class="hold">
 							<button class="holdnum" aria-describedby="followers-{i}">
 								<span class="bignum" class:faint={!period.followers}
 									>{period.followers ? signedShort(period.followers.gained) : '—'}</span
@@ -2348,28 +2381,27 @@
 					</div>
 				{:else if nums && 'average' in nums}
 					{@const a = nums.average}
-					{@const per = AVERAGE_PER[a.key]}
-					{@const life = a.key === 'lifetime'}
+					{@const perVideo = nums.perVideo}
+					{@const per = perVideo ? 'a video' : AVERAGE_PER[a.key]}
+					{@const empty = !a.periods || (perVideo && a.released === 0)}
 					<div class="trio">
-						<div>
-							<span class="bignum accent" class:faint={!a.periods}
-								>{!a.periods ? '—' : life ? short(a.released) : avg(a.released)}</span
-							>
-							<span class="unit"
-								>{life ? (a.released === 1 ? 'video out' : 'videos out') : `${avg(a.released) === '1' ? 'video' : 'videos'} ${per}`}</span
-							>
-						</div>
+						{#if !perVideo}
+							<div>
+								<span class="bignum accent" class:faint={empty}>{empty ? '—' : avg(a.released)}</span>
+								<span class="unit">{avg(a.released) === '1' ? 'video' : 'videos'} {per}</span>
+							</div>
+						{/if}
 						<div class="hold">
 							<button class="holdnum" aria-describedby="views-{i}">
-								<span class="bignum" class:faint={!a.periods}>{a.periods ? avg(a.views) : '—'}</span>
+								<span class="bignum" class:faint={empty}>{empty ? '—' : avg(a.views)}</span>
 								<span class="unit">views {per}</span>
 							</button>
 							<div class="ppop" id="views-{i}" role="tooltip">
-								{#if a.periods}
-									<p class="gained"><strong class="exact">{avgExact.format(a.views)}</strong> views {per} on the videos out</p>
+								{#if !empty}
+									<p class="gained"><strong class="exact">{avgExact.format(a.views)}</strong> views {per}</p>
 								{/if}
-								<p class="pnote">{averageNote(a)}</p>
-								{#if a.periods}
+								<p class="pnote">{averageNote(a, perVideo)}</p>
+								{#if !empty}
 									{#each view.platforms as p (p)}
 										<p class="pline">
 											<i style:background={PLATFORM_COLOURS[p]}></i>
@@ -2383,13 +2415,36 @@
 							</div>
 						</div>
 						<div class="hold">
+							<button class="holdnum" aria-describedby="likes-{i}">
+								<span class="bignum" class:faint={empty}>{empty ? '—' : avg(a.likes)}</span>
+								<span class="unit">likes {per}</span>
+							</button>
+							<div class="ppop" id="likes-{i}" role="tooltip">
+								{#if !empty}
+									<p class="gained"><strong class="exact">{avgExact.format(a.likes)}</strong> likes {per}</p>
+								{/if}
+								<p class="pnote">{averageNote(a, perVideo)}</p>
+								{#if !empty}
+									{#each view.platforms as p (p)}
+										<p class="pline">
+											<i style:background={PLATFORM_COLOURS[p]}></i>
+											<span class="pname">{PLATFORMS[p].label}</span>
+											<span class="pval">{avgExact.format(a.byPlatform[p].likes)} {per}</span>
+										</p>
+									{/each}
+								{/if}
+							</div>
+						</div>
+						<div class="hold">
 							<button class="holdnum" aria-describedby="followers-{i}">
-								<span class="bignum" class:faint={!a.followers}>{a.followers ? signedAvg(a.followers.gained) : '—'}</span>
+								<span class="bignum" class:faint={!a.followers || empty}
+									>{a.followers && !empty ? signedAvg(a.followers.gained) : '—'}</span
+								>
 								<span class="unit">follows {per}</span>
 							</button>
 							<div class="ppop" id="followers-{i}" role="tooltip">
 								<p class="gained">
-									{#if a.followers}
+									{#if a.followers && !empty}
 										<strong class:down={a.followers.gained < 0}>{signedAvgExact(a.followers.gained)}</strong> followers and
 										subscribers {per}{a.followers.partly ? ' (over the stretch flock read them)' : ''}
 									{:else}
@@ -2397,9 +2452,11 @@
 									{/if}
 								</p>
 								<p class="pnote">
-									{life
+									{a.key === 'lifetime'
 										? "The accounts' counts now, shared over the videos out."
-										: `How far the accounts' counts moved ${per}, on average over the same whole periods: followers won less followers lost. A count flock began reading later is scaled up from what it read.`}
+										: perVideo
+											? "How far the accounts' counts moved over the same whole periods, shared over the videos that went out in them. A count flock began reading later is scaled up from what it read."
+											: `How far the accounts' counts moved ${per}, on average over the same whole periods: followers won less followers lost. A count flock began reading later is scaled up from what it read.`}
 								</p>
 								{#each view.platforms as p (p)}
 									{@const gain = a.byPlatform[p].followers}
@@ -2407,7 +2464,7 @@
 										<i style:background={PLATFORM_COLOURS[p]}></i>
 										<span class="pname">{PLATFORMS[p].label}</span>
 										<span class="pval"
-											>{gain
+											>{gain && !empty
 												? `${signedAvgExact(gain.gained)} ${per}${gain.partly ? ' (scaled from what flock read)' : ''}`
 												: 'not read yet'}</span
 										>
@@ -2644,7 +2701,7 @@
 				{releases.length === 0
 					? 'No videos read yet. They appear once the worker has read the channel.'
 					: spanned.length === 0
-						? `Nothing went out in the last ${filter.days} days. Choose a longer timeframe in the filter.`
+						? `Nothing went out in the timeframe (${timeframeWords(filter)}). Choose a longer one in the filter.`
 						: words.length > 0 && inViewList.length > 0
 							? `No title in view holds “${titleQuery.trim()}”.`
 							: 'Nothing to show with these choices.'}
@@ -3524,9 +3581,19 @@
 	   "166.2k" run into the followers beside it. */
 	.trio {
 		display: grid;
-		grid-template-columns: repeat(3, auto);
+		grid-auto-columns: auto;
+		grid-auto-flow: column;
 		justify-content: space-between;
-		gap: 10px;
+		gap: 8px;
+	}
+
+	/* Four numbers to a box: smaller than the list's, so five boxes still fit. */
+	.period .bignum {
+		font-size: clamp(16px, 8.5cqi, 25px);
+	}
+
+	.period .unit {
+		font-size: 10.5px;
 	}
 
 	/* A number whose details open on hover or focus. No min-width: 0 — the

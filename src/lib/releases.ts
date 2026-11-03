@@ -497,6 +497,18 @@ export interface DashFilter {
 	hidden: boolean;
 	/** How far back the page looks, in days (DASH_SPANS): every number on it counts only releases since. */
 	days: number;
+	/** A start and end date chosen instead of `days`; null when the days are in effect. */
+	range: DashRange | null;
+}
+
+/**
+ * A timeframe of dates, local and inclusive: from `from`'s first moment to
+ * `to`'s last, or with `to` "today" up to whatever day it is — moving on by
+ * itself, and taking in what is still to come, as the days do.
+ */
+export interface DashRange {
+	from: string;
+	to: string | 'today';
 }
 
 /** The Dashboard's timeframes: a month at a time, up to half a year. */
@@ -508,7 +520,8 @@ export const DEFAULT_FILTER: DashFilter = {
 	unlisted: false,
 	private: false,
 	hidden: false,
-	days: 30
+	days: 30,
+	range: null
 };
 
 /** The platforms a filter saved before it said which it knew was saved knowing: those before Facebook's numbers. */
@@ -537,8 +550,56 @@ export function readFilter(raw: unknown): DashFilter {
 		unlisted: typeof r.unlisted === 'boolean' ? r.unlisted : DEFAULT_FILTER.unlisted,
 		private: typeof r.private === 'boolean' ? r.private : DEFAULT_FILTER.private,
 		hidden: typeof r.hidden === 'boolean' ? r.hidden : DEFAULT_FILTER.hidden,
-		days: DASH_SPANS.includes(Number(r.days)) ? Number(r.days) : DEFAULT_FILTER.days
+		days: DASH_SPANS.includes(Number(r.days)) ? Number(r.days) : DEFAULT_FILTER.days,
+		range: readRange(r.range)
 	};
+}
+
+const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** A local date's first moment, or NaN for anything not a real YYYY-MM-DD. */
+export function dayAt(iso: string): number {
+	const m = ISO_DAY.exec(iso);
+	if (!m) return NaN;
+	const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+	return date.getDate() === Number(m[3]) && date.getMonth() === Number(m[2]) - 1 ? date.getTime() : NaN;
+}
+
+/** A stored range, or null for one that is not whole: a real start, and a real end not before it or "today". */
+export function readRange(raw: unknown): DashRange | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const { from, to } = raw as Record<string, unknown>;
+	if (typeof from !== 'string' || !Number.isFinite(dayAt(from))) return null;
+	if (to === 'today') return { from, to };
+	if (typeof to !== 'string' || !(dayAt(to) >= dayAt(from))) return null;
+	return { from, to };
+}
+
+/** Where the timeframe starts and ends (exclusive), in ms: the last `days`, or the chosen range. */
+export function timeframeBounds(filter: Pick<DashFilter, 'days' | 'range'>, now: number): [number, number] {
+	if (!filter.range) return [now - filter.days * DAY, Infinity];
+	const from = dayAt(filter.range.from);
+	if (filter.range.to === 'today') return [from, Infinity];
+	const to = new Date(dayAt(filter.range.to));
+	return [from, new Date(to.getFullYear(), to.getMonth(), to.getDate() + 1).getTime()];
+}
+
+/** Whether a release falls in the filter's timeframe (inSpan, or the chosen range). */
+export function inTimeframe(release: Pick<Release, 'at'>, filter: Pick<DashFilter, 'days' | 'range'>, now: number): boolean {
+	const [from, to] = timeframeBounds(filter, now);
+	return release.at >= from && release.at < to;
+}
+
+/** The timeframe in words: "Last 30 days", "3 Mar 2025 – Today", "1 Jan – 31 Mar 2026". */
+export function timeframeWords(filter: Pick<DashFilter, 'days' | 'range'>, locale?: string): string {
+	if (!filter.range) return `Last ${filter.days} days`;
+	const from = new Date(dayAt(filter.range.from));
+	const day = (d: Date, year: boolean) =>
+		d.toLocaleDateString(locale, { day: 'numeric', month: 'short', ...(year ? { year: 'numeric' } : {}) });
+	if (filter.range.to === 'today') return `${day(from, true)} – Today`;
+	const to = new Date(dayAt(filter.range.to));
+	if (filter.range.from === filter.range.to) return day(from, true);
+	return `${day(from, from.getFullYear() !== to.getFullYear())} – ${day(to, true)}`;
 }
 
 /**
@@ -800,13 +861,15 @@ export interface PeriodStats {
 	released: number;
 	/** The views those releases have now, on the chosen platforms. */
 	views: number;
+	/** The likes those releases have now, on the chosen platforms. */
+	likes: number;
 	/** Views every release in view gained in the period. */
 	gained: number;
 	/** Some post was not read yet at the start, so `gained` counts from its first read. */
 	partly: boolean;
 	/** How far the accounts' follower counts moved in the period, over the chosen platforms; null when none was read. */
 	followers: FollowerGain | null;
-	byPlatform: Record<StatPlatform, { views: number; gained: number; followers: FollowerGain | null }>;
+	byPlatform: Record<StatPlatform, { views: number; likes: number; gained: number; followers: FollowerGain | null }>;
 }
 
 /** The periods the strip shows until its boxes are chosen. */
@@ -845,14 +908,15 @@ export function statsOfPeriod(
 		from,
 		released: 0,
 		views: 0,
+		likes: 0,
 		gained: 0,
 		partly: false,
 		followers: null,
 		byPlatform: {
-			youtube: { views: 0, gained: 0, followers: null },
-			instagram: { views: 0, gained: 0, followers: null },
-			tiktok: { views: 0, gained: 0, followers: null },
-			facebook: { views: 0, gained: 0, followers: null }
+			youtube: { views: 0, likes: 0, gained: 0, followers: null },
+			instagram: { views: 0, likes: 0, gained: 0, followers: null },
+			tiktok: { views: 0, likes: 0, gained: 0, followers: null },
+			facebook: { views: 0, likes: 0, gained: 0, followers: null }
 		}
 	};
 	for (const r of releases) {
@@ -866,6 +930,8 @@ export function statsOfPeriod(
 			if (out) {
 				stats.views += views;
 				stats.byPlatform[post.platform].views += views;
+				stats.likes += post.likes ?? 0;
+				stats.byPlatform[post.platform].likes += post.likes ?? 0;
 			}
 			let before = viewsAt(post, start);
 			if (before === null) {
@@ -910,9 +976,11 @@ export interface PeriodAverage {
 	released: number;
 	/** The views those videos have now, a period (a lifetime: a video). */
 	views: number;
+	/** Their likes now, the same way. */
+	likes: number;
 	/** The accounts' follower move a period (a lifetime: a video); null when none was read. */
 	followers: FollowerGain | null;
-	byPlatform: Record<StatPlatform, { views: number; followers: FollowerGain | null }>;
+	byPlatform: Record<StatPlatform, { views: number; likes: number; followers: FollowerGain | null }>;
 }
 
 /**
@@ -944,12 +1012,13 @@ export function periodAverage(
 		to: key === 'lifetime' ? now : periodStart(key, now),
 		released: 0,
 		views: 0,
+		likes: 0,
 		followers: null,
 		byPlatform: {
-			youtube: { views: 0, followers: null },
-			instagram: { views: 0, followers: null },
-			tiktok: { views: 0, followers: null },
-			facebook: { views: 0, followers: null }
+			youtube: { views: 0, likes: 0, followers: null },
+			instagram: { views: 0, likes: 0, followers: null },
+			tiktok: { views: 0, likes: 0, followers: null },
+			facebook: { views: 0, likes: 0, followers: null }
 		}
 	};
 	const to = avg.to.getTime();
@@ -972,12 +1041,16 @@ export function periodAverage(
 			const views = post.views ?? 0;
 			avg.views += views;
 			avg.byPlatform[post.platform].views += views;
+			avg.likes += post.likes ?? 0;
+			avg.byPlatform[post.platform].likes += post.likes ?? 0;
 		}
 	}
 	if (key !== 'lifetime') avg.released /= n;
 	avg.views /= n;
+	avg.likes /= n;
 	for (const p of filter.platforms) {
 		avg.byPlatform[p].views /= n;
+		avg.byPlatform[p].likes /= n;
 		avg.byPlatform[p].followers = sumGains(
 			followers
 				.filter((s) => s.platform === p)
@@ -998,6 +1071,40 @@ export function periodAverage(
 	}
 	avg.followers = sumGains(filter.platforms.map((p) => avg.byPlatform[p].followers));
 	return avg;
+}
+
+/**
+ * The average period's numbers for a video: the views and follows of the
+ * same whole periods, shared over the videos that went out in them — what a
+ * video brought in on average, by week, month, quarter or year (only the
+ * running period left out differs). `released` is those videos, not divided.
+ * A lifetime's average is a video's already.
+ */
+export function videoAverage(
+	releases: Release[],
+	filter: DashFilter,
+	key: PeriodKey,
+	now: Date,
+	followers: FollowerState[] = []
+): PeriodAverage {
+	const a = periodAverage(releases, filter, key, now, followers);
+	if (key === 'lifetime' || a.periods === 0) return a;
+	const videos = Math.round(a.released * a.periods);
+	const per = videos > 0 ? a.periods / videos : 0;
+	const gain = (g: FollowerGain | null) => g && { ...g, gained: videos > 0 ? g.gained * per : 0 };
+	return {
+		...a,
+		released: videos,
+		views: a.views * per,
+		likes: a.likes * per,
+		followers: gain(a.followers),
+		byPlatform: {
+			youtube: { views: a.byPlatform.youtube.views * per, likes: a.byPlatform.youtube.likes * per, followers: gain(a.byPlatform.youtube.followers) },
+			instagram: { views: a.byPlatform.instagram.views * per, likes: a.byPlatform.instagram.likes * per, followers: gain(a.byPlatform.instagram.followers) },
+			tiktok: { views: a.byPlatform.tiktok.views * per, likes: a.byPlatform.tiktok.likes * per, followers: gain(a.byPlatform.tiktok.followers) },
+			facebook: { views: a.byPlatform.facebook.views * per, likes: a.byPlatform.facebook.likes * per, followers: gain(a.byPlatform.facebook.followers) }
+		}
+	};
 }
 
 /* ---- sorting ---- */

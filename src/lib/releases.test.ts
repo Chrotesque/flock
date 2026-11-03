@@ -13,6 +13,10 @@ import {
 	peerGroups,
 	periodAverage,
 	periodStats,
+	videoAverage,
+	inTimeframe,
+	readRange,
+	timeframeWords,
 	pooledSkipRate,
 	overallOf,
 	ratioOf,
@@ -718,11 +722,64 @@ describe('periodAverage', () => {
 		expect(life.followers).toEqual({ gained: 40, partly: false });
 	});
 
+	it("shares an average period's views, likes and follows over its videos", () => {
+		const week = periodAverage(releases, DEFAULT_FILTER, 'week', now, [youtube]);
+		const video = videoAverage(releases, DEFAULT_FILTER, 'week', now, [youtube]);
+		expect(video.periods).toBe(2);
+		expect(video.released).toBe(2);
+		expect(video.views).toBe(200);
+		// Two videos with 5 likes each over two weeks: 5 a week, and 5 a video.
+		expect(week.likes).toBe(5);
+		expect(video.likes).toBe(5);
+		// One video a week, so a video's follows are a week's.
+		expect(video.followers?.gained).toBeCloseTo(week.followers!.gained);
+		expect(video.followers?.partly).toBe(true);
+		expect(videoAverage(releases, DEFAULT_FILTER, 'lifetime', now, [youtube])).toEqual(
+			periodAverage(releases, DEFAULT_FILTER, 'lifetime', now, [youtube])
+		);
+	});
+
 	it('counts days by the calendar', () => {
 		const days = periodAverage(releases, DEFAULT_FILTER, 'today', now);
 		// 1 Oct to 13 Oct, today left out.
 		expect(days.periods).toBe(13);
 		expect(days.released).toBeCloseTo(3 / 13);
+	});
+});
+
+describe('the timeframe', () => {
+	const now = new Date(2026, 9, 14, 12, 0).getTime();
+	const at = (m: number, d: number, h = 10) => ({ at: new Date(2026, m, d, h, 0).getTime() });
+
+	it('reads only a whole range', () => {
+		expect(readRange({ from: '2026-03-01', to: 'today' })).toEqual({ from: '2026-03-01', to: 'today' });
+		expect(readRange({ from: '2026-03-01', to: '2026-03-01' })).toEqual({ from: '2026-03-01', to: '2026-03-01' });
+		expect(readRange({ from: '2026-03-02', to: '2026-03-01' })).toBeNull();
+		expect(readRange({ from: '2026-02-30', to: 'today' })).toBeNull();
+		expect(readRange(null)).toBeNull();
+		expect(readFilter({ days: 60, range: { from: '2026-01-05', to: 'today' } }).range).toEqual({ from: '2026-01-05', to: 'today' });
+		expect(readFilter({}).range).toBeNull();
+	});
+
+	it('counts the last days, or a range from its first moment to its last day, or on with today', () => {
+		const days = { days: 30, range: null };
+		expect(inTimeframe(at(8, 20), days, now)).toBe(true);
+		expect(inTimeframe(at(8, 10), days, now)).toBe(false);
+		const march = { days: 30, range: { from: '2026-03-01', to: '2026-03-31' } };
+		expect(inTimeframe(at(2, 1, 0), march, now)).toBe(true);
+		expect(inTimeframe(at(2, 31, 23), march, now)).toBe(true);
+		expect(inTimeframe(at(3, 1, 0), march, now)).toBe(false);
+		const onward = { days: 30, range: { from: '2026-03-01', to: 'today' as const } };
+		// "Today" moves on, and takes in what is still to come, as the days do.
+		expect(inTimeframe(at(10, 2), onward, now)).toBe(true);
+		expect(inTimeframe(at(1, 28), onward, now)).toBe(false);
+	});
+
+	it('names the timeframe', () => {
+		expect(timeframeWords({ days: 60, range: null })).toBe('Last 60 days');
+		expect(timeframeWords({ days: 30, range: { from: '2026-03-01', to: 'today' } }, 'en-GB')).toBe('1 Mar 2026 – Today');
+		expect(timeframeWords({ days: 30, range: { from: '2026-03-01', to: '2026-03-31' } }, 'en-GB')).toBe('1 Mar – 31 Mar 2026');
+		expect(timeframeWords({ days: 30, range: { from: '2025-12-01', to: '2026-01-31' } }, 'en-GB')).toBe('1 Dec 2025 – 31 Jan 2026');
 	});
 });
 
