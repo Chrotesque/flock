@@ -923,7 +923,8 @@
 			.map((s) => `${s.name || PLATFORMS[s.platform].label} (${PLATFORMS[s.platform].label}) ${whole.format(s.count)} ${followerWord(s.platform, s.count)}`)
 	);
 	const followersAbout = $derived(
-		'Followers and subscribers each video brought. Facebook counts the follows from a reel itself, and YouTube Analytics the subscribers from a video (gained less lost, about two days late). ' +
+		`${view.platforms.includes('youtube') ? 'Followers and subscribers' : 'Followers'} each video brought. ` +
+			'Facebook counts the follows from a reel itself, and YouTube Analytics the subscribers from a video (gained less lost, about two days late). ' +
 			"Instagram and TikTok only say how many an account has, so flock credits each rise in that count to the videos gaining views at the moment — in proportion to those views, or to the newest video when none was — which is flock's estimate, not a platform figure; it also stands in for YouTube's newest days." +
 			(followerCounts.length ? `\n\nNow: ${followerCounts.join(' · ')}` : '')
 	);

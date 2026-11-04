@@ -56,6 +56,13 @@
 		head?: Snippet;
 	} = $props();
 
+	// "Subscribers" is YouTube's word: only a box counting a YouTube channel the brand has says it.
+	const followerNoun = $derived(
+		box.platforms.includes('youtube') && followers.some((f) => f.platform === 'youtube')
+			? 'followers and subscribers'
+			: 'followers'
+	);
+
 	const filter = $derived(boxFilter(box, now));
 	const key = $derived(boxPeriod(box));
 	const ranged = $derived(box.timeframe.kind !== 'period');
@@ -234,7 +241,7 @@
 					? {
 							strong: signed(s.followers.gained),
 							tone: s.followers.gained < 0 ? 'down' : 'up',
-							text: ` followers and subscribers${s.followers.partly ? ' (since flock began reading them)' : ''}`
+							text: ` ${followerNoun}${s.followers.partly ? ' (since flock began reading them)' : ''}`
 						}
 					: { text: 'No follower counts read yet' }
 			],
@@ -283,7 +290,7 @@
 					? {
 							strong: signedAvgExact(f.gained),
 							tone: f.gained < 0 ? 'down' : 'up',
-							text: ` followers and subscribers ${per}${f.partly ? ' (over the stretch flock read them)' : ''}`
+							text: ` ${followerNoun} ${per}${f.partly ? ' (over the stretch flock read them)' : ''}`
 						}
 					: { text: 'No follower counts read for it yet' }
 			],
