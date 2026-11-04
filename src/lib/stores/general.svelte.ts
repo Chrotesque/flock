@@ -6,7 +6,7 @@ import { settle, LOG_SETTLE_MS } from '../settle';
 import type { GeneralSettings, NasDestination, WatchFolder } from '../types';
 import type { TimeZoneChoice } from '../timezones';
 import { DEFAULT_COLUMNS, columnWords, readColumns, type DashColumn } from '../dashcolumns';
-import { DEFAULT_LAYOUT, FLOCK_BOXES, readLayout } from '../statbox';
+import { FLOCK_BOXES, layoutFor, readLayouts, withLayout } from '../statbox';
 import { readTodoBrands } from '../todobrands';
 import {
 	folderKind,
@@ -39,7 +39,7 @@ export const DEFAULT_GENERAL: GeneralSettings = {
 	todoBrands: null,
 	timeZones: [],
 	dashboardColumns: DEFAULT_COLUMNS,
-	dashboardBoxes: DEFAULT_LAYOUT
+	dashboardBoxes: {}
 };
 
 /**
@@ -100,7 +100,7 @@ class GeneralStore {
 				todoBrands: readTodoBrands(stored.todoBrands),
 				timeZones: Array.isArray(stored.timeZones) ? stored.timeZones : [],
 				dashboardColumns: readColumns(stored.dashboardColumns),
-				dashboardBoxes: readLayout(stored.dashboardBoxes)
+				dashboardBoxes: readLayouts(stored.dashboardBoxes)
 			};
 			this.#loaded = true;
 			this.#logged = $state.snapshot(this.value);
@@ -196,9 +196,14 @@ class GeneralStore {
 		if (columnsWere !== columnsNow) logAction('settings', 'Changed the Dashboard columns', `${columnsWere} → ${columnsNow}`);
 
 		const boxWords = (ids: string[]) => ids.map((id) => this.#boxNames[id] ?? id).join(', ') || 'none';
-		const boxesWere = boxWords(before.dashboardBoxes);
-		const boxesNow = boxWords(after.dashboardBoxes);
-		if (boxesWere !== boxesNow) logAction('settings', "Changed the Dashboard's stat boxes", `${boxesWere} → ${boxesNow}`);
+		const boxKeys = new Set([...Object.keys(before.dashboardBoxes), ...Object.keys(after.dashboardBoxes)]);
+		for (const key of boxKeys) {
+			const boxesWere = boxWords(layoutFor(before.dashboardBoxes, key));
+			const boxesNow = boxWords(layoutFor(after.dashboardBoxes, key));
+			if (boxesWere === boxesNow) continue;
+			const whose = this.#boxScopes[key] ?? key;
+			logAction('settings', "Changed the Dashboard's stat boxes", `${whose}: ${boxesWere} → ${boxesNow}`);
+		}
 
 		for (const key of ['watchFolders', 'projectFolders'] as const) this.#logFolders(key, before, after);
 
@@ -374,10 +379,17 @@ class GeneralStore {
 	/** Box names the log's lines use, by id: flock's, and whatever the Dashboard passes in. */
 	#boxNames: Record<string, string> = Object.fromEntries(FLOCK_BOXES.map((b) => [b.id, b.name]));
 
-	/** The stat boxes on this profile's Dashboard, in order (statbox.ts), with their names for the log. */
-	setDashboardBoxes(next: string[], names: Record<string, string> = {}) {
+	/** What each layout key is called, for the log: a brand's name, or a scope's. */
+	#boxScopes: Record<string, string> = {};
+
+	/**
+	 * The stat boxes on this profile's Dashboard for one brand (or scope), in
+	 * order (statbox.ts), with the boxes' and the brand's names for the log.
+	 */
+	setDashboardBoxes(key: string, next: string[], names: Record<string, string> = {}, scopeName = key) {
 		this.#boxNames = { ...this.#boxNames, ...names };
-		this.value.dashboardBoxes = readLayout(next);
+		this.#boxScopes = { ...this.#boxScopes, [key]: scopeName };
+		this.value.dashboardBoxes = withLayout(this.value.dashboardBoxes, key, next);
 		this.queueSave();
 		this.#queueLog();
 	}

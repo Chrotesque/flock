@@ -86,6 +86,7 @@
 		boxSummary,
 		creatorWords,
 		isFlockBox,
+		layoutFor,
 		moveBox,
 		placeBox,
 		placedBoxes,
@@ -1241,7 +1242,10 @@
 	   arrow keys); the row follows the pointer and is saved on release. */
 	let dragId = $state<string | null>(null);
 	let dragOrder = $state<string[] | null>(null);
-	const layout = $derived(general.value.dashboardBoxes);
+	// Each brand (or a local scope) has its own row: a brand that never had one shows the row every brand starts from.
+	const layoutKey = $derived(scope ? `scope:${scope.label}` : brands.currentId);
+	const layoutName = $derived(scope ? scope.label : (brands.current?.name ?? 'the brand'));
+	const layout = $derived(layoutFor(general.value.dashboardBoxes, layoutKey));
 	const placed = $derived(placedBoxes(dragOrder ?? layout, statBoxes.all));
 	/** The row's width, for what still fits. */
 	let stripWidth = $state(0);
@@ -1254,7 +1258,7 @@
 	let picking = $state(false);
 
 	function setLayout(next: string[]) {
-		general.setDashboardBoxes(next, statBoxes.names);
+		general.setDashboardBoxes(layoutKey, next, statBoxes.names, layoutName);
 	}
 
 	function place(id: string) {
@@ -2050,6 +2054,19 @@
 				<BrandMonths brand={brandPanel} onclose={() => (brandPanel = null)} />
 			{/if}
 		{/if}
+		{#if editing}
+			<!-- Edit mode in a line, between the brands and Ratio View. -->
+			<p class="editbar" role="status">
+				<strong>EDIT MODE ACTIVE</strong> —
+				{#if marksJestr}Jestr Campaign assignments per row;{/if}
+				Rearrange and remove Stat boxes (create new in Settings)
+				{#if lastHidden}
+					<span class="undo">Hid “{lastHidden.title}” <button onclick={undoHide}>Undo</button></span>
+				{/if}
+				{#if jestrCampaigns.error}<span class="bad">Not saved: {jestrCampaigns.error}</span>{/if}
+				{#if hiddenVideos.error}<span class="bad">Not saved: {hiddenVideos.error}</span>{/if}
+			</p>
+		{/if}
 		<div class="aside">
 			<!-- Ratio View: a switch, and once it is on, beside it in the same box, the
 			     platforms it shows — each added or taken out with a click. The box grows
@@ -2302,23 +2319,6 @@
 		<p class="banner">
 			{brands.multiple ? `${brands.current?.name ?? 'This brand'} has` : 'There is'} no YouTube channel chosen.
 			<a href="{base}/settings?section=brands">Choose one in Settings → Brands</a>.
-		</p>
-	{/if}
-
-	{#if editing}
-		<p class="banner editing">
-			<strong>EDITING</strong> — Stat boxes: drag one by its grip to move it, × takes it off, + adds one while
-			another fits (they are made under Settings → Dashboard → Stat boxes). Press the pencil beside a title to
-			rename that video on every platform it is on, or on some only; the worker renames it within seconds. The eye
-			hides a video from the Dashboard — the list, the totals, the stat boxes and the usual; while editing, hidden ones stay in the list, faded, so the eye
-			can show one again. <em>Hidden</em> in the filter shows them outside Edit mode too.
-			{#if marksJestr}Click a video to mark it as a Jestr campaign, or to take the mark off.{/if}
-			Press <strong>■</strong> when finished.
-			{#if lastHidden}
-				<span class="undo">Hid “{lastHidden.title}” <button onclick={undoHide}>Undo</button></span>
-			{/if}
-			{#if jestrCampaigns.error}<span class="bad">Not saved: {jestrCampaigns.error}</span>{/if}
-			{#if hiddenVideos.error}<span class="bad">Not saved: {hiddenVideos.error}</span>{/if}
 		</p>
 	{/if}
 
@@ -3487,19 +3487,26 @@
 		color: #fff;
 	}
 
-	.banner.editing {
+	.editbar {
+		flex: 1 1 0;
+		min-width: 0;
+		/* 50px to the brands and to Ratio View: the toolbar's 16px gap and the rest. */
+		margin: 0 34px;
+		padding: 6px 14px;
+		border-radius: var(--radius);
 		background: var(--pink);
-		border-color: var(--pink);
 		color: var(--bg);
+		font-size: 12.5px;
 		font-weight: 500;
+		line-height: 1.35;
 	}
 
-	.banner.editing strong {
+	.editbar strong {
 		font-weight: 800;
 		letter-spacing: 0.04em;
 	}
 
-	.banner.editing .bad {
+	.editbar .bad {
 		margin-left: 8px;
 		padding: 1px 7px;
 		border-radius: 6px;
@@ -3601,7 +3608,7 @@
 		stroke-linejoin: round;
 	}
 
-	.banner.editing .undo {
+	.editbar .undo {
 		margin-left: 8px;
 		padding: 1px 4px 1px 8px;
 		border-radius: 6px;
@@ -3609,7 +3616,7 @@
 		color: var(--text);
 	}
 
-	.banner.editing .undo button {
+	.editbar .undo button {
 		margin-left: 4px;
 		padding: 0 4px;
 		font: inherit;

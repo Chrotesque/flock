@@ -11,6 +11,7 @@
 	import { statBoxes } from '$lib/stores/statboxes.svelte';
 	import { users } from '$lib/stores/users.svelte';
 	import { general } from '$lib/stores/general.svelte';
+	import { brands } from '$lib/stores/brands.svelte';
 	import {
 		BOX_HOWS,
 		BOX_METRICS,
@@ -25,6 +26,7 @@
 		creatorWords,
 		howRefusal,
 		isFlockBox,
+		layoutFor,
 		metricFits,
 		moveMetric,
 		newBox,
@@ -53,7 +55,8 @@
 
 	const me = $derived(users.current);
 	const profileIds = $derived(users.list.map((u) => u.id));
-	const onMine = $derived(new Set(general.value.dashboardBoxes));
+	// The brand in view's row: where the list says a box is placed.
+	const onMine = $derived(new Set(layoutFor(general.value.dashboardBoxes, brands.currentId)));
 
 	/** The box in the builder, and whether it is new (not saved yet). */
 	let draft = $state<StatBox | null>(null);
@@ -229,7 +232,7 @@
 	<div class="library">
 		<div class="libhead">
 			<p class="lead">
-				Every stat box anyone made, shared by every profile. Place them on the Dashboard in its Edit mode; what
+				Every stat box anyone made, shared by every profile. Place them on the Dashboard in its Edit mode, for each brand on its own; what
 				each counts is set here, and never by the Dashboard's filter.
 			</p>
 			<button class="btn btn-primary small" type="button" onclick={startNew} disabled={!me}>New stat box</button>
@@ -246,7 +249,7 @@
 						<span class="by" class:flock={isFlockBox(b)} class:own={b.creator === me?.id}
 							>{b.creator === me?.id ? 'by you' : `by ${creatorWords(b, users.list)}`}</span
 						>
-						{#if onMine.has(b.id)}<span class="placed" title="On your Dashboard">on your Dashboard</span>{/if}
+						{#if onMine.has(b.id)}<span class="placed" title="On your Dashboard for the brand in view">on {brands.multiple ? `${brands.current?.name ?? "the brand"}'s` : "your"} Dashboard</span>{/if}
 					</div>
 					<p class="sum">{boxSummary(b)}</p>
 					<div class="acts">

@@ -301,8 +301,8 @@ export interface GeneralSettings {
 	timeZones: TimeZoneChoice[];
 	/** The Dashboard list's columns, in order, each shown or not (dashcolumns.ts; Settings → Dashboard). */
 	dashboardColumns: DashColumn[];
-	/** The stat boxes on the Dashboard, by id, in order (statbox.ts); placed in its Edit mode. */
-	dashboardBoxes: string[];
+	/** The stat boxes on the Dashboard, per brand, by id, in order (statbox.ts `BoxLayouts`); placed in its Edit mode. */
+	dashboardBoxes: Record<string, string[]>;
 }
 
 export interface WatchFolder {

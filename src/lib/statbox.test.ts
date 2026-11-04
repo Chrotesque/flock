@@ -15,6 +15,9 @@ import {
 	placeBox,
 	placedBoxes,
 	readLayout,
+	readLayouts,
+	layoutFor,
+	withLayout,
 	readStatBox,
 	readStatBoxes,
 	suggestedName,
@@ -229,5 +232,20 @@ describe('rates', () => {
 	it('has no usual without peers to compare with', () => {
 		const a = rel(T, [post('youtube', T, 1000, 0, 0)]);
 		expect(boxRates([a], all, T - H, T + H, T + 9 * 24 * H, [a]).usual).toBeNull();
+	});
+});
+
+describe('a row per brand', () => {
+	it('reads 0.22.0’s one row as every brand’s start', () => {
+		const layouts = readLayouts(['flock:week']);
+		expect(layoutFor(layouts, 'b1')).toEqual(['flock:week']);
+		expect(layoutFor(readLayouts(undefined), 'b1')).toEqual(DEFAULT_LAYOUT);
+	});
+
+	it('keeps each brand to its own once set', () => {
+		const layouts = withLayout(readLayouts(['flock:week']), 'b1', ['flock:year', 'flock:year']);
+		expect(layoutFor(layouts, 'b1')).toEqual(['flock:year']);
+		expect(layoutFor(layouts, 'b2')).toEqual(['flock:week']);
+		expect(readLayouts({ b1: ['x'], '': ['y'], b2: 'z' })).toEqual({ b1: ['x'] });
 	});
 });

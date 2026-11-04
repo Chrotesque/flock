@@ -10,7 +10,7 @@
  * each naming who made it; flock's own (FLOCK_BOXES, the strip as it was up to
  * 0.20.11) live here, not in the row, and cannot be changed — only copied.
  * Which boxes a profile's Dashboard shows, and in what order, is its own
- * (`general.dashboardBoxes`, a list of ids).
+ * and set per brand (`general.dashboardBoxes`: brand → ids; see `readLayouts`).
  *
  * The arithmetic is releases.ts's: a box only says which of `statsOfPeriod`,
  * `periodAverage` and `videoAverage` to run, over what.
@@ -217,6 +217,38 @@ export function readStatBoxes(raw: unknown): StatBox[] {
 		out.push(box);
 	}
 	return out;
+}
+
+/**
+ * Which boxes each brand's Dashboard shows, by brand id (or a local scope's
+ * `scope:<label>`); `ALL_BRANDS` is what a brand with none of its own shows.
+ */
+export type BoxLayouts = Record<string, string[]>;
+
+export const ALL_BRANDS = '*';
+
+/**
+ * Stored layouts, rebuilt. A plain list — one row for every brand, as 0.22.0
+ * and 0.22.1 kept it — becomes the row every brand starts from.
+ */
+export function readLayouts(raw: unknown): BoxLayouts {
+	if (Array.isArray(raw)) return { [ALL_BRANDS]: readLayout(raw) };
+	if (!raw || typeof raw !== 'object') return {};
+	const out: BoxLayouts = {};
+	for (const [key, ids] of Object.entries(raw as Record<string, unknown>)) {
+		if (key && Array.isArray(ids)) out[key] = readLayout(ids);
+	}
+	return out;
+}
+
+/** A brand's row: its own, else the one every brand starts from, else flock's boxes. */
+export function layoutFor(layouts: BoxLayouts, key: string): string[] {
+	return layouts[key] ?? layouts[ALL_BRANDS] ?? [...DEFAULT_LAYOUT];
+}
+
+/** The layouts with one brand's row set. */
+export function withLayout(layouts: BoxLayouts, key: string, ids: string[]): BoxLayouts {
+	return { ...layouts, [key]: readLayout(ids) };
 }
 
 /** A stored layout: the ids in order, once each. Nothing stored is flock's boxes. */
