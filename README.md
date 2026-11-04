@@ -218,6 +218,15 @@ tiktok:demo sign-in` signs a sandbox target user in with the reading scopes,
 and `pnpm tiktok:demo read` reads its videos and followers once. A brand whose
 TikTok account has the same handle shows them.
 
+**Signing in from flock's page.** The Dashboard's info button (ⓘ) turns red
+while a brand's TikTok account cannot be read, and its popup has *Continue
+with TikTok*. TikTok sends the browser back to flock's `/connect/tiktok` page,
+which has to be registered on the app as a redirect URI (on flock's website:
+`https://flock-scheduler.netlify.app/app/connect/tiktok`). Something has to
+answer it: set `"pageSignin": "stats"` in the worker config's `tiktok` section
+(or `true` to ask for posting only), or run `pnpm tiktok:demo serve` for the
+sandbox while signing in.
+
 Limits:
 
 - **Private accounts only, until TikTok approves your app for public posting**

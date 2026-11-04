@@ -2,6 +2,8 @@
 	import { onMount, tick } from 'svelte';
 	import { base } from '$app/paths';
 	import PlatformIcon from './PlatformIcon.svelte';
+	import TikTokSignin from './TikTokSignin.svelte';
+	import { canRead } from '$lib/tiktoksignin';
 	import DashFilter from './DashFilter.svelte';
 	import ViewsCurve from './ViewsCurve.svelte';
 	import RenameDialog from './RenameDialog.svelte';
@@ -828,6 +830,7 @@
 
 	function onWindowPointer(event: PointerEvent) {
 		const target = event.target as HTMLElement;
+		if (statusPinned && !target.closest('.status')) statusPinned = false;
 		if (picking && !target.closest('.boxpicker, .addbox')) picking = false;
 		if (cell && !target.closest('.cellpop, [data-col]')) {
 			cell = null;
@@ -841,6 +844,9 @@
 		event.preventDefault();
 		cell = null;
 	}
+
+	/** The status popup kept open by a click, so the TikTok sign-in in it is easy to reach. */
+	let statusPinned = $state(false);
 
 	/** One platform's part of a sum, or of the total row's sum. */
 	function cellPart(posts: Post[], col: CellCol, p: StatPlatform): string {
@@ -1396,6 +1402,8 @@
 		note: string;
 		/** YouTube's only: what the day's units went on, and the uploads' own count. */
 		costs?: { rows: QuotaRow[]; uploads: number | null };
+		/** TikTok's only: offer a sign-in from the page (TikTokSignin). */
+		signin?: boolean;
 	}
 
 	/** The status icon's popup: a line per platform read, each with its level. */
@@ -1435,20 +1443,20 @@
 			lines.push({
 				platform: 'tiktok',
 				who: accountOf('tiktok'),
-				// A sign-in without either reading scope is a choice (the scopes are
-				// opt-in), not a fault, so it stays neutral; one of the two missing is
-				// half a read and shows as such.
-				level: lineLevel({ error: ttBeat?.error, partial: missing.length === 1 }),
+				// Red while the sign-in cannot read the numbers (the user's call,
+				// 4 Nov 2026): the line then carries the sign-in itself.
+				level: canRead(ttBeat) ? lineLevel({ error: ttBeat?.error }) : 'bad',
 				read: ago(ttBeat?.polledAt),
 				error: shortError(ttBeat?.error),
 				detail: ttBeat?.error ?? '',
 				limit: null,
+				signin: true,
 				note: !ttBeat
-					? 'Not read yet: the worker reads TikTok once the account is signed in with --with-stats'
+					? 'Not read yet: sign the account in for its videos and followers'
 					: missing.length === 2
-						? 'Not read: its sign-in lacks video.list and user.info.stats (pnpm worker:auth --tiktok --with-stats)'
+						? 'Not read: its sign-in does not allow video.list and user.info.stats'
 						: missing.length === 1
-							? `Partly read: its sign-in lacks ${missing[0]}`
+							? `Partly read: its sign-in does not allow ${missing[0]}`
 							: counts
 								? [
 										counts.followers != null ? `${whole.format(counts.followers)} ${followerWord('tiktok', counts.followers)}` : '',
@@ -2148,11 +2156,13 @@
 			<!-- When each platform was read and what is left of the day, behind one
 			     icon coloured by the worst of it; hover or focus shows the lines. -->
 			{#if statusLines.length > 0}
-				<div class="status">
+				<div class="status" class:pinned={statusPinned}>
 					<button
 						class="btn icon info {statusLevel}"
 						aria-label="Status: {LEVEL_WORDS[statusLevel]}"
 						aria-describedby="dash-status"
+						aria-expanded={statusPinned}
+						onclick={() => (statusPinned = !statusPinned)}
 					>
 						<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
 							<circle cx="8" cy="8" r="6.5" />
@@ -2160,7 +2170,7 @@
 							<circle class="dot" cx="8" cy="4.9" r="0.95" />
 						</svg>
 					</button>
-					<div class="pop" id="dash-status" role="tooltip">
+					<div class="pop" id="dash-status" role="group" aria-label="How each platform's numbers are read">
 						{#each statusLines as line (line.platform)}
 							{@const account = line.who}
 							<div class="sline {line.level}">
@@ -2183,6 +2193,9 @@
 									{/if}
 									{#if line.note}
 										<p class="snote">{line.note}</p>
+									{/if}
+									{#if line.signin}
+										<TikTokSignin />
 									{/if}
 									{#if line.costs}
 										<!-- What the day's units went on: what each costs, and what it took today. -->
@@ -3070,7 +3083,8 @@
 	}
 
 	.status:hover .pop,
-	.status:focus-within .pop {
+	.status:focus-within .pop,
+	.status.pinned .pop {
 		opacity: 1;
 		visibility: visible;
 		transform: none;

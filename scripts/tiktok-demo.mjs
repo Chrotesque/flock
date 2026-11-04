@@ -11,6 +11,9 @@
 //                              redirect URI and the PocketBase address, copied from
 //                              worker/.worker-config.json (or --from <file>); nothing else
 //   pnpm tiktok:demo sign-in   TikTok's consent, asking for video.list and user.info.stats too
+//   pnpm tiktok:demo serve     answers *Sign in with TikTok* on flock's page (its Dashboard info
+//                              popup) with this config's key, until ctrl-c; the page's address
+//                              /connect/tiktok must be a redirect URI on the app
 //   pnpm tiktok:demo read      one read of the demo accounts' videos and followers
 //   pnpm tiktok:demo check     who each demo account is, and what its sign-in allows
 //
@@ -81,6 +84,9 @@ switch (command) {
 	case 'sign-in':
 		run('authorize.mjs', ['--tiktok', '--with-stats', ...rest]);
 		break;
+	case 'serve':
+		run('index.mjs', ['--tiktok-signins']);
+		break;
 	case 'read':
 		run('index.mjs', ['--stats']);
 		break;
@@ -88,6 +94,6 @@ switch (command) {
 		run('index.mjs', ['--tiktok']);
 		break;
 	default:
-		console.log('Usage: pnpm tiktok:demo init | sign-in | read | check');
+		console.log('Usage: pnpm tiktok:demo init | sign-in | serve | read | check');
 		process.exitCode = command ? 1 : 0;
 }

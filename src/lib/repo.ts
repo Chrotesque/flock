@@ -17,6 +17,7 @@ import {
 import { readHidden } from './hiddenvideos';
 import { MOVING, canMove, planMove, readMove, type MoveRequest, type MoveStep } from './brandmove';
 import { newId } from './id';
+import { SIGNIN_KEY, type SigninRow } from './tiktoksignin';
 import { firstLine, formatSchedule } from './format';
 import { REEL_FIELDS, STATS_FIELDS, UPLOAD_FIELDS, type StatsRow, type TodoReelRow, type UploadRow } from './videotodo';
 import { canRetry, retryWhen } from './attention';
@@ -897,6 +898,53 @@ export async function requestTikTokCheck(giveUpMs = 20_000): Promise<'done' | 'f
 		if (answer?.id === id && (answer.status === 'failed' || answer.status === 'expired')) return 'failed';
 		if (Date.now() - started > giveUpMs) return 'timeout';
 	}
+}
+
+/**
+ * Starts a TikTok sign-in (tiktoksignin.ts): asks the worker for TikTok's
+ * consent address, to be opened in this tab. The worker that answers keeps
+ * the check values; nothing secret reaches the page. 'timeout' when no
+ * worker answers sign-ins.
+ */
+export async function startTikTokSignin(
+	redirect: string,
+	giveUpMs = 12_000
+): Promise<{ url: string } | { error: string } | 'timeout'> {
+	assertDeviceNamed();
+	const id = newId();
+	const ask: SigninRow = { id, status: 'pending', redirect, requestedAt: new Date().toISOString(), by: deviceName() };
+	await setSetting(SIGNIN_KEY, ask);
+	const started = Date.now();
+	for (;;) {
+		await new Promise((resolve) => setTimeout(resolve, 700));
+		const row = await getSetting<SigninRow | null>(SIGNIN_KEY, null);
+		if (row?.id !== id) return { error: 'Another sign-in was started meanwhile.' };
+		if (row.status === 'open' && row.url) return { url: row.url };
+		if (row.status === 'failed' || row.status === 'expired') return { error: row.error || 'The worker gave the sign-in up.' };
+		if (Date.now() - started > giveUpMs) return 'timeout';
+	}
+}
+
+/** The sign-in in progress, as the worker and the page last left it. */
+export function readTikTokSignin(): Promise<SigninRow | null> {
+	return getSetting<SigninRow | null>(SIGNIN_KEY, null);
+}
+
+/**
+ * Hands what TikTok sent back to the worker: the code and state, or TikTok's
+ * refusal. Only onto the sign-in that was opened; false when there is none.
+ */
+export async function returnTikTokSignin(patch: Pick<SigninRow, 'code' | 'state' | 'error'>): Promise<boolean> {
+	assertDeviceNamed();
+	const row = await readTikTokSignin();
+	if (!row || row.status !== 'open') return false;
+	await setSetting(SIGNIN_KEY, {
+		...row,
+		...patch,
+		status: patch.code ? 'code' : 'returned',
+		returnedAt: new Date().toISOString()
+	});
+	return true;
 }
 
 /**

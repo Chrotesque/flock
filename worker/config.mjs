@@ -93,6 +93,10 @@ export function loadConfig() {
 			clientSecret: process.env.TIKTOK_CLIENT_SECRET || tiktok.clientSecret || '',
 			// Must be byte-identical to a redirect URI registered on the app.
 			redirectUri: process.env.TIKTOK_REDIRECT_URI || tiktok.redirectUri || '',
+			// Whether this worker answers sign-ins started on flock's page
+			// (tiktoksignin.mjs): false, true, or "stats" to ask for the
+			// Dashboard's reading scopes too — only once the app lists them.
+			pageSignin: tiktok.pageSignin ?? false,
 			accounts: tiktokAccounts(tiktok, process.env)
 		},
 		// Instagram through Facebook Login: the Meta app's own id and secret

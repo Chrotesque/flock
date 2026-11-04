@@ -64,11 +64,10 @@ import {
 import { FACEBOOK_PERMISSIONS, FACEBOOK_SCOPES, checkFacebookGrant } from './facebook.mjs';
 import { fetchOrExplain } from './net.mjs';
 import { accessToken } from './google.mjs';
+import { TIKTOK_AUTH, TIKTOK_TOKEN } from './tiktoksignin.mjs';
 
 const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
-const TIKTOK_AUTH = 'https://www.tiktok.com/v2/auth/authorize/';
-const TIKTOK_TOKEN = 'https://open.tiktokapis.com/v2/oauth/token/';
 const FACEBOOK_GRAPH = 'https://graph.facebook.com';
 
 /**

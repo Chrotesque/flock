@@ -83,6 +83,7 @@ import { unitsToday } from './quota.mjs';
 import { instagramStatsPass } from './igstats.mjs';
 import { facebookStatsPass } from './fbstats.mjs';
 import { tiktokStatsPass, statsReach, videoIdOf } from './ttstats.mjs';
+import { hostBeat, signinPass } from './tiktoksignin.mjs';
 import { msUntil } from './upload.mjs';
 import { errorText } from './net.mjs';
 import { startPreviewServer } from './preview.mjs';
@@ -175,6 +176,8 @@ const once = process.argv.includes('--once');
 const dry = process.argv.includes('--dry');
 const checkVidiq = process.argv.includes('--vidiq');
 const statsOnly = process.argv.includes('--stats');
+// The TikTok demo's sign-in answerer: nothing else runs (see serveTikTokSignins).
+const serveSignins = process.argv.includes('--tiktok-signins');
 const checkTikTok = process.argv.includes('--tiktok');
 const checkInstagram = process.argv.includes('--instagram');
 const checkFacebook = process.argv.includes('--facebook');
@@ -986,6 +989,76 @@ async function creatorCheckPass(pb, config) {
 	} finally {
 		checkingCreators = false;
 	}
+}
+
+/**
+ * Answers TikTok sign-ins started on flock's page (tiktoksignin.mjs), when
+ * this worker's config says to (`tiktok.pageSignin`) and the demo is not
+ * holding them. A new account is read at once, so the Dashboard fills in.
+ */
+let signingIn = false;
+
+async function tiktokSigninPass(pb, config) {
+	if (signingIn || dry || !config.tiktok.pageSignin || !hb.canPublish() || !config.tiktok.clientSecret) return;
+	signingIn = true;
+	try {
+		await signinPass({
+			pb,
+			config,
+			log,
+			run,
+			afterConnect: async () => {
+				await refreshTikTokCreators(pb, config, log, true);
+				await tiktokStatsPass({ pb, config, log });
+			}
+		});
+	} finally {
+		signingIn = false;
+	}
+}
+
+/**
+ * `--tiktok-signins` (pnpm tiktok:demo serve): only answers sign-ins from
+ * flock's page, on this config's key — the sandbox's, which can grant the
+ * Dashboard's reading scopes before the live app is approved for them. It
+ * holds the sign-ins while it runs, so the publishing worker leaves them to
+ * it, and reads the account straight after. No heartbeat, no account pass:
+ * that would remove the live accounts' rows (tiktok-demo.mjs).
+ */
+async function serveTikTokSignins(pb, config) {
+	if (!config.tiktok.clientKey || !config.tiktok.clientSecret) {
+		throw new Error('No TikTok client key and secret in this config.');
+	}
+	let stop = false;
+	const leave = () => {
+		if (stop) process.exit(1);
+		stop = true;
+	};
+	for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, leave);
+	log("answering TikTok sign-ins from flock's page — ctrl-c to stop");
+	let beatAt = 0;
+	while (!stop) {
+		try {
+			if (Date.now() - beatAt > 10_000) {
+				await hostBeat(pb, run);
+				beatAt = Date.now();
+			}
+			await signinPass({
+				pb,
+				config,
+				log,
+				run,
+				stats: true,
+				afterConnect: () => tiktokStatsPass({ pb, config, log })
+			});
+		} catch (err) {
+			log(`sign-in pass failed: ${err.message.split('\n')[0]}`);
+		}
+		await new Promise((resolve) => setTimeout(resolve, 1500));
+	}
+	await hostBeat(pb, run, false).catch(() => {});
+	log('stopped answering TikTok sign-ins');
+	await remote.flush();
 }
 
 /**
@@ -2051,9 +2124,10 @@ async function main() {
 	}
 
 	// A stats check reads whatever is set up, so it needs no YouTube either.
-	const config = requireConfig({ needToken: !dry && !statsOnly, needGoogle: !dry && !statsOnly });
+	const quiet = statsOnly || serveSignins;
+	const config = requireConfig({ needToken: !dry && !quiet, needGoogle: !dry && !quiet });
 	const pb = makeClient(config.pocketbaseUrl);
-	const live = !(once || dry || statsOnly);
+	const live = !(once || dry || quiet);
 	// One polling worker of a role per machine; a second leaves before it has
 	// written anything. The one-shot modes may run beside a polling worker.
 	if (live && !(await holdInstance(config.role, shutdown))) {
@@ -2071,7 +2145,7 @@ async function main() {
 		return;
 	}
 	log(
-		`worker started (${dry ? 'dry run' : once ? 'single pass' : statsOnly ? 'stats only' : 'polling'}, ` +
+		`worker started (${dry ? 'dry run' : once ? 'single pass' : statsOnly ? 'stats only' : serveSignins ? 'TikTok sign-ins only' : 'polling'}, ` +
 			`role ${config.role}, ${WORKER_VERSION === 'dev' ? 'dev' : `v${WORKER_VERSION}`}, pid ${process.pid})`
 	);
 	remote.attach(pb);
@@ -2133,7 +2207,7 @@ async function main() {
 			break;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
-			if (once || dry || statsOnly) throw err;
+			if (once || dry || quiet) throw err;
 			if (attempt >= 30) {
 				throw new Error(
 					`${message}\nGave up after five minutes. Check that this machine can open flock in a browser ` +
@@ -2159,6 +2233,11 @@ async function main() {
 
 	// Reads only, so it goes before the stale-row recovery: a stats check must
 	// not touch the publishing queue.
+	if (serveSignins) {
+		await serveTikTokSignins(pb, config);
+		return;
+	}
+
 	if (statsOnly) {
 		// Only what is set up: a pass with nothing to read would write its
 		// "not connected" over the status the real worker keeps.
@@ -2376,6 +2455,7 @@ async function main() {
 		void folderPickPass(pb).catch((err) => log(`folder pick failed: ${err.message}`));
 		void fileRequestPass(pb).catch((err) => log(`image request failed: ${err.message.split('\n')[0]}`));
 		void creatorCheckPass(pb, config).catch((err) => log(`TikTok account check failed: ${err.message.split('\n')[0]}`));
+		void tiktokSigninPass(pb, config).catch((err) => log(`TikTok sign-in failed: ${err.message.split('\n')[0]}`));
 		void tiktokHandlesPass(pb).catch((err) => log(`TikTok handle lookup failed: ${err.message.split('\n')[0]}`));
 		void statsRefreshPass(pb, config).catch((err) => log(`stats refresh failed: ${err.message.split('\n')[0]}`));
 		void importPass(pb, config).catch((err) => log(`import pass failed: ${err.message.split('\n')[0]}`));
