@@ -15,13 +15,18 @@
 		type Release,
 		type StatPlatform
 	} from '$lib/releases';
+	import { rateWords } from '$lib/ratioview';
+	import { changeWords } from '$lib/trend';
 	import {
+		RATE_METRICS,
+		boxRates,
 		boxFilter,
 		boxName,
 		boxPeriod,
 		boxReleases,
 		boxSummary,
 		timeframeLabel,
+		METRIC_LABELS,
 		type BoxMetric,
 		type StatBox
 	} from '$lib/statbox';
@@ -63,6 +68,20 @@
 				? periodAverage(counted, filter, key, now, followers)
 				: null
 	);
+	// The rates are over the videos the box counts: out in its timeframe, or
+	// in the whole periods an average is over. The usual's peers are every
+	// video of the box's platforms and kinds.
+	const stretch = $derived.by((): [number, number] | null => {
+		if (total) return [total.from.getTime(), total.to.getTime()];
+		if (!average || !average.from || average.periods === 0) return null;
+		return [average.from.getTime(), average.to.getTime() - (average.key === 'lifetime' ? 0 : 1)];
+	});
+	const rates = $derived(
+		box.metrics.some((m) => RATE_METRICS.includes(m)) && stretch
+			? boxRates(counted, filter, stretch[0], stretch[1], now.getTime(), counted)
+			: null
+	);
+
 	// A platform whose views are read for none of the videos (Facebook without
 	// read_insights) says so, rather than +0.
 	const viewsUnread = $derived(
@@ -154,6 +173,8 @@
 		big: string;
 		faint: boolean;
 		accent: boolean;
+		/** vs usual's colour: ahead green, behind amber. */
+		verdict?: 'ahead' | 'behind' | 'usual' | null;
 		unit: string;
 		heads: Head[];
 		note: string;
@@ -286,9 +307,69 @@
 		};
 	}
 
+	const videosWords = (n: number) => `${whole.format(n)} ${n === 1 ? 'video' : 'videos'}`;
+	const over = $derived(
+		box.how === 'total' ? `the ${rates ? videosWords(rates.videos) : 'videos'} out ${span}` : `the ${rates ? videosWords(rates.videos) : 'videos'} the average is over`
+	);
+
+	function rateCell(m: BoxMetric): Cell {
+		const base = { metric: m, accent: false, heads: [] as Head[], lines: [] as Line[] };
+		if (m === 'skip') {
+			const platforms = box.platforms.filter((p) => p === 'youtube' || p === 'instagram');
+			const v = rates?.skip ?? null;
+			return {
+				...base,
+				big: v === null ? '—' : rateWords(v),
+				faint: v === null,
+				unit: 'skipped',
+				heads: v === null ? [{ text: 'No skip rate read for these videos' }] : [{ strong: rateWords(v), tone: 'exact', text: ' of the views skipped at the start' }],
+				note: `Over ${over}, pooled by views. ${
+					platforms.length ? 'Only YouTube and Instagram give one.' : 'Only YouTube and Instagram give one, and this box counts neither.'
+				}`,
+				lines: platforms.map((p) => {
+					const r = rates?.byPlatform[p].skip ?? null;
+					return { platform: p, text: r === null ? 'not read' : rateWords(r) };
+				})
+			};
+		}
+		if (m === 'engaged') {
+			const v = rates?.engaged ?? null;
+			return {
+				...base,
+				big: v === null ? '—' : rateWords(v),
+				faint: v === null,
+				unit: 'engaged',
+				heads: v === null ? [{ text: 'No views read for these videos' }] : [{ strong: rateWords(v), tone: 'exact', text: ' likes and comments per view' }],
+				note: `Over ${over}: their likes and comments added up, over their views.`,
+				lines: box.platforms.map((p) => {
+					const r = rates?.byPlatform[p].engaged ?? null;
+					return { platform: p, text: r === null ? 'no views read' : rateWords(r) };
+				})
+			};
+		}
+		const u = rates?.usual ?? null;
+		return {
+			...base,
+			big: u?.ratio == null ? '—' : changeWords(u.ratio),
+			faint: u?.ratio == null,
+			verdict: u?.verdict ?? null,
+			unit: 'vs usual',
+			heads:
+				u?.ratio == null
+					? [{ text: 'Not enough videos to compare with yet' }]
+					: [{ strong: changeWords(u.ratio), tone: u.verdict === 'behind' ? 'down' : u.verdict === 'ahead' ? 'up' : 'exact', text: ' against the usual' }],
+			note: `The views of ${over} at their age (up to a week), added up, against the usual of the same platform and kind at that age. Within ±20 % is usual.`,
+			lines: box.platforms.map((p) => {
+				const r = rates?.byPlatform[p].usual ?? null;
+				return { platform: p, text: r?.ratio == null ? 'nothing to compare with' : changeWords(r.ratio) };
+			})
+		};
+	}
+
 	const cells = $derived(
 		box.metrics.map((m): Cell => {
-			if (sample) return { metric: m, big: '—', faint: true, accent: false, unit: m, heads: [], note: '', lines: [] };
+			if (sample) return { metric: m, big: '—', faint: true, accent: false, unit: METRIC_LABELS[m], heads: [], note: '', lines: [] };
+			if (RATE_METRICS.includes(m)) return rateCell(m);
 			if (total) return totalCell(m, total);
 			return averageCell(m, average!);
 		})
@@ -311,7 +392,7 @@
 			{:else}
 				<div class="hold">
 					<button class="holdnum" type="button" aria-describedby="{uid}-{cell.metric}">
-						<span class="bignum" class:accent={cell.accent} class:faint={cell.faint}>{cell.big}</span>
+						<span class="bignum" class:accent={cell.accent} class:faint={cell.faint} class:ahead={cell.verdict === 'ahead'} class:behind={cell.verdict === 'behind'}>{cell.big}</span>
 						<span class="unit">{cell.unit}</span>
 					</button>
 					<div class="ppop" id="{uid}-{cell.metric}" role="tooltip">
@@ -395,6 +476,14 @@
 
 	.bignum.faint {
 		color: var(--text-faint);
+	}
+
+	.bignum.ahead {
+		color: var(--ok);
+	}
+
+	.bignum.behind {
+		color: var(--warn);
 	}
 
 	.bignum.accent {

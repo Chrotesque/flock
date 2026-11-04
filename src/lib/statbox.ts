@@ -17,8 +17,17 @@
  */
 import { isoDate } from './format';
 import { PLATFORMS } from './platforms';
+import { engagedRate } from './ratioview';
 import {
 	PERIOD_KEYS,
+	judge,
+	overallOf,
+	peerGroups,
+	pooledSkipRate,
+	skipPosts,
+	visibilityOf,
+	type Overall,
+	type Post,
 	PERIOD_LABELS,
 	STAT_PLATFORMS,
 	dayAt,
@@ -44,9 +53,9 @@ export const HOW_LABELS: Record<BoxHow, string> = {
 	video: 'Per video'
 };
 
-export type BoxMetric = 'videos' | 'views' | 'likes' | 'comments' | 'follows';
+export type BoxMetric = 'videos' | 'views' | 'likes' | 'comments' | 'follows' | 'skip' | 'engaged' | 'usual';
 
-export const BOX_METRICS: BoxMetric[] = ['videos', 'views', 'likes', 'comments', 'follows'];
+export const BOX_METRICS: BoxMetric[] = ['videos', 'views', 'likes', 'comments', 'follows', 'skip', 'engaged', 'usual'];
 
 /** The unit under each number, and the metric's name in the builder. */
 export const METRIC_LABELS: Record<BoxMetric, string> = {
@@ -54,8 +63,14 @@ export const METRIC_LABELS: Record<BoxMetric, string> = {
 	views: 'views',
 	likes: 'likes',
 	comments: 'comments',
-	follows: 'follows'
+	follows: 'follows',
+	skip: 'skipped',
+	engaged: 'engaged',
+	usual: 'vs usual'
 };
+
+/** The numbers that are rates over the videos counted, not sums: the same however a box takes them. */
+export const RATE_METRICS: BoxMetric[] = ['skip', 'engaged', 'usual'];
 
 /** The day, week, month, quarter or year running, or the lifetime; the last N days; or a range of dates. */
 export type BoxTimeframe =
@@ -262,7 +277,7 @@ export function boxSummary(box: StatBox, locale?: string): string {
 	const platforms =
 		box.platforms.length === STAT_PLATFORMS.length ? 'every platform' : box.platforms.map((p) => PLATFORMS[p].label).join(', ');
 	const kinds = box.kinds.length === KIND_ORDER.length ? 'every kind' : box.kinds.map((k) => KIND_LABELS[k]).join(', ');
-	return [timeframeLabel(box.timeframe, locale), how, box.metrics.join(', '), platforms, kinds].join(' · ');
+	return [timeframeLabel(box.timeframe, locale), how, box.metrics.map((m) => METRIC_LABELS[m]).join(', '), platforms, kinds].join(' · ');
 }
 
 /** Who made a box, in words: "flock", the profile's name now, or its name then. */
@@ -406,6 +421,65 @@ export function moveBox(layout: string[], id: string, index: number): string[] {
 /** The boxes a layout shows, in its order; ids no box has any more (deleted) are skipped. */
 export function placedBoxes(layout: string[], boxes: StatBox[]): StatBox[] {
 	return layout.map((id) => boxes.find((b) => b.id === id)).filter((b): b is StatBox => Boolean(b));
+}
+
+/** Whether two boxes count the same: everything but their names, ids and makers. */
+export function sameCount(a: StatBox, b: StatBox): boolean {
+	const key = (x: StatBox) => JSON.stringify([x.timeframe, x.how, x.metrics, x.platforms, x.kinds]);
+	return key(wholeBox(a)) === key(wholeBox(b));
+}
+
+/** The box among `boxes` that counts exactly as `box` does (another id); undefined with none. */
+export function twinOf(box: StatBox, boxes: StatBox[]): StatBox | undefined {
+	return boxes.find((b) => b.id !== box.id && sameCount(b, box));
+}
+
+/* ---- the rates: over the videos a box counts ---- */
+
+export interface BoxRate {
+	/** The share of views skipped at the start, pooled by views; YouTube and Instagram only. */
+	skip: number | null;
+	/** Likes and comments per view, in percent, pooled by views. */
+	engaged: number | null;
+	/** Their views at their age (up to a week) against the usual of the same platform and kind, added up. */
+	usual: Overall | null;
+}
+
+export interface BoxRates extends BoxRate {
+	/** The videos they are over. */
+	videos: number;
+	byPlatform: Record<StatPlatform, BoxRate>;
+}
+
+/**
+ * A box's rates over the public videos whose first post on its platforms
+ * went out from `from` to `to` (inclusive). `peers` are the releases the
+ * usual is the middle of: the box's own platforms and kinds, every one.
+ */
+export function boxRates(releases: Release[], filter: DashFilter, from: number, to: number, now: number, peers: Release[]): BoxRates {
+	const out = releases.filter((r) => {
+		const posts = filter.platforms.map((p) => r.posts[p]).filter((p): p is Post => Boolean(p));
+		if (posts.length === 0 || visibilityOf(r, filter.platforms) !== 'public') return false;
+		const first = Math.min(...posts.map((p) => p.at));
+		return first >= from && first <= to;
+	});
+	const groups = peerGroups(peers);
+	const judged = (posts: { post: Post; kind: string }[]) =>
+		posts.length === 0 ? null : overallOf(posts.map(({ post, kind }) => judge(post, groups.get(`${post.platform}:${kind}`) ?? [], now)));
+	const rate = (platforms: StatPlatform[]): BoxRate => {
+		const posts = out.flatMap((r) => platforms.map((p) => r.posts[p]).filter((p): p is Post => Boolean(p)).map((post) => ({ post, kind: r.kind })));
+		const usual = judged(posts);
+		return {
+			skip: pooledSkipRate(out.flatMap((r) => skipPosts(r, platforms))),
+			engaged: engagedRate(posts.map((p) => p.post)),
+			usual: usual && usual.ratio !== null ? usual : null
+		};
+	};
+	return {
+		...rate(filter.platforms),
+		videos: out.length,
+		byPlatform: Object.fromEntries(STAT_PLATFORMS.map((p) => [p, rate([p])])) as Record<StatPlatform, BoxRate>
+	};
 }
 
 /** The narrowest a box can be on the Dashboard: room for each of its numbers. */

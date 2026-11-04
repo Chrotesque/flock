@@ -858,6 +858,8 @@ export interface PeriodStats {
 	key: PeriodKey;
 	label: string;
 	from: Date;
+	/** Where it ends: now, or the last moment of the range. */
+	to: Date;
 	/** Public releases whose first post went out in the period. */
 	released: number;
 	/** The views those releases have now, on the chosen platforms. */
@@ -922,6 +924,7 @@ export function statsOfPeriod(
 		key,
 		label: PERIOD_LABELS[key],
 		from,
+		to: new Date(end),
 		released: 0,
 		views: 0,
 		likes: 0,

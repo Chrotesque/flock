@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import PlatformIcon from './PlatformIcon.svelte';
 	import StatBoxCard from './StatBoxCard.svelte';
 	import ConfirmButton from './ConfirmButton.svelte';
@@ -31,6 +31,7 @@
 		suggestedName,
 		toggleIn,
 		toggleMetric,
+		twinOf,
 		withHow,
 		withTimeframe,
 		type BoxMetric,
@@ -149,6 +150,70 @@
 		if (draft) draft = toggleMetric(draft, m);
 	}
 
+	/* The numbers' pills: dragged into order; a first click picks one (its
+	   outline brightens), a second, not ending a drag, takes it out. */
+	let pickedMetric = $state<BoxMetric | null>(null);
+	let heldMetric = $state<BoxMetric | null>(null);
+	let moved = $state(false);
+	let downAt: [number, number] = [0, 0];
+	let justDragged = false;
+
+	function pillDown(event: PointerEvent, m: BoxMetric) {
+		if (event.button !== 0) return;
+		heldMetric = m;
+		moved = false;
+		downAt = [event.clientX, event.clientY];
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+	}
+
+	function pillMove(event: PointerEvent) {
+		if (!heldMetric || !draft) return;
+		if (!moved && Math.hypot(event.clientX - downAt[0], event.clientY - downAt[1]) < 5) return;
+		moved = true;
+		const under = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('.pill.on[data-metric]');
+		const over = under?.dataset.metric as BoxMetric | undefined;
+		if (!under || !over || over === heldMetric) return;
+		const rect = under.getBoundingClientRect();
+		const others = draft.metrics.filter((x) => x !== heldMetric);
+		const at = others.indexOf(over) + (event.clientX > rect.left + rect.width / 2 ? 1 : 0);
+		const metrics = [...others.slice(0, at), heldMetric, ...others.slice(at)];
+		if (metrics.join() !== draft.metrics.join()) draft = { ...draft, metrics };
+	}
+
+	function pillUp() {
+		justDragged = moved;
+		heldMetric = null;
+		moved = false;
+	}
+
+	function pillClick(m: BoxMetric) {
+		if (justDragged) {
+			justDragged = false;
+			return;
+		}
+		if (pickedMetric !== m) {
+			pickedMetric = m;
+			return;
+		}
+		if (draft && draft.metrics.length > 1) draft = toggleMetric(draft, m);
+		pickedMetric = null;
+	}
+
+	function pillKey(event: KeyboardEvent, m: BoxMetric) {
+		const by = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
+		if (!by || !draft) return;
+		event.preventDefault();
+		draft = moveMetric(draft, m, by);
+		void tick().then(() => document.querySelector<HTMLElement>(`.pill.on[data-metric="${m}"]`)?.focus());
+	}
+
+	function onWindowPointer(event: PointerEvent) {
+		if (pickedMetric && !(event.target as HTMLElement).closest?.('.metrics')) pickedMetric = null;
+	}
+
+	/** A box counting exactly as the one in the builder does: making it would only add a copy. */
+	const twin = $derived(draft ? twinOf(draft, statBoxes.all) : undefined);
+
 	const sorted = $derived([
 		...statBoxes.all.filter((b) => isFlockBox(b)),
 		...statBoxes.all.filter((b) => !isFlockBox(b) && b.creator === me?.id),
@@ -157,7 +222,10 @@
 	const now = $derived(new Date());
 </script>
 
+<svelte:window onpointerdown={onWindowPointer} />
+
 <div class="boxes">
+	{#if !draft}
 	<div class="library">
 		<div class="libhead">
 			<p class="lead">
@@ -172,7 +240,7 @@
 		<ul>
 			{#each sorted as b (b.id)}
 				{@const mine = canEditBox(b, me?.id ?? '', profileIds)}
-				<li class:open={draft?.id === b.id}>
+				<li>
 					<div class="who">
 						<span class="name">{boxName(b)}</span>
 						<span class="by" class:flock={isFlockBox(b)} class:own={b.creator === me?.id}
@@ -199,11 +267,12 @@
 			{/each}
 		</ul>
 	</div>
-
-	{#if draft}
+	{:else}
 		<div class="builder card">
 			<h3>{isNew ? 'New stat box' : 'Edit stat box'} <span class="maker">made by {draft.creator === me?.id ? 'you' : creatorWords(draft, users.list)}</span></h3>
 
+			<div class="cols">
+			<div class="col">
 			<label class="field">
 				<span class="flabel">Name</span>
 				<input
@@ -291,31 +360,43 @@
 
 			<div class="field">
 				<span class="flabel">Numbers, in order</span>
-				<ol class="metrics">
-					{#each draft.metrics as m, i (m)}
-						<li>
-							<span>{METRIC_LABELS[m]}</span>
-							<button class="mini" type="button" aria-label="Move {m} earlier" disabled={i === 0} onclick={() => draft && (draft = moveMetric(draft, m, -1))}>‹</button>
-							<button class="mini" type="button" aria-label="Move {m} later" disabled={i === draft.metrics.length - 1} onclick={() => draft && (draft = moveMetric(draft, m, 1))}>›</button>
-							<button class="mini" type="button" aria-label="Take {m} out" disabled={draft.metrics.length === 1} onclick={() => metric(m)}>×</button>
-						</li>
+				<div class="metrics" role="group" aria-label="The numbers shown, in order">
+					{#each draft.metrics as m (m)}
+						<button
+							class="pill on"
+							class:picked={pickedMetric === m}
+							class:held={heldMetric === m && moved}
+							type="button"
+							data-metric={m}
+							aria-pressed={pickedMetric === m}
+							title={pickedMetric === m
+								? draft.metrics.length > 1
+									? 'Click again to take it out; drag to move it'
+									: 'The last number stays'
+								: 'Drag to move it (or arrow keys); click twice to take it out'}
+							onpointerdown={(e) => pillDown(e, m)}
+							onpointermove={pillMove}
+							onpointerup={pillUp}
+							onpointercancel={pillUp}
+							onclick={() => pillClick(m)}
+							onkeydown={(e) => pillKey(e, m)}>{METRIC_LABELS[m]}</button
+						>
 					{/each}
-				</ol>
-				{#if unchosen.length > 0}
-					<div class="row">
-						{#each unchosen as m (m)}
-							<button
-								class="chip add"
-								type="button"
-								disabled={!metricFits(m, draft.how)}
-								title={metricFits(m, draft.how) ? `Add ${m}` : 'An average video is one video: it has no count of videos'}
-								onclick={() => metric(m)}>+ {METRIC_LABELS[m]}</button
-							>
-						{/each}
-					</div>
-				{/if}
+					{#each unchosen as m (m)}
+						<button
+							class="pill add"
+							type="button"
+							disabled={!metricFits(m, draft.how)}
+							title={metricFits(m, draft.how) ? `Add ${METRIC_LABELS[m]}` : 'An average video is one video: it has no count of videos'}
+							onclick={() => metric(m)}>+ {METRIC_LABELS[m]}</button
+						>
+					{/each}
+				</div>
+				<span class="hint">Drag the numbers into order. Click one to pick it and again to take it out; a dashed one is added with a click.</span>
 			</div>
 
+			</div>
+			<div class="col">
 			<div class="field">
 				<span class="flabel">Platforms</span>
 				<div class="row">
@@ -359,10 +440,26 @@
 				<span class="hint">The numbers are the Dashboard's: for whichever brand is in view there.</span>
 			</div>
 
+			</div>
+			</div>
+
 			{#if error}<p class="banner bad">{error}</p>{/if}
 			<div class="foot">
+				{#if twin}
+					<p class="twin">
+						The same as <strong>“{boxName(twin)}”</strong>
+						({twin.creator === me?.id ? 'yours' : `by ${creatorWords(twin, users.list)}`}) — change something to make one
+						of its own.
+					</p>
+				{/if}
 				<button class="btn small" type="button" onclick={() => (draft = null)}>Cancel</button>
-				<button class="btn btn-primary small" type="button" onclick={save} disabled={saving}>
+				<button
+					class="btn btn-primary small"
+					type="button"
+					onclick={save}
+					disabled={saving || Boolean(twin)}
+					title={twin ? `It would only copy “${boxName(twin)}”` : undefined}
+				>
 					{saving ? 'Saving…' : isNew ? 'Make it' : 'Save'}
 				</button>
 			</div>
@@ -373,15 +470,83 @@
 <style>
 	.boxes {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 		gap: 24px;
+	}
+
+	/* The builder takes the panel's whole width: its fields in two columns. */
+	.cols {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+		gap: 16px 36px;
 		align-items: start;
 	}
 
-	@media (max-width: 1100px) {
-		.boxes {
-			grid-template-columns: minmax(0, 1fr);
-		}
+	.col {
+		display: grid;
+		gap: 16px;
+		min-width: 0;
+	}
+
+	.metrics {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.pill {
+		padding: 5px 12px;
+		border: 1px solid var(--pink);
+		border-radius: 999px;
+		background: rgba(255, 77, 158, 0.12);
+		color: var(--text);
+		font: inherit;
+		font-size: 12.5px;
+		cursor: grab;
+		touch-action: none;
+		user-select: none;
+		transition:
+			border-color 0.12s,
+			box-shadow 0.12s;
+	}
+
+	/* Picked: a brighter shade of its outline, waiting for the second click. */
+	.pill.picked {
+		border-color: #ffb3d6;
+		box-shadow:
+			0 0 0 1px #ffb3d6,
+			0 0 10px rgba(255, 140, 200, 0.45);
+	}
+
+	.pill.held {
+		cursor: grabbing;
+		opacity: 0.85;
+	}
+
+	.pill.add {
+		border: 1px dashed var(--border-strong);
+		background: none;
+		color: var(--text-faint);
+		cursor: pointer;
+	}
+
+	.pill.add:hover:not(:disabled) {
+		color: var(--text);
+		border-color: var(--text-faint);
+	}
+
+	.pill.add:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.twin {
+		margin: 0 auto 0 0;
+		font-size: 12.5px;
+		color: var(--warn);
+	}
+
+	.twin strong {
+		color: var(--text);
 	}
 
 	.libhead {
@@ -415,10 +580,6 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		background: var(--surface);
-	}
-
-	li.open {
-		border-color: var(--pink);
 	}
 
 	.who {
@@ -567,62 +728,6 @@
 		cursor: not-allowed;
 	}
 
-	.chip.add {
-		border-style: dashed;
-	}
-
-	.metrics {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-		counter-reset: m;
-	}
-
-	.metrics li {
-		display: inline-flex;
-		grid-template-columns: none;
-		align-items: center;
-		gap: 2px;
-		padding: 3px 4px 3px 10px;
-		border-color: var(--pink);
-		border-radius: 999px;
-		font-size: 12.5px;
-		color: var(--text);
-	}
-
-	.metrics li span {
-		margin-right: 4px;
-	}
-
-	.mini {
-		display: grid;
-		place-items: center;
-		width: 20px;
-		height: 20px;
-		padding: 0;
-		border: 0;
-		border-radius: 50%;
-		background: none;
-		color: var(--text-dim);
-		font: inherit;
-		font-size: 13px;
-		line-height: 1;
-		cursor: pointer;
-	}
-
-	.mini:hover:not(:disabled) {
-		background: var(--surface-2);
-		color: var(--text);
-	}
-
-	.mini:disabled {
-		opacity: 0.3;
-		cursor: default;
-	}
-
 	.preview {
 		display: flex;
 		padding: 14px 0;
@@ -652,6 +757,7 @@
 
 	.foot {
 		display: flex;
+		align-items: center;
 		justify-content: flex-end;
 		gap: 8px;
 	}

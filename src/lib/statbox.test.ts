@@ -19,12 +19,15 @@ import {
 	readStatBoxes,
 	suggestedName,
 	toggleIn,
+	twinOf,
+	boxRates,
 	toggleMetric,
 	unplaceBox,
 	withHow,
 	withTimeframe,
 	type StatBox
 } from './statbox';
+import type { Post, Release } from './releases';
 
 const me = { id: 'p1', name: 'Pat' };
 const box = (over: Partial<StatBox> = {}): StatBox => ({ ...newBox('b1', me), ...over });
@@ -167,5 +170,64 @@ describe('counting', () => {
 		const f = boxFilter(box({ platforms: ['tiktok'], kinds: ['short'] }), now);
 		expect(f).toMatchObject({ range: null, platforms: ['tiktok'], kinds: ['short'], hidden: false });
 		expect(boxPeriod(box())).toBe('month');
+	});
+});
+
+describe('twins', () => {
+	it('counts two boxes alike by everything but name, id and maker', () => {
+		const a = box({ name: 'Mine' });
+		const b = { ...box(), id: 'b2', name: 'Other', creator: 'p9' };
+		expect(twinOf(b, [a])?.id).toBe('b1');
+		expect(twinOf({ ...b, metrics: ['likes', 'videos', 'views', 'follows'] }, [a])).toBeUndefined();
+		expect(twinOf(a, [a])).toBeUndefined();
+		expect(twinOf(copyBox(FLOCK_BOXES[1], 'c', me), FLOCK_BOXES)?.id).toBe('flock:week');
+	});
+});
+
+describe('rates', () => {
+	const T = Date.parse('2026-10-20T12:00:00Z');
+	const H = 3600_000;
+	const post = (platform: Post['platform'], at: number, views: number, likes: number, comments: number, skipRate?: number): Post => ({
+		platform,
+		record: `${platform}${at}`,
+		id: `${platform}${at}`,
+		url: '',
+		at,
+		views,
+		likes,
+		comments,
+		followers: null,
+		samples: [[at + 7 * 24 * H, views]],
+		skipRate
+	});
+	const rel = (at: number, posts: Post[]): Release => ({
+		key: String(at),
+		title: '',
+		at,
+		kind: 'short',
+		privacy: 'public',
+		duration: 30,
+		thumb: '',
+		posts: Object.fromEntries(posts.map((p) => [p.platform, p])),
+		links: {},
+		job: '',
+		matched: ''
+	});
+	const all = boxFilter(box(), new Date(T));
+
+	it('pools skip and engagement by views over the videos in the stretch only', () => {
+		const a = rel(T, [post('youtube', T, 1000, 40, 10, 20), post('instagram', T, 1000, 10, 0, 40)]);
+		const late = rel(T + 10 * H, [post('youtube', T + 10 * H, 5000, 0, 0, 90)]);
+		const r = boxRates([a, late], all, T - H, T + H, T + 20 * H, [a, late]);
+		expect(r.videos).toBe(1);
+		expect(r.skip).toBeCloseTo(30);
+		expect(r.engaged).toBeCloseTo(3);
+		expect(r.byPlatform.youtube.engaged).toBeCloseTo(5);
+		expect(r.byPlatform.tiktok.engaged).toBeNull();
+	});
+
+	it('has no usual without peers to compare with', () => {
+		const a = rel(T, [post('youtube', T, 1000, 0, 0)]);
+		expect(boxRates([a], all, T - H, T + H, T + 9 * 24 * H, [a]).usual).toBeNull();
 	});
 });
