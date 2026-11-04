@@ -354,14 +354,9 @@
 		<section class="wk" aria-label="Worker">
 			<h2>
 				Worker
-				<span class="wkdots">
-					{#each workers.view.dots as dot (dot.role)}
-						<span class="wkdot {dot.state}" title={dot.title} aria-label={dot.title}></span>
-					{/each}
-				</span>
 				{#if inHand.jobs.length + inHand.other.length > 0}<span class="count">{inHand.jobs.length + inHand.other.length}</span>{/if}
+				{#each workerNotes as note (note)}<span class="count" title={workers.view.dots.map((d) => d.title).join(' · ')}>{note.toLowerCase()}</span>{/each}
 			</h2>
-			{#if workerNotes.length > 0}<p class="wknote">{workerNotes.join(' · ')}</p>{/if}
 			{#if inHand.jobs.length + inHand.other.length > 0}
 				<ul>
 					{#each inHand.jobs as job (job.job)}
@@ -872,32 +867,6 @@
 		gap: 8px;
 	}
 
-	.wkdots {
-		display: inline-flex;
-		gap: 4px;
-	}
-
-	.wkdot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: #ef4444;
-	}
-
-	.wkdot.up {
-		background: #34d399;
-	}
-
-	.wkdot.covering {
-		background: var(--warn);
-		box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--warn);
-	}
-
-	.wknote {
-		margin: 0;
-		font-size: 13px;
-		color: var(--text-faint);
-	}
 
 	.wk li.wkjob {
 		display: grid;
