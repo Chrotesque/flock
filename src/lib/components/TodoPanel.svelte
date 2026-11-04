@@ -13,7 +13,7 @@
 	import { celebrations } from '$lib/stores/celebrations.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { general } from '$lib/stores/general.svelte';
-	import { INSTAGRAM_STEP, WAITING, releaseWhen, type InstagramStep, type TodoLine } from '$lib/videotodo';
+	import { INSTAGRAM_STEP, WAITING, relativeWords, releaseWhen, type InstagramStep, type TodoLine } from '$lib/videotodo';
 	import { follows, toggled } from '$lib/todobrands';
 	import type { Attention } from '$lib/attention';
 	import { ageWords, type Celebration } from '$lib/celebrate';
@@ -78,6 +78,32 @@
 	}
 
 	let lines = $derived(videoTodo.lines);
+	let dismissed = $derived(videoTodo.dismissed);
+
+	/**
+	 * A row's Dismiss (v0.22.11, the user's request): one press asks, a second
+	 * within two seconds takes the line off. The id of the row asking, if any.
+	 */
+	let asking = $state<string | null>(null);
+	let askTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function pressDismiss(line: TodoLine) {
+		if (askTimer) clearTimeout(askTimer);
+		askTimer = null;
+		if (asking !== line.id) {
+			asking = line.id;
+			askTimer = setTimeout(() => (asking = null), 2000);
+			return;
+		}
+		asking = null;
+		void videoTodo.dismiss(line);
+	}
+
+	/** The second-chance list, folded each time the panel opens. */
+	let showDismissed = $state(false);
+	$effect(() => {
+		if (todoPanel.open) showDismissed = false;
+	});
 	let items = $derived(attention.items);
 	let cheers = $derived(celebrations.items);
 
@@ -506,6 +532,7 @@
 					<span class="mid">Paid promotion</span>
 					<span class="mid">Studio · Instagram</span>
 					{#if jestr}<span class="mid">Jestr</span>{/if}
+					<span></span>
 				</div>
 				<ul>
 					{#each lines as line (line.id)}
@@ -645,10 +672,78 @@
 									{/if}
 								</div>
 							{/if}
+
+							<!-- Done as far as the user is concerned (v0.22.11): two presses.
+							     Not on a placeholder, whose real line would come back. -->
+							<div class="cell end">
+								{#if line.studioUrl}
+									<button
+										class="dismiss small"
+										class:armed={asking === line.id}
+										onclick={() => pressDismiss(line)}
+										onblur={() => {
+											if (asking === line.id) asking = null;
+										}}
+										title={asking === line.id
+											? 'Press again to take it off this list'
+											: 'Take it off this list, whatever is left on it — offered back for 7 days below'}
+									>
+										{asking === line.id ? 'Dismiss?' : 'Dismiss'}
+									</button>
+								{/if}
+							</div>
 						</li>
 					{/each}
 				</ul>
 			</div>
+		{/if}
+
+		{#if dismissed.length > 0}
+			<!-- A second chance (v0.22.11, the user's request): the lines
+			     dismissed in the last 7 days, folded until asked for. -->
+			<section class="gone" aria-label="Dismissed">
+				<button class="gonehead" aria-expanded={showDismissed} onclick={() => (showDismissed = !showDismissed)}>
+					<svg class="chev" class:open={showDismissed} viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+						<path d="M9 6l6 6l-6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+					</svg>
+					Dismissed · last 7 days <span class="count">{dismissed.length}</span>
+				</button>
+				{#if showDismissed}
+					<ul transition:fade={{ duration: 140 }}>
+						{#each dismissed as entry (entry.line.id)}
+							{@const line = entry.line}
+							<li class="goneline" animate:flip={{ duration: 200 }} out:fade={{ duration: 160 }}>
+								<a
+									class="preview"
+									class:upright={line.short || !line.thumb}
+									href={line.watchUrl}
+									target="_blank"
+									rel="noopener"
+									tabindex="-1"
+									aria-hidden="true"
+									onpointerenter={(event) => showBig(event, line.thumb ? line.thumbLarge || line.thumb : '', line.short)}
+									onpointerleave={() => (big = null)}
+								>
+									{#if line.thumb}<img src={line.thumb} alt="" loading="lazy" referrerpolicy="no-referrer" />{/if}
+								</a>
+								<div class="info">
+									<a class="title" href={line.watchUrl} target="_blank" rel="noopener">{line.title}</a>
+									<p class="meta" title={exactDate(entry.at)}>
+										Dismissed {relativeWords(Date.parse(entry.at), now)}{entry.by ? ` by ${entry.by}` : ''}
+									</p>
+								</div>
+								<button
+									class="dismiss small"
+									onclick={() => videoTodo.restore(line)}
+									title="Put it back on the list with what is left on it"
+								>
+									Restore
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
 		{/if}
 
 		{#if big}
@@ -1165,14 +1260,87 @@
 		outline: none;
 	}
 
+	/* The video rows' Dismiss and Restore: quieter than the row's own buttons. */
+	.dismiss.small {
+		padding: 5px 13px;
+		font-size: 12px;
+		background: transparent;
+		color: var(--text-faint);
+	}
+
+	/* Asked; a second press takes the line off. */
+	.dismiss.armed,
+	.dismiss.armed:hover {
+		background: var(--pink);
+		border-color: transparent;
+		color: var(--bg);
+	}
+
+	.cell.end {
+		justify-items: end;
+	}
+
+	/* The second-chance list: a folded heading under the videos. */
+	.gone {
+		display: grid;
+		gap: 10px;
+		margin-top: 8px;
+	}
+
+	.gonehead {
+		justify-self: start;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 6px 4px 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		font-size: 13px;
+		font-weight: 650;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+		cursor: pointer;
+	}
+
+	.gonehead:hover,
+	.gonehead:focus-visible {
+		color: var(--text-dim);
+		outline: none;
+	}
+
+	.gonehead .count {
+		font-size: 11.5px;
+		letter-spacing: 0;
+	}
+
+	.chev {
+		transition: transform 0.15s;
+	}
+
+	.chev.open {
+		transform: rotate(90deg);
+	}
+
+	.goneline {
+		grid-template-columns: 44px minmax(0, 1fr) auto;
+		opacity: 0.75;
+	}
+
+	.goneline:hover,
+	.goneline:focus-within {
+		opacity: 1;
+	}
+
 	/* One grid for the head and every row, so the columns line up. */
 	/* The Studio cell holds YouTube's button and the reel's beside it. */
 	.table {
-		--cols: 44px minmax(0, 1fr) 130px 170px 210px 100px;
+		--cols: 44px minmax(0, 1fr) 130px 170px 210px 100px 96px;
 	}
 
 	.table.nojestr {
-		--cols: 44px minmax(0, 1fr) 130px 170px 210px;
+		--cols: 44px minmax(0, 1fr) 130px 170px 210px 96px;
 	}
 
 	/* When it goes or went public: the words over the time, the date on hover. */
@@ -1514,10 +1682,10 @@
 		/* Narrow: the two platforms' entries stack, and the button wraps
 		   under the marks if it must, so the title keeps its room. */
 		.table {
-			--cols: 44px minmax(0, 1fr) 96px 96px 180px 80px;
+			--cols: 44px minmax(0, 1fr) 96px 96px 180px 80px 88px;
 		}
 		.table.nojestr {
-			--cols: 44px minmax(0, 1fr) 96px 96px 180px;
+			--cols: 44px minmax(0, 1fr) 96px 96px 180px 88px;
 		}
 		.thead,
 		li {

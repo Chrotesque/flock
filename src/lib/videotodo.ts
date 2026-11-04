@@ -43,7 +43,8 @@ import { studioTasks, studioUrl, videoIdOf } from './studio';
  * `since` is where the list began, so a new install or a newly connected
  * channel does not list everything it already had, and `instagramSince` the
  * same for the reels, by when each goes out; `jestr` and `studio` are the YouTube video ids done
- * for each, `instagram` the reels' `upload_targets` ids.
+ * for each, `instagram` the reels' `upload_targets` ids. `dismissed` (v0.22.11)
+ * are the lines taken off by hand, whatever was left on them.
  */
 export interface TodoState {
 	since: string;
@@ -51,6 +52,35 @@ export interface TodoState {
 	studio: string[];
 	instagram: string[];
 	instagramSince: string;
+	dismissed: Dismissal[];
+}
+
+/**
+ * A line taken off the list by hand (v0.22.11, the user's request: a video
+ * she will not link on Jestr and needs no paid promotion stays otherwise).
+ * Not a mark of the steps done — nothing was. `restored` once put back; the
+ * entry stays, so two browsers' copies merge by whichever happened last
+ * rather than a removal being undone by the next merge.
+ */
+export interface Dismissal {
+	/** The line's id: YouTube's video id. */
+	id: string;
+	/** When it was dismissed. */
+	at: string;
+	/** Who dismissed it: the profile's name. */
+	by: string;
+	/** When it was put back, if it was. */
+	restored?: string;
+}
+
+/** How long a dismissed line is offered back (the user's 7 days). */
+export const DISMISS_SHOWN_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** A dismissed line still in its second-chance week, with who and when. */
+export interface DismissedLine {
+	line: TodoLine;
+	at: string;
+	by: string;
 }
 
 export type TodoKind = 'jestr' | 'studio' | 'instagram';
@@ -198,6 +228,23 @@ const ids = (value: unknown): string[] =>
 
 const validDate = (value: unknown): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value));
 
+/** The dismissals read field by field; one without an id or a date is dropped. */
+function dismissals(value: unknown): Dismissal[] {
+	if (!Array.isArray(value)) return [];
+	const out: Dismissal[] = [];
+	for (const item of value) {
+		const v = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+		if (typeof v.id !== 'string' || !v.id || !validDate(v.at)) continue;
+		out.push({
+			id: v.id,
+			at: v.at,
+			by: typeof v.by === 'string' ? v.by : '',
+			...(validDate(v.restored) ? { restored: v.restored } : {})
+		});
+	}
+	return out.slice(-TODO_DONE_MAX);
+}
+
 /**
  * A stored state read field by field. Without one, the Jestr-only list's row
  * (`{ since, done }`) is adopted, so its start and its marks carry over. A
@@ -212,7 +259,8 @@ export function readTodoState(value: unknown, legacy: unknown, fallbackSince: st
 			jestr: ids(v.jestr),
 			studio: ids(v.studio),
 			instagram: ids(v.instagram),
-			instagramSince: validDate(v.instagramSince) ? v.instagramSince : REELS_LISTED_FROM
+			instagramSince: validDate(v.instagramSince) ? v.instagramSince : REELS_LISTED_FROM,
+			dismissed: dismissals(v.dismissed)
 		};
 	}
 	const old = (legacy && typeof legacy === 'object' ? legacy : {}) as Record<string, unknown>;
@@ -222,7 +270,8 @@ export function readTodoState(value: unknown, legacy: unknown, fallbackSince: st
 		jestr: ids(old.done),
 		studio: [],
 		instagram: [],
-		instagramSince: validDate(old.since) ? REELS_LISTED_FROM : since
+		instagramSince: validDate(old.since) ? REELS_LISTED_FROM : since,
+		dismissed: []
 	};
 }
 
@@ -238,16 +287,63 @@ export function markDone(state: TodoState, kind: TodoKind, id: string): TodoStat
 	return { ...state, [kind]: done };
 }
 
+/** A line taken off by hand, now; dismissing one put back before starts over. */
+export function dismissLine(state: TodoState, id: string, at: string, by: string): TodoState {
+	const dismissed = [...state.dismissed.filter((d) => d.id !== id), { id, at, by }].slice(-TODO_DONE_MAX);
+	return { ...state, dismissed };
+}
+
+/** A dismissed line put back: its entry says when, so a merge cannot dismiss it again. */
+export function restoreLine(state: TodoState, id: string, at: string): TodoState {
+	return {
+		...state,
+		dismissed: state.dismissed.map((d) => (d.id === id && !d.restored ? { ...d, restored: at } : d))
+	};
+}
+
+/** When an entry last changed: put back, else dismissed. */
+const lastEvent = (d: Dismissal) => Date.parse(d.restored ?? d.at);
+
 /** Both browsers' marks, for when two save near the same moment; `a`'s starts win. */
 export function mergeStates(a: TodoState, b: TodoState): TodoState {
 	const union = (x: string[], y: string[]) => [...x, ...y.filter((id) => !x.includes(id))].slice(-TODO_DONE_MAX);
+	// Per line, whichever happened last — a dismissal or its putting back.
+	const byId = new Map(a.dismissed.map((d) => [d.id, d]));
+	for (const d of b.dismissed) {
+		const known = byId.get(d.id);
+		if (!known || lastEvent(d) > lastEvent(known)) byId.set(d.id, d);
+	}
 	return {
 		since: a.since,
 		jestr: union(a.jestr, b.jestr),
 		studio: union(a.studio, b.studio),
 		instagram: union(a.instagram, b.instagram),
-		instagramSince: a.instagramSince
+		instagramSince: a.instagramSince,
+		dismissed: [...byId.values()].sort((x, y) => Date.parse(x.at) - Date.parse(y.at)).slice(-TODO_DONE_MAX)
 	};
+}
+
+/**
+ * The lines as the list shows them: those not dismissed, and apart from
+ * them the dismissed ones of the last week, newest dismissal first. A line
+ * dismissed and since finished some other way is in neither, as `lines`
+ * holds only what has something left on it.
+ */
+export function splitDismissed(
+	lines: TodoLine[],
+	state: TodoState,
+	now: number
+): { lines: TodoLine[]; dismissed: DismissedLine[] } {
+	const active = new Map(state.dismissed.filter((d) => !d.restored).map((d) => [d.id, d]));
+	const kept: TodoLine[] = [];
+	const dismissed: DismissedLine[] = [];
+	for (const line of lines) {
+		const d = active.get(line.id);
+		if (!d) kept.push(line);
+		else if (now - Date.parse(d.at) <= DISMISS_SHOWN_MS) dismissed.push({ line, at: d.at, by: d.by });
+	}
+	dismissed.sort((x, y) => Date.parse(y.at) - Date.parse(x.at));
+	return { lines: kept, dismissed };
 }
 
 /** PocketBase writes dates as "2026-10-11 07:00:14.000Z"; that space is not ISO. */

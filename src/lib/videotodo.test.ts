@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+	DISMISS_SHOWN_MS,
 	REELS_LISTED_FROM,
 	TODO_DONE_MAX,
+	dismissLine,
 	isComplete,
 	markDone,
 	mergeStates,
 	readTodoState,
 	relativeWords,
 	releaseWhen,
+	restoreLine,
+	splitDismissed,
 	startOfDay,
 	todoLines,
 	videoUrl,
@@ -19,7 +23,7 @@ import {
 } from './videotodo';
 
 const since = '2026-10-10T22:00:00.000Z';
-const fresh: TodoState = { since, jestr: [], studio: [], instagram: [], instagramSince: since };
+const fresh: TodoState = { since, jestr: [], studio: [], instagram: [], instagramSince: since, dismissed: [] };
 
 const stat = (id: string, published: string, extra: Partial<StatsRow> = {}): StatsRow => ({
 	video_id: id,
@@ -49,7 +53,14 @@ describe('startOfDay', () => {
 
 describe('readTodoState', () => {
 	it('keeps a good row', () => {
-		const row = { since, jestr: ['a'], studio: ['b'], instagram: ['r1'], instagramSince: '2026-10-20T22:00:00.000Z' };
+		const row = {
+			since,
+			jestr: ['a'],
+			studio: ['b'],
+			instagram: ['r1'],
+			instagramSince: '2026-10-20T22:00:00.000Z',
+			dismissed: [{ id: 'v1', at: since, by: 'Joy' }]
+		};
 		expect(readTodoState(row, null, 'x')).toEqual(row);
 		expect(isComplete(row)).toBe(true);
 	});
@@ -60,8 +71,27 @@ describe('readTodoState', () => {
 			jestr: ['a', 'b'],
 			studio: [],
 			instagram: [],
-			instagramSince: REELS_LISTED_FROM
+			instagramSince: REELS_LISTED_FROM,
+			dismissed: []
 		});
+	});
+
+	it('reads dismissals field by field, and a row from before them as none', () => {
+		const row = {
+			since,
+			dismissed: [
+				{ id: 'v1', at: since, by: 'Joy', restored: '2026-10-12T10:00:00.000Z' },
+				{ id: 'v2', at: 'soon' },
+				{ at: since },
+				{ id: 'v3', at: since, by: 4, restored: 'never' },
+				'v4'
+			]
+		};
+		expect(readTodoState(row, null, 'x').dismissed).toEqual([
+			{ id: 'v1', at: since, by: 'Joy', restored: '2026-10-12T10:00:00.000Z' },
+			{ id: 'v3', at: since, by: '' }
+		]);
+		expect(readTodoState({ since }, null, 'x').dismissed).toEqual([]);
 	});
 
 	it('falls back on a missing or broken row, and drops what is not an id', () => {
@@ -102,9 +132,63 @@ describe('markDone and mergeStates', () => {
 	it('keeps both browsers’ marks', () => {
 		const merged = mergeStates(
 			{ ...fresh, jestr: ['a'], instagram: ['r1'] },
-			{ since: 'other', jestr: ['b'], studio: ['c'], instagram: ['r2'], instagramSince: 'other' }
+			{ since: 'other', jestr: ['b'], studio: ['c'], instagram: ['r2'], instagramSince: 'other', dismissed: [] }
 		);
-		expect(merged).toEqual({ since, jestr: ['a', 'b'], studio: ['c'], instagram: ['r1', 'r2'], instagramSince: since });
+		expect(merged).toEqual({
+			since,
+			jestr: ['a', 'b'],
+			studio: ['c'],
+			instagram: ['r1', 'r2'],
+			instagramSince: since,
+			dismissed: []
+		});
+	});
+});
+
+describe('dismissing and restoring', () => {
+	const t1 = '2026-11-01T10:00:00.000Z';
+	const t2 = '2026-11-02T10:00:00.000Z';
+	const t3 = '2026-11-03T10:00:00.000Z';
+
+	it('dismisses each line once, and a dismissal again starts over', () => {
+		const once = dismissLine(fresh, 'v1', t1, 'Joy');
+		expect(once.dismissed).toEqual([{ id: 'v1', at: t1, by: 'Joy' }]);
+		const back = restoreLine(once, 'v1', t2);
+		expect(back.dismissed).toEqual([{ id: 'v1', at: t1, by: 'Joy', restored: t2 }]);
+		expect(dismissLine(back, 'v1', t3, 'Sam').dismissed).toEqual([{ id: 'v1', at: t3, by: 'Sam' }]);
+	});
+
+	it('merges by whichever happened last, so a restore survives an older copy', () => {
+		const old = dismissLine(fresh, 'v1', t1, 'Joy');
+		const restored = restoreLine(old, 'v1', t2);
+		expect(mergeStates(old, restored).dismissed).toEqual(restored.dismissed);
+		expect(mergeStates(restored, old).dismissed).toEqual(restored.dismissed);
+		const again = dismissLine(restored, 'v1', t3, 'Joy');
+		expect(mergeStates(restored, again).dismissed).toEqual(again.dismissed);
+	});
+
+	it('keeps both browsers’ dismissals', () => {
+		const a = dismissLine(fresh, 'v1', t1, 'Joy');
+		const b = dismissLine(fresh, 'v2', t2, 'Sam');
+		expect(mergeStates(a, b).dismissed.map((d) => d.id)).toEqual(['v1', 'v2']);
+	});
+
+	it('splits off the dismissed lines, offering back only the last week’s, newest first', () => {
+		const line = (id: string) =>
+			({ id, title: id }) as unknown as Parameters<typeof splitDismissed>[0][number];
+		const now = Date.parse(t3);
+		let state = dismissLine(fresh, 'old', new Date(now - DISMISS_SHOWN_MS - 1000).toISOString(), 'Joy');
+		state = dismissLine(state, 'a', t1, 'Joy');
+		state = dismissLine(state, 'b', t2, 'Sam');
+		state = dismissLine(state, 'back', t1, 'Joy');
+		state = restoreLine(state, 'back', t2);
+		state = dismissLine(state, 'gone', t2, 'Joy');
+		const split = splitDismissed([line('keep'), line('old'), line('a'), line('b'), line('back')], state, now);
+		expect(split.lines.map((l) => l.id)).toEqual(['keep', 'back']);
+		expect(split.dismissed.map((d) => [d.line.id, d.by])).toEqual([
+			['b', 'Sam'],
+			['a', 'Joy']
+		]);
 	});
 });
 

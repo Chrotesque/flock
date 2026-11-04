@@ -1,5 +1,5 @@
 import { getSetting, loadTodoReels, loadTodoStats, loadTodoUploads, setSetting, subscribeTodoTargets } from '../repo';
-import { logAction } from '../log';
+import { deviceName, logAction } from '../log';
 import { device } from './device.svelte';
 import { general } from './general.svelte';
 import { brands } from './brands.svelte';
@@ -9,12 +9,16 @@ import {
 	LEGACY_JESTR_KEY,
 	INSTAGRAM_STEP,
 	TODO_KEY,
+	dismissLine,
 	isComplete,
 	markDone,
 	mergeStates,
 	readTodoState,
+	restoreLine,
+	splitDismissed,
 	startOfDay,
 	todoLines,
+	type DismissedLine,
 	type TodoReelRow,
 	type StatsRow,
 	type TodoKind,
@@ -43,7 +47,8 @@ class VideoTodoStore {
 	#marking = $state<string[]>([]);
 	#busy = false;
 
-	lines = $derived.by((): TodoLine[] => {
+	/** Every line with something left, dismissed ones included; `lines` and `dismissed` split it. */
+	#all = $derived.by((): TodoLine[] => {
 		if (!this.#state) return [];
 		const marking = this.#marking;
 		const state: TodoState = {
@@ -61,6 +66,18 @@ class VideoTodoStore {
 		const ready = !brands.loading && accounts.loaded;
 		return ready ? followedLines(lines, followedChannels(brands.list, accounts.list, general.value.todoBrands)) : lines;
 	});
+
+	/** Re-read every minute, so a dismissal leaves the second-chance list after its week. */
+	#now = $state(Date.now());
+
+	#split = $derived(
+		this.#state ? splitDismissed(this.#all, this.#state, this.#now) : { lines: [], dismissed: [] as DismissedLine[] }
+	);
+
+	/** What the list shows and the sidebar's box counts. */
+	lines = $derived(this.#split.lines);
+	/** Taken off by hand in the last 7 days, newest first: offered back (v0.22.11). */
+	dismissed = $derived(this.#split.dismissed);
 
 	#lastRead = 0;
 	#soon: ReturnType<typeof setTimeout> | null = null;
@@ -82,6 +99,7 @@ class VideoTodoStore {
 			}, 400);
 		});
 		const timer = setInterval(() => {
+			this.#now = Date.now();
 			const waiting = this.lines.some((line) => line.waiting);
 			if (waiting || Date.now() - this.#lastRead >= POLL_MS - 1000) void this.refresh();
 		}, WAITING_POLL_MS);
@@ -202,6 +220,48 @@ class VideoTodoStore {
 			what.push(`Instagram's ${INSTAGRAM_STEP} (${reel.url})`);
 		}
 		return this.#mark(marks, `Opened in Studio: "${line.title}"`, `${what.join('; ')} · ${line.studioUrl}`);
+	}
+
+	/**
+	 * Takes a line off the list (`dismiss`) or puts it back (`restore`), at
+	 * once in memory and then merged with the stored state and written. The
+	 * entries merge by whichever happened last, so a read landing meanwhile
+	 * cannot undo either. A failed write puts the entry back as it was.
+	 */
+	async #setDismissed(line: TodoLine, restore: boolean): Promise<void> {
+		if (!this.#state) return;
+		const at = new Date().toISOString();
+		const before = this.#state.dismissed.find((d) => d.id === line.id);
+		const apply = (state: TodoState) =>
+			restore ? restoreLine(state, line.id, at) : dismissLine(state, line.id, at, deviceName());
+		this.#state = apply(this.#state);
+		this.#now = Date.now();
+		try {
+			const read = await this.#readState();
+			const next = mergeStates(apply(read.state), this.#state);
+			await setSetting(TODO_KEY, next);
+			this.#state = this.#state ? mergeStates(next, this.#state) : next;
+			logAction(
+				'upload',
+				restore ? `Restored to To finish: "${line.title}"` : `Dismissed from To finish: "${line.title}"`,
+				[line.channel, line.watchUrl].filter(Boolean).join(' · ')
+			);
+		} catch {
+			if (this.#state) {
+				const others = this.#state.dismissed.filter((d) => d.id !== line.id);
+				this.#state = { ...this.#state, dismissed: before ? [...others, before] : others };
+			}
+		}
+	}
+
+	/** The row's Dismiss: done as far as the user is concerned, whatever is left on it. */
+	dismiss(line: TodoLine): Promise<void> {
+		return this.#setDismissed(line, false);
+	}
+
+	/** Restore on the second-chance list: the line comes back with what is left on it. */
+	restore(line: TodoLine): Promise<void> {
+		return this.#setDismissed(line, true);
 	}
 }
 
