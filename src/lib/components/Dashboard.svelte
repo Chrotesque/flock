@@ -708,7 +708,9 @@
 		const crossing = `.list .row:hover .c-${crossCol.col}${crossCol.sub >= 0 ? ` > :nth-child(${crossCol.sub + 1})` : ''}`;
 		// A cell is shorter than its row, so the tint is a layer reaching past it
 		// both ways, which each row clips at its own edges while a column is lit.
-		return `<style>.list .row { overflow-y: clip; } ${cells} { position: relative; } ${cells}::after { content: ''; position: absolute; inset: -60px -6px; background: rgba(255, 255, 255, 0.035); pointer-events: none; } ${crossing}::after { background: rgba(255, 255, 255, 0.08); box-shadow: inset 1px 0 rgba(255, 255, 255, 0.08), inset -1px 0 rgba(255, 255, 255, 0.08); }</style>`;
+		// Solid colours (the user's): the column as the hovered row (#1e1a2b), the
+		// crossing a shade lighter; under the text, over the row's own background.
+		return `<style>.list .row { overflow-y: clip; isolation: isolate; } ${cells} { position: relative; } ${cells}::after { content: ''; position: absolute; inset: -60px -6px; z-index: -1; background: #1e1a2b; pointer-events: none; } ${crossing}::after { background: #221e2f; }</style>`;
 	});
 
 	function cellOf(col: ColumnId): string {
