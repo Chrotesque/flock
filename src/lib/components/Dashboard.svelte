@@ -674,6 +674,43 @@
 		phone: phoneTemplate(columns)
 	});
 	/** A cell's classes: its column, whether it is sized to its content, and whether the narrower lists or a phone leave it out. */
+	/* The column under the pointer, lit from the header down, and the cell where
+	   it crosses the hovered row lit a little more. In Ratio View a column is
+	   one platform's cells under one metric. Written as a style rule rather
+	   than a class on every cell, so a long list costs one rule. The thumbnail
+	   and title are left out: the row's own highlight covers them. */
+	let crossCol = $state<{ col: string; sub: number } | null>(null);
+
+	function onListPointer(event: PointerEvent) {
+		if (phone.current) return;
+		const target = event.target as HTMLElement;
+		const cell = target.closest<HTMLElement>('[class*="c-"]');
+		const col = cell ? [...cell.classList].find((c) => c.startsWith('c-'))?.slice(2) : undefined;
+		if (!cell || !col || col === 'thumb' || col === 'video' || !COLUMNS[col as ColumnId]) {
+			if (crossCol) crossCol = null;
+			return;
+		}
+		let sub = -1;
+		if (ratioView && cell.classList.contains('pcells')) {
+			const part = [...cell.children].find((child) => child.contains(target));
+			sub = part ? [...cell.children].indexOf(part) : -1;
+			if (sub < 0) {
+				if (crossCol) crossCol = null;
+				return;
+			}
+		}
+		if (crossCol?.col !== col || crossCol.sub !== sub) crossCol = { col, sub };
+	}
+
+	const crossStyle = $derived.by(() => {
+		if (!crossCol) return '';
+		const cells = `.list .c-${crossCol.col}${crossCol.sub >= 0 ? ` > :nth-child(${crossCol.sub + 1})` : ''}`;
+		const crossing = `.list .row:hover .c-${crossCol.col}${crossCol.sub >= 0 ? ` > :nth-child(${crossCol.sub + 1})` : ''}`;
+		// A cell is shorter than its row, so the tint is a layer reaching past it
+		// both ways, which each row clips at its own edges while a column is lit.
+		return `<style>.list .row { overflow-y: clip; } ${cells} { position: relative; } ${cells}::after { content: ''; position: absolute; inset: -60px -6px; background: rgba(255, 255, 255, 0.035); pointer-events: none; } ${crossing}::after { background: rgba(255, 255, 255, 0.08); box-shadow: inset 1px 0 rgba(255, 255, 255, 0.08), inset -1px 0 rgba(255, 255, 255, 0.08); }</style>`;
+	});
+
 	function cellOf(col: ColumnId): string {
 		if (ratioView) return `c-${col}${ratioOff(col, 'mid') ? ' midoff' : ''}${ratioOff(col, 'narrow') ? ' narrowoff' : ''}`;
 		const def = COLUMNS[col];
@@ -1256,6 +1293,8 @@
 	// The + shows while a two-number box would still fit.
 	const canPlace = $derived(fits({ metrics: ['views', 'likes'] }));
 	let picking = $state(false);
+	/** The + in the left half of the screen: its picker opens to the right, clear of the sidebar. */
+	let pickRight = $state(false);
 
 	function setLayout(next: string[]) {
 		general.setDashboardBoxes(layoutKey, next, statBoxes.names, layoutName);
@@ -2282,14 +2321,18 @@
 						type="button"
 						aria-haspopup="menu"
 						aria-expanded={picking}
-						onclick={() => (picking = !picking)}
+						onclick={(e) => {
+							const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+							pickRight = r.left + r.width / 2 < window.innerWidth / 2;
+							picking = !picking;
+						}}
 						onkeydown={onPickerKey}
 					>
 						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
 						{placed.length === 0 ? 'Add a stat box' : 'Add'}
 					</button>
 					{#if picking}
-						<div class="boxpicker" role="menu" aria-label="Stat boxes to add" tabindex="-1" onkeydown={onPickerKey}>
+						<div class="boxpicker" class:rightward={pickRight} role="menu" aria-label="Stat boxes to add" tabindex="-1" onkeydown={onPickerKey}>
 							{#if unplaced.length === 0}
 								<p class="pickempty">Every stat box is on the Dashboard already.</p>
 							{/if}
@@ -2349,7 +2392,10 @@
 		style:--cols-mid={grids.mid}
 		style:--cols-narrow={grids.narrow}
 		style:--cols-phone={grids.phone}
+		onpointermove={onListPointer}
+		onpointerleave={() => (crossCol = null)}
 	>
+		{@html crossStyle}
 		<div class="row cols">
 			{@render sortHead('date', 'Video', 'left mdate', '', 1, HEAD_ICONS.date)}
 			{#each columns as col (col)}{@render (ratioView ? ratioHead : headCell)(col)}{/each}
@@ -3325,6 +3371,11 @@
 		border-radius: var(--radius);
 		background: var(--surface);
 		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+	}
+
+	.boxpicker.rightward {
+		right: auto;
+		left: 18px;
 	}
 
 	.boxpicker button {
