@@ -12,6 +12,10 @@
 	import { users } from '$lib/stores/users.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
+	import { accounts } from '$lib/stores/accounts.svelte';
+	import { dashData } from '$lib/stores/dashdata.svelte';
+	import { hiddenVideos } from '$lib/stores/hiddenvideos.svelte';
+	import { brandSet } from '$lib/brandset';
 	import {
 		BOX_HOWS,
 		BOX_METRICS,
@@ -50,8 +54,32 @@
 	onMount(() => {
 		void statBoxes.load();
 		void users.load();
+		// The preview's numbers: the Dashboard's data, read once if it is not in yet.
+		if (!dashData.loaded) void dashData.refresh();
+		void accounts.load();
+		void hiddenVideos.load().catch(() => {});
 		return statBoxes.subscribe();
 	});
+
+	/* The preview counts one brand's videos: the brand in view until another is
+	   picked under it; with one brand, that one. */
+	let previewBrandId = $state('');
+	const previewBrand = $derived(
+		brands.list.some((b) => b.id === previewBrandId) ? previewBrandId : (brands.currentId || brands.list[0]?.id || '')
+	);
+	const previewReady = $derived(dashData.loaded && accounts.loaded);
+	const preview = $derived(
+		previewReady
+			? brandSet(
+					dashData,
+					previewBrand,
+					(p) => accounts.forBrand(p, previewBrand),
+					(p) => !accounts.forBrand(p, previewBrand) && !brands.multiple && accounts.forPlatform(p).length <= 1,
+					hiddenVideos.marks,
+					brands.multiple
+				)
+			: { releases: [], followers: [] }
+	);
 
 	const me = $derived(users.current);
 	const profileIds = $derived(users.list.map((u) => u.id));
@@ -438,9 +466,28 @@
 			<div class="field">
 				<span class="flabel">How it looks</span>
 				<div class="preview card">
-					<StatBoxCard box={draft} {now} sample />
+					<StatBoxCard
+						box={draft}
+						{now}
+						sample={!previewReady}
+						releases={preview.releases}
+						followers={preview.followers}
+					/>
 				</div>
-				<span class="hint">The numbers are the Dashboard's: for whichever brand is in view there.</span>
+				{#if brands.list.length > 1}
+					<div class="row previewfrom">
+						<span class="hint">Preview with data from:</span>
+						{#each brands.list as b (b.id)}
+							<button
+								class="chip"
+								type="button"
+								aria-pressed={previewBrand === b.id}
+								class:on={previewBrand === b.id}
+								onclick={() => (previewBrandId = b.id)}>{b.name}</button
+							>
+						{/each}
+					</div>
+				{/if}
 			</div>
 
 			</div>
@@ -729,6 +776,14 @@
 	.chip:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
+	}
+
+	.previewfrom {
+		gap: 6px;
+	}
+
+	.previewfrom .hint {
+		margin-right: 4px;
 	}
 
 	.preview {

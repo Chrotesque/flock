@@ -110,6 +110,11 @@ class AccountsStore {
 		return accountFor(brands.current, platform, this.list, brands.list.length);
 	}
 
+	/** The account a given brand posts as on a platform, or null. */
+	forBrand(platform: PlatformId, brandId: string): Account | null {
+		return accountFor(brands.byId(brandId), platform, this.list, brands.list.length);
+	}
+
 	/** Whether the brand in view is offered the platform on uploads, and as which account. */
 	offer(platform: PlatformId): Offer {
 		return offerFor(brands.current, platform, this.list, brands.list.length);
