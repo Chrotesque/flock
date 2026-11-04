@@ -1,0 +1,106 @@
+/**
+ * What To finish's Worker section shows (the user's design, 4 Nov 2026):
+ * each upload a worker has in hand, with the platforms it has finished as a
+ * row of marks and a check, and a line per platform still to go — how far
+ * its upload has got and which try it is on, a release held for its minute,
+ * or waiting its turn. The tasks are the heartbeats' `doing` (a publish
+ * names its job and platform since 0.21.5); the posts are `upload_targets`.
+ * Work that is no upload's (a NAS copy, a rename) is listed on its own.
+ */
+import type { DashTarget } from './dashboard';
+import type { PlatformId } from './types';
+import type { WorkerTask } from './workerstatus';
+
+export type JobRowState = 'working' | 'held' | 'waiting' | 'failed';
+
+export interface JobRow {
+	platform: PlatformId;
+	state: JobRowState;
+	/** 0–100, while bytes go up. */
+	progress?: number;
+	/** The try it is on, and the most it makes (0: no fixed most). */
+	tries?: { n: number; max: number };
+	/** A held release's slot, or a waiting post's. */
+	until?: string;
+	/** The post's error, when it failed. */
+	error?: string;
+}
+
+export interface WorkerJob {
+	job: string;
+	title: string;
+	/** Platforms that are out or held by the platform, in the order they got there. */
+	done: PlatformId[];
+	rows: JobRow[];
+}
+
+const ORDER: PlatformId[] = ['youtube', 'instagram', 'tiktok', 'facebook'];
+
+/** A post the platform has: published, or held by YouTube or Facebook for its time. */
+function isDone(status: string): boolean {
+	return status === 'published' || status === 'scheduled';
+}
+
+function finishedAt(target: DashTarget): number {
+	const t = Date.parse(target.updated ?? '') || Date.parse(target.published_at ?? '');
+	return Number.isFinite(t) ? t : 0;
+}
+
+/** Each upload in hand, and the tasks no upload owns. */
+export function workerJobs(tasks: WorkerTask[], targets: DashTarget[], now: number): { jobs: WorkerJob[]; other: WorkerTask[] } {
+	const other = tasks.filter((task) => !task.job);
+	const ids = [...new Set(tasks.filter((task) => task.job).map((task) => task.job!))];
+	const jobs = ids.map((job) => {
+		const mine = tasks.filter((task) => task.job === job);
+		const posts = targets.filter((t) => t.job === job && t.status !== 'cancelled');
+		const done = posts
+			.filter((t) => isDone(t.status))
+			.sort((a, b) => finishedAt(a) - finishedAt(b) || ORDER.indexOf(a.platform) - ORDER.indexOf(b.platform))
+			.map((t) => t.platform);
+
+		const rows: JobRow[] = [];
+		const platforms = new Set<PlatformId>([
+			...posts.filter((t) => !isDone(t.status)).map((t) => t.platform),
+			// A task whose post is not read yet still shows.
+			...mine.map((task) => task.platform).filter((p): p is PlatformId => Boolean(p) && !done.includes(p as PlatformId))
+		]);
+		for (const platform of ORDER.filter((p) => platforms.has(p))) {
+			const task = mine.find((t) => t.platform === platform);
+			const post = posts.find((t) => t.platform === platform);
+			if (task) {
+				const held = Boolean(task.until && Date.parse(task.until) > now && task.progress === undefined && !task.tries);
+				rows.push({
+					platform,
+					state: held ? 'held' : 'working',
+					...(task.progress !== undefined ? { progress: task.progress } : {}),
+					...(task.tries ? { tries: task.tries } : {}),
+					...(task.until ? { until: task.until } : {})
+				});
+			} else if (post?.status === 'failed') {
+				rows.push({ platform, state: 'failed', ...(post.error ? { error: post.error } : {}) });
+			} else if (post?.status === 'publishing') {
+				// Taken up by a run whose heartbeat does not list it (another worker).
+				rows.push({ platform, state: 'working' });
+			} else if (post) {
+				rows.push({ platform, state: 'waiting', ...(post.scheduled_at ? { until: post.scheduled_at } : {}) });
+			}
+		}
+
+		const title = posts[0]?.jobTitle || posts[0]?.title || mine[0].text.replace(/^Publishing to [^:]+: /, '').replace(/^"|"$/g, '');
+		return { job, title, done, rows };
+	});
+	return { jobs, other };
+}
+
+/** "Progress: 82%" and "Retries: 2/10" — the second only from a second try on. */
+export function rowWords(row: JobRow, time: (iso: string) => string): string[] {
+	const words: string[] = [];
+	if (row.state === 'held') words.push(row.until ? `Held for its slot · out at ${time(row.until)}` : 'Held for its slot');
+	if (row.state === 'working') {
+		words.push(row.progress === undefined ? 'Working' : row.progress >= 100 ? 'Progress: 100% · processing' : `Progress: ${row.progress}%`);
+		if (row.tries && row.tries.n > 1) words.push(`Retries: ${row.tries.n - 1}/${row.tries.max ? row.tries.max - 1 : '–'}`);
+	}
+	if (row.state === 'waiting') words.push(row.until ? `Waiting · slot ${time(row.until)}` : 'Waiting');
+	if (row.state === 'failed') words.push('Failed');
+	return words;
+}

@@ -22,6 +22,7 @@ import { fetchOrExplain, isNetworkError } from './net.mjs';
 import { streamRequest, videoMime, sleep, msUntil, MiB } from './upload.mjs';
 import { pickAccount, instagramReady } from './accounts.mjs';
 import { COVER_MISSING, triedFor, withCoverRetries } from './coverretry.mjs';
+import { taskProgress, taskTries } from './taskscope.mjs';
 
 const GRAPH = 'https://graph.facebook.com';
 const UPLOAD = 'https://rupload.facebook.com/ig-api-upload';
@@ -82,7 +83,8 @@ export function checkGrant(rows) {
 }
 
 // Instagram's stated limits for a Reel.
-const MAX_BYTES = 1024 * MiB;
+// IG User Media, Reel specifications: "File size: 300MB maximum" (src/lib/filesize.ts says the same on Review).
+const MAX_BYTES = 300 * 1000 * 1000;
 const MIN_SECONDS = 3;
 const MAX_SECONDS = 15 * 60;
 const ACCEPTED_MIME = new Set(['video/mp4', 'video/quicktime']);
@@ -394,7 +396,10 @@ async function uploadBytes(ig, container, video, log) {
 		},
 		body: video.stream,
 		size: video.size,
-		onProgress: (pct) => log(`  ${pct}%`)
+		onProgress: (pct) => {
+			taskProgress(pct);
+			log(`  ${pct}%`);
+		}
 	});
 	let body = {};
 	try {
@@ -578,7 +583,9 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 	}
 	if (video.size > MAX_BYTES) {
 		video.stream.destroy();
-		throw new Error(`Instagram caps a Reel at 1 GB; this one is ${(video.size / MiB).toFixed(0)} MB.`);
+		throw new Error(
+			`Instagram takes Reels of up to 300 MB; this one is ${Math.round(video.size / 1e6)} MB. Export a smaller file for Instagram.`
+		);
 	}
 
 	const params = buildContainer(target, options, duration);
@@ -683,6 +690,8 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 	const startedAt = Date.now();
 	try {
 		for (let attempt = 1; ; attempt += 1) {
+			// A post's tries only show once there is more than one.
+			if (attempt > 1) taskTries(attempt, MAX_UPLOAD_ATTEMPTS);
 			const failure = await sendToContainer();
 			if (!failure) break;
 			video.stream.destroy();

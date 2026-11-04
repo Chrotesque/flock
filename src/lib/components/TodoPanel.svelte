@@ -8,6 +8,8 @@
 	import { todoPanel } from '$lib/stores/todopanel.svelte';
 	import { videoTodo } from '$lib/stores/videotodo.svelte';
 	import { attention } from '$lib/stores/attention.svelte';
+	import { workers } from '$lib/stores/workers.svelte';
+	import { rowWords, workerJobs } from '$lib/workerjobs';
 	import { celebrations } from '$lib/stores/celebrations.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { general } from '$lib/stores/general.svelte';
@@ -56,6 +58,25 @@
 		const y = Math.min(Math.max(8, at.top + at.height / 2 - h / 2), innerHeight - h - 8);
 		big = { src, upright, x, y };
 	}
+	/**
+	 * What the workers have in hand, first in the panel (v0.21.5, the user's
+	 * design; it replaced the task lines under the sidebar's Worker): an
+	 * upload per block, its finished platforms as marks and a check, a line
+	 * per platform still to go (workerjobs.ts). The heartbeats come in live.
+	 */
+	let inHand = $derived(workerJobs(workers.view.tasks, attention.targets, workers.now));
+	let workerNotes = $derived(workers.view.notes.filter((note) => !(note === 'Idle' && inHand.other.length + inHand.jobs.length > 0)));
+
+	/** A time on this machine's clock, with the day when it is not today. */
+	function clock(iso: string): string {
+		const date = new Date(iso);
+		if (Number.isNaN(date.getTime())) return '';
+		const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+		return date.toDateString() === new Date().toDateString()
+			? time
+			: `${date.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} ${time}`;
+	}
+
 	let lines = $derived(videoTodo.lines);
 	let items = $derived(attention.items);
 	let cheers = $derived(celebrations.items);
@@ -263,7 +284,7 @@
 			<div>
 				<h1>To finish <span class="count">{items.length + lines.length}</span></h1>
 				<p class="sub">
-					What needs attention comes first: click a post for its upload in the Log, retry a failed one, and
+					First what the worker is doing right now, upload by upload. Then what needs attention: click a post for its upload in the Log, retry a failed one, and
 					dismiss it once dealt with. Then what is left to do by hand on each video: the Studio button opens it in YouTube Studio and
 					counts it as done, together with the Paid partnership label of its Instagram reel (added in the Instagram app on a
 					phone; the website cannot). The $ is what YouTube reports about paid promotion, and for Instagram whether the label
@@ -329,6 +350,67 @@
 				</svg>
 			</button>
 		</header>
+
+		<section class="wk" aria-label="Worker">
+			<h2>
+				Worker
+				<span class="wkdots">
+					{#each workers.view.dots as dot (dot.role)}
+						<span class="wkdot {dot.state}" title={dot.title} aria-label={dot.title}></span>
+					{/each}
+				</span>
+				{#if inHand.jobs.length + inHand.other.length > 0}<span class="count">{inHand.jobs.length + inHand.other.length}</span>{/if}
+			</h2>
+			{#if workerNotes.length > 0}<p class="wknote">{workerNotes.join(' · ')}</p>{/if}
+			{#if inHand.jobs.length + inHand.other.length > 0}
+				<ul>
+					{#each inHand.jobs as job (job.job)}
+						<li class="wkjob" animate:flip={{ duration: 200 }} out:fade={{ duration: 160 }}>
+							<div class="wkhead">
+								<a class="title" href="{base}/log/upload?job={encodeURIComponent(job.job)}" title="Open this upload in the Log">
+									{job.title}
+								</a>
+								{#if job.done.length > 0}
+									<span
+										class="wkdone"
+										title="Done on {job.done.map((p) => PLATFORMS[p].label).join(', ')}"
+										aria-label="Done on {job.done.map((p) => PLATFORMS[p].label).join(', ')}"
+									>
+										{#each job.done as platform (platform)}
+											<span in:fade={{ duration: 200 }}><PlatformIcon {platform} size={18} /></span>
+										{/each}
+										<svg class="wkcheck" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+											<path d="M5 12l5 5l10 -10" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+										</svg>
+									</span>
+								{/if}
+							</div>
+							{#each job.rows as row (row.platform)}
+								{@const words = rowWords(row, clock)}
+								<div class="wkrow {row.state}">
+									<span class="wkmark"><PlatformIcon platform={row.platform} size={18} /></span>
+									<span class="wkname">{PLATFORMS[row.platform].label}</span>
+									<span class="wkbar" aria-hidden="true">
+										{#if row.state === 'working' && row.progress !== undefined}
+											<span style:width="{row.progress}%"></span>
+										{:else if row.state === 'working'}
+											<span class="busy"></span>
+										{/if}
+									</span>
+									<span class="wkwords" title={row.error}>{words.join(' · ')}</span>
+								</div>
+							{/each}
+						</li>
+					{/each}
+					{#each inHand.other as task, i (i)}
+						<li class="wkjob wkother">
+							<span class="spinner small" aria-hidden="true"></span>
+							<span class="wkwords">{task.text}</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
 
 		{#if items.length > 0 || cheers.length > 0}
 			<section class="attn" aria-label="Needs attention">
@@ -420,7 +502,7 @@
 		{#if lines.length === 0}
 			{#if items.length === 0 && cheers.length === 0}<p class="empty">Nothing left to finish.</p>{/if}
 		{:else}
-			{#if items.length + cheers.length > 0}<h2>Videos <span class="count">{lines.length}</span></h2>{/if}
+			<h2>Videos <span class="count">{lines.length}</span></h2>
 			<div class="table" class:nojestr={!jestr}>
 				<div class="thead" aria-hidden="true">
 					<span>Video</span>
@@ -775,6 +857,153 @@
 	h2 .count {
 		font-size: 11.5px;
 		letter-spacing: 0;
+	}
+
+	/* The Worker section: an upload per block, finished platforms as marks
+	   and a check beside its title, a line per platform still to go. */
+	.wk {
+		display: grid;
+		gap: 18px;
+	}
+
+	.wk h2 {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.wkdots {
+		display: inline-flex;
+		gap: 4px;
+	}
+
+	.wkdot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: #ef4444;
+	}
+
+	.wkdot.up {
+		background: #34d399;
+	}
+
+	.wkdot.covering {
+		background: var(--warn);
+		box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--warn);
+	}
+
+	.wknote {
+		margin: 0;
+		font-size: 13px;
+		color: var(--text-faint);
+	}
+
+	.wk li.wkjob {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 8px;
+		padding: 10px 14px;
+		border-left: 3px solid #a855f7;
+	}
+
+	.wk li.wkother {
+		grid-template-columns: auto minmax(0, 1fr);
+		align-items: center;
+		gap: 10px;
+		border-left-color: var(--border-strong);
+	}
+
+	.wkhead {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 14px;
+	}
+
+	.wk a.title:hover {
+		color: var(--pink-soft);
+	}
+
+	.wkdone {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.wkdone > span {
+		display: inline-flex;
+	}
+
+	.wkcheck {
+		color: #34d399;
+	}
+
+	.wkrow {
+		display: grid;
+		grid-template-columns: 18px 84px minmax(80px, 240px) minmax(0, 1fr);
+		align-items: center;
+		gap: 12px;
+		font-size: 13px;
+		color: var(--text-dim);
+	}
+
+	.wkmark {
+		display: inline-flex;
+	}
+
+	.wkbar {
+		height: 6px;
+		border-radius: 3px;
+		background: var(--border);
+		overflow: hidden;
+		position: relative;
+	}
+
+	.wkbar > span {
+		position: absolute;
+		inset: 0 auto 0 0;
+		border-radius: 3px;
+		background: var(--accent-grad);
+		transition: width 0.6s ease;
+	}
+
+	.wkbar > .busy {
+		width: 30%;
+		animation: wkbusy 1.4s ease-in-out infinite alternate;
+	}
+
+	@keyframes wkbusy {
+		from {
+			left: 0;
+		}
+		to {
+			left: 70%;
+		}
+	}
+
+	.wkrow.held .wkbar,
+	.wkrow.waiting .wkbar {
+		opacity: 0.4;
+	}
+
+	.wkrow.failed .wkwords {
+		color: #f87171;
+	}
+
+	.wkwords {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.wkbar > .busy {
+			animation: none;
+			left: 35%;
+		}
 	}
 
 	/* What needs attention: a row per item, its platform (or a "!" for the

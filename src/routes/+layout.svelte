@@ -178,14 +178,6 @@
 		return `To finish, ${parts.join(', ')}`;
 	});
 
-	/** A held release's slot, as the clock on this machine reads it. */
-	function at(iso: string): string {
-		const date = new Date(iso);
-		return Number.isNaN(date.getTime()) || date.getTime() < Date.now()
-			? ''
-			: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-	}
-
 	let needsDevice = $derived(!device.ready);
 	import type { Snippet } from 'svelte';
 
@@ -509,11 +501,6 @@
 							{/each}
 						</span>
 					</div>
-					{#each workers.view.lines as line, i (i)}
-						<p class="doing" title={line.text}>
-							{line.text}{#if line.until && at(line.until)}<span class="until"> · out at {at(line.until)}</span>{/if}
-						</p>
-					{/each}
 				</section>
 			</div>
 
@@ -1229,20 +1216,6 @@
 			0 0 8px rgba(251, 191, 36, 0.6);
 	}
 
-	.doing {
-		margin: 2px 0 0;
-		font-size: 10.5px;
-		line-height: 1.35;
-		color: var(--text-faint);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.until {
-		color: var(--text-dim);
-	}
-
 	.alert {
 		display: flex;
 		align-items: center;
@@ -1499,9 +1472,6 @@
 			display: none;
 		}
 		.devtestline {
-			display: none;
-		}
-		.doing {
 			display: none;
 		}
 		main {

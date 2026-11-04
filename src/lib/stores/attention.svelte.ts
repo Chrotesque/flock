@@ -22,6 +22,11 @@ const POLL_MS = 60_000;
  */
 class AttentionStore {
 	#targets = $state<DashTarget[]>([]);
+
+	/** Every post not out yet and the last days' (To finish's Worker section reads them too). */
+	get targets(): DashTarget[] {
+		return this.#targets;
+	}
 	#status = $state<StatsStatus | null>(null);
 	#dismissed = $state<string[]>([]);
 	/** Keys being saved: shown as gone at once, back if the save fails. */

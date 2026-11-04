@@ -33,6 +33,7 @@
 	import { RECORD_VERSION, timingOfTargets, type UploadRecord } from '$lib/uploadrecord';
 	import { allowanceWarning, postAllowance, youtubeGrantWarnings } from '$lib/accounts';
 	import { facebookProblems } from '$lib/facebook';
+	import { sizeProblems } from '$lib/filesize';
 	import { devtestActive } from '$lib/devtest';
 	import { VERSION } from '$lib/version';
 	import { formatBytes, isoDate } from '$lib/format';
@@ -146,7 +147,18 @@
 	);
 
 	/** Whatever holds the confirm tick back, TikTok's rules first. */
-	let confirmHold = $derived(tiktokHold || facebookHold || editHold);
+	/** A video larger than a platform takes: it would only fail after the whole upload. */
+	let sizeHold = $derived.by(() => {
+		if (draft.step !== 3) return '';
+		for (const row of plan) {
+			const video = draft.videoFor(row.platform);
+			const problem = sizeProblems(row.platform, video.file?.size ?? video.nasFile?.size ?? video.kept?.size ?? 0)[0];
+			if (problem) return `${PLATFORMS[row.platform].label}: ${problem}`;
+		}
+		return '';
+	});
+
+	let confirmHold = $derived(tiktokHold || facebookHold || sizeHold || editHold);
 
 	// The confirm button deliberately takes two clicks, the second within two
 	// seconds of the first: this is the point where a multi-GB upload and four

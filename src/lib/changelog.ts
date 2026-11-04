@@ -21,6 +21,8 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-04T04:10:00+01:00', version: '0.21.5', line: 'Added: To Finish > Worker' },
+	{ at: '2026-11-04T03:40:00+01:00', version: '0.21.5', line: 'Added: Review > Size Limits' },
 	{ at: '2026-11-03T15:30:00+01:00', version: '0.21.3', line: 'Changed: Dashboard > Boxes' },
 	{ at: '2026-11-03T15:05:00+01:00', version: '0.21.2', line: 'Changed: Dashboard > Labels' },
 	{ at: '2026-11-03T14:09:00+01:00', version: '0.21.1', line: 'Added: Filter > Date Range' },

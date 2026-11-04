@@ -16,6 +16,7 @@ import {
 	ownsPublishing
 } from './roles.mjs';
 import { WORKER_VERSION } from './version.mjs';
+import { inTask } from './taskscope.mjs';
 
 /**
  * `live` is false for the one-shot modes, which write no heartbeat and simply
@@ -208,13 +209,16 @@ export function makeHeartbeat({
 		 * Runs `fn` as a named task: shown in the sidebar while it runs, and —
 		 * for publishing work — counted, so a handover waits for it.
 		 */
-		async track(text, fn, { publishing = false, until } = {}) {
+		async track(text, fn, { publishing = false, until, job, platform } = {}) {
 			const id = ++nextTask;
-			tasks.set(id, until ? { text, until } : { text });
+			// `job` and `platform` let the page group a task under its upload;
+			// `progress` and `tries` are filled in while it runs (taskscope.mjs).
+			const task = { text, ...(until ? { until } : {}), ...(job ? { job } : {}), ...(platform ? { platform } : {}) };
+			tasks.set(id, task);
 			if (publishing) publishingTasks++;
 			beatSoon();
 			try {
-				return await fn();
+				return await inTask(task, beatSoon, fn);
 			} finally {
 				tasks.delete(id);
 				if (publishing) publishingTasks--;

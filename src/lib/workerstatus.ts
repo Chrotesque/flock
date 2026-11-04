@@ -13,6 +13,13 @@ export interface WorkerTask {
 	text: string;
 	/** For a release the worker is holding until its slot. */
 	until?: string;
+	/** The upload a publish is for, and the platform (since 0.21.5). */
+	job?: string;
+	platform?: import('./types').PlatformId;
+	/** How far its upload has got, 0–100 (worker/taskscope.mjs). */
+	progress?: number;
+	/** The try it is on, and the most it makes (0: no fixed most). */
+	tries?: { n: number; max: number };
 }
 
 export interface WorkerBeat {
@@ -43,6 +50,10 @@ export interface WorkerDot {
 export interface WorkerView {
 	dots: WorkerDot[];
 	lines: WorkerTask[];
+	/** The tasks in hand of the workers running (To finish's Worker section). */
+	tasks: WorkerTask[];
+	/** What is said beside them: covering, waiting, idle, not running. */
+	notes: string[];
 }
 
 /** Mirrors STALE_MS in worker/roles.mjs: three missed beats and it is down. */
@@ -121,7 +132,7 @@ export function workerView(beats: WorkerBeats, now: number): WorkerView {
 	const alive = roles.map((role) => beats[role]).filter((b): b is WorkerBeat => isAlive(b, now));
 	if (alive.length === 0) {
 		const text = newest ? `Not running · last seen ${ago(now - lastSeen(newest))}` : 'Not running';
-		return { dots, lines: [{ text }] };
+		return { dots, lines: [{ text }], tasks: [], notes: [text] };
 	}
 
 	const lines: WorkerTask[] = [];
@@ -129,7 +140,10 @@ export function workerView(beats: WorkerBeats, now: number): WorkerView {
 	const nas = beats.nas;
 	if (split && isAlive(local, now) && local?.covering) lines.push({ text: 'PC covering for the NAS' });
 	if (split && isAlive(nas, now) && nas?.waiting) lines.push({ text: 'NAS waiting for the PC to hand over' });
-	for (const beat of alive) for (const task of beat.doing ?? []) lines.push(task);
+	const notes = lines.map((line) => line.text);
+	const tasks = alive.flatMap((beat) => beat.doing ?? []);
+	lines.push(...tasks);
 	if (lines.length === 0) lines.push({ text: 'Idle' });
-	return { dots, lines };
+	if (tasks.length === 0) notes.push('Idle');
+	return { dots, lines, tasks, notes };
 }

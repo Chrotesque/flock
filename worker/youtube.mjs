@@ -13,6 +13,7 @@ import { youtubeVideoId } from './moves.mjs';
 import { sameTitle, snippetPatch } from './retitle.mjs';
 import { describeNetworkError, fetchOrExplain } from './net.mjs';
 import { charge, countUpload, unitCost } from './quota.mjs';
+import { taskProgress } from './taskscope.mjs';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/youtube/v3/videos';
@@ -962,7 +963,10 @@ export async function publishToYouTube({ target, job, pb, config, log, saveHandl
 	const result = await putVideo(uploadUrl, video.stream, {
 		size: video.size,
 		mimeType: video.mimeType,
-		onProgress: (pct) => log(`  ${pct}%`)
+		onProgress: (pct) => {
+			taskProgress(pct);
+			log(`  ${pct}%`);
+		}
 	});
 
 	const videoId = result.id;

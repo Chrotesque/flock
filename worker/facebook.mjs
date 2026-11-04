@@ -31,6 +31,7 @@ import { GraphError, graph, transientGraphError } from './instagram.mjs';
 import { facebookVideoId } from './moves.mjs';
 import { captionWithTitle } from './retitle.mjs';
 import { COVER_MISSING, triedFor, withCoverRetries } from './coverretry.mjs';
+import { taskProgress } from './taskscope.mjs';
 
 /**
  * Listing the Pages, reading them and taking their tokens, and publishing to
@@ -468,7 +469,10 @@ export async function publishToFacebook({ target, job, pb, config, log, saveHand
 		},
 		body: video.stream,
 		size: video.size,
-		onProgress: (pct) => log(`  ${pct}%`)
+		onProgress: (pct) => {
+			taskProgress(pct);
+			log(`  ${pct}%`);
+		}
 	});
 	let answer = {};
 	try {

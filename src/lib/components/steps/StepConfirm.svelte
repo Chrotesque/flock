@@ -30,6 +30,7 @@
 		CONSENT_PREFIX
 	} from '$lib/tiktok';
 	import { facebookProblems } from '$lib/facebook';
+	import { sizeProblems } from '$lib/filesize';
 	import { findMentions, handleKey, mentionNotes, type MentionNote } from '$lib/tiktokmentions';
 	import { tiktokHandles } from '$lib/stores/tiktokhandles.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
@@ -70,14 +71,17 @@
 
 	/**
 	 * TikTok's own rules, checked once more on the resolved options, and
-	 * Facebook's length limit for a reel: the worker refuses such a post
+	 * Facebook's length limit for a reel, and each platform's largest file
+	 * (filesize.ts): the worker refuses such a post
 	 * rather than quietly posting another way, so it is better said here,
 	 * while it can still be changed.
 	 */
 	function tiktokIssues(row: PlanRow): string[] {
-		if (row.platform === 'facebook') return facebookProblems(draft.videoFor('facebook').duration);
-		if (row.platform !== 'tiktok') return [];
-		return tiktokProblems(row.options, accounts.tiktok, draft.videoFor('tiktok').duration);
+		const video = draft.videoFor(row.platform);
+		const tooBig = sizeProblems(row.platform, video.file?.size ?? video.nasFile?.size ?? video.kept?.size ?? 0);
+		if (row.platform === 'facebook') return [...tooBig, ...facebookProblems(video.duration)];
+		if (row.platform !== 'tiktok') return tooBig;
+		return [...tooBig, ...tiktokProblems(row.options, accounts.tiktok, video.duration)];
 	}
 
 	/**

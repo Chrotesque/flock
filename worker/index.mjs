@@ -284,7 +284,9 @@ async function handleTarget(pb, config, platform, target) {
 			adapter.timing === 'slot' && adapter.holds !== false && msUntil(target.scheduled_at) > 0 ? target.scheduled_at : undefined;
 		await hb.track(`Publishing to ${name}`, () => publishOne(pb, config, platform, target, job, label, claim), {
 			publishing: true,
-			until
+			until,
+			job: job.id,
+			platform
 		});
 	} finally {
 		inHand.delete(target.id);
@@ -1351,7 +1353,9 @@ async function settleOrphan(pb, config, platform, row) {
 		} else if (verdict.action === 'publish') {
 			log(`${label} was processed but never published — publishing it now`);
 			const result = await hb.track(`Publishing to ${NAMES[platform]}: "${row.title || row.id}"`, () => adapter.publishReady(config, handle, row), {
-				publishing: true
+				publishing: true,
+				job: row.job,
+				platform
 			});
 			await recordResult(pb, platform, row, result, label);
 		}

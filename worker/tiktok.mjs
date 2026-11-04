@@ -15,6 +15,7 @@ import { createReadStream } from 'node:fs';
 import { findTools, makeCoverVideo, placementOf } from './tiktokcover.mjs';
 import { pickAccount } from './accounts.mjs';
 import { planChunks, readChunks, videoMime, sleep, MiB } from './upload.mjs';
+import { taskProgress } from './taskscope.mjs';
 
 const SETUP = 'pnpm worker:auth --tiktok';
 
@@ -663,6 +664,7 @@ async function sendVideo({ target, job, pb, config, account, creator, level, pos
 		const range = plan.ranges[index++];
 		await putChunk(init.upload_url, chunk, range, video.size, mime);
 		const pct = Math.floor(((range.end + 1) / video.size) * 100);
+		taskProgress(pct);
 		if (pct >= reported + 10 || index === plan.count) {
 			reported = pct;
 			log(`  ${pct}%`);
