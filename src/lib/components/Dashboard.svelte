@@ -710,7 +710,7 @@
 		// both ways, which each row clips at its own edges while a column is lit.
 		// Solid colours (the user's): the column as the hovered row (#1e1a2b), the
 		// crossing a shade lighter; under the text, over the row's own background.
-		return `<style>.list .row { overflow-y: clip; isolation: isolate; } ${cells} { position: relative; } ${cells}::after { content: ''; position: absolute; inset: -60px -6px; z-index: -1; background: #1e1a2b; pointer-events: none; } ${crossing}::after { background: #221e2f; }</style>`;
+		return `<style>.list .row { overflow-y: clip; isolation: isolate; } ${cells} { position: relative; } ${cells}::after { content: ''; position: absolute; inset: -60px -6px; z-index: -1; background: #1e1a2b; pointer-events: none; } ${crossing}::after { background: #2b253d; }</style>`;
 	});
 
 	function cellOf(col: ColumnId): string {

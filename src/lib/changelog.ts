@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-04T06:01:00+01:00', version: '0.22.6', line: 'Changed: Dashboard > Colours' },
 	{ at: '2026-11-04T05:58:00+01:00', version: '0.22.5', line: 'Changed: Dashboard > Colours' },
 	{ at: '2026-11-04T05:45:00+01:00', version: '0.22.4', line: 'Added: Stat Box > Preview' },
 	{ at: '2026-11-04T05:37:00+01:00', version: '0.22.3', line: 'Added: Dashboard > Crosshair' },
