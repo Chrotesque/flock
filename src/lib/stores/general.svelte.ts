@@ -6,7 +6,7 @@ import { settle, LOG_SETTLE_MS } from '../settle';
 import type { GeneralSettings, NasDestination, WatchFolder } from '../types';
 import type { TimeZoneChoice } from '../timezones';
 import { DEFAULT_COLUMNS, columnWords, readColumns, type DashColumn } from '../dashcolumns';
-import { DEFAULT_BOXES, boxWords, readBoxes, type BoxChoice } from '../periodboxes';
+import { DEFAULT_LAYOUT, FLOCK_BOXES, readLayout } from '../statbox';
 import { readTodoBrands } from '../todobrands';
 import {
 	folderKind,
@@ -39,7 +39,7 @@ export const DEFAULT_GENERAL: GeneralSettings = {
 	todoBrands: null,
 	timeZones: [],
 	dashboardColumns: DEFAULT_COLUMNS,
-	dashboardPeriods: DEFAULT_BOXES
+	dashboardBoxes: DEFAULT_LAYOUT
 };
 
 /**
@@ -100,7 +100,7 @@ class GeneralStore {
 				todoBrands: readTodoBrands(stored.todoBrands),
 				timeZones: Array.isArray(stored.timeZones) ? stored.timeZones : [],
 				dashboardColumns: readColumns(stored.dashboardColumns),
-				dashboardPeriods: readBoxes(stored.dashboardPeriods)
+				dashboardBoxes: readLayout(stored.dashboardBoxes)
 			};
 			this.#loaded = true;
 			this.#logged = $state.snapshot(this.value);
@@ -195,9 +195,10 @@ class GeneralStore {
 		const columnsNow = columnWords(after.dashboardColumns);
 		if (columnsWere !== columnsNow) logAction('settings', 'Changed the Dashboard columns', `${columnsWere} → ${columnsNow}`);
 
-		const boxesWere = boxWords(before.dashboardPeriods);
-		const boxesNow = boxWords(after.dashboardPeriods);
-		if (boxesWere !== boxesNow) logAction('settings', "Changed the Dashboard's period boxes", `${boxesWere} → ${boxesNow}`);
+		const boxWords = (ids: string[]) => ids.map((id) => this.#boxNames[id] ?? id).join(', ') || 'none';
+		const boxesWere = boxWords(before.dashboardBoxes);
+		const boxesNow = boxWords(after.dashboardBoxes);
+		if (boxesWere !== boxesNow) logAction('settings', "Changed the Dashboard's stat boxes", `${boxesWere} → ${boxesNow}`);
 
 		for (const key of ['watchFolders', 'projectFolders'] as const) this.#logFolders(key, before, after);
 
@@ -370,9 +371,13 @@ class GeneralStore {
 		this.#queueLog();
 	}
 
-	/** The Dashboard's period boxes, as its strip arranges them (periodboxes.ts). */
-	setDashboardPeriods(next: BoxChoice[]) {
-		this.value.dashboardPeriods = readBoxes(next);
+	/** Box names the log's lines use, by id: flock's, and whatever the Dashboard passes in. */
+	#boxNames: Record<string, string> = Object.fromEntries(FLOCK_BOXES.map((b) => [b.id, b.name]));
+
+	/** The stat boxes on this profile's Dashboard, in order (statbox.ts), with their names for the log. */
+	setDashboardBoxes(next: string[], names: Record<string, string> = {}) {
+		this.#boxNames = { ...this.#boxNames, ...names };
+		this.value.dashboardBoxes = readLayout(next);
 		this.queueSave();
 		this.#queueLog();
 	}

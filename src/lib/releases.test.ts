@@ -792,7 +792,8 @@ describe('the timeframe', () => {
 		expect(readRange({ from: '2026-03-02', to: '2026-03-01' })).toBeNull();
 		expect(readRange({ from: '2026-02-30', to: 'today' })).toBeNull();
 		expect(readRange(null)).toBeNull();
-		expect(readFilter({ days: 60, range: { from: '2026-01-05', to: 'today' } }).range).toEqual({ from: '2026-01-05', to: 'today' });
+		// The list's filter has no range since 0.22.0: one stored before is dropped.
+		expect(readFilter({ days: 60, range: { from: '2026-01-05', to: 'today' } }).range).toBeNull();
 		expect(readFilter({}).range).toBeNull();
 	});
 

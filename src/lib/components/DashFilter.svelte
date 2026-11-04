@@ -14,27 +14,24 @@
 		type FilterCounts,
 		type StatPlatform
 	} from '$lib/releases';
-	import { isoDate } from '$lib/format';
 
 	/**
 	 * Every choice of what the page looks at, in one element: a line saying
 	 * what is shown, which opens into the choices — the timeframe, platforms
 	 * (all of them together is the combined view), kinds and visibility. The
-	 * page's numbers and its list all follow it — but for the platforms while
+	 * list and its totals follow it — never the stat boxes, which carry their
+	 * own (statbox.ts) — but for the platforms while
 	 * the Dashboard's Ratio View shows every one side by side (`overridden`):
 	 * they stay as chosen, greyed, and cannot be changed until it is off.
 	 */
 	let {
 		filter = $bindable(),
 		counts,
-		overridden = false,
-		earliest = ''
+		overridden = false
 	}: {
 		filter: DashFilter;
 		counts: FilterCounts;
 		overridden?: boolean;
-		/** The day the brand's first video went out (YYYY-MM-DD): no range starts before it. */
-		earliest?: string;
 	} = $props();
 
 	const NOT_IN_EFFECT = 'Not in effect: Ratio View shows the platforms picked beside its switch';
@@ -84,32 +81,8 @@
 		filter = { ...filter, kinds: on ? filter.kinds.filter((x) => x !== k) : KIND_ORDER.filter((x) => x === k || filter.kinds.includes(x)) };
 	}
 
-	const today = $derived(isoDate(new Date()));
-	/** Where a range starts when first chosen: as far back as the days in effect, not before the first video. */
-	const rangeStart = $derived.by(() => {
-		const back = isoDate(new Date(Date.now() - filter.days * 86_400_000));
-		return earliest && back < earliest ? earliest : back;
-	});
-	const toToday = $derived(!filter.range || filter.range.to === 'today');
-
 	function setDays(days: number) {
 		filter = { ...filter, days, range: null };
-	}
-
-	/** A start date typed or picked; never before the first video, never after the end. */
-	function setFrom(value: string) {
-		if (!value) return;
-		let from = earliest && value < earliest ? earliest : value;
-		if (from > today) from = today;
-		const to = filter.range?.to ?? 'today';
-		filter = { ...filter, range: { from, to: to !== 'today' && to < from ? from : to } };
-	}
-
-	/** An end date, or "today" to move on with the days. */
-	function setTo(value: string) {
-		if (!value) return;
-		const from = filter.range?.from ?? rangeStart;
-		filter = { ...filter, range: { from, to: value === 'today' ? 'today' : value < from ? from : value } };
 	}
 
 	function reset() {
@@ -184,40 +157,6 @@
 						>
 					{/each}
 					<span class="spanunit">days</span>
-				</div>
-				<span class="or">or</span>
-				<!-- From a date to a date, or on with today. -->
-				<div class="range" class:on={filter.range} role="group" aria-label="From and to a date">
-					<label>
-						<span>From</span>
-						<input
-							type="date"
-							min={earliest || undefined}
-							max={filter.range && filter.range.to !== 'today' ? filter.range.to : today}
-							value={filter.range?.from ?? rangeStart}
-							title={earliest ? `The first video went out on ${earliest}` : undefined}
-							onchange={(e) => setFrom(e.currentTarget.value)}
-						/>
-					</label>
-					<span class="to">
-						<span>to</span>
-						<button
-							class="today"
-							class:on={filter.range && toToday}
-							aria-pressed={Boolean(filter.range) && toToday}
-							title="Up to whatever day it is: moves on by itself"
-							onclick={() => setTo('today')}>Today</button
-						>
-						<input
-							type="date"
-							aria-label="To a date"
-							class:on={filter.range && !toToday}
-							min={filter.range?.from ?? rangeStart}
-							max={today}
-							value={filter.range && filter.range.to !== 'today' ? filter.range.to : ''}
-							onchange={(e) => setTo(e.currentTarget.value)}
-						/>
-					</span>
 				</div>
 			</section>
 
@@ -481,72 +420,6 @@
 		padding: 0 9px 0 4px;
 		font-size: 11.5px;
 		color: var(--text-faint);
-	}
-
-	.or {
-		font-size: 11.5px;
-		color: var(--text-faint);
-	}
-
-	.range {
-		display: inline-flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 8px;
-		padding: 2px 4px 2px 10px;
-		border: 1px solid var(--border-strong);
-		border-radius: 999px;
-		background: var(--surface);
-		font-size: 12px;
-		color: var(--text-dim);
-	}
-
-	.range.on {
-		box-shadow: inset 0 0 0 1px var(--pink);
-		background: rgba(255, 77, 158, 0.06);
-	}
-
-	.range label,
-	.range .to {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-	}
-
-	.range input {
-		padding: 2px 6px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-elev);
-		color: var(--text);
-		font: inherit;
-		font-size: 12px;
-		color-scheme: dark;
-	}
-
-	.range input.on {
-		border-color: var(--pink);
-	}
-
-	.range .today {
-		padding: 3px 9px;
-		border: 1px solid var(--border);
-		border-radius: 999px;
-		background: none;
-		color: var(--text-dim);
-		font: inherit;
-		font-size: 12px;
-		font-weight: 600;
-	}
-
-	.range .today:hover {
-		color: var(--text);
-	}
-
-	.range .today.on {
-		background: rgba(255, 77, 158, 0.12);
-		border-color: var(--pink);
-		color: var(--text);
 	}
 
 	h3 {

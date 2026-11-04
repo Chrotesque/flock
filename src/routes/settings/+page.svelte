@@ -12,6 +12,7 @@
 	import TemplateEditor from '$lib/components/TemplateEditor.svelte';
 	import BrandEditor from '$lib/components/BrandEditor.svelte';
 	import DashColumnsEditor from '$lib/components/DashColumnsEditor.svelte';
+	import StatBoxEditor from '$lib/components/StatBoxEditor.svelte';
 	import UserSettings from '$lib/components/UserSettings.svelte';
 	import { users } from '$lib/stores/users.svelte';
 	import { shownColumns } from '$lib/dashcolumns';
@@ -81,6 +82,8 @@
 
 	let active = $state<Section>('general');
 	let tab = $state<'defaults' | 'tags' | 'filters' | 'profiles'>('defaults');
+	/** Settings → Dashboard's tab: the list's columns, or the stat boxes. */
+	let dashTab = $state<'columns' | 'boxes'>('columns');
 
 	// Narrowed once here rather than guarded at every use site below.
 	let platform = $derived<PlatformId | null>(isPlatformId(active) ? active : null);
@@ -154,6 +157,7 @@
 			) {
 				active = section;
 				if (section === 'devtest' && knownTab(wantTab)) devtestTab = knownTab(wantTab);
+				if (section === 'dashboard') dashTab = wantTab === 'boxes' ? 'boxes' : 'columns';
 				return;
 			}
 			if (wantPlatform && isPlatformId(wantPlatform)) {
@@ -521,26 +525,40 @@
 								<div>
 									<h2>Dashboard</h2>
 									<p>
-										The columns of the Dashboard's list of videos: which are shown, and in what order.
-										Your profile's alone; other profiles keep their own.
+										{dashTab === 'columns'
+											? "The columns of the Dashboard's list of videos: which are shown, and in what order. Your profile's alone; other profiles keep their own."
+											: 'The stat boxes over the list: what each counts. Every profile shares them; which are on your Dashboard is yours.'}
 									</p>
 								</div>
 							</div>
 						</header>
 
-						{#if general.loading}
-							<p class="banner">Loading…</p>
+						<div class="tabs" role="tablist" aria-label="Dashboard">
+							<button role="tab" aria-selected={dashTab === 'columns'} class:active={dashTab === 'columns'} onclick={() => (dashTab = 'columns')}
+								>Columns</button
+							>
+							<button role="tab" aria-selected={dashTab === 'boxes'} class:active={dashTab === 'boxes'} onclick={() => (dashTab = 'boxes')}
+								>Stat boxes</button
+							>
+						</div>
+
+						{#if dashTab === 'boxes'}
+							<StatBoxEditor />
 						{:else}
-							<DashColumnsEditor />
+							{#if general.loading}
+								<p class="banner">Loading…</p>
+							{:else}
+								<DashColumnsEditor />
+							{/if}
+							{#each devtestDashboardSettings as mod (mod.title)}
+								<section class="devtestmod dashlocal">
+									<h3>{mod.title} <span class="localtag">local only</span></h3>
+									{#if mod.DashboardSettings}
+										<mod.DashboardSettings />
+									{/if}
+								</section>
+							{/each}
 						{/if}
-						{#each devtestDashboardSettings as mod (mod.title)}
-							<section class="devtestmod dashlocal">
-								<h3>{mod.title} <span class="localtag">local only</span></h3>
-								{#if mod.DashboardSettings}
-									<mod.DashboardSettings />
-								{/if}
-							</section>
-						{/each}
 					{:else if active === 'users'}
 						<header class="panelhead">
 							<div class="ident">

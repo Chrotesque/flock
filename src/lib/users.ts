@@ -40,7 +40,7 @@ export const PERSONAL_KEYS = [
 	'todoBrands',
 	'timeZones',
 	'dashboardColumns',
-	'dashboardPeriods',
+	'dashboardBoxes',
 	'jestrIntegration'
 ] as const;
 
@@ -57,7 +57,7 @@ export function userSettingKey(area: UserArea, userId: string): string {
 
 /** What a profile has of its own, in words: the Profiles tab's list, and what a copy copies. */
 export const PERSONAL_WORDS = [
-	"The Dashboard's columns and period boxes",
+	"The Dashboard's columns and the stat boxes on it",
 	'The To finish indicator, and the brands it follows',
 	'Extra time zones',
 	'The Jestr integration',

@@ -497,7 +497,7 @@ export interface DashFilter {
 	hidden: boolean;
 	/** How far back the page looks, in days (DASH_SPANS): every number on it counts only releases since. */
 	days: number;
-	/** A start and end date chosen instead of `days`; null when the days are in effect. */
+	/** A start and end date instead of `days`: a stat box's (statbox.ts); the list's filter has none. */
 	range: DashRange | null;
 }
 
@@ -551,7 +551,8 @@ export function readFilter(raw: unknown): DashFilter {
 		private: typeof r.private === 'boolean' ? r.private : DEFAULT_FILTER.private,
 		hidden: typeof r.hidden === 'boolean' ? r.hidden : DEFAULT_FILTER.hidden,
 		days: DASH_SPANS.includes(Number(r.days)) ? Number(r.days) : DEFAULT_FILTER.days,
-		range: readRange(r.range)
+		// The list has no date range since 0.22.0 (the stat boxes have): one stored before is dropped.
+		range: null
 	};
 }
 
@@ -863,13 +864,15 @@ export interface PeriodStats {
 	views: number;
 	/** The likes those releases have now, on the chosen platforms. */
 	likes: number;
+	/** Their comments now, the same way. */
+	comments: number;
 	/** Views every release in view gained in the period. */
 	gained: number;
 	/** Some post was not read yet at the start, so `gained` counts from its first read. */
 	partly: boolean;
 	/** How far the accounts' follower counts moved in the period, over the chosen platforms; null when none was read. */
 	followers: FollowerGain | null;
-	byPlatform: Record<StatPlatform, { views: number; likes: number; gained: number; followers: FollowerGain | null }>;
+	byPlatform: Record<StatPlatform, { views: number; likes: number; comments: number; gained: number; followers: FollowerGain | null }>;
 }
 
 /** The periods the strip shows until its boxes are chosen. */
@@ -922,14 +925,15 @@ export function statsOfPeriod(
 		released: 0,
 		views: 0,
 		likes: 0,
+		comments: 0,
 		gained: 0,
 		partly: false,
 		followers: null,
 		byPlatform: {
-			youtube: { views: 0, likes: 0, gained: 0, followers: null },
-			instagram: { views: 0, likes: 0, gained: 0, followers: null },
-			tiktok: { views: 0, likes: 0, gained: 0, followers: null },
-			facebook: { views: 0, likes: 0, gained: 0, followers: null }
+			youtube: { views: 0, likes: 0, comments: 0, gained: 0, followers: null },
+			instagram: { views: 0, likes: 0, comments: 0, gained: 0, followers: null },
+			tiktok: { views: 0, likes: 0, comments: 0, gained: 0, followers: null },
+			facebook: { views: 0, likes: 0, comments: 0, gained: 0, followers: null }
 		}
 	};
 	// A range that ends before the period starts leaves nothing in it.
@@ -947,6 +951,8 @@ export function statsOfPeriod(
 				stats.byPlatform[post.platform].views += views;
 				stats.likes += post.likes ?? 0;
 				stats.byPlatform[post.platform].likes += post.likes ?? 0;
+				stats.comments += post.comments ?? 0;
+				stats.byPlatform[post.platform].comments += post.comments ?? 0;
 			}
 			let before = viewsAt(post, start);
 			if (before === null) {
@@ -997,9 +1003,11 @@ export interface PeriodAverage {
 	views: number;
 	/** Their likes now, the same way. */
 	likes: number;
+	/** Their comments now, the same way. */
+	comments: number;
 	/** The accounts' follower move a period (a lifetime: a video); null when none was read. */
 	followers: FollowerGain | null;
-	byPlatform: Record<StatPlatform, { views: number; likes: number; followers: FollowerGain | null }>;
+	byPlatform: Record<StatPlatform, { views: number; likes: number; comments: number; followers: FollowerGain | null }>;
 }
 
 /**
@@ -1039,12 +1047,13 @@ export function periodAverage(
 		released: 0,
 		views: 0,
 		likes: 0,
+		comments: 0,
 		followers: null,
 		byPlatform: {
-			youtube: { views: 0, likes: 0, followers: null },
-			instagram: { views: 0, likes: 0, followers: null },
-			tiktok: { views: 0, likes: 0, followers: null },
-			facebook: { views: 0, likes: 0, followers: null }
+			youtube: { views: 0, likes: 0, comments: 0, followers: null },
+			instagram: { views: 0, likes: 0, comments: 0, followers: null },
+			tiktok: { views: 0, likes: 0, comments: 0, followers: null },
+			facebook: { views: 0, likes: 0, comments: 0, followers: null }
 		}
 	};
 	const limit = avg.to.getTime();
@@ -1082,14 +1091,18 @@ export function periodAverage(
 			avg.byPlatform[post.platform].views += views;
 			avg.likes += post.likes ?? 0;
 			avg.byPlatform[post.platform].likes += post.likes ?? 0;
+			avg.comments += post.comments ?? 0;
+			avg.byPlatform[post.platform].comments += post.comments ?? 0;
 		}
 	}
 	if (key !== 'lifetime') avg.released /= n;
 	avg.views /= n;
 	avg.likes /= n;
+	avg.comments /= n;
 	for (const p of filter.platforms) {
 		avg.byPlatform[p].views /= n;
 		avg.byPlatform[p].likes /= n;
+		avg.byPlatform[p].comments /= n;
 		avg.byPlatform[p].followers = sumGains(
 			followers
 				.filter((s) => s.platform === p)
@@ -1131,17 +1144,24 @@ export function videoAverage(
 	const videos = Math.round(a.released * a.periods);
 	const per = videos > 0 ? a.periods / videos : 0;
 	const gain = (g: FollowerGain | null) => g && { ...g, gained: videos > 0 ? g.gained * per : 0 };
+	const each = (x: PeriodAverage['byPlatform'][StatPlatform]) => ({
+		views: x.views * per,
+		likes: x.likes * per,
+		comments: x.comments * per,
+		followers: gain(x.followers)
+	});
 	return {
 		...a,
 		released: videos,
 		views: a.views * per,
 		likes: a.likes * per,
+		comments: a.comments * per,
 		followers: gain(a.followers),
 		byPlatform: {
-			youtube: { views: a.byPlatform.youtube.views * per, likes: a.byPlatform.youtube.likes * per, followers: gain(a.byPlatform.youtube.followers) },
-			instagram: { views: a.byPlatform.instagram.views * per, likes: a.byPlatform.instagram.likes * per, followers: gain(a.byPlatform.instagram.followers) },
-			tiktok: { views: a.byPlatform.tiktok.views * per, likes: a.byPlatform.tiktok.likes * per, followers: gain(a.byPlatform.tiktok.followers) },
-			facebook: { views: a.byPlatform.facebook.views * per, likes: a.byPlatform.facebook.likes * per, followers: gain(a.byPlatform.facebook.followers) }
+			youtube: each(a.byPlatform.youtube),
+			instagram: each(a.byPlatform.instagram),
+			tiktok: each(a.byPlatform.tiktok),
+			facebook: each(a.byPlatform.facebook)
 		}
 	};
 }

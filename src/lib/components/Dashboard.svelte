@@ -76,21 +76,22 @@
 		toDashboardVideo
 	} from '$lib/repo';
 	import { UPLOADS_A_DAY, quotaToday, refreshDue, stopToday, stopWords, type QuotaRow } from '$lib/youtubequota';
-	import { averageCount, formatBytes, formatDuration, isoDate, shortCount } from '$lib/format';
+	import { formatBytes, formatDuration, shortCount } from '$lib/format';
+	import StatBoxCard from './StatBoxCard.svelte';
+	import { statBoxes } from '$lib/stores/statboxes.svelte';
+	import { users } from '$lib/stores/users.svelte';
 	import {
-		AVERAGE_PER,
-		AVERAGE_LABELS,
-		KIND_PERIODS,
-		MIN_BOXES,
-		VIDEO_LABELS,
-		addBox,
-		boxLabel,
-		canAddBox,
-		chooseBox,
-		sameBox,
-		type BoxChoice,
-		type BoxKind
-	} from '$lib/periodboxes';
+		boxMinWidth,
+		boxName,
+		boxSummary,
+		creatorWords,
+		isFlockBox,
+		moveBox,
+		placeBox,
+		placedBoxes,
+		unplaceBox,
+		type StatBox
+	} from '$lib/statbox';
 	import { matchesTitle, searchWords, titleParts } from '$lib/titlesearch';
 	import { KIND_LABELS } from '$lib/videokind';
 	import { TREND, changeWords } from '$lib/trend';
@@ -109,15 +110,8 @@
 		isStatPlatform,
 		judge,
 		peerGroups,
-		PERIOD_LABELS,
 		inTimeframe,
-		periodStart,
-		periodAverage,
-		statsOfPeriod,
 		timeframeWords,
-		videoAverage,
-		type PeriodAverage,
-		type PeriodStats,
 		overallOf,
 		readFilter,
 		sortRows,
@@ -343,6 +337,8 @@
 		const stopMarks = jestrCampaigns.subscribe();
 		void hiddenVideos.load().catch(() => {});
 		const stopHidden = hiddenVideos.subscribe();
+		void statBoxes.load();
+		const stopBoxes = statBoxes.subscribe();
 		void titleRequests.load();
 		const stopRenames = titleRequests.subscribe();
 		const stopReels = subscribeReels((reel, action) => {
@@ -362,6 +358,7 @@
 			stopStats();
 			stopMarks();
 			stopHidden();
+			stopBoxes();
 			stopRenames();
 			stopReels();
 			stopTargets();
@@ -458,15 +455,10 @@
 			)
 		)
 	);
-	// The timeframe (the filter's days) is cut first, so every number on the
-	// page follows it: the list and its totals, the counts in the filter, the
-	// periods, and the peers "usual" is the middle of.
+	// The timeframe (the filter's days) is cut first, so the list follows it:
+	// its rows and totals, the counts in the filter, and the peers "usual" is
+	// the middle of. The stat boxes count the brand's every video by their own.
 	const spanned = $derived(releases.filter((r) => inTimeframe(r, filter, now)));
-	/** The first day a video went out on, of the brand in view: the earliest the timeframe can start. */
-	const firstDay = $derived.by(() => {
-		const first = Math.min(...releases.map((r) => r.at));
-		return Number.isFinite(first) ? isoDate(new Date(first)) : '';
-	});
 	const groups = $derived(peerGroups(spanned));
 	const counts = $derived(filterCounts(spanned, view));
 	// While editing, the videos hidden with the eye show too (faded), so one
@@ -796,7 +788,7 @@
 
 	function onWindowPointer(event: PointerEvent) {
 		const target = event.target as HTMLElement;
-		if (boxMenu !== null && !target.closest('.pmenu, .pick, .addbox')) boxMenu = null;
+		if (picking && !target.closest('.boxpicker, .addbox')) picking = false;
 		if (cell && !target.closest('.cellpop, [data-col]')) {
 			cell = null;
 			dismissedAt = Date.now();
@@ -875,7 +867,6 @@
 	};
 	const followerWord = (p: StatPlatform, n: number) => FOLLOWER_WORDS[p][Math.abs(n) === 1 ? 0 : 1];
 	const signed = (n: number) => (n > 0 ? `+${whole.format(n)}` : n < 0 ? `−${whole.format(-n)}` : '0');
-	const signedShort = (n: number) => (n > 0 ? `+${short(n)}` : n < 0 ? `−${short(-n)}` : '0');
 	const onDay = (iso: string) => new Date(postTime(iso)).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 
 	/** The accounts' counts now, for the column's tooltip. */
@@ -913,13 +904,6 @@
 				return `${label}: ${whole.format(post.followers)}, credited from when the count rose${since}`;
 			})
 			.join('\n');
-	}
-
-	/** A period's follower move in one platform, in words for its popup. */
-	function gainWords(gain: FollowerGain | null, p: StatPlatform): string {
-		if (!gain) return 'not read yet';
-		const state = followersInView.find((s) => s.platform === p);
-		return `${signed(gain.gained)} ${followerWord(p, gain.gained)}${gain.partly && state ? ` since ${onDay(state.since)}` : ''}`;
 	}
 
 	/* ---- Edit mode ----
@@ -1010,7 +994,7 @@
 		if (r.hidden) return `Hidden — show it on the Dashboard again${row.posts.length < all ? ` (on ${where}, the platforms in view)` : ''}`;
 		return row.posts.length < all
 			? `Hide its ${where} post from the Dashboard — only the platforms in view; the rest stays`
-			: 'Hide this video from the Dashboard: from the list, the totals, the periods and the usual';
+			: 'Hide this video from the Dashboard: from the list, the totals, the stat boxes and the usual';
 	}
 
 	const totals = $derived.by(() => {
@@ -1244,96 +1228,85 @@
 		}
 	}
 
-	/* ---- the period numbers and what is coming ---- */
+	/* ---- the stat boxes (statbox.ts) ----
+	 *
+	 * Each box counts the brand in view's videos through its own timeframe,
+	 * platforms and kinds — never the filter, which is the list's. Which are
+	 * shown, and in what order, is this profile's; they are placed, moved and
+	 * taken off in Edit mode, as many as fit in a row.
+	 */
 
 	const nowDate = $derived(new Date(now));
-	// The periods run up to the brand's lifetime, past the list's timeframe, so
-	// they count every video the filter's other choices keep.
-	const periodReleases = $derived(releases.filter((r) => inView(r, view)));
-	/** The strip's boxes, as this profile chose them (periodboxes.ts). */
-	const boxes = $derived(general.value.dashboardPeriods);
-	const boxNumbers = $derived(
-		boxes.map((box): { plain: PeriodStats } | { average: PeriodAverage; perVideo: boolean } | null =>
-			!box
-				? null
-				: box.kind === 'plain'
-					? { plain: statsOfPeriod(periodReleases, view, box.period, nowDate, followersInView) }
-					: box.kind === 'video'
-						? { average: videoAverage(periodReleases, view, box.period, nowDate, followersInView), perVideo: true }
-						: { average: periodAverage(periodReleases, view, box.period, nowDate, followersInView), perVideo: false }
-		)
-	);
-	/** The menu's groups after None, each a kind of box and the periods it offers (periodboxes.ts). */
-	const MENU_GROUPS: { kind: BoxKind; title: string; labels: Record<PeriodAverage['key'], string> }[] = [
-		{ kind: 'plain', title: 'Plain stats', labels: PERIOD_LABELS },
-		{ kind: 'average', title: 'Averages', labels: AVERAGE_LABELS },
-		{ kind: 'video', title: 'Per video', labels: AVERAGE_LABELS }
-	];
-	/** The box whose menu is open, by its place in the strip. */
-	let boxMenu = $state<number | null>(null);
-	/** The pointer near the strip's right edge, or the + focused: the last box makes room for the +. */
-	let nearAdd = $state(false);
+	/* Moving a box: its grip is dragged over the others (or moved with the
+	   arrow keys); the row follows the pointer and is saved on release. */
+	let dragId = $state<string | null>(null);
+	let dragOrder = $state<string[] | null>(null);
+	const layout = $derived(general.value.dashboardBoxes);
+	const placed = $derived(placedBoxes(dragOrder ?? layout, statBoxes.all));
+	/** The row's width, for what still fits. */
+	let stripWidth = $state(0);
+	const usedWidth = $derived(placed.reduce((sum, b) => sum + boxMinWidth(b), 0));
+	/** Whether a box fits beside those placed: the row holds what its width holds. */
+	const fits = (b: Pick<StatBox, 'metrics'>) => stripWidth === 0 || usedWidth + boxMinWidth(b) <= stripWidth;
+	const unplaced = $derived(statBoxes.all.filter((b) => !layout.includes(b.id)));
+	// The + shows while a two-number box would still fit.
+	const canPlace = $derived(fits({ metrics: ['views', 'likes'] }));
+	let picking = $state(false);
 
-	function pickBox(index: number, choice: BoxChoice) {
-		general.setDashboardPeriods(chooseBox(boxes, index, choice));
-		boxMenu = null;
+	function setLayout(next: string[]) {
+		general.setDashboardBoxes(next, statBoxes.names);
 	}
 
-	/** Adds an empty box at the end and opens its menu. */
-	function addPeriodBox() {
-		const next = addBox(boxes);
-		if (next === boxes) return;
-		general.setDashboardPeriods(next);
-		boxMenu = next.length - 1;
-		nearAdd = false;
+	function place(id: string) {
+		setLayout(placeBox(layout, id));
+		picking = false;
 	}
 
-	// Escape closes a box's menu, not the Dashboard: caught on the menu and its
-	// heading, before DashboardOverlay's window listener sees it.
-	function onBoxMenuKey(event: KeyboardEvent) {
-		if (event.key !== 'Escape' || boxMenu === null) return;
+	function onGripDown(event: PointerEvent, id: string) {
+		if (event.button !== 0) return;
 		event.preventDefault();
-		boxMenu = null;
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		dragId = id;
+		dragOrder = [...layout];
 	}
 
-	function onStripPointer(event: PointerEvent) {
-		const strip = event.currentTarget as HTMLElement;
-		nearAdd = canAddBox(boxes) && event.clientX > strip.getBoundingClientRect().right - 90;
+	function onGripMove(event: PointerEvent) {
+		if (!dragId || !dragOrder) return;
+		const under = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-box]');
+		const over = under?.dataset.box;
+		if (!under || !over || over === dragId) return;
+		const rect = under.getBoundingClientRect();
+		const others = dragOrder.filter((id) => id !== dragId);
+		const at = others.indexOf(over) + (event.clientX > rect.left + rect.width / 2 ? 1 : 0);
+		const next = moveBox(dragOrder, dragId, at);
+		if (next.join() !== dragOrder.join()) dragOrder = next;
 	}
 
-	const PERIOD_UNIT: Record<PeriodAverage['key'], [string, string]> = {
-		today: ['day', 'days'],
-		week: ['week', 'weeks'],
-		month: ['month', 'months'],
-		quarter: ['quarter', 'quarters'],
-		year: ['year', 'years'],
-		lifetime: ['video', 'videos']
-	};
-
-	/** What an average box's numbers are over, for its popups; `perVideo` shares them over the videos. */
-	function averageNote(a: PeriodAverage, perVideo: boolean): string {
-		const [one, many] = PERIOD_UNIT[a.key];
-		const videos = (n: number) => `${whole.format(n)} ${n === 1 ? 'video' : 'videos'}`;
-		const where = a.ranged ? ` in the timeframe (${timeframeWords(filter)})` : '';
-		if (a.key === 'lifetime') return a.periods ? `Over the ${videos(a.periods)} out${where}, shared over them.` : `No video out${where || ' yet'}.`;
-		const running = a.key === 'today' ? 'today is' : `this ${one} is`;
-		// The running period is left out; a range ending earlier ends the periods there instead.
-		const tail = a.to.getTime() === periodStart(a.key, nowDate).getTime() ? `; ${running} left out until it is over.` : '.';
-		if (!a.periods || !a.from)
-			return a.ranged
-				? `No whole ${one}${where}, so nothing to average.`
-				: `Not a whole ${one} since the first video yet: ${running} left out until it is over.`;
-		const day = (d: Date) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-		const last = new Date(a.to.getTime() - 1);
-		const span = `the ${whole.format(a.periods)} whole ${a.periods === 1 ? one : many} ${a.ranged ? `from ${day(a.from)} to ${day(last)}` : `since ${day(a.from)}`}`;
-		if (perVideo) return a.released ? `Over the ${videos(a.released)} out in ${span}, shared over them${tail}` : `No video went out in ${span}.`;
-		return `Over ${span}${tail}`;
+	function onGripUp() {
+		if (dragOrder && dragOrder.join() !== layout.join()) setLayout(dragOrder);
+		dragId = null;
+		dragOrder = null;
 	}
-	// A platform whose views are read for none of the videos (Facebook without
-	// read_insights) says so, rather than +0.
-	const viewsUnread = $derived(
-		new Set(view.platforms.filter((p) => !inViewList.some((r) => typeof r.posts[p]?.views === 'number')))
-	);
+
+	function onGripKey(event: KeyboardEvent, id: string) {
+		const by = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
+		if (!by) return;
+		event.preventDefault();
+		setLayout(moveBox(layout, id, layout.indexOf(id) + by));
+		void tick().then(() => document.querySelector<HTMLElement>(`[data-grip="${CSS.escape(id)}"]`)?.focus());
+	}
+
+	// Escape closes the picker, not the Dashboard: caught on the picker and its
+	// button, before DashboardOverlay's window listener sees it.
+	function onPickerKey(event: KeyboardEvent) {
+		if (event.key !== 'Escape' || !picking) return;
+		event.preventDefault();
+		picking = false;
+	}
+
+	$effect(() => {
+		if (!editing) picking = false;
+	});
 
 	/* ---- side notes: when each platform was read, and what is left of the day ---- */
 
@@ -1472,16 +1445,6 @@
 	const num = (n: number | null | undefined) => (n == null ? '—' : whole.format(n));
 	/** Big, but readable: 12,345 up to five digits, 123.4K past them. */
 	const big = (n: number) => (n >= 100_000 ? compact.format(n) : whole.format(n));
-	/** The period boxes' numbers: 999, then 1k, 1.2k, 85.8k, 102k (shortCount); the popups have them exact. */
-	const short = (n: number) => shortCount(n);
-	/** An average box's numbers: 1.4, then as `short`; the popups have one decimal. */
-	const avg = (n: number) => averageCount(n);
-	const avgExact = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
-	const signedAvg = (n: number) => (avg(n) === '0' ? '0' : n > 0 ? `+${avg(n)}` : `−${avg(-n)}`);
-	const signedAvgExact = (n: number) => {
-		const text = avgExact.format(Math.abs(n));
-		return text === '0' ? '0' : n > 0 ? `+${text}` : `−${text}`;
-	};
 	/** The list's counts, shortened the same way; `exact` puts the whole figure on hover. */
 	const count = (n: number | null | undefined) => (n == null ? '—' : shortCount(n));
 	const exact = (n: number | null | undefined) => (n != null && Math.abs(n) >= 1000 ? whole.format(n) : undefined);
@@ -2009,7 +1972,7 @@
 	<!-- One row: what is looked at, for which brand, as which accounts — and when each was read. -->
 	<h1 class="hidden">Dashboard</h1>
 	<div class="toolbar">
-		<DashFilter bind:filter {counts} overridden={ratioView} earliest={firstDay} />
+		<DashFilter bind:filter {counts} overridden={ratioView} />
 		{#if brands.multiple}
 			<div class="brands" role="radiogroup" aria-label="Brand in view">
 				{#each devtestDashboardScopes as s (s.label)}
@@ -2240,267 +2203,100 @@
 		<p class="banner bad">Could not reach PocketBase — {error}</p>
 	{/if}
 
-	<!-- The period boxes, 3 to 5, each chosen from its heading (periodboxes.ts). Near the strip's right edge
-	     the last box makes room for a + that adds one, while fewer than 5. -->
-	<section
-		class="card periods"
-		class:adding={nearAdd && canAddBox(boxes)}
-		aria-label="Numbers by period"
-		style:--boxes={boxes.length}
-		style:--boxes-narrow={Math.min(boxes.length, 3)}
-		onpointermove={onStripPointer}
-		onpointerleave={() => (nearAdd = false)}
-	>
-		{#each boxes as choice, i (i)}
-			{@const nums = boxNumbers[i]}
-			<div class="period" class:none={!choice}>
-				<div class="phead">
-					<h2>
-						<button
-							class="pick"
-							type="button"
-							aria-haspopup="menu"
-							aria-expanded={boxMenu === i}
-							title="Choose what this box shows"
-							onclick={() => (boxMenu = boxMenu === i ? null : i)}
-							onkeydown={onBoxMenuKey}
-						>
-							{boxLabel(choice)}
-							<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" /></svg>
-						</button>
-					</h2>
-					{#if boxMenu === i}
-						<div class="pmenu" role="menu" aria-label="What this box shows" tabindex="-1" onkeydown={onBoxMenuKey}>
-							<button
-								type="button"
-								role="menuitemradio"
-								aria-checked={choice === null}
-								title={boxes.length > MIN_BOXES ? 'Takes this box away' : 'Leaves this box empty: the strip keeps at least 3'}
-								onclick={() => pickBox(i, null)}>None</button
-							>
-							{#each MENU_GROUPS as group (group.kind)}
-								<hr />
-								<p class="pmhead">{group.title}</p>
-								{#each KIND_PERIODS[group.kind] as key (key)}
-									{@const option = { kind: group.kind, period: key } as BoxChoice}
-									<button
-										type="button"
-										role="menuitemradio"
-										aria-checked={sameBox(choice, option)}
-										onclick={() => pickBox(i, option)}>{group.labels[key]}</button
-									>
-								{/each}
+	<!-- The stat boxes this profile placed (statbox.ts), each counting by its own
+	     settings; in Edit mode moved by their grips, taken off with ×, and added
+	     with + while another fits. -->
+	{#if placed.length > 0 || editing}
+		<section
+			class="card periods"
+			class:editingboxes={editing}
+			aria-label="Stat boxes"
+			bind:clientWidth={stripWidth}
+		>
+			{#each placed as b, i (b.id)}
+				<StatBoxCard
+					box={b}
+					{releases}
+					followers={followersInView}
+					now={nowDate}
+					leftward={i >= placed.length - 2 && i > 0}
+				>
+					{#snippet head()}
+						{#if editing}
+							<span class="boxtools" class:dragging={dragId === b.id}>
+								<button
+									class="boxtool grip"
+									type="button"
+									data-grip={b.id}
+									aria-label="Move {boxName(b)} (arrow keys)"
+									title="Drag to move it"
+									onpointerdown={(e) => onGripDown(e, b.id)}
+									onpointermove={onGripMove}
+									onpointerup={onGripUp}
+									onpointercancel={onGripUp}
+									onkeydown={(e) => onGripKey(e, b.id)}
+								>
+									<svg viewBox="0 0 16 16" aria-hidden="true">
+										<circle cx="6" cy="4" r="1.1" /><circle cx="10" cy="4" r="1.1" /><circle cx="6" cy="8" r="1.1" /><circle
+											cx="10"
+											cy="8"
+											r="1.1"
+										/><circle cx="6" cy="12" r="1.1" /><circle cx="10" cy="12" r="1.1" />
+									</svg>
+								</button>
+								<button
+									class="boxtool"
+									type="button"
+									aria-label="Take {boxName(b)} off the Dashboard"
+									title="Take it off the Dashboard (it stays among the stat boxes)"
+									onclick={() => setLayout(unplaceBox(layout, b.id))}
+								>
+									<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
+								</button>
+							</span>
+						{/if}
+					{/snippet}
+				</StatBoxCard>
+			{/each}
+			{#if editing && (canPlace || placed.length === 0)}
+				<div class="addslot">
+					<button
+						class="addbox"
+						type="button"
+						aria-haspopup="menu"
+						aria-expanded={picking}
+						onclick={() => (picking = !picking)}
+						onkeydown={onPickerKey}
+					>
+						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
+						{placed.length === 0 ? 'Add a stat box' : 'Add'}
+					</button>
+					{#if picking}
+						<div class="boxpicker" role="menu" aria-label="Stat boxes to add" tabindex="-1" onkeydown={onPickerKey}>
+							{#if unplaced.length === 0}
+								<p class="pickempty">Every stat box is on the Dashboard already.</p>
+							{/if}
+							{#each unplaced as b (b.id)}
+								{@const room = fits(b)}
+								<button
+									type="button"
+									role="menuitem"
+									disabled={!room}
+									title={room ? boxSummary(b) : 'Too wide for the room left in the row: take a box off first'}
+									onclick={() => place(b.id)}
+								>
+									<span class="pickname">{boxName(b)}</span>
+									<span class="pickby" class:flock={isFlockBox(b)}>by {creatorWords(b, users.list)}</span>
+									<span class="picksum">{boxSummary(b)}</span>
+								</button>
 							{/each}
+							<a class="picknew" href="{base}/settings?section=dashboard&tab=boxes">Make a new stat box…</a>
 						</div>
 					{/if}
 				</div>
-				{#if nums && 'plain' in nums}
-					{@const period = nums.plain}
-					<div class="trio">
-						<div>
-							<span class="bignum accent">{short(period.released)}</span>
-							<span class="unit">{period.released === 1 ? 'video' : 'videos'}</span>
-						</div>
-						<!-- The views' gains and each platform's share, on hover or focus. -->
-						<div class="hold">
-							<button class="holdnum" aria-describedby="views-{i}">
-								<span class="bignum">{short(period.views)}</span>
-								<span class="unit">views</span>
-							</button>
-							<div class="ppop" id="views-{i}" role="tooltip">
-								<p class="gained"><strong class="exact">{whole.format(period.views)}</strong> views on the videos out</p>
-								<p class="gained">
-									<strong>+{whole.format(period.gained)}</strong> views gained{period.partly ? ' (at least)' : ''}
-								</p>
-								<p class="pnote">
-									{#if period.key === 'lifetime' && filter.range}
-										Every view of the videos out in the timeframe ({timeframeWords(filter)}).
-									{:else if period.key === 'lifetime'}
-										Every view of every video in view, since each went out.
-									{:else}
-										Views every video in view gained since the start of the period{period.partly
-											? '. Some were not read yet at its start, so they count from when flock first read them.'
-											: '.'}
-									{/if}
-								</p>
-								{#each view.platforms as p (p)}
-									<p class="pline">
-										<i style:background={PLATFORM_COLOURS[p]}></i>
-										<span class="pname">{PLATFORMS[p].label}</span>
-										{#if viewsUnread.has(p)}
-											<span class="pval">views not read yet</span>
-										{:else}
-											<span class="pval">{whole.format(period.byPlatform[p].views)} on the videos out</span>
-											<strong>+{whole.format(period.byPlatform[p].gained)}</strong>
-										{/if}
-									</p>
-								{/each}
-							</div>
-						</div>
-						<div class="hold">
-							<button class="holdnum" aria-describedby="likes-{i}">
-								<span class="bignum">{short(period.likes)}</span>
-								<span class="unit">likes</span>
-							</button>
-							<div class="ppop" id="likes-{i}" role="tooltip">
-								<p class="gained"><strong class="exact">{whole.format(period.likes)}</strong> likes on the videos out</p>
-								<p class="pnote">The likes the videos that went out in the period have now.</p>
-								{#each view.platforms as p (p)}
-									<p class="pline">
-										<i style:background={PLATFORM_COLOURS[p]}></i>
-										<span class="pname">{PLATFORMS[p].label}</span>
-										<span class="pval">{whole.format(period.byPlatform[p].likes)}</span>
-									</p>
-								{/each}
-							</div>
-						</div>
-						<div class="hold">
-							<button class="holdnum" aria-describedby="followers-{i}">
-								<span class="bignum" class:faint={!period.followers}
-									>{period.followers ? signedShort(period.followers.gained) : '—'}</span
-								>
-								<span class="unit">follows</span>
-							</button>
-							<div class="ppop" id="followers-{i}" role="tooltip">
-								<p class="gained">
-									{#if period.followers}
-										<strong class:down={period.followers.gained < 0}>{signed(period.followers.gained)}</strong> followers and
-										subscribers{period.followers.partly ? ' (since flock began reading them)' : ''}
-									{:else}
-										No follower counts read yet
-									{/if}
-								</p>
-								<p class="pnote">
-									{period.key === 'lifetime' && !filter.range
-										? "The accounts' counts now: everyone who follows them."
-										: "How far the accounts' counts moved since the start of the period: followers won less followers lost."}
-								</p>
-								{#each view.platforms as p (p)}
-									{@const gain = period.byPlatform[p].followers}
-									<p class="pline">
-										<i style:background={PLATFORM_COLOURS[p]}></i>
-										<span class="pname">{PLATFORMS[p].label}</span>
-										<span class="pval">{gainWords(gain, p)}</span>
-									</p>
-								{/each}
-							</div>
-						</div>
-					</div>
-				{:else if nums && 'average' in nums}
-					{@const a = nums.average}
-					{@const perVideo = nums.perVideo}
-					{@const per = perVideo ? 'a video' : AVERAGE_PER[a.key]}
-					{@const empty = !a.periods || (perVideo && a.released === 0)}
-					<div class="trio">
-						{#if !perVideo}
-							<div>
-								<span class="bignum accent" class:faint={empty}>{empty ? '—' : avg(a.released)}</span>
-								<span class="unit">{avg(a.released) === '1' ? 'video' : 'videos'}</span>
-							</div>
-						{/if}
-						<div class="hold">
-							<button class="holdnum" aria-describedby="views-{i}">
-								<span class="bignum" class:faint={empty}>{empty ? '—' : avg(a.views)}</span>
-								<span class="unit">views</span>
-							</button>
-							<div class="ppop" id="views-{i}" role="tooltip">
-								{#if !empty}
-									<p class="gained"><strong class="exact">{avgExact.format(a.views)}</strong> views {per}</p>
-								{/if}
-								<p class="pnote">{averageNote(a, perVideo)}</p>
-								{#if !empty}
-									{#each view.platforms as p (p)}
-										<p class="pline">
-											<i style:background={PLATFORM_COLOURS[p]}></i>
-											<span class="pname">{PLATFORMS[p].label}</span>
-											<span class="pval"
-												>{viewsUnread.has(p) ? 'views not read yet' : `${avgExact.format(a.byPlatform[p].views)} ${per}`}</span
-											>
-										</p>
-									{/each}
-								{/if}
-							</div>
-						</div>
-						<div class="hold">
-							<button class="holdnum" aria-describedby="likes-{i}">
-								<span class="bignum" class:faint={empty}>{empty ? '—' : avg(a.likes)}</span>
-								<span class="unit">likes</span>
-							</button>
-							<div class="ppop" id="likes-{i}" role="tooltip">
-								{#if !empty}
-									<p class="gained"><strong class="exact">{avgExact.format(a.likes)}</strong> likes {per}</p>
-								{/if}
-								<p class="pnote">{averageNote(a, perVideo)}</p>
-								{#if !empty}
-									{#each view.platforms as p (p)}
-										<p class="pline">
-											<i style:background={PLATFORM_COLOURS[p]}></i>
-											<span class="pname">{PLATFORMS[p].label}</span>
-											<span class="pval">{avgExact.format(a.byPlatform[p].likes)} {per}</span>
-										</p>
-									{/each}
-								{/if}
-							</div>
-						</div>
-						<div class="hold">
-							<button class="holdnum" aria-describedby="followers-{i}">
-								<span class="bignum" class:faint={!a.followers || empty}
-									>{a.followers && !empty ? signedAvg(a.followers.gained) : '—'}</span
-								>
-								<span class="unit">follows</span>
-							</button>
-							<div class="ppop" id="followers-{i}" role="tooltip">
-								<p class="gained">
-									{#if a.followers && !empty}
-										<strong class:down={a.followers.gained < 0}>{signedAvgExact(a.followers.gained)}</strong> followers and
-										subscribers {per}{a.followers.partly ? ' (over the stretch flock read them)' : ''}
-									{:else}
-										No follower counts read for it yet
-									{/if}
-								</p>
-								<p class="pnote">
-									{a.key === 'lifetime' && a.ranged
-										? "How far the accounts' counts moved in the timeframe, shared over the videos out in it."
-										: a.key === 'lifetime'
-										? "The accounts' counts now, shared over the videos out."
-										: perVideo
-											? "How far the accounts' counts moved over the same whole periods, shared over the videos that went out in them. A count flock began reading later is scaled up from what it read."
-											: `How far the accounts' counts moved ${per}, on average over the same whole periods: followers won less followers lost. A count flock began reading later is scaled up from what it read.`}
-								</p>
-								{#each view.platforms as p (p)}
-									{@const gain = a.byPlatform[p].followers}
-									<p class="pline">
-										<i style:background={PLATFORM_COLOURS[p]}></i>
-										<span class="pname">{PLATFORMS[p].label}</span>
-										<span class="pval"
-											>{gain && !empty
-												? `${signedAvgExact(gain.gained)} ${per}${gain.partly ? ' (scaled from what flock read)' : ''}`
-												: 'not read yet'}</span
-										>
-									</p>
-								{/each}
-							</div>
-						</div>
-					</div>
-				{:else}
-					<p class="pempty">Nothing here yet — choose what this box shows from its heading.</p>
-				{/if}
-			</div>
-		{/each}
-		{#if canAddBox(boxes)}
-			<button
-				class="addbox"
-				type="button"
-				aria-label="Add a box"
-				title="Add a box"
-				onfocus={() => (nearAdd = true)}
-				onblur={() => (nearAdd = false)}
-				onclick={addPeriodBox}
-			>
-				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
-			</button>
-		{/if}
-	</section>
+			{/if}
+		</section>
+	{/if}
 
 	{#if noChannel}
 		<p class="banner">
@@ -2511,9 +2307,10 @@
 
 	{#if editing}
 		<p class="banner editing">
-			<strong>EDITING VIDEOS</strong> — Press the pencil beside a title to rename that video on every platform it
-			is on, or on some only; the worker renames it within seconds. The eye hides a video from the Dashboard —
-			the list, the totals, the periods and the usual; while editing, hidden ones stay in the list, faded, so the eye
+			<strong>EDITING</strong> — Stat boxes: drag one by its grip to move it, × takes it off, + adds one while
+			another fits (they are made under Settings → Dashboard → Stat boxes). Press the pencil beside a title to
+			rename that video on every platform it is on, or on some only; the worker renames it within seconds. The eye
+			hides a video from the Dashboard — the list, the totals, the stat boxes and the usual; while editing, hidden ones stay in the list, faded, so the eye
 			can show one again. <em>Hidden</em> in the filter shows them outside Edit mode too.
 			{#if marksJestr}Click a video to mark it as a Jestr campaign, or to take the mark off.{/if}
 			Press <strong>■</strong> when finished.
@@ -3407,54 +3204,98 @@
 		color: var(--text-faint);
 	}
 
+	/* The stat boxes: a row of them, each as wide as its numbers want, wrapping
+	   only when the window is narrower than when they were placed. */
 	.periods {
 		position: relative;
-		display: grid;
-		grid-template-columns: repeat(var(--boxes, 5), minmax(0, 1fr));
+		display: flex;
+		flex-wrap: wrap;
+		row-gap: 14px;
 		margin-bottom: 14px;
 		padding: 14px 0;
-		container-type: inline-size;
-		transition: padding-right 0.22s ease;
 	}
 
-	/* Near the right edge the last box draws back and shows the +. */
-	.periods.adding {
-		padding-right: 54px;
+	.periods.editingboxes {
+		border-color: color-mix(in oklab, var(--pink) 45%, var(--border));
+	}
+
+	.boxtools {
+		display: inline-flex;
+		flex: none;
+		gap: 2px;
+		margin: -3px -6px 0 0;
+	}
+
+	.boxtool {
+		display: grid;
+		place-items: center;
+		width: 22px;
+		height: 22px;
+		padding: 0;
+		border: 1px solid transparent;
+		border-radius: 6px;
+		background: none;
+		color: var(--text-faint);
+		cursor: pointer;
+	}
+
+	.boxtool.grip {
+		cursor: grab;
+		touch-action: none;
+	}
+
+	.dragging .grip {
+		cursor: grabbing;
+		border-color: var(--pink);
+		color: var(--text);
+	}
+
+	.boxtool:hover,
+	.boxtool:focus-visible {
+		border-color: var(--border-strong);
+		background: var(--surface-2);
+		color: var(--text);
+	}
+
+	.boxtool svg {
+		width: 13px;
+		height: 13px;
+		fill: currentColor;
+		stroke: currentColor;
+		stroke-width: 1.6;
+		stroke-linecap: round;
+	}
+
+	.grip svg {
+		stroke: none;
+	}
+
+	.addslot {
+		position: relative;
+		display: flex;
+		flex: 0 0 auto;
+		align-items: center;
+		padding: 0 18px;
 	}
 
 	.addbox {
-		position: absolute;
-		top: 50%;
-		right: 11px;
-		display: grid;
-		place-items: center;
-		width: 32px;
-		height: 32px;
-		margin-top: -16px;
-		padding: 0;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		height: 34px;
+		padding: 0 14px 0 10px;
 		border: 1px dashed var(--border-strong);
-		border-radius: 50%;
+		border-radius: 999px;
 		background: var(--surface-2);
 		color: var(--text-dim);
+		font: inherit;
+		font-size: 12.5px;
 		cursor: pointer;
-		opacity: 0;
-		pointer-events: none;
-		transform: scale(0.7);
-		transition:
-			opacity 0.18s,
-			transform 0.18s,
-			color 0.12s,
-			border-color 0.12s;
-	}
-
-	.periods.adding .addbox {
-		opacity: 1;
-		pointer-events: auto;
-		transform: none;
 	}
 
 	.addbox:hover,
-	.addbox:focus-visible {
+	.addbox:focus-visible,
+	.addbox[aria-expanded='true'] {
 		border-style: solid;
 		border-color: var(--pink);
 		color: var(--text);
@@ -3469,53 +3310,16 @@
 		stroke-linecap: round;
 	}
 
-	/* A box's heading is its menu: what it shows, chosen there. */
-	.phead {
-		position: relative;
-	}
-
-	.pick {
-		display: inline-flex;
-		align-items: center;
-		gap: 5px;
-		padding: 0;
-		border: 0;
-		background: none;
-		color: inherit;
-		font: inherit;
-		letter-spacing: inherit;
-		text-transform: inherit;
-		cursor: pointer;
-	}
-
-	.pick:hover,
-	.pick:focus-visible,
-	.pick[aria-expanded='true'] {
-		color: var(--text);
-	}
-
-	.pick svg {
-		width: 9px;
-		height: 9px;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.6;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-		transition: transform 0.15s;
-	}
-
-	.pick[aria-expanded='true'] svg {
-		transform: rotate(180deg);
-	}
-
-	.pmenu {
+	.boxpicker {
 		position: absolute;
-		top: calc(100% + 2px);
-		left: -8px;
+		top: calc(100% + 6px);
+		right: 18px;
 		z-index: 40;
 		display: grid;
-		min-width: 180px;
+		gap: 2px;
+		width: 340px;
+		max-height: min(420px, 60vh);
+		overflow-y: auto;
 		padding: 6px;
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius);
@@ -3523,246 +3327,68 @@
 		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 	}
 
-	.pmenu button {
-		position: relative;
-		padding: 5px 10px 5px 26px;
+	.boxpicker button {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 2px 10px;
+		padding: 7px 10px;
 		border: 0;
 		border-radius: var(--radius-sm);
 		background: none;
-		color: var(--text-dim);
+		color: var(--text);
 		font: inherit;
-		font-size: 12.5px;
 		text-align: left;
 		cursor: pointer;
 	}
 
-	.pmenu button:hover,
-	.pmenu button:focus-visible {
+	.boxpicker button:hover:not(:disabled),
+	.boxpicker button:focus-visible {
 		background: var(--surface-2);
-		color: var(--text);
 	}
 
-	.pmenu button[aria-checked='true'] {
-		color: var(--text);
+	.boxpicker button:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
 	}
 
-	.pmenu button[aria-checked='true']::before {
-		content: '✓';
-		position: absolute;
-		left: 9px;
-		color: var(--pink);
+	.pickname {
+		font-size: 13px;
+		font-weight: 600;
 	}
 
-	.pmenu hr {
-		margin: 5px 2px;
-		border: 0;
-		border-top: 1px solid var(--border);
-	}
-
-	.pmhead {
-		margin: 2px 10px 3px;
-		font-size: 10.5px;
-		font-weight: 650;
-		letter-spacing: 0.09em;
-		text-transform: uppercase;
-		color: var(--text-faint);
-	}
-
-	.pempty {
-		margin: 4px 0 0;
-		font-size: 12px;
-		line-height: 1.45;
-		color: var(--text-faint);
-	}
-
-	/* Each box sizes its numbers to itself, so five of them never crowd. */
-	.period {
-		min-width: 0;
-		padding: 0 18px;
-		container-type: inline-size;
-	}
-
-	.period + .period {
-		border-left: 1px solid var(--border);
-	}
-
-	/* Each number as wide as it is, spread over the box: equal thirds let
-	   "166.2k" run into the followers beside it. */
-	.trio {
-		display: grid;
-		grid-auto-columns: auto;
-		grid-auto-flow: column;
-		justify-content: space-between;
-		gap: 8px;
-	}
-
-	/* Four numbers to a box: smaller than the list's, so five boxes still fit. */
-	.period .bignum {
-		font-size: clamp(16px, 8.5cqi, 25px);
-	}
-
-	.period .unit {
-		font-size: 10.5px;
-	}
-
-	/* A number whose details open on hover or focus. No min-width: 0 — the
-	   number's own width is the column's floor. */
-	.hold {
-		position: relative;
-	}
-
-	.holdnum {
-		display: block;
-		width: 100%;
-		padding: 0;
-		border: 0;
-		border-radius: 6px;
-		background: none;
-		color: inherit;
-		font: inherit;
-		text-align: left;
-		cursor: default;
-		outline-offset: 3px;
-	}
-
-	.hold:hover .bignum,
-	.holdnum:focus-visible .bignum {
-		text-decoration: underline dotted var(--text-faint);
-		text-underline-offset: 5px;
-		text-decoration-thickness: 1px;
-	}
-
-	.ppop {
-		position: absolute;
-		top: calc(100% + 8px);
-		left: 0;
-		z-index: 30;
-		display: grid;
-		gap: 5px;
-		width: max-content;
-		min-width: 230px;
-		max-width: min(340px, calc(100vw - 40px));
-		padding: 11px 13px;
-		border: 1px solid var(--border-strong);
-		border-radius: var(--radius);
-		background: var(--surface);
-		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-		font-size: 12px;
-		color: var(--text-dim);
-		font-variant-numeric: tabular-nums;
-		opacity: 0;
-		visibility: hidden;
-		transform: translateY(-4px);
-		transition:
-			opacity 0.14s,
-			transform 0.14s,
-			visibility 0s 0.14s;
-	}
-
-	/* Bridges the gap to the number, so the pointer can move onto the popup. */
-	.ppop::before {
-		content: '';
-		position: absolute;
-		left: 0;
-		right: 0;
-		top: -9px;
-		height: 9px;
-	}
-
-	/* The last boxes open theirs leftwards, so they stay on screen. */
-	.period:nth-last-child(-n + 2 of .period) .ppop {
-		left: auto;
-		right: 0;
-	}
-
-	.hold:hover .ppop,
-	.hold:focus-within .ppop {
-		opacity: 1;
-		visibility: visible;
-		transform: none;
-		transition:
-			opacity 0.14s,
-			transform 0.14s;
-	}
-
-	.ppop p {
-		margin: 0;
-	}
-
-	.ppop .gained {
-		margin: 0;
-		font-size: 12.5px;
-		color: var(--text);
-	}
-
-	.ppop .pnote {
-		margin-bottom: 4px;
+	.pickby {
 		font-size: 11px;
-		line-height: 1.45;
-		color: var(--text-faint);
-	}
-
-	.pline {
-		display: grid;
-		grid-template-columns: 8px auto minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 7px;
-	}
-
-	.pline i {
-		width: 8px;
-		height: 8px;
-		border-radius: 2px;
-	}
-
-	.pname {
-		color: var(--text);
-	}
-
-	.pval {
-		color: var(--text-faint);
-	}
-
-	.pline strong,
-	.ppop .gained strong {
-		color: var(--ok);
-		font-weight: 650;
-	}
-
-	.ppop strong.exact {
-		color: var(--text);
-	}
-
-	.ppop strong.down {
 		color: var(--warn);
 	}
 
-	.bignum {
-		display: block;
-		font-size: clamp(20px, 11cqi, 32px);
-		font-weight: 700;
-		line-height: 1.05;
-		letter-spacing: -0.02em;
-		font-variant-numeric: tabular-nums;
-		color: var(--text);
-	}
-
-	.bignum.faint {
+	.pickby.flock {
 		color: var(--text-faint);
 	}
 
-	.bignum.accent {
-		background: var(--accent-grad);
-		-webkit-background-clip: text;
-		background-clip: text;
-		color: transparent;
+	.picksum {
+		grid-column: 1 / -1;
+		font-size: 11px;
+		line-height: 1.4;
+		color: var(--text-faint);
 	}
 
-	.unit {
-		display: block;
-		margin-top: 3px;
-		font-size: 11.5px;
-		color: var(--text-dim);
+	.pickempty {
+		margin: 6px 10px;
+		font-size: 12px;
+		color: var(--text-faint);
+	}
+
+	.picknew {
+		margin-top: 4px;
+		padding: 7px 10px;
+		border-top: 1px solid var(--border);
+		font-size: 12.5px;
+		color: var(--pink);
+		text-decoration: none;
+	}
+
+	.picknew:hover {
+		text-decoration: underline;
 	}
 
 
@@ -4855,25 +4481,6 @@
 
 	/* ---- narrower ---- */
 
-	/* Five boxes need about 230px each; below that they go three to a row. */
-	@media (max-width: 1440px) {
-		.periods {
-			grid-template-columns: repeat(var(--boxes-narrow, 3), minmax(0, 1fr));
-			row-gap: 14px;
-		}
-		.period:nth-child(3n + 1) {
-			border-left: 0;
-		}
-		.period:nth-child(3n) .ppop {
-			left: auto;
-			right: 0;
-		}
-		.period:nth-child(n + 4) {
-			padding-top: 12px;
-			border-top: 1px solid var(--border);
-		}
-	}
-
 	@media (max-width: 1200px) {
 		.list {
 			--thumbcol: 56px;
@@ -4903,17 +4510,7 @@
 			left: 0;
 		}
 		.periods {
-			grid-template-columns: minmax(0, 1fr);
-			gap: 14px;
-		}
-		.period + .period {
-			border-left: 0;
-			border-top: 1px solid var(--border);
-			padding-top: 12px;
-		}
-		.period .hold:last-child .ppop {
-			left: auto;
-			right: 0;
+			flex-direction: column;
 		}
 		.list {
 			--thumbcol: 48px;
