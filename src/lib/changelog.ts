@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-04T16:02:02+01:00', version: '0.22.10', line: 'Fixed: Delete > Hover Text' },
 	{ at: '2026-11-04T15:42:12+01:00', version: '0.22.9', line: 'Changed: Stat Box > Follows' },
 	{ at: '2026-11-04T15:29:19+01:00', version: '0.22.8', line: 'Changed: Dashboard > Filter' },
 	{ at: '2026-11-04T14:56:01+01:00', version: '0.22.7', line: 'Added: TikTok Sign-in' },

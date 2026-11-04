@@ -91,9 +91,11 @@
 		color: var(--bg);
 	}
 
-	.confirm.danger.armed {
+	/* White on red, hovered too: the hover rule above would paint the text red on red. */
+	.confirm.danger.armed,
+	.confirm.danger.armed:hover:not(:disabled) {
 		background: var(--danger);
-		color: var(--bg);
+		color: #fff;
 	}
 
 	.confirm:disabled {
