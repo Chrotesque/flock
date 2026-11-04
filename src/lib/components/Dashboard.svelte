@@ -4,6 +4,7 @@
 	import PlatformIcon from './PlatformIcon.svelte';
 	import TikTokSignin from './TikTokSignin.svelte';
 	import { canRead } from '$lib/tiktoksignin';
+	import { footNote } from '$lib/dashfoot';
 	import DashFilter from './DashFilter.svelte';
 	import ViewsCurve from './ViewsCurve.svelte';
 	import RenameDialog from './RenameDialog.svelte';
@@ -1409,7 +1410,8 @@
 	/** The status icon's popup: a line per platform read, each with its level. */
 	const statusLines = $derived.by(() => {
 		const lines: StatusLine[] = [];
-		if (ytBeat) {
+		const inView = (p: StatPlatform) => view.platforms.includes(p);
+		if (ytBeat && inView('youtube')) {
 			const { quota } = ytBeat;
 			const limit = { used: quota.units, total: quota.ceiling, words: 'units used today' };
 			lines.push({
@@ -1424,7 +1426,7 @@
 				costs: { rows: quota.rows, uploads: quota.uploads }
 			});
 		}
-		if (noteInstagram) {
+		if (noteInstagram && inView('instagram')) {
 			const limit = allowance ? { used: allowance.used, total: allowance.total, words: 'posts in the last 24 h' } : null;
 			lines.push({
 				platform: 'instagram',
@@ -1437,7 +1439,7 @@
 				note: ''
 			});
 		}
-		if (noteTikTok) {
+		if (noteTikTok && inView('tiktok')) {
 			const missing = ttBeat?.missing ?? [];
 			const counts = ttBeat?.counts;
 			lines.push({
@@ -1468,7 +1470,7 @@
 								: ''
 			});
 		}
-		if (noteFacebook) {
+		if (noteFacebook && inView('facebook')) {
 			lines.push({
 				platform: 'facebook',
 				who: accountOf('facebook'),
@@ -1568,6 +1570,11 @@
 	function linkTitle(p: PlatformId): string {
 		const label = PLATFORMS[p].label;
 		return isStatPlatform(p) ? `Open on ${label}` : `Open on ${label} — flock posted it there but does not read its views yet`;
+	}
+
+	/** A platform the filter shows: the others' marks and links stay off the Dashboard. */
+	function shownPlatform(p: PlatformId): boolean {
+		return (view.platforms as readonly string[]).includes(p);
 	}
 
 	function matchWords(release: Release): string {
@@ -1841,8 +1848,8 @@
 					<span class="dot">·</span><span class="hid" title="Hidden in Edit mode: shown only while the filter's Hidden is on, and never part of the usual">hidden</span>
 				{/if}
 				<span class="dot">·</span>
-				<span class="marks" title={matchWords(r)}>
-					{#each ALL_PLATFORMS.filter((p) => r.links[p]) as p (p)}
+				<span class="marks" title={multi ? matchWords(r) : ''}>
+					{#each ALL_PLATFORMS.filter((p) => r.links[p] && shownPlatform(p)) as p (p)}
 						<span class="mark" class:unread={!isStatPlatform(p)}><PlatformIcon platform={p} size={11} /></span>
 					{/each}
 				</span>
@@ -2513,7 +2520,7 @@
 								</h4>
 								<ViewsCurve curves={row.curves} big />
 								<p class="links">
-									{#each ALL_PLATFORMS.filter((p) => r.links[p]) as p (p)}
+									{#each ALL_PLATFORMS.filter((p) => r.links[p] && shownPlatform(p)) as p (p)}
 										<a href={r.links[p]} target="_blank" rel="noopener" title={linkTitle(p)}
 											><PlatformIcon platform={p} size={13} /> {PLATFORMS[p].label}</a
 										>
@@ -2521,7 +2528,7 @@
 									{#if r.job}
 										<a href="{base}/log/upload?job={encodeURIComponent(r.job)}">Upload overview</a>
 									{/if}
-									{#if r.matched}<span class="match">{matchWords(r)}</span>{/if}
+									{#if r.matched && multi}<span class="match">{matchWords(r)}</span>{/if}
 								</p>
 							</div>
 						</div>
@@ -2640,14 +2647,7 @@
 		{/if}
 	</details>
 
-	<p class="foot">
-		Views, likes and comments are each platform's own counters.
-		{combined || multi ? 'Sums across platforms, ' : ''}"usual", the verdicts and the curves are flock's arithmetic over them,
-		not figures any platform reports. A video's followers are Facebook's own count for a reel and YouTube Analytics' for a
-		video; for Instagram and TikTok, which only report how many an account has, and for YouTube's newest days they are
-		flock's estimate: each rise is credited to the videos gaining views at the time. TikTok lists public videos only. One
-		channel at a time; nothing is added up across channels.
-	</p>
+	<p class="foot">{footNote(view.platforms, combined || multi).join(' ')}</p>
 
 	<!-- A phone's tap on a sum: each platform's part of it, under the number. -->
 	{#if cell && cellInfo}
