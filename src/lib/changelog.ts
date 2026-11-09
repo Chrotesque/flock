@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-09T18:40:00+01:00', version: '0.22.14', line: 'Changed: Jestr > Blue Line' },
 	{ at: '2026-11-09T18:20:00+01:00', version: '0.22.13', line: 'Added: Jestr > Jestr Counts' },
 	{ at: '2026-11-09T18:19:00+01:00', version: '0.22.13', line: 'Added: Jestr > Impact Graph' },
 	{ at: '2026-11-09T18:18:00+01:00', version: '0.22.13', line: 'Changed: Jestr > Projects' },
