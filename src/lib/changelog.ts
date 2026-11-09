@@ -21,6 +21,8 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-09T18:46:00+01:00', version: '0.22.15', line: 'Added: Jestr > CSV Import' },
+	{ at: '2026-11-09T18:45:00+01:00', version: '0.22.15', line: 'Added: Jestr > Unlink Line' },
 	{ at: '2026-11-09T18:40:00+01:00', version: '0.22.14', line: 'Changed: Jestr > Blue Line' },
 	{ at: '2026-11-09T18:20:00+01:00', version: '0.22.13', line: 'Added: Jestr > Jestr Counts' },
 	{ at: '2026-11-09T18:19:00+01:00', version: '0.22.13', line: 'Added: Jestr > Impact Graph' },
