@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-09T16:31:00+01:00', version: '0.22.12', line: 'Added: Jestr > Dismiss' },
 	{ at: '2026-11-04T17:10:11+01:00', version: '0.22.11', line: 'Added: To finish > Dismiss' },
 	{ at: '2026-11-04T16:02:02+01:00', version: '0.22.10', line: 'Fixed: Delete > Hover Text' },
 	{ at: '2026-11-04T15:42:12+01:00', version: '0.22.9', line: 'Changed: Stat Box > Follows' },
