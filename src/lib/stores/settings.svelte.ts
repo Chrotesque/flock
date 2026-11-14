@@ -76,6 +76,16 @@ class SettingsStore {
 	}
 
 	/** Enabled for the brand in view but not offered, for want of an account. */
+	/**
+	 * Whether the brand in view has an account on one platform only. The
+	 * others are then left off the Upload screens altogether rather than shown
+	 * locked: with nothing to switch between, their marks would only name
+	 * platforms the brand does not use.
+	 */
+	get loneAccount(): boolean {
+		return this.ordered.filter((entry) => accounts.offer(entry.platform).offered).length === 1;
+	}
+
 	get withoutAccount(): PlatformId[] {
 		return this.ordered
 			.filter((entry) => entry.enabled && !accounts.offer(entry.platform).offered)

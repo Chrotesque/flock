@@ -35,9 +35,12 @@
 				offered,
 				why,
 				on,
-				complete: on && draft.isComplete(platform)
+				complete: on && draft.isComplete(platform),
+				noAccount: !accounts.offer(platform).offered
 			};
 		})
+			// A brand on one platform only shows that one (settings.loneAccount).
+			.filter((item) => !(settings.loneAccount && item.noAccount))
 	);
 
 	let composing = $derived(

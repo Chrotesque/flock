@@ -79,7 +79,8 @@ export function tiktokImageNote(
 	if (picked.length > 0) {
 		return `No cover image yet: pick one while writing for ${picked.join(' or ')}. Without one, TikTok uses its cover frame.`;
 	}
-	return 'TikTok takes the cover image picked for Instagram or Facebook. Neither is in this upload, so it uses its cover frame.';
+	// Names no other platform: the upload may be TikTok's alone.
+	return 'No cover image in this upload, so TikTok uses its cover frame.';
 }
 
 interface Limit {

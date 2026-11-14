@@ -110,7 +110,7 @@ describe("TikTok's Cover box note", () => {
 
 	it('says where to pick one, or that there is nowhere to', () => {
 		expect(tiktokImageNote(['instagram', 'tiktok'], true, null)).toMatch(/^No cover image yet: pick one while writing for Instagram\./);
-		expect(tiktokImageNote(['tiktok'], true, null)).toMatch(/Neither is in this upload/);
+		expect(tiktokImageNote(['tiktok'], true, null)).toBe('No cover image in this upload, so TikTok uses its cover frame.');
 	});
 
 	it('says when the picture does not fit TikTok', () => {

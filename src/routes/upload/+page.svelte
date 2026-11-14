@@ -1021,7 +1021,7 @@
 				<p class="banner error">Could not reach PocketBase — {settings.error}</p>
 			{/if}
 
-			{#if brands.multiple && settings.withoutAccount.length > 0 && phase !== 'uploading'}
+			{#if brands.multiple && !settings.loneAccount && settings.withoutAccount.length > 0 && phase !== 'uploading'}
 				<!-- Said, not hidden: a platform that silently vanished would look like a bug. -->
 				<p class="banner">
 					{settings.withoutAccount.map((id) => PLATFORMS[id].label).join(', ')}
