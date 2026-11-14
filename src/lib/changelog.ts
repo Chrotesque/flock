@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-14T15:29:00+01:00', version: '0.23.5', line: 'Fixed: Worker > Brand Space' },
 	{ at: '2026-11-14T15:25:00+01:00', version: '0.23.4', line: 'Added: Worker > Brand Names' },
 	{ at: '2026-11-14T15:12:00+01:00', version: '0.23.3', line: 'Changed: Instagram > Uploads' },
 	{ at: '2026-11-14T14:15:00+01:00', version: '0.23.2', line: 'Fixed: Worker > Late Posts' },

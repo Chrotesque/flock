@@ -390,7 +390,7 @@
 						<li class="wkjob" animate:flip={{ duration: 200 }} out:fade={{ duration: 160 }}>
 							<div class="wkhead">
 								<a class="title" href="{base}/log/upload?job={encodeURIComponent(job.job)}" title="Open this upload in the Log">
-									{#if brands.multiple && job.brand && brands.byId(job.brand)}{brands.byId(job.brand)?.name}: {/if}{job.title}
+									{#if brands.multiple && job.brand && brands.byId(job.brand)}{`${brands.byId(job.brand)?.name}: `}{/if}{job.title}
 								</a>
 								{#if job.done.length > 0}
 									<span
