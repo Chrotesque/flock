@@ -59,6 +59,8 @@ import {
 import { publishToTikTok, probeTikTok, refreshTikTokCreators, creatorInfo, privacyLabel, grantedTikTokScope } from './tiktok.mjs';
 import {
 	publishToInstagram,
+	prepareReel,
+	containerPlan,
 	probeInstagram,
 	publishReady,
 	dropHostedCover,
@@ -66,6 +68,18 @@ import {
 	accountInfo
 } from './instagram.mjs';
 import { instagramReady } from './accounts.mjs';
+import {
+	PREPARE_MS,
+	freshPrep,
+	giveUpText,
+	prepFingerprint,
+	prepLooksReady,
+	prepOf,
+	prepStep,
+	prepUsable,
+	readyPrep,
+	refusedPrep
+} from './igprep.mjs';
 import { copyToDestination, copyInto } from './archive.mjs';
 import { scanFolders, published } from './watch.mjs';
 import { readWatchConfig } from './folders.mjs';
@@ -273,13 +287,33 @@ async function handleTarget(pb, config, platform, target) {
 	target = fresh;
 	// Draining for an update: only a post whose slot has come still starts.
 	if (!hb.canPublish() && !dueWhileDraining(target.scheduled_at)) return;
+	// An Instagram reel goes out only from a container prepared ahead for the
+	// post as it is now (igprep.mjs); until then the preparing pass has it.
+	const prep = prepOf(target.handle);
+	if (platform === 'instagram') {
+		if (preparing.has(target.id)) return;
+		let fingerprint;
+		try {
+			const plan = containerPlan(config, target, job);
+			fingerprint = prepFingerprint({ params: plan.params, account: plan.account, job });
+		} catch {
+			return; // Said by the preparing pass.
+		}
+		if (!prepUsable(prep, { fingerprint, slot: target.scheduled_at, now: Date.now() })) return;
+	}
 
 	// Claim before starting, so a second pass cannot pick up the same row while
 	// its upload is in flight. The claim names this run, which is what lets
 	// the platform handle below be refused if the row has been taken over.
 	inHand.add(target.id);
 	try {
-		const claim = { run, role: config.role, claimedAt: new Date().toISOString() };
+		const claim = {
+			run,
+			role: config.role,
+			claimedAt: new Date().toISOString(),
+			// Kept, so a row put back in the queue is not uploaded again for nothing.
+			...(prep ? { prep } : {})
+		};
 		await pb.updateTarget(target.id, { status: 'publishing', error: '', handle: claim });
 		log(`claimed ${label}`);
 
@@ -1262,6 +1296,140 @@ async function nudgeMain(pb, config) {
 	}
 }
 
+/** Instagram rows a preparing try is at work on, and the accounts trying. */
+const preparing = new Set();
+const preparingAccounts = new Set();
+let preparingListed = false;
+
+/**
+ * Uploads Instagram reels ahead of their slot (igprep.mjs): every pending
+ * reel from 14 hours before its slot gets a container, tried again with
+ * growing pauses through Meta's refusals for up to 12 hours, then the post
+ * fails. One try at a time per account, so a long refusal streak on one reel
+ * does not hold another account's. The row stays `pending` — the page can
+ * still move, edit, release or delete it — and the slot pass claims it once
+ * a container made from the post as it is now is ready.
+ */
+async function preparePass(pb, config) {
+	if (preparingListed || dry || !hb.canPublish() || !ADAPTERS.instagram.ready(config)) return;
+	preparingListed = true;
+	let rows;
+	try {
+		rows = await pb.pendingTargets('instagram', new Date(Date.now() + PREPARE_MS));
+	} catch (err) {
+		log(`instagram preparing pass failed: ${err.message.split('\n')[0]}`);
+		return;
+	} finally {
+		preparingListed = false;
+	}
+	const now = Date.now();
+	for (const row of rows) {
+		if (preparing.has(row.id) || inHand.has(row.id)) continue;
+		let job;
+		let fingerprint;
+		let account;
+		try {
+			job = await pb.getJob(row.job);
+			if (job.source_local) continue;
+			const plan = containerPlan(config, row, job);
+			account = plan.account;
+			fingerprint = prepFingerprint({ params: plan.params, account, job });
+		} catch (err) {
+			noteOnce(`prep:${row.id}`, `instagram: cannot prepare "${row.title || row.description?.slice(0, 40) || row.id}" yet: ${err.message.split('\n')[0]}`);
+			continue;
+		}
+		const step = prepStep({ handle: row.handle, fingerprint, slot: row.scheduled_at, now });
+		if (step.action === 'wait' || step.action === 'ready') continue;
+		if (step.action === 'fail') {
+			const text = giveUpText(prepOf(row.handle));
+			await inJob(row.job, async () => {
+				await pb.updateTarget(row.id, { status: 'failed', error: text.slice(0, 1900) });
+				log(`FAILED instagram "${row.title || row.description?.slice(0, 40) || row.id}": ${text}`);
+				pb.log(`Instagram upload gave up`, `${row.title || '(no title)'}: ${text}`);
+			}).catch((err) => log(`instagram: could not mark "${row.title || row.description?.slice(0, 40) || row.id}" failed: ${err.message.split('\n')[0]}`));
+			continue;
+		}
+		if (preparingAccounts.has(account)) continue;
+		let prep = prepOf(row.handle);
+		if (step.action === 'start') {
+			prep = freshPrep({ fingerprint, account, now });
+			if (step.reason) inJob(row.job, () => log(`instagram "${row.title || row.description?.slice(0, 40) || row.id}": uploading again — ${step.reason}`));
+		}
+		preparing.add(row.id);
+		preparingAccounts.add(account);
+		void inJob(row.job, () => prepareOne(pb, config, row, job, prep))
+			.catch((err) => log(`instagram preparing "${row.title || row.description?.slice(0, 40) || row.id}" failed: ${err.message.split('\n')[0]}`))
+			.finally(() => {
+				preparing.delete(row.id);
+				preparingAccounts.delete(account);
+			});
+	}
+}
+
+/** Lines said once until their text changes. */
+const onceSaid = new Map();
+function noteOnce(key, message) {
+	if (onceSaid.get(key) === message) return;
+	onceSaid.set(key, message);
+	log(message);
+}
+
+/**
+ * One try at preparing a reel. The row's handle is written only while it is
+ * still a pending Instagram post with no move or request waiting, and only
+ * the handle — the page's own fields are never touched.
+ */
+async function prepareOne(pb, config, row, job, prep) {
+	const label = `instagram "${row.title || row.description?.slice(0, 40) || row.id}"`;
+	const write = async (next) => {
+		const now = await pb.getTarget(row.id).catch(() => null);
+		if (!now || now.status !== 'pending' || now.move || now.request || now.platform !== 'instagram') return false;
+		await pb.updateTarget(row.id, { handle: { prep: next } });
+		return true;
+	};
+	if (!(await write({ ...prep, state: 'trying', containerId: '' }))) return;
+	const tries = (Number(prep.tries) || 0) + 1;
+	if (tries > 1) log(`${label}: try ${tries}, refused since ${new Date(prep.since).toLocaleTimeString()}`);
+	const name = `Instagram, ahead of its slot: "${row.title || row.description?.slice(0, 60) || row.id}"`;
+	try {
+		const done = await hb.track(
+			`Uploading to ${name}`,
+			() =>
+				prepareReel({
+					target: row,
+					job,
+					pb,
+					config,
+					log: (message) => log(`  ${message}`),
+					onContainer: async (containerId) => {
+						if (!(await write({ ...prep, state: 'uploading', containerId }))) {
+							throw new Error('The post changed or left the queue; not uploading it.');
+						}
+					}
+				}),
+			{ publishing: true, job: job.id, platform: 'instagram' }
+		);
+		const next = readyPrep(prep, { containerId: done.containerId, notes: done.notes, now: Date.now() });
+		if (await write(next)) log(`${label}: uploaded and processed ahead of its slot (container ${done.containerId})`);
+	} catch (err) {
+		const message = err.message.split('\n')[0];
+		if (err.retry) {
+			const next = refusedPrep(prep, { error: message, now: Date.now() });
+			if (await write(next)) {
+				log(`${label}: ${message} — trying a new container at ${new Date(next.nextTryAt).toLocaleTimeString()}`);
+			}
+			return;
+		}
+		// Anything another container cannot get past (a file Instagram does not
+		// take, a lost grant): the post fails now, nothing having been posted.
+		const now = await pb.getTarget(row.id).catch(() => null);
+		if (now?.status === 'pending' && !now.move && !now.request) {
+			await pb.updateTarget(row.id, { status: 'failed', error: errorText(err).slice(0, 1900), handle: null });
+			log(`FAILED ${label}: ${message}`);
+		}
+	}
+}
+
 /** Lanes at work, `platform:account`, and platforms whose rows are being listed. */
 const busy = new Set();
 const listing = new Set();
@@ -1300,6 +1468,10 @@ async function slotPass(pb, config, { wait = false } = {}) {
 				listing.delete(platform);
 			}
 
+			// Instagram's are claimed only once prepared (igprep.mjs, preparePass).
+			if (platform === 'instagram') {
+				targets = targets.filter((t) => prepLooksReady(t.handle) && !preparing.has(t.id));
+			}
 			const lanes = new Map();
 			for (const target of targets) {
 				const key = `${platform}:${target.account ?? ''}`;
@@ -1427,9 +1599,11 @@ async function settleOrphan(pb, config, platform, row) {
 	inHand.add(row.id);
 	try {
 		if (verdict.action === 'requeue') {
+			const kept = prepOf(row.handle);
 			await pb.updateTarget(row.id, {
 				status: 'pending',
-				handle: null,
+				// A reel prepared ahead stays prepared; the claim reads it again.
+				handle: kept ? { prep: kept } : null,
 				error: `Queued again: ${verdict.reason}.`.slice(0, 1900)
 			});
 			log(`queued ${label} again — ${verdict.reason}`);
@@ -1439,7 +1613,7 @@ async function settleOrphan(pb, config, platform, row) {
 			await recordResult(pb, platform, row, probe.result, label);
 		} else if (verdict.action === 'publish') {
 			log(`${label} was processed but never published — publishing it now`);
-			const result = await hb.track(`Publishing to ${NAMES[platform]}: "${row.title || row.id}"`, () => adapter.publishReady(config, handle, row), {
+			const result = await hb.track(`Publishing to ${NAMES[platform]}: "${row.title || row.description?.slice(0, 40) || row.id}"`, () => adapter.publishReady(config, handle, row), {
 				publishing: true,
 				job: row.job,
 				platform
@@ -1788,7 +1962,7 @@ async function requestOne(pb, config, row) {
 async function editOne(pb, config, row, step) {
 	const name = NAMES[row.platform] ?? row.platform;
 	const edit = step.request;
-	const title = edit.title || row.title || row.id;
+	const title = edit.title || row.title || row.description?.slice(0, 40) || row.id;
 	const label = `${row.platform} "${title}"`;
 	const taken = { title: edit.title, description: edit.description, options: edit.options, request: null };
 
@@ -2480,6 +2654,7 @@ async function main() {
 	const slotTick = () => {
 		void accountPass(pb, config);
 		void slotPass(pb, config);
+		void preparePass(pb, config).catch((err) => log(`instagram preparing pass failed: ${err.message.split('\n')[0]}`));
 		void orphanPass(pb, config).catch((err) => log(`orphan check failed: ${err.message}`));
 		void movePass(pb, config).catch((err) => log(`move pass failed: ${err.message.split('\n')[0]}`));
 		void reschedulePass(pb, config).catch((err) => log(`reschedule pass failed: ${err.message.split('\n')[0]}`));

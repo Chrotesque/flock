@@ -52,7 +52,7 @@ describe('editHold', () => {
 		expect(editHold(post({ status: 'publishing' }), NOW)).toEqual({
 			refused: 'The worker has it ready for its minute; TikTok takes it as it is.'
 		});
-		expect(editHold(post({ platform: 'instagram', scheduled_at: at(0.15) }), NOW)).toEqual({
+		expect(editHold(post({ platform: 'instagram', scheduled_at: at(0.04) }), NOW)).toEqual({
 			refused: 'The worker takes it up for Instagram any moment now.'
 		});
 		expect(editHold(post({ status: 'cancelled' }), NOW)).toEqual({ refused: 'It was cancelled.' });

@@ -18,8 +18,9 @@ describe('lockReason', () => {
 	});
 
 	it('locks an Instagram or TikTok post the worker is about to take up, or has', () => {
-		expect(lockReason(post({ scheduled_at: minutes(9) }), now)).toMatch(/any moment/);
-		expect(lockReason(post({ scheduled_at: minutes(12) }), now)).toBe('');
+		// Instagram's reel is uploaded hours ahead but taken up two minutes before.
+		expect(lockReason(post({ scheduled_at: minutes(2) }), now)).toMatch(/any moment/);
+		expect(lockReason(post({ scheduled_at: minutes(4) }), now)).toBe('');
 		expect(lockReason(post({ platform: 'tiktok', scheduled_at: minutes(0.5) }), now)).toMatch(/any moment/);
 		expect(lockReason(post({ status: 'publishing' }), now)).toMatch(/takes it as it is/);
 	});

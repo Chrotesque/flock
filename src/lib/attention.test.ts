@@ -276,3 +276,30 @@ describe('dismissed keys', () => {
 		expect(next.at(-1)).toBe('new');
 	});
 });
+
+describe('an Instagram reel the worker is still uploading ahead (worker/igprep.mjs)', () => {
+	const prep = { state: 'trying', since: iso(now - 3 * H), tries: 7, lastError: 'Instagram refused the upload (400)' };
+	it('is late, not lost, once its slot has passed — a warning, never red', () => {
+		const items = targetProblems(
+			[target({ id: 'r', platform: 'instagram', scheduled_at: iso(now - 20 * 60_000), updated: iso(now - 30 * 60_000), prep })],
+			NOW,
+			label
+		);
+		expect(items.map((i) => [i.kind, i.level, i.key])).toEqual([['retrying', 'warn', 'retrying:r']]);
+		expect(items[0].text).toBe('instagram: "Clip" is late — Instagram keeps refusing the upload');
+		expect(items[0].detail).toMatch(/^Tried 7 times since \d\d:\d\d; flock keeps trying until \d\d:\d\d .* Last answer: Instagram refused/);
+		expect(hasFailure(items)).toBe(false);
+	});
+	it('says nothing before its slot', () => {
+		expect(targetProblems([target({ platform: 'instagram', scheduled_at: iso(now + H), prep })], NOW, label)).toEqual([]);
+	});
+	it('is never sent like any other once it is prepared and still not taken up', () => {
+		const ready = { ...prep, state: 'ready' };
+		const items = targetProblems(
+			[target({ platform: 'instagram', scheduled_at: iso(now - 20 * 60_000), updated: iso(now - 30 * 60_000), prep: ready })],
+			NOW,
+			label
+		);
+		expect(items.map((i) => i.kind)).toEqual(['unsent']);
+	});
+});

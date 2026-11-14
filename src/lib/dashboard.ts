@@ -49,6 +49,18 @@ export interface DashTarget {
 	updated?: string;
 	/** Ticked as a Jestr campaign at upload (jestrcampaign.ts). */
 	jestr?: boolean;
+	/** An Instagram reel the worker is uploading ahead of its slot (worker/igprep.mjs). */
+	prep?: PrepState;
+}
+
+/** What the page reads of `handle.prep`. */
+export interface PrepState {
+	/** 'trying', 'uploading' or 'ready'. */
+	state: string;
+	/** When this preparation began: the twelve hours of tries count from here. */
+	since: string;
+	tries: number;
+	lastError: string;
 }
 
 const MIN = 60_000;

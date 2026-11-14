@@ -245,12 +245,13 @@ Limits:
 ### Instagram
 
 Every video goes out as a Reel: MP4 or MOV, under 1 GB, 3 seconds to 15
-minutes. The worker uploads it ten minutes before its slot
-(`instagramLeadSeconds`) and publishes it on the minute. Instagram sometimes
-refuses an upload it had accepted in full, and a connection can drop. In
-either case the worker starts the upload again, pausing longer each time,
-until 15 minutes past the slot. A reel that gets through late goes out at
-once.
+minutes. The worker uploads it up to 14 hours before its slot and publishes
+it on the minute. Instagram sometimes refuses an upload it had accepted in
+full, and a connection can drop. In either case the worker starts the upload
+again, pausing longer each time (up to 10 minutes), for up to 12 hours; then
+the post fails, and To finish offers a Retry. A reel that gets through after
+its slot goes out at once. Until it goes out the post can still be moved or
+edited in flock; an edit to its text, options or cover uploads it again.
 
 You need:
 

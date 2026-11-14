@@ -156,7 +156,7 @@ export function makeClient(baseUrl) {
 		async undeliveredCandidates(since) {
 			const filter = encodeURIComponent(`(status="failed" && scheduled_at >= "${pbDate(since)}") || status="pending"`);
 			const fields = encodeURIComponent(
-				'id,job,platform,status,scheduled_at,updated,title,error,expand.job.created,expand.job.title,expand.job.source_local'
+				'id,job,platform,status,scheduled_at,updated,title,error,handle.prep,expand.job.created,expand.job.title,expand.job.source_local'
 			);
 			const res = await request(
 				`/api/collections/upload_targets/records?perPage=200&expand=job&fields=${fields}&filter=${filter}`

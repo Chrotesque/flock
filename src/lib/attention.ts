@@ -15,7 +15,19 @@ import { quotaToday } from './youtubequota';
  */
 
 /** `failed` and `unsent` are posts that did not go out — the sidebar box turns red for them. */
-export type AttentionKind = 'failed' | 'unsent' | 'stuck' | 'importing' | 'private' | 'cover' | 'system';
+export type AttentionKind = 'failed' | 'unsent' | 'retrying' | 'stuck' | 'importing' | 'private' | 'cover' | 'system';
+
+/**
+ * How long the worker keeps trying to upload an Instagram reel before the
+ * post fails (worker/igprep.mjs `RETRY_MS`). Keep the two in step.
+ */
+export const PREP_RETRY_MS = 12 * 3_600_000;
+
+/** "08:05", local, as the Calendar shows times. */
+function clock(at: number): string {
+	const d = new Date(at);
+	return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 /**
  * How the worker's warning starts when a reel went out without its cover
@@ -101,6 +113,20 @@ export function targetProblems(targets: DashTarget[], now: Date, label: (p: Plat
 					platform: ''
 				});
 			}
+		} else if (t.status === 'pending' && t.prep && t.prep.state !== 'ready' && at > slot) {
+			// Past its slot while Instagram still refuses the upload: the worker
+			// keeps trying (worker/igprep.mjs), so it is late, not lost.
+			const since = time(t.prep.since);
+			out.push({
+				level: 'warn',
+				kind: 'retrying',
+				key: `retrying:${t.id}`,
+				text: `${name} is late — Instagram keeps refusing the upload`,
+				detail:
+					`Tried ${t.prep.tries} time${t.prep.tries === 1 ? '' : 's'} since ${clock(since)}; flock keeps trying until ${clock(since + PREP_RETRY_MS)} and posts it as soon as Instagram takes it.` +
+					(t.prep.lastError ? ` Last answer: ${t.prep.lastError}` : ''),
+				...post
+			});
 		} else if (t.status === 'pending') {
 			const due = t.platform === 'youtube' ? time(t.jobCreated) : slot;
 			if (sinceChange(due) > 10 * MIN) {

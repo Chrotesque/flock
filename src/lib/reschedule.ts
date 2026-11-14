@@ -23,10 +23,12 @@ export const SYNCED: readonly PlatformId[] = ['youtube', 'facebook'];
 
 /**
  * How long before its slot the worker takes up a post it holds itself
- * (worker: Instagram's ten-minute lead, TikTok none), plus a minute: from
- * then on a new time would not reach it.
+ * (worker: Instagram's two-minute lead, TikTok none), plus a minute: from
+ * then on a new time would not reach it. An Instagram reel is uploaded
+ * hours earlier (worker/igprep.mjs) but stays pending until then, so a move
+ * or an edit still reaches it — an edit by uploading it again.
  */
-const TAKEN_UP_MS: Partial<Record<PlatformId, number>> = { instagram: 11 * 60_000, tiktok: 60_000 };
+const TAKEN_UP_MS: Partial<Record<PlatformId, number>> = { instagram: 3 * 60_000, tiktok: 60_000 };
 
 /** How far ahead the worker hands a reel to Facebook; Facebook's own limit is 29 days. */
 const FACEBOOK_MAX_MS = 28 * 24 * 3_600_000;

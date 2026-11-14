@@ -12,10 +12,12 @@
 //
 // Instagram cannot schedule either, but its publishing comes in two halves: a
 // container is created and the bytes uploaded and processed first, and a
-// separate media_publish call is what puts it on the profile. So the loop
-// hands a target over a few minutes ahead of its slot, the container is made
-// ready, and the publish call waits for the minute — the one platform here
-// that can hit it. Everything read out of `options` is a parameter the
+// separate media_publish call is what puts it on the profile. So each reel
+// is uploaded hours ahead of its slot (`prepareReel`, driven by igprep.mjs,
+// through Meta's refusal streaks), and the loop takes the target up two
+// minutes before its slot only to make the publish call on the minute — the
+// one platform here that can hit it. The upload inside `publishToInstagram`
+// is the fallback for a prepared container that is no longer usable. Everything read out of `options` is a parameter the
 // container call actually takes.
 
 import { fetchOrExplain, isNetworkError } from './net.mjs';
@@ -563,10 +565,14 @@ export async function dropHostedCover(config, handle) {
 	await graph(ig, `/${handle.coverPhotoId}`, { method: 'DELETE' });
 }
 
-export async function publishToInstagram({ target, job, pb, config, log, saveHandle, stillWanted }) {
-	// The account this post is for, or an error — never another account.
+/** The account id and the container parameters a post would be made with — what igprep.mjs fingerprints. */
+export function containerPlan(config, target, job) {
 	const ig = instagramAccount(config, target.account ?? '');
-	const options = target.options ?? {};
+	return { account: ig.igUserId, params: buildContainer(target, target.options ?? {}, Number(job.video_duration) || 0) };
+}
+
+/** The video, opened and checked against what Instagram takes; throws a permanent error otherwise. */
+async function openChecked(pb, job) {
 	const name = job.video_name || job.video;
 	const duration = Number(job.video_duration) || 0;
 	if (duration > 0 && (duration < MIN_SECONDS || duration > MAX_SECONDS)) {
@@ -574,8 +580,7 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 			`Instagram takes Reels between 3 seconds and 15 minutes; this one runs ${Math.round(duration)}s.`
 		);
 	}
-
-	let video = await pb.openVideo(job);
+	const video = await pb.openVideo(job);
 	const mime = videoMime(video, name);
 	if (!ACCEPTED_MIME.has(mime)) {
 		video.stream.destroy();
@@ -587,6 +592,173 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 			`Instagram takes Reels of up to 300 MB; this one is ${Math.round(video.size / 1e6)} MB. Export a smaller file for Instagram.`
 		);
 	}
+	return video;
+}
+
+/**
+ * One try at preparing a reel ahead of its slot (igprep.mjs): the cover on
+ * the Page, a new container, the bytes, Instagram's processing, the cover
+ * photo deleted. Nothing is published. `onContainer(id)` is awaited before a
+ * byte goes up, so the row names the container being filled. Resolves with
+ * `{ containerId, notes }`; a refusal another container may get past is
+ * thrown with `retry: true`, anything else as it is.
+ */
+export async function prepareReel({ target, job, pb, config, log, onContainer }) {
+	const ig = instagramAccount(config, target.account ?? '');
+	const { params } = containerPlan(config, target, job);
+	const name = job.video_name || job.video;
+	const notes = [];
+	let hosted = null;
+	if (job.cover) {
+		const got = await withCoverRetries(async () => hostCover(ig, await pb.openCover(job), job.cover), {
+			retryable: transientGraphError,
+			log
+		});
+		if (!('error' in got)) {
+			hosted = got.value;
+			params.cover_url = hosted.url;
+			delete params.thumb_offset;
+		} else {
+			const why = explain(got.error).message.split('\n')[0];
+			notes.push(
+				`${COVER_MISSING} could not put it on the Page (${why})${triedFor(got)}. Instagram shows the frame at the cover time.`
+			);
+			log(notes[notes.length - 1]);
+		}
+	}
+	const retry = (err) => Object.assign(explain(err), { retry: true });
+	try {
+		let container;
+		try {
+			container = await graph(ig, `/${ig.igUserId}/media`, { method: 'POST', params });
+		} catch (err) {
+			if (isNetworkError(err) || transientGraphError(err)) throw retry(err);
+			throw explain(err);
+		}
+		if (!container.id) throw retry(new Error('Instagram returned no container id.'));
+		await onContainer(container.id);
+		const video = await openChecked(pb, job);
+		log(
+			`uploading ${name} (${(video.size / MiB).toFixed(1)} MB) ahead of its slot into container ${container.id} ` +
+				`for @${ig.username || ig.igUserId}`
+		);
+		try {
+			await uploadBytes(ig, container, video, log);
+		} catch (err) {
+			video.stream.destroy();
+			if (err.freshContainer || isNetworkError(err)) throw retry(err);
+			throw explain(err);
+		}
+		try {
+			await waitForContainer(ig, container.id, log);
+		} catch (err) {
+			// A container Instagram could not process is spent; another may work.
+			throw retry(err);
+		}
+		return { containerId: container.id, notes };
+	} finally {
+		if (hosted) {
+			await graph(ig, `/${hosted.id}`, { method: 'DELETE' }).catch((err) =>
+				log(`cover photo ${hosted.id} could not be deleted from the Page — it is unpublished, so nobody sees it (${err.message.split('\n')[0]})`)
+			);
+		}
+	}
+}
+
+/**
+ * Publishes a reel prepared ahead (igprep.mjs) at its slot: the container is
+ * read once more, the handle saved, the minute waited for and the publish
+ * call made. Resolves with null when the container is not usable any more
+ * (expired, refused after all), so the caller uploads the usual way.
+ */
+async function publishPrepared({ ig, target, prep, log, saveHandle, stillWanted }) {
+	let code = '';
+	try {
+		const read = await graph(ig, `/${prep.containerId}`, { params: { fields: 'status_code,status' } });
+		code = String(read.status_code || '');
+	} catch (err) {
+		log(`the reel uploaded ahead could not be read (${err.message.split('\n')[0]}) — uploading it now`);
+		return null;
+	}
+	if (code !== 'FINISHED') {
+		log(`the reel uploaded ahead reads ${code.toLowerCase() || 'empty'} — uploading it now`);
+		return null;
+	}
+	const handle = { kind: 'instagram-container', containerId: prep.containerId, account: ig.igUserId, prep };
+	await saveHandle(handle);
+	log(`publishing container ${prep.containerId}, uploaded ${new Date(prep.madeAt).toLocaleTimeString()} after ${prep.tries} tr${prep.tries === 1 ? 'y' : 'ies'}`);
+	return publishHeld({ ig, target, containerId: prep.containerId, handle, log, saveHandle, stillWanted, notes: prep.notes ?? [] });
+}
+
+/** Waits for the slot and publishes a processed container: the end of every reel. */
+async function publishHeld({ ig, target, containerId, handle, log, saveHandle, stillWanted, notes, shareToFeed }) {
+	const wait = msUntil(target.scheduled_at);
+	if (wait > 0) {
+		log(
+			`ready — holding until ${new Date(target.scheduled_at).toLocaleTimeString()} ` +
+				`(${Math.round(wait / 1000)}s)`
+		);
+		await sleep(wait);
+	} else if (wait < -60_000) {
+		log(`ready ${Math.round(-wait / 60000)} min past the slot — publishing now`);
+	}
+
+	// Moved to another brand while it was held (moves.mjs): this account
+	// must not post it. The container stays unpublished, and Instagram drops
+	// an unpublished container within a day.
+	if (stillWanted && !(await stillWanted())) {
+		throw Object.assign(new Error('Moved to another account while it was held; not posted here.'), { moved: true });
+	}
+
+	// Instagram can publish the reel and still answer the call with an error,
+	// its container reading unpublished for a while after (31 Oct 2026). The
+	// handle says the call was made, so that read is not believed at once
+	// (orphans.mjs). A failed or slow save costs only that, never the minute.
+	await Promise.race([saveHandle({ ...handle, publishCalled: true }).catch(() => {}), sleep(3_000)]);
+
+	let published;
+	try {
+		published = await publishContainer(ig, containerId);
+	} catch (err) {
+		throw explain(err);
+	}
+	const mediaId = String(published.id ?? '');
+
+	let url = profileUrl(ig);
+	try {
+		const media = await graph(ig, `/${mediaId}`, { params: { fields: 'permalink' } });
+		if (media.permalink) url = media.permalink;
+	} catch {
+		// The reel is up; the permalink is a nicety.
+	}
+
+	const feed = shareToFeed ?? (target.options ?? {}).shareToFeed !== false;
+	return {
+		url,
+		mediaId,
+		containerId,
+		scheduled: false,
+		privacyStatus: feed ? 'a reel, shown in the feed too' : 'a reel, in the Reels tab only',
+		...(notes.length > 0 ? { notes } : {})
+	};
+}
+
+export async function publishToInstagram({ target, job, pb, config, log, saveHandle, stillWanted }) {
+	// The account this post is for, or an error — never another account.
+	const ig = instagramAccount(config, target.account ?? '');
+	const options = target.options ?? {};
+	const name = job.video_name || job.video;
+	const duration = Number(job.video_duration) || 0;
+
+	// Uploaded ahead of its slot (igprep.mjs); the claim checked it still
+	// matches the post.
+	const prep = target.handle?.prep;
+	if (prep?.state === 'ready' && prep.containerId) {
+		const done = await publishPrepared({ ig, target, prep, log, saveHandle, stillWanted });
+		if (done) return done;
+	}
+
+	let video = await openChecked(pb, job);
 
 	const params = buildContainer(target, options, duration);
 
@@ -712,54 +884,17 @@ export async function publishToInstagram({ target, job, pb, config, log, saveHan
 	}
 
 	// The container is ready; the publish call is what hits the minute.
-	const wait = msUntil(target.scheduled_at);
-	if (wait > 0) {
-		log(
-			`ready — holding until ${new Date(target.scheduled_at).toLocaleTimeString()} ` +
-				`(${Math.round(wait / 1000)}s)`
-		);
-		await sleep(wait);
-	} else if (wait < -60_000) {
-		log(`ready ${Math.round(-wait / 60000)} min past the slot — publishing now`);
-	}
-
-	// Moved to another brand while it was held (moves.mjs): this account
-	// must not post it. The container stays unpublished, and Instagram drops
-	// an unpublished container within a day.
-	if (stillWanted && !(await stillWanted())) {
-		throw Object.assign(new Error('Moved to another account while it was held; not posted here.'), { moved: true });
-	}
-
-	// Instagram can publish the reel and still answer the call with an error,
-	// its container reading unpublished for a while after (31 Oct 2026). The
-	// handle says the call was made, so that read is not believed at once
-	// (orphans.mjs). A failed or slow save costs only that, never the minute.
-	await Promise.race([saveHandle({ ...handle, publishCalled: true }).catch(() => {}), sleep(3_000)]);
-
-	let published;
-	try {
-		published = await publishContainer(ig, container.id);
-	} catch (err) {
-		throw explain(err);
-	}
-	const mediaId = String(published.id ?? '');
-
-	let url = profileUrl(ig);
-	try {
-		const media = await graph(ig, `/${mediaId}`, { params: { fields: 'permalink' } });
-		if (media.permalink) url = media.permalink;
-	} catch {
-		// The reel is up; the permalink is a nicety.
-	}
-
-	return {
-		url,
-		mediaId,
+	return publishHeld({
+		ig,
+		target,
 		containerId: container.id,
-		scheduled: false,
-		privacyStatus: params.share_to_feed ? 'a reel, shown in the feed too' : 'a reel, in the Reels tab only',
-		...(notes.length > 0 ? { notes } : {})
-	};
+		handle,
+		log,
+		saveHandle,
+		stillWanted,
+		notes,
+		shareToFeed: params.share_to_feed
+	});
 }
 
 let accountsAt = 0;

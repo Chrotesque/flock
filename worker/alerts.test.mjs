@@ -164,3 +164,12 @@ describe('the line protocol', () => {
 		assert.equal(decodeLine('  '), null);
 	});
 });
+
+describe('undelivered, while Instagram still refuses an upload made ahead', () => {
+	it('shows no card until the twelve hours are up and the post fails', () => {
+		const trying = target({ id: 'ig', scheduled_at: pb(now - H), handle: { prep: { state: 'trying', since: pb(now - 5 * H) } } });
+		assert.deepEqual(undelivered([trying], NOW), []);
+		const ready = target({ id: 'ig', scheduled_at: pb(now - H), handle: { prep: { state: 'ready', since: pb(now - 5 * H) } } });
+		assert.deepEqual(undelivered([ready], NOW).map((i) => i.key), ['unsent:ig']);
+	});
+});

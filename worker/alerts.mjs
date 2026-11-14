@@ -95,6 +95,10 @@ export function undelivered(targets, now = new Date()) {
 		};
 		if (t.status === 'failed' && at - slot < FAILED_WINDOW_MS) {
 			out.push({ key: `failed:${t.id}:${t.updated ?? ''}`, kind: 'failed', ...item });
+		} else if (t.status === 'pending' && t.handle?.prep && t.handle.prep.state !== 'ready') {
+			// An Instagram reel the worker is still trying to upload (igprep.mjs):
+			// late, perhaps, but not undelivered until its twelve hours are up and
+			// it fails — the card then shows the failure.
 		} else if (t.status === 'pending' && !job.source_local) {
 			const due = t.platform === 'youtube' ? time(job.created) : slot;
 			const changed = time(t.updated);

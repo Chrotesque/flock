@@ -1392,6 +1392,7 @@ export async function loadDashTargets(since?: Date): Promise<(DashTarget & { bra
 		account?: string;
 		updated?: string;
 		options?: { visibility?: string; privacy?: string; jestrCampaign?: boolean };
+		handle?: { prep?: { state?: string; since?: string; tries?: number; lastError?: string } } | null;
 		expand?: { job?: { brand?: string; title?: string; created?: string; source_local?: boolean; error?: string; product?: string } };
 	};
 	const rows = await pb.collection('upload_targets').getFullList<Row>({
@@ -1403,7 +1404,7 @@ export async function loadDashTargets(since?: Date): Promise<(DashTarget & { bra
 			: {}),
 		fields:
 			'id,job,platform,status,scheduled_at,published_at,error,remote_url,title,account,updated,' +
-			'options.visibility,options.privacy,options.jestrCampaign,' +
+			'options.visibility,options.privacy,options.jestrCampaign,handle.prep,' +
 			'expand.job.brand,expand.job.title,expand.job.created,expand.job.source_local,expand.job.error,expand.job.product'
 	});
 	return rows.map((row) => {
@@ -1427,7 +1428,17 @@ export async function loadDashTargets(since?: Date): Promise<(DashTarget & { bra
 			brand: job?.brand ?? '',
 			product: job?.product ?? '',
 			account: row.account ?? '',
-			updated: row.updated ?? ''
+			updated: row.updated ?? '',
+			...(row.handle?.prep?.since
+				? {
+						prep: {
+							state: String(row.handle.prep.state ?? ''),
+							since: String(row.handle.prep.since),
+							tries: Number(row.handle.prep.tries) || 0,
+							lastError: String(row.handle.prep.lastError ?? '')
+						}
+					}
+				: {})
 		};
 	});
 }

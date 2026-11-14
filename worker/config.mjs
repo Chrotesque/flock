@@ -126,10 +126,11 @@ export function loadConfig() {
 		// The hold-and-fire platforms are checked on their own, tighter tick, so
 		// a release lands within seconds of its slot rather than within a poll.
 		slotSeconds: Number(process.env.FLOCK_SLOT_SECONDS || file.slotSeconds || 15),
-		// How far ahead of its slot an Instagram reel is uploaded, so the
-		// container is processed and waiting when the minute comes.
+		// How far ahead of its slot an Instagram reel is taken up to be
+		// published. The upload itself happens hours before (igprep.mjs), so
+		// this is only the hold before the publish call.
 		instagramLeadSeconds: Number(
-			process.env.FLOCK_INSTAGRAM_LEAD_SECONDS ?? file.instagramLeadSeconds ?? 600
+			process.env.FLOCK_INSTAGRAM_LEAD_SECONDS ?? file.instagramLeadSeconds ?? 120
 		),
 		// Scoring is answered on its own, much faster tick: a person is watching
 		// the button spin, where nobody is watching an upload queue.

@@ -3,7 +3,7 @@
   "role": "all",
   "pollSeconds": 60,
   "slotSeconds": 15,
-  "instagramLeadSeconds": 600,
+  "instagramLeadSeconds": 120,
   "scoreSeconds": 3,
   "previewPort": 8790,
   "statsSeconds": 30,
