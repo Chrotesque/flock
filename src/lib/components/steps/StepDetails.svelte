@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { jestrOn as jestrEnabled } from '$lib/devtest';
 	import { untrack } from 'svelte';
 	import { base } from '$app/paths';
 	import ThumbnailPicker from '../ThumbnailPicker.svelte';
@@ -115,7 +116,7 @@
 	// and only with the Jestr integration on.
 	let jestrPlatforms = $derived(JESTR_PLATFORMS.filter((p) => draft.activePlatforms.includes(p)));
 	let showJestrBox = $derived(
-		general.value.jestrIntegration && composing !== null && jestrPlatforms.includes(composing)
+		jestrEnabled(general.value.jestrIntegration) && composing !== null && jestrPlatforms.includes(composing)
 	);
 	let jestrTicked = $derived(tickedIn(draft.overrides));
 	let tiktokActive = $derived(draft.activePlatforms.includes('tiktok'));

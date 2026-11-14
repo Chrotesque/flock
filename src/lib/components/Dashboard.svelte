@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { jestrOn as jestrEnabled } from '$lib/devtest';
 	import { onMount, tick } from 'svelte';
 	import { base } from '$app/paths';
 	import PlatformIcon from './PlatformIcon.svelte';
@@ -606,7 +607,7 @@
 
 	/* ---- Jestr campaigns (jestrcampaign.ts): a column, and marks made in Edit mode, with the integration on ---- */
 
-	const jestrOn = $derived(general.value.jestrIntegration);
+	const jestrOn = $derived(jestrEnabled(general.value.jestrIntegration));
 	// Ratio View has no Jestr column, so a click there opens the row rather than marking it unseen.
 	const marksJestr = $derived(jestrOn && !ratioView);
 	const flagged = $derived(flaggedPosts(dashData.targets));

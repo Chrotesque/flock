@@ -137,6 +137,19 @@ export const devtestPages: DevTestPage[] = devtestModules
 	.flatMap((mod) => mod.pages ?? [])
 	.filter((p, i, all) => Boolean(p?.id && p.label && p.Page) && all.findIndex((q) => q.id === p.id) === i);
 
+/**
+ * Whether this build has the local Jestr Partner page, which holds the
+ * Jestr integration's switch. Without it (the website's copy, a stranger's
+ * install) the integration is off whatever the shared setting says: nothing
+ * there could turn it off again (see `jestrOn`).
+ */
+export const jestrBuiltIn = devtestPages.some((p) => p.id === 'jestr');
+
+/** Whether the Jestr features show: the integration switched on, in a build that has it. */
+export function jestrOn(integration: boolean): boolean {
+	return integration && jestrBuiltIn;
+}
+
 /** The pages switched on right now (`shown`), in the same order; reactive where it is read. */
 export function shownDevtestPages(): DevTestPage[] {
 	return devtestPages.filter((p) => p.shown?.() ?? true);

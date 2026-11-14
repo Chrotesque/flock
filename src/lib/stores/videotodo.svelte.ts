@@ -1,3 +1,4 @@
+import { jestrOn as jestrEnabled } from '../devtest';
 import { getSetting, loadTodoReels, loadTodoStats, loadTodoUploads, setSetting, subscribeTodoTargets } from '../repo';
 import { deviceName, logAction } from '../log';
 import { device } from './device.svelte';
@@ -60,7 +61,7 @@ class VideoTodoStore {
 				...marking.filter((m) => m.startsWith('instagram:')).map((m) => m.slice(10))
 			]
 		};
-		const lines = todoLines(this.#stats, this.#uploads, state, { jestr: general.value.jestrIntegration }, this.#reels);
+		const lines = todoLines(this.#stats, this.#uploads, state, { jestr: jestrEnabled(general.value.jestrIntegration) }, this.#reels);
 		// Only the brands To finish follows (todobrands.ts) — once it is known
 		// which channel is whose, so nothing flickers away while that loads.
 		const ready = !brands.loading && accounts.loaded;

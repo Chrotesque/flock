@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { jestrOn as jestrEnabled } from '$lib/devtest';
 	import Checkbox from './Checkbox.svelte';
 	import { general } from '$lib/stores/general.svelte';
 	import {
@@ -23,7 +24,7 @@
 	 */
 
 	const layout = $derived(general.value.dashboardColumns);
-	const jestr = $derived(general.value.jestrIntegration);
+	const jestr = $derived(jestrEnabled(general.value.jestrIntegration));
 	const shown = $derived(shownColumns(layout, { jestr }));
 
 	function save(next: DashColumn[]) {

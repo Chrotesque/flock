@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { jestrOn as jestrEnabled } from '$lib/devtest';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import PlatformIcon from '$lib/components/PlatformIcon.svelte';
@@ -50,7 +51,7 @@
 
 	// The list's table icon, for the Dashboard section.
 	const COLUMNS_ICON ='M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13ZM4 9.5h16M9.5 9.5V20M14.5 9.5V20';
-	const shownCount = $derived(shownColumns(general.value.dashboardColumns, { jestr: general.value.jestrIntegration }).length);
+	const shownCount = $derived(shownColumns(general.value.dashboardColumns, { jestr: jestrEnabled(general.value.jestrIntegration) }).length);
 
 	// The DevTest section lists only while a local-devtest module has settings;
 	// one bringing just a page (a sidebar link) has nothing to show here.

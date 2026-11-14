@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { jestrOn as jestrEnabled } from '$lib/devtest';
 	import { tick } from 'svelte';
 	import { flip } from 'svelte/animate';
 	import { fade, fly } from 'svelte/transition';
@@ -126,7 +127,7 @@
 		const words = `${c.combined.toLocaleString()} views in ${ageWords(c.age)} (${each}) · top 15% usually ${Math.round(c.median).toLocaleString()}`;
 		return [brand, words].filter(Boolean).join(' · ');
 	}
-	let jestr = $derived(general.value.jestrIntegration);
+	let jestr = $derived(jestrEnabled(general.value.jestrIntegration));
 
 	/** A post's brand, named once there are several. */
 	function brandOf(item: Attention): string {
