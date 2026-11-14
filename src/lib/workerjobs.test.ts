@@ -65,6 +65,36 @@ describe('workerJobs', () => {
 	});
 });
 
+describe('an Instagram reel between tries (worker/igprep.mjs)', () => {
+	const prep = { state: 'trying', since: '2026-11-04T01:00:00Z', tries: 7, lastError: 'refused (400)', nextTryAt: '2026-11-04T02:20:00Z' };
+
+	it('is listed though no heartbeat names it', () => {
+		const { jobs } = workerJobs([], [post('youtube', 'published'), post('instagram', 'pending', { prep })], now);
+		expect(jobs).toHaveLength(1);
+		expect(jobs[0].done).toEqual(['youtube']);
+		expect(jobs[0].rows).toEqual([{ platform: 'instagram', state: 'retrying', refused: 7, next: prep.nextTryAt, error: 'refused (400)' }]);
+	});
+
+	it('gives way to the try in hand, and is not listed before a first refusal or once ready', () => {
+		const task = { text: 'Publishing to Instagram: "x"', job: 'j1', platform: 'instagram' as const, progress: 40 };
+		expect(workerJobs([task], [post('instagram', 'pending', { prep })], now).jobs[0].rows[0].state).toBe('working');
+		expect(workerJobs([], [post('instagram', 'pending', { prep: { ...prep, tries: 0 } })], now).jobs).toEqual([]);
+		expect(workerJobs([], [post('instagram', 'pending', { prep: { ...prep, state: 'ready' } })], now).jobs).toEqual([]);
+	});
+
+	it('says the refusals and the next try', () => {
+		const later = new Date(Date.now() + 600_000).toISOString();
+		expect(rowWords({ platform: 'instagram', state: 'retrying', refused: 7, next: later }, () => '16:22')).toEqual([
+			'Retrying · 7 refused',
+			'next try 16:22'
+		]);
+		expect(rowWords({ platform: 'instagram', state: 'retrying', refused: 7, next: '2000-01-01T00:00:00Z' }, () => '')).toEqual([
+			'Retrying · 7 refused',
+			'trying again now'
+		]);
+	});
+});
+
 describe('rowWords', () => {
 	const time = () => '15:00';
 	it('says progress, and retries from the second try on', () => {

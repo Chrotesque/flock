@@ -1392,7 +1392,7 @@ export async function loadDashTargets(since?: Date): Promise<(DashTarget & { bra
 		account?: string;
 		updated?: string;
 		options?: { visibility?: string; privacy?: string; jestrCampaign?: boolean };
-		handle?: { prep?: { state?: string; since?: string; tries?: number; lastError?: string } } | null;
+		handle?: { prep?: { state?: string; since?: string; tries?: number; lastError?: string; nextTryAt?: string } } | null;
 		expand?: { job?: { brand?: string; title?: string; created?: string; source_local?: boolean; error?: string; product?: string } };
 	};
 	const rows = await pb.collection('upload_targets').getFullList<Row>({
@@ -1435,7 +1435,8 @@ export async function loadDashTargets(since?: Date): Promise<(DashTarget & { bra
 							state: String(row.handle.prep.state ?? ''),
 							since: String(row.handle.prep.since),
 							tries: Number(row.handle.prep.tries) || 0,
-							lastError: String(row.handle.prep.lastError ?? '')
+							lastError: String(row.handle.prep.lastError ?? ''),
+							nextTryAt: String(row.handle.prep.nextTryAt ?? '')
 						}
 					}
 				: {})

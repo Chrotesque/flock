@@ -1049,12 +1049,17 @@
 	}
 
 	.wkrow.held .wkbar,
-	.wkrow.waiting .wkbar {
+	.wkrow.waiting .wkbar,
+	.wkrow.retrying .wkbar {
 		opacity: 0.4;
 	}
 
 	.wkrow.failed .wkwords {
 		color: #f87171;
+	}
+
+	.wkrow.retrying .wkwords {
+		color: var(--warn);
 	}
 
 	.wkwords {

@@ -61,6 +61,8 @@ export interface PrepState {
 	since: string;
 	tries: number;
 	lastError: string;
+	/** When the next try is due, while trying ('' when unknown). */
+	nextTryAt?: string;
 }
 
 const MIN = 60_000;
