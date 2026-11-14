@@ -36,8 +36,8 @@ const item = {
 const NOW = '2026-10-20T12:00:00.000Z';
 
 test('the stats scopes are asked for only with the flag', () => {
-	assert.deepEqual(tiktokScopes(), ['user.info.basic', 'video.publish']);
-	assert.deepEqual(tiktokScopes(true), ['user.info.basic', 'video.publish', 'video.list', 'user.info.stats']);
+	assert.deepEqual(tiktokScopes(), ['user.info.basic', 'video.publish', 'video.upload']);
+	assert.deepEqual(tiktokScopes(true), ['user.info.basic', 'video.publish', 'video.upload', 'video.list', 'user.info.stats']);
 });
 
 test("a grant's scopes are read from TikTok's comma-separated string", () => {

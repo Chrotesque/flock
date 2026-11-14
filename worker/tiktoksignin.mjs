@@ -243,7 +243,7 @@ export async function signinPass({ pb, config, log, run, stats = false, afterCon
 			verifier: held.verifier
 		});
 		const { added, creatorError } = await connectAccount(config, body);
-		const missing = TIKTOK_STATS_SCOPES.filter((name) => !hasScope(added.scope, name));
+		const missing = [...TIKTOK_STATS_SCOPES, 'video.upload'].filter((name) => !hasScope(added.scope, name));
 		const who = added.username ? `@${added.username}` : `open id ${added.openId}`;
 		log(`tiktok sign-in: ${who} connected${creatorError ? ` (its name was not read: ${creatorError.split('\n')[0]})` : ''}`);
 		if (afterConnect) await afterConnect(added).catch((err) => log(`tiktok after sign-in: ${err.message.split('\n')[0]}`));

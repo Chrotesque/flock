@@ -174,7 +174,8 @@ it has processed the video, usually a minute or two later.
 On the [TikTok for Developers](https://developers.tiktok.com) portal:
 
 1. Create an app with **Login Kit** and the **Content Posting API**, turn on
-   **Direct Post**, and tick the `user.info.basic` and `video.publish` scopes.
+   **Direct Post**, and tick the `user.info.basic`, `video.publish` and
+   `video.upload` scopes (the last sends a video as a draft instead).
 2. Under Login Kit's **Desktop** tab, register the redirect URI
    `http://localhost:8765/tiktok`. Put the same address in the config as
    `tiktok.redirectUri`.
@@ -545,8 +546,12 @@ boxes below it follow the platform you are writing for:
   where in the video it goes, *Beginning* or *End* (the default).
 - **YouTube:** playlists, from the channel's own. Click the field, tick as
   many as you like, then *Done*; each shows as a tag with an × to take it off.
-- **TikTok:** the *Post to TikTok* box, with the choices TikTok wants made on
-  every post:
+- **TikTok:** the *Post to TikTok* box. *Send: As a post* (the default) or
+  *As a draft*: a draft is only the video, put in the TikTok inbox at its slot;
+  click TikTok's notification to finish it there, caption and settings
+  included (*Copy the caption for TikTok* takes the caption along). An account
+  signed in before drafts existed has to be signed in again first. A post has
+  the choices TikTok wants made on every post:
   - who can view the video, from what the account offers, with nothing
     preselected;
   - whether viewers may comment, Duet or Stitch, all off until ticked;

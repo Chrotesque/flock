@@ -175,8 +175,8 @@
 
   <section id="tiktok">
     <h2>Posting to TikTok</h2>
-    <p class="sub">flock uses TikTok's Login Kit and the Content Posting API's Direct Post. The post screen follows
-    TikTok's content sharing guidelines.</p>
+    <p class="sub">flock uses TikTok's Login Kit and the Content Posting API: Direct Post, or Upload to send a
+    draft. The post screen follows TikTok's content sharing guidelines.</p>
     <div class="split">
       <div>
         <ul class="checks">
@@ -196,9 +196,12 @@
           Confirmation", with the Branded Content Policy added for branded content.</li>
           <li><strong>The post is TikTok's to finish.</strong> The file is uploaded in chunks, the status is polled
           until TikTok reports the post published, and the notice says it may take a few minutes to appear.</li>
+          <li><strong>Or it goes as a draft.</strong> Picking "As a draft" sends only the video to the creator's
+          TikTok inbox. flock says to click the inbox notification to continue editing in TikTok and complete the
+          post; the caption and every setting are chosen there.</li>
         </ul>
-        <p>Permissions requested: <code>user.info.basic</code>, to show which account a post goes to, and
-        <code>video.publish</code>, to post it. Only if the operator signs in for them, also
+        <p>Permissions requested: <code>user.info.basic</code>, to show which account a post goes to,
+        <code>video.publish</code>, to post it, and <code>video.upload</code>, to send it as a draft instead. Only if the operator signs in for them, also
         <code>video.list</code> and <code>user.info.stats</code>, so the Dashboard can show the account's own
         public videos with their counts and its follower count; without them, nothing else is read from the
         account. Each installation uses a TikTok developer app of its own, so its client key and secret stay in
@@ -250,7 +253,7 @@
 <footer class="bottom">
   <div class="wrap">
     <img src="icon.png" alt="">
-    <span>flock, version 0.20.9. Contact: contact@chrotesque.com</span>
+    <span>flock, version 0.23.0. Contact: contact@chrotesque.com</span>
     <nav>
       <a href="how-it-works.html">How it works</a>
       <a href="https://github.com/Chrotesque/flock">GitHub</a>

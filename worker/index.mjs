@@ -436,14 +436,21 @@ async function recordResult(pb, platform, target, result, label) {
 		...(result.scheduled ? {} : { published_at: new Date().toISOString() })
 	});
 
-	const how = result.scheduled ? `scheduled for ${target.scheduled_at}` : `live as ${result.privacyStatus}`;
+	const how = result.scheduled
+		? `scheduled for ${target.scheduled_at}`
+		: result.draft
+			? 'sent to the TikTok inbox as a draft'
+			: `live as ${result.privacyStatus}`;
 	log(`done ${label} — ${how}  ${result.url}`);
 	// TikTok named no video for it: the stats pass looks for it among the
 	// account's videos (ttstats.mjs), soon rather than at its next tick.
-	if (platform === 'tiktok' && !videoIdOf(result.url)) tiktokLinkSoon();
+	if (platform === 'tiktok' && !result.draft && !videoIdOf(result.url)) tiktokLinkSoon();
 	if (todo) log(`  ${todo}`);
 	const said = [todo, ...(result.notes ?? [])].filter(Boolean).join(' ');
-	pb.log(`Published to ${platform}`, `${target.title || '(no title)'} -> ${result.url} (${how})${said ? ` ${said}` : ''}`);
+	pb.log(
+		result.draft ? `Sent to ${platform} as a draft` : `Published to ${platform}`,
+		`${target.title || '(no title)'} -> ${result.url} (${how})${said ? ` ${said}` : ''}`
+	);
 }
 
 /** The row's handle with the time the platform was handed; null when there is none to keep. */

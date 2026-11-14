@@ -27,7 +27,9 @@
 		readDisclosure,
 		disclosureLabel,
 		consentLinks,
-		CONSENT_PREFIX
+		isDraft,
+		CONSENT_PREFIX,
+		DRAFT_INBOX_NOTICE
 	} from '$lib/tiktok';
 	import { facebookProblems } from '$lib/facebook';
 	import { sizeProblems } from '$lib/filesize';
@@ -90,7 +92,8 @@
 	 * about here too, for a caption that never passed through Details.
 	 */
 	function mentionsOf(row: PlanRow): MentionNote[] {
-		if (row.platform !== 'tiktok') return [];
+		// A draft goes without its caption: nothing in it can fail to link.
+		if (row.platform !== 'tiktok' || isDraft(row.options)) return [];
 		// Once per handle as written: a caption naming an account twice says so once.
 		const notes = mentionNotes(row.description, tiktokHandles.rows);
 		return notes.filter((note, i) => notes.findIndex((n) => n.mention.handle === note.mention.handle) === i);
@@ -554,15 +557,20 @@
 			{@const account = accountFor(row.platform)}
 			{@const allowance = postAllowance(accounts.for(row.platform))}
 			{@const overAllowance = allowanceWarning(allowance, dueAt(row))}
-			{@const disclosure = row.platform === 'tiktok' ? readDisclosure(row.options) : null}
+			{@const tiktokDraft = row.platform === 'tiktok' && isDraft(row.options)}
+			{@const disclosure = row.platform === 'tiktok' && !tiktokDraft ? readDisclosure(row.options) : null}
 			<li class="card" class:flagged={row.overLimit || row.errors > 0}>
 				<span class="ic"><PlatformIcon platform={row.platform} size={20} /></span>
 
 				<div class="body">
 					<div class="titleline">
-						<p class="title" class:empty={!label}>
-							{def.hasTitle ? 'Title' : 'Caption'}: {label ? `"${label}"` : '(none)'}
-						</p>
+						{#if tiktokDraft}
+							<p class="title">Draft for the TikTok inbox: the caption is written in TikTok</p>
+						{:else}
+							<p class="title" class:empty={!label}>
+								{def.hasTitle ? 'Title' : 'Caption'}: {label ? `"${label}"` : '(none)'}
+							</p>
+						{/if}
 						<button class="info" onclick={() => openDetail(row)} aria-label="Show description for {def.label}">
 							<svg viewBox="0 0 24 24" width="15" height="15" fill="none">
 								<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6" />
@@ -660,6 +668,9 @@
 							{issue}
 						</p>
 					{/each}
+					{#if tiktokDraft}
+						<p class="consent">Only the video is sent. {DRAFT_INBOX_NOTICE}</p>
+					{/if}
 					{#if disclosure}
 						<!-- TikTok's label and declaration, worded as their guidelines require.
 						     ' and ' as an expression: Svelte trims spaces at the edges of a block. -->

@@ -1,14 +1,16 @@
 import { CAMPAIGN_OPTION } from './jestrcampaign';
 import { COVER_AT_OPTION } from './coverimage';
+import { POST_MODE_OPTION } from './tiktok';
 
 /**
  * Keys the Details step's own boxes write on a post's options — the Jestr
- * campaign tick and TikTok's cover placement — not option fields, so a reset
+ * campaign tick, TikTok's cover placement and whether TikTok gets a draft —
+ * not option fields, so a reset
  * of the options keeps them. Instagram's Paid partnership tick was one until
  * v0.16.62, when it went: Meta's API took the label and never showed it, so
  * To finish reminds of it instead (videotodo.ts).
  */
-export const BOX_OPTIONS = [CAMPAIGN_OPTION, COVER_AT_OPTION];
+export const BOX_OPTIONS = [CAMPAIGN_OPTION, COVER_AT_OPTION, POST_MODE_OPTION];
 
 /** What survives a reset of a post's options: the Details boxes' choices. */
 export function keptOnReset(options: Record<string, unknown> | undefined): Record<string, boolean | string> {

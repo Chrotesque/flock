@@ -454,6 +454,8 @@ export interface TikTokCreator {
 	duetDisabled: boolean;
 	stitchDisabled: boolean;
 	maxDurationSeconds: number;
+	/** Whether the sign-in holds video.upload, so drafts can go; absent from a worker before 0.23.0. */
+	canDraft?: boolean;
 	error?: string;
 }
 

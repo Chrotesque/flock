@@ -22,8 +22,23 @@ const SETUP = 'pnpm worker:auth --tiktok';
 const TOKEN_URL = 'https://open.tiktokapis.com/v2/oauth/token/';
 const API = 'https://open.tiktokapis.com/v2';
 
-/** What the consent asks for: the login itself, and posting. Nothing that reads. */
-export const TIKTOK_SCOPES = ['user.info.basic', 'video.publish'];
+/**
+ * What the consent asks for: the login itself and posting, directly
+ * (video.publish) or as a draft to the creator's TikTok inbox
+ * (video.upload). Nothing that reads.
+ */
+export const TIKTOK_SCOPES = ['user.info.basic', 'video.publish', 'video.upload'];
+
+/** The longest video TikTok takes as a draft (its Upload reference: 10 minutes). */
+export const DRAFT_MAX_SECONDS = 600;
+
+/**
+ * Whether a post goes to the creator's TikTok inbox as a draft rather than
+ * straight to the profile: the Post to TikTok box's choice, `postMode`.
+ */
+export function isDraft(options) {
+	return options?.postMode === 'draft';
+}
 
 /**
  * What the Dashboard's TikTok numbers need on top (ttstats.mjs): the
@@ -387,7 +402,10 @@ function explainInit(err) {
 		spam_risk_too_many_posts: 'TikTok says this account has posted too much today. Try again tomorrow.',
 		spam_risk_user_banned_from_posting: 'TikTok has banned this account from posting.',
 		scope_not_authorized:
-			'The TikTok grant lacks video.publish. Re-authorise with:  pnpm worker:auth --tiktok',
+			'The TikTok sign-in does not allow this kind of post (video.publish, or video.upload for a draft). ' +
+				'Sign the account in again.',
+		spam_risk_too_many_pending_share:
+			'TikTok holds at most 5 drafts a day waiting in the inbox. Post or delete some in the TikTok app first.',
 		rate_limit_exceeded: 'TikTok rate limit hit; upload again in a few minutes.',
 		url_ownership_unverified: 'TikTok refused the upload source.'
 	};
@@ -459,7 +477,7 @@ async function putChunk(uploadUrl, chunk, range, total, mime) {
  * a definite answer, too many misses in a row, or the overall cap ends the
  * wait, and the last two say so, because the post may still appear.
  */
-async function waitForPublish(config, account, publishId, username, log) {
+async function waitForPublish(config, account, publishId, username, log, draft = false) {
 	const started = Date.now();
 	let lastStatus = '';
 	let misses = 0;
@@ -498,6 +516,9 @@ async function waitForPublish(config, account, publishId, username, log) {
 			const ids = data.publicaly_available_post_id ?? data.publicly_available_post_id ?? [];
 			return { postIds: Array.isArray(ids) ? ids.map(String) : [] };
 		}
+		// A draft is done once TikTok has put it in the inbox: the creator
+		// finishes and posts it in the app, whenever they like.
+		if (draft && status === 'SEND_TO_USER_INBOX') return { postIds: [], inbox: true };
 		if (status === 'FAILED') throw new Error(explainFailure(data.fail_reason));
 		await sleep(STATUS_EVERY_MS);
 	}
@@ -530,6 +551,9 @@ export async function probeTikTok(config, handle) {
 			result: { url: postId ? `${profile}/video/${postId}` : profile, scheduled: false, privacyStatus: 'posted' }
 		};
 	}
+	if (status === 'SEND_TO_USER_INBOX') {
+		return { state: 'done', result: draftResult(handle.username) };
+	}
 	if (status === 'FAILED') return { state: 'gone', reason: explainFailure(data.fail_reason) };
 	if (status === 'PROCESSING_UPLOAD' || status === '') return { state: 'incomplete' };
 	return { state: 'processing' };
@@ -544,8 +568,10 @@ export async function publishToTikTok({ target, job, pb, config, log, saveHandle
 	// Their rules require this before every post: it is where the account's
 	// privacy levels and interaction settings come from.
 	const creator = await creatorInfo(config, account);
-	const level = resolvePrivacy(options.privacy, creator);
 	const duration = Number(job.video_duration) || 0;
+	if (isDraft(options)) return sendDraft({ job, pb, config, account, creator, options, duration, log, saveHandle });
+
+	const level = resolvePrivacy(options.privacy, creator);
 	const postInfo = buildPostInfo(target, options, creator, level, duration);
 
 	if (creator.maxDurationSeconds > 0 && duration > creator.maxDurationSeconds) {
@@ -597,8 +623,96 @@ async function coverVideo({ job, pb, config, options, creator, log, notes }) {
 	}
 }
 
+/** What a draft in the inbox is recorded as: the profile, since no post exists yet. */
+function draftResult(username, notes = []) {
+	return {
+		url: `https://www.tiktok.com/@${username}`,
+		scheduled: false,
+		privacyStatus: 'draft',
+		draft: true,
+		notes: [
+			`Sent to @${username}'s TikTok inbox as a draft: open the notification in the TikTok app to finish and post it.`,
+			...notes
+		]
+	};
+}
+
+/**
+ * A draft: the video goes to the creator's TikTok inbox (Content Posting
+ * API, Upload — scope video.upload), where they finish and post it in
+ * TikTok's own editor. TikTok takes no caption, audience or interaction
+ * settings with it — those are chosen in the app — so only the bytes go,
+ * the cover image put into them as for a direct post (the frame is then
+ * there to pick as the cover). Done once TikTok says the notification went
+ * out (SEND_TO_USER_INBOX).
+ */
+async function sendDraft({ job, pb, config, account, creator, options, duration, log, saveHandle }) {
+	if (duration > DRAFT_MAX_SECONDS) {
+		throw new Error(
+			`The video runs ${Math.round(duration)}s; TikTok takes a draft of at most ${DRAFT_MAX_SECONDS / 60} minutes.`
+		);
+	}
+	const notes = [];
+	const withCover = job.tiktok_cover ? await coverVideo({ job, pb, config, options, creator, log, notes }) : null;
+	try {
+		const { publishId } = await uploadVideo({
+			job,
+			pb,
+			config,
+			account,
+			creator,
+			withCover,
+			log,
+			saveHandle,
+			path: '/post/publish/inbox/video/init/',
+			body: {},
+			what: `as a draft to @${creator.username}'s inbox`
+		});
+		await waitForPublish(config, account, publishId, creator.username, log, true);
+		return { ...draftResult(creator.username, notes), publishId, postId: '' };
+	} finally {
+		await withCover?.cleanup();
+	}
+}
+
 /** The upload itself: init, the chunks, the wait for TikTok to publish. */
 async function sendVideo({ target, job, pb, config, account, creator, level, postInfo, log, saveHandle, withCover, notes }) {
+	const { publishId } = await uploadVideo({
+		job,
+		pb,
+		config,
+		account,
+		creator,
+		withCover,
+		log,
+		saveHandle,
+		path: '/post/publish/video/init/',
+		body: { post_info: postInfo },
+		what: `as @${creator.username}, ${privacyLabel(level).toLowerCase()}`
+	});
+
+	const outcome = await waitForPublish(config, account, publishId, creator.username, log);
+	const postId = outcome.postIds[0] ?? '';
+	const url = postId
+		? `https://www.tiktok.com/@${creator.username}/video/${postId}`
+		: `https://www.tiktok.com/@${creator.username}`;
+
+	return {
+		url,
+		publishId,
+		postId,
+		scheduled: false,
+		privacyStatus: privacyLabel(level).toLowerCase(),
+		...(notes.length > 0 ? { notes } : {})
+	};
+}
+
+/**
+ * The bytes, either route: the init call at `path` with `body` plus the
+ * file's source_info, the handle saved before a byte goes up, then the
+ * chunks. Returns TikTok's publish id.
+ */
+async function uploadVideo({ job, pb, config, account, creator, withCover, log, saveHandle, path, body, what }) {
 	const video = withCover
 		? { stream: createReadStream(withCover.path), size: withCover.size, mimeType: 'video/mp4' }
 		: await pb.openVideo(job);
@@ -617,14 +731,13 @@ async function sendVideo({ target, job, pb, config, account, creator, level, pos
 	const plan = planChunks(video.size);
 	log(
 		`posting ${job.video_name || job.video} (${(video.size / MiB).toFixed(1)} MB, ` +
-			`${plan.count} chunk${plan.count === 1 ? '' : 's'}) as @${creator.username}, ` +
-			privacyLabel(level).toLowerCase()
+			`${plan.count} chunk${plan.count === 1 ? '' : 's'}) ${what}`
 	);
 
 	let init;
 	try {
-		init = await api(config, account, '/post/publish/video/init/', {
-			post_info: postInfo,
+		init = await api(config, account, path, {
+			...body,
 			source_info: {
 				source: 'FILE_UPLOAD',
 				video_size: video.size,
@@ -649,7 +762,8 @@ async function sendVideo({ target, job, pb, config, account, creator, level, pos
 			kind: 'tiktok-publish',
 			publishId: init.publish_id,
 			username: creator.username,
-			account: account.openId
+			account: account.openId,
+			...(path.includes('/inbox/') ? { draft: true } : {})
 		});
 	} catch (err) {
 		video.stream.destroy();
@@ -671,20 +785,7 @@ async function sendVideo({ target, job, pb, config, account, creator, level, pos
 		}
 	}
 
-	const outcome = await waitForPublish(config, account, init.publish_id, creator.username, log);
-	const postId = outcome.postIds[0] ?? '';
-	const url = postId
-		? `https://www.tiktok.com/@${creator.username}/video/${postId}`
-		: `https://www.tiktok.com/@${creator.username}`;
-
-	return {
-		url,
-		publishId: init.publish_id,
-		postId,
-		scheduled: false,
-		privacyStatus: privacyLabel(level).toLowerCase(),
-		...(notes.length > 0 ? { notes } : {})
-	};
+	return { publishId: init.publish_id };
 }
 
 let creatorsAt = 0;
@@ -717,7 +818,9 @@ export async function refreshTikTokCreators(pb, config, log, force = false) {
 			await pb.upsertAccount('tiktok', id, {
 				handle: creator.username,
 				name: creator.nickname,
-				details: { fetchedAt: now, ...creator, error: '' },
+				// Whether this sign-in may send drafts: one made before flock
+				// asked for video.upload may not, and the box says so.
+				details: { fetchedAt: now, ...creator, canDraft: hasScope(grantedTikTokScope(account), 'video.upload'), error: '' },
 				error: '',
 				fetched_at: now
 			});

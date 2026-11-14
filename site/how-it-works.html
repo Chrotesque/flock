@@ -109,8 +109,8 @@
     <p class="sub">What flock asks TikTok for, and when.</p>
     <dl class="calls">
       <dt>Login Kit</dt>
-      <dd>The authorization code flow with PKCE, requesting <code>user.info.basic</code> and
-      <code>video.publish</code>, and — only when the operator signs in with <code>--with-stats</code> —
+      <dd>The authorization code flow with PKCE, requesting <code>user.info.basic</code>,
+      <code>video.publish</code> and <code>video.upload</code>, and — only when the operator signs in with <code>--with-stats</code> —
       <code>video.list</code> and <code>user.info.stats</code> for the Dashboard. The refresh token is stored
       locally and rotated by the worker.</dd>
 
@@ -127,9 +127,16 @@
       <code>FILE_UPLOAD</code> as the source. The file is then sent to
       the upload address TikTok returns, in chunks of 5 to 64 MB.</dd>
 
+      <dt>Or, when the operator picks "As a draft": upload to the inbox</dt>
+      <dd><code>/post/publish/inbox/video/init/</code> (<code>video.upload</code>) with <code>FILE_UPLOAD</code> as
+      the source and nothing else: TikTok takes no caption or settings with a draft. The file goes up in the same
+      chunks, and TikTok sends the creator a notification. The post box and the confirmation say to click that
+      notification in the TikTok inbox to continue editing in TikTok and complete the post; the caption, audience,
+      interactions and disclosure are then chosen in TikTok itself.</dd>
+
       <dt>Afterwards: status</dt>
-      <dd><code>/post/publish/status/fetch/</code> every ten seconds until TikTok reports the post complete or
-      failed. The outcome, and TikTok's reason if it failed, is recorded on the release.</dd>
+      <dd><code>/post/publish/status/fetch/</code> every ten seconds until TikTok reports the post complete (or,
+      for a draft, sent to the inbox) or failed. The outcome, and TikTok's reason if it failed, is recorded on the release.</dd>
 
       <dt>Every ten minutes, with the reading permissions: the account's videos</dt>
       <dd><code>/video/list/</code> with the fields <code>id</code>, <code>create_time</code>,
@@ -149,8 +156,7 @@
       gaining views at the time.</dd>
 
       <dt>Not used</dt>
-      <dd><code>video.upload</code>, which sends a draft to the creator's inbox, is not requested by anything in
-      the app. Nothing reads who follows the account, the text of comments, private videos or messages; without the
+      <dd>Nothing reads who follows the account, the text of comments, private videos or messages; without the
       reading permissions, nothing reads the account's videos or counts at all.</dd>
     </dl>
   </section>
@@ -172,7 +178,7 @@
 <footer class="bottom">
   <div class="wrap">
     <img src="icon.png" alt="">
-    <span>flock, version 0.20.9. Contact: contact@chrotesque.com</span>
+    <span>flock, version 0.23.0. Contact: contact@chrotesque.com</span>
     <nav>
       <a href="index.html">Overview</a>
       <a href="https://github.com/Chrotesque/flock">GitHub</a>

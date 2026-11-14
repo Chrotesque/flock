@@ -1,6 +1,6 @@
 import { PLATFORMS, PLATFORM_IDS } from '../platforms';
 import { isoDate, makeTime, nextDayMatching } from '../format';
-import { tiktokProblems } from '../tiktok';
+import { isDraft, tiktokProblems } from '../tiktok';
 import { captionProblems } from '../tiktokmentions';
 import { PASTE_TAG_BOX, type FlockPaste, type PastedPlatform } from '../flockpaste';
 import { withPlaylists } from '../playlists';
@@ -394,6 +394,9 @@ class DraftStore {
 	 */
 	isComplete(platform: PlatformId): boolean {
 		const text = this.textFor(platform);
+		// A TikTok draft carries no caption — it is written in TikTok — so
+		// none is needed, and a mention in one cannot fail to link.
+		if (platform === 'tiktok' && this.tiktokDraft) return this.tiktokProblems.length === 0;
 		if (!text.description.trim()) return false;
 		if (platform === 'tiktok' && this.tiktokProblems.length > 0) return false;
 		if (platform === 'tiktok' && captionProblems(text.description).length > 0) return false;
@@ -405,6 +408,11 @@ class DraftStore {
 	 * audience list comes from the worker's creator row, which is why this
 	 * reads the accounts store — the draft reads from stores, never back.
 	 */
+	/** Whether TikTok gets a draft in the creator's inbox rather than a post (tiktok.ts). */
+	get tiktokDraft(): boolean {
+		return isDraft(this.overrides.tiktok);
+	}
+
 	get tiktokProblems(): string[] {
 		return tiktokProblems(this.overrides.tiktok ?? {}, accounts.tiktok, this.videoFor('tiktok').duration);
 	}

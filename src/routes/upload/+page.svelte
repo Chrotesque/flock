@@ -29,6 +29,7 @@
 	import { uploadEdit } from '$lib/stores/uploadedit.svelte';
 	import { logAction } from '$lib/log';
 	import { findMentions, handleKey, mentionNotes } from '$lib/tiktokmentions';
+	import { DRAFT_INBOX_NOTICE, isDraft } from '$lib/tiktok';
 	import { tiktokHandles } from '$lib/stores/tiktokhandles.svelte';
 	import { RECORD_VERSION, timingOfTargets, type UploadRecord } from '$lib/uploadrecord';
 	import { allowanceWarning, postAllowance, youtubeGrantWarnings } from '$lib/accounts';
@@ -318,7 +319,8 @@
 			out.push(...youtubeGrantWarnings(row.options, accounts.for('youtube')));
 			if (row.options.visibility === 'Private') out.push('Private: uploaded as private and left private.');
 		}
-		if (row.platform === 'tiktok') {
+		// A draft carries no audience or caption: nothing of it to warn about.
+		if (row.platform === 'tiktok' && !isDraft(row.options)) {
 			const privacy = String(row.options.privacy ?? '');
 			if (privacy && privacy !== 'Public') out.push(`Posted for ${privacy.toLowerCase()} only.`);
 			for (const note of mentionNotes(row.description, tiktokHandles.rows)) {
@@ -440,7 +442,7 @@
 		);
 		// The TikTok handles it names come first in the @ list next time.
 		const tiktok = plan.find((row) => row.platform === 'tiktok');
-		if (tiktok) tiktokHandles.markUsed(findMentions(tiktok.description).map((m) => handleKey(m.handle)));
+		if (tiktok && !isDraft(tiktok.options)) tiktokHandles.markUsed(findMentions(tiktok.description).map((m) => handleKey(m.handle)));
 	}
 
 	/** What the last save of an edit did, for the done screen. */
@@ -807,7 +809,12 @@
 						</li>
 					{/each}
 				</ul>
-				{#if plan.some((row) => row.platform === 'tiktok')}
+				{#if plan.some((row) => row.platform === 'tiktok' && isDraft(row.options))}
+					<!-- TikTok's Upload docs ask for this after every draft. -->
+					<p class="caveat">
+						The worker sends the video to your TikTok inbox at its slot. {DRAFT_INBOX_NOTICE}
+					</p>
+				{:else if plan.some((row) => row.platform === 'tiktok')}
 					<!-- TikTok's guidelines ask for this notice after every post. -->
 					<p class="caveat">
 						After the worker posts to TikTok, it may take a few minutes for the video to be

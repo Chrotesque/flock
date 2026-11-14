@@ -48,5 +48,8 @@ describe('doneWords', () => {
 		expect(doneWords({ username: '', missing: ['video.list', 'user.info.stats'] })).toBe(
 			'The account is connected, but TikTok did not allow video.list and user.info.stats, so its numbers cannot be read.'
 		);
+		expect(doneWords({ username: 'paper_moon', missing: ['video.upload'] })).toBe(
+			'@paper_moon is connected. Its videos and followers are being read. It cannot be sent drafts (TikTok did not allow video.upload).'
+		);
 	});
 });

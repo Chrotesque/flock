@@ -5,6 +5,9 @@ import {
 	disclosureLabel,
 	readDisclosure,
 	tiktokProblems,
+	isDraft,
+	forPostMode,
+	postModeOf,
 	BRANDED_BLOCKS_PRIVATE,
 	DISCLOSURE_INCOMPLETE
 } from './tiktok';
@@ -123,5 +126,40 @@ describe('tiktokProblems: an account that cannot post', () => {
 			'TikTok says @owls_nest cannot post right now — try again later. (TikTok spam_risk_too_many_posts: The creator has reached the daily post cap)'
 		]);
 		expect(tiktokProblems({ privacy: 'Public' }, { ...creator, error: '' }, 30)).toEqual([]);
+	});
+});
+
+describe('drafts', () => {
+	it('reads the post mode, direct unless a draft was chosen', () => {
+		expect(postModeOf({})).toBe('direct');
+		expect(postModeOf(undefined)).toBe('direct');
+		expect(postModeOf({ postMode: 'draft' })).toBe('draft');
+		expect(isDraft({ postMode: 'direct' })).toBe(false);
+	});
+
+	it('asks nothing of a draft that TikTok sets itself', () => {
+		// No audience, an unfinished disclosure: none of it goes with a draft.
+		const options = { postMode: 'draft', discloseContent: true };
+		expect(tiktokProblems(options, { ...creator, canDraft: true }, 30)).toEqual([]);
+	});
+
+	it('holds a draft from a sign-in that cannot send one, or one TikTok will not hold', () => {
+		const options = { postMode: 'draft' };
+		expect(tiktokProblems(options, { ...creator, canDraft: false }, 30)[0]).toMatch(/Sign it in again/);
+		// A worker from before drafts says nothing: not known, so not offered.
+		expect(tiktokProblems(options, creator, 30)[0]).toMatch(/Sign it in again/);
+		expect(tiktokProblems(options, { ...creator, canDraft: true }, 601)[0]).toMatch(/up to 10 minutes/);
+	});
+
+	it('still stops a draft for an account TikTok says cannot post now', () => {
+		const problems = tiktokProblems({ postMode: 'draft' }, { ...creator, canDraft: true, error: 'spam_risk' }, 30);
+		expect(problems[0]).toMatch(/cannot post right now/);
+	});
+
+	it("drops a direct post's choices from a draft, and keeps a post's", () => {
+		const options = { postMode: 'draft', privacy: 'Public', allowComments: true, coverImageAt: 'end', jestrCampaign: true };
+		expect(forPostMode(options)).toEqual({ postMode: 'draft', coverImageAt: 'end', jestrCampaign: true });
+		const post = { privacy: 'Public', allowComments: true };
+		expect(forPostMode(post)).toBe(post);
 	});
 });

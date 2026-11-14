@@ -84,6 +84,8 @@
 		brandName: string;
 		/** The upload's product name as stored; shown under its box while editing (productLabel); '' for none. */
 		product: string;
+		/** A TikTok post sent to the creator's inbox as a draft rather than posted. */
+		draft: boolean;
 	}
 
 	/**
@@ -244,7 +246,9 @@
 			past: passed || target.status === 'cancelled',
 			brand: target.brand ?? '',
 			brandName: target.brand_name ?? '',
-			product: target.product ?? ''
+			product: target.product ?? '',
+			// A TikTok draft: the worker marks its handle (tiktok.mjs).
+			draft: (target.handle as { draft?: unknown } | null)?.draft === true
 		};
 	}
 
@@ -311,7 +315,7 @@
 	}
 
 	function statusLabel(entry: Entry): string {
-		if (entry.status === 'published') return 'released';
+		if (entry.status === 'published') return entry.draft ? 'in the TikTok inbox' : 'released';
 		if (entry.status === 'scheduled') return 'on the platform';
 		if (entry.status === 'publishing') return 'uploading';
 		if (entry.status === 'failed') return 'failed';

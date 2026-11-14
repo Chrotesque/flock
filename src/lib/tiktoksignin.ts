@@ -59,6 +59,8 @@ export function canRead(report: { missing?: string[] } | undefined | null): bool
 export function doneWords(row: Pick<SigninRow, 'username' | 'nickname' | 'missing'>): string {
 	const who = row.username ? `@${row.username}` : 'The account';
 	const missing = row.missing ?? [];
-	if (missing.length === 0) return `${who} is connected. Its videos and followers are being read.`;
-	return `${who} is connected, but TikTok did not allow ${missing.join(' and ')}, so its numbers cannot be read.`;
+	const reading = missing.filter((scope) => scope !== 'video.upload');
+	const drafts = missing.includes('video.upload') ? ' It cannot be sent drafts (TikTok did not allow video.upload).' : '';
+	if (reading.length === 0) return `${who} is connected. Its videos and followers are being read.${drafts}`;
+	return `${who} is connected, but TikTok did not allow ${reading.join(' and ')}, so its numbers cannot be read.${drafts}`;
 }

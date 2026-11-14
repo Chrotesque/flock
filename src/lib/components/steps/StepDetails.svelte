@@ -48,7 +48,11 @@
 		PRIVATE_BLOCKS_BRANDED,
 		BRANDED_BLOCKS_PRIVATE,
 		DISCLOSURE_INCOMPLETE,
-		DISCLOSURE_TOGGLE
+		DISCLOSURE_TOGGLE,
+		DRAFT_INBOX_NOTICE,
+		DRAFT_TAKES_NOTHING,
+		POST_MODE_OPTION,
+		postModeOf
 	} from '$lib/tiktok';
 	import {
 		captionSegments,
@@ -235,6 +239,22 @@
 			accounts.tiktok?.commentDisabled || accounts.tiktok?.duetDisabled || accounts.tiktok?.stitchDisabled
 		)
 	);
+
+	// Straight to the profile, or a draft in the creator's TikTok inbox
+	// (tiktok.ts): a draft takes only the video, so the box then holds none of
+	// the post's choices — TikTok asks for them when the draft is posted.
+	let tiktokMode = $derived(postModeOf(tiktokOptions));
+	let tiktokDraft = $derived(tiktokMode === 'draft');
+	let captionCopied = $state(false);
+	async function copyCaption() {
+		try {
+			await navigator.clipboard.writeText(tiktokCaption);
+			captionCopied = true;
+			setTimeout(() => (captionCopied = false), 2000);
+		} catch {
+			captionCopied = false;
+		}
+	}
 
 	function setTikTok(key: string, value: string | boolean) {
 		draft.overrides.tiktok = { ...(draft.overrides.tiktok ?? {}), [key]: value };
@@ -1346,9 +1366,24 @@
 					<span class="icons"><PlatformIcon platform="tiktok" size={13} /></span>
 				</span>
 
+				<div class="coverat first" role="radiogroup" aria-label="How the video goes to TikTok">
+					<span class="coveratlabel">Send</span>
+					{#each [['direct', 'As a post'], ['draft', 'As a draft']] as [value, label] (value)}
+						<button
+							class="coveratopt"
+							class:on={tiktokMode === value}
+							role="radio"
+							aria-checked={tiktokMode === value}
+							onclick={() => setTikTok(POST_MODE_OPTION, value)}
+						>
+							{label}
+						</button>
+					{/each}
+				</div>
+
 				{#if accounts.tiktok}
 					<p class="ttline">
-						Posting as <strong>{accounts.tiktok.nickname || accounts.tiktok.username}</strong>
+						{tiktokDraft ? 'Sending to' : 'Posting as'} <strong>{accounts.tiktok.nickname || accounts.tiktok.username}</strong>
 						<span class="ttfaint">@{accounts.tiktok.username}</span>
 					</p>
 					{#if tiktokCheckLine}
@@ -1363,6 +1398,15 @@
 					</p>
 				{/if}
 
+				{#if tiktokDraft}
+					<p class="ttnote">flock uploads the video to your TikTok inbox at its slot. {DRAFT_INBOX_NOTICE}</p>
+					<p class="ttnote ttfaint">{DRAFT_TAKES_NOTHING}</p>
+					{#if tiktokCaption.trim()}
+						<button class="btn ttcopy" onclick={() => void copyCaption()}>
+							{captionCopied ? 'Caption copied' : 'Copy the caption for TikTok'}
+						</button>
+					{/if}
+				{:else}
 				<label class="ttfield">
 					<span class="ttlabel">Who can view this video</span>
 					<select
@@ -1452,6 +1496,7 @@
 							rel="noopener">{link.label}</a
 						>{/each}.
 				</p>
+				{/if}
 
 				{#each draft.tiktokProblems as problem (problem)}
 					<p class="warnbox tt">{problem}</p>
@@ -2556,6 +2601,11 @@
 	/* TikTok's per-post controls, worded as their guidelines require. */
 	.tiktokbox {
 		gap: 8px;
+	}
+
+	.ttcopy {
+		justify-self: start;
+		font-size: 12px;
 	}
 
 	.ttline {

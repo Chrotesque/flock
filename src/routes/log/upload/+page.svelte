@@ -523,7 +523,7 @@
 						{#if t.account}<span class="as" class:was={Boolean(movedTo(t, now))}>as {t.account}</span>{/if}
 						{#if movedTo(t, now)}<span class="as moved">now as {movedTo(t, now)}</span>{/if}
 						{#if now}
-							<span class="status {now.status}">{statusWords(now.status)}</span>
+							<span class="status {now.status}">{statusWords(now.status, t.platform === 'tiktok' && t.options?.postMode === 'draft')}</span>
 						{/if}
 					</header>
 

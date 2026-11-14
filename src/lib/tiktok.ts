@@ -19,6 +19,70 @@ function firstLine(text: string): string {
  * below is theirs; keep it as it is.
  */
 
+/**
+ * How a post goes to TikTok — the Post to TikTok box's choice, written into
+ * the post's options as `postMode`: straight to the profile (Direct Post,
+ * video.publish), or to the creator's TikTok inbox as a draft (Upload,
+ * video.upload), finished and posted in TikTok's own editor. Absent is
+ * direct, which every post was before drafts existed.
+ */
+export const POST_MODE_OPTION = 'postMode';
+export type PostMode = 'direct' | 'draft';
+
+export function postModeOf(options: OptionValues | undefined): PostMode {
+	return options?.[POST_MODE_OPTION] === 'draft' ? 'draft' : 'direct';
+}
+
+export function isDraft(options: OptionValues | undefined): boolean {
+	return postModeOf(options) === 'draft';
+}
+
+/**
+ * A direct post's choices, none of which go with a draft: TikTok asks for
+ * them when the draft is posted in the app. Dropped from a draft's plan so
+ * its record and Review row show only what TikTok gets.
+ */
+export const DIRECT_ONLY = [
+	'privacy',
+	'allowComments',
+	'allowDuet',
+	'allowStitch',
+	'discloseContent',
+	'brandOrganic',
+	'brandContent',
+	'disclosure',
+	'aiGenerated',
+	'coverFrame'
+] as const;
+
+/** A TikTok post's options as they go out: a draft's without the direct post's choices. */
+export function forPostMode(options: OptionValues): OptionValues {
+	if (!isDraft(options)) return options;
+	const out: OptionValues = { ...options };
+	for (const key of DIRECT_ONLY) delete out[key];
+	return out;
+}
+
+/** The longest video TikTok takes as a draft (its Upload reference: 10 minutes). */
+export const DRAFT_MAX_SECONDS = 600;
+
+/**
+ * What TikTok asks an app to tell whoever sends a draft: the post is
+ * finished from the notification in their TikTok inbox. Its docs: "inform
+ * users that they must click on inbox notifications to continue the editing
+ * flow in TikTok and complete the post."
+ */
+export const DRAFT_INBOX_NOTICE =
+	'Once it is uploaded, click the notification in your TikTok inbox to continue editing in TikTok and complete the post.';
+
+/** Why a draft carries none of flock's caption or settings. */
+/** A sign-in from before flock asked for drafts (video.upload) cannot send one. */
+export const DRAFT_NOT_ALLOWED = (username: string) =>
+	`@${username} was signed in before flock could send drafts. Sign it in again to allow them, or send this as a post.`;
+
+export const DRAFT_TAKES_NOTHING =
+	'TikTok takes only the video with a draft: the caption, who can view it, comments, Duet, Stitch and the content disclosure are all set in TikTok when you post it.';
+
 export const MUSIC_USAGE_URL = 'https://www.tiktok.com/legal/page/global/music-usage-confirmation/en';
 export const BRANDED_CONTENT_POLICY_URL = 'https://www.tiktok.com/legal/page/global/bc-policy/en';
 
@@ -102,6 +166,16 @@ export function tiktokProblems(
 	// daily cap, a posting ban): the guidelines say stop and try again later.
 	if (creator?.error) {
 		problems.push(`TikTok says @${creator.username} cannot post right now — try again later. (${firstLine(creator.error)})`);
+	}
+
+	// A draft is only the video: every choice is made in TikTok. What stops
+	// one is a sign-in that cannot send drafts and TikTok's ten minutes.
+	if (isDraft(options)) {
+		if (creator && creator.canDraft !== true) problems.push(DRAFT_NOT_ALLOWED(creator.username));
+		if (durationSeconds > DRAFT_MAX_SECONDS) {
+			problems.push(`The video runs ${Math.round(durationSeconds)}s; TikTok takes a draft of up to 10 minutes.`);
+		}
+		return problems;
 	}
 
 	if (!audience) problems.push('Choose who can view the video.');

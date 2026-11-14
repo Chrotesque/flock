@@ -268,7 +268,8 @@ const BOX_LABELS: Record<string, string> = {
 	playlists: 'Playlists',
 	playlist: 'Playlist',
 	paidPromotion: 'Paid promotion',
-	tags: 'Tags as sent'
+	tags: 'Tags as sent',
+	postMode: 'Sent to TikTok'
 };
 
 /** An option key in the words the screens use for it: the registry's, a per-upload box's, else the key. */
@@ -311,7 +312,13 @@ export function optionLines(platform: PlatformId, given: OptionValues): OptionLi
 	const def = PLATFORMS[platform];
 	// TikTok's box starts with nothing chosen and every box unticked, so a
 	// choice missing from the options is "not set" or "No", and is said.
-	const options = platform === 'tiktok' ? { ...TIKTOK_UNMADE, ...given } : given;
+	// A draft carries none of them: TikTok asks for them when it is posted.
+	const options =
+		platform === 'tiktok' && given.postMode === 'draft'
+			? { ...given, postMode: 'As a draft, to the TikTok inbox' }
+			: platform === 'tiktok'
+				? { ...TIKTOK_UNMADE, ...given }
+				: given;
 	const lines: OptionLine[] = [];
 	const done = new Set<string>();
 	for (const field of def.fields) {
@@ -330,8 +337,9 @@ export function optionLines(platform: PlatformId, given: OptionValues): OptionLi
 	return lines;
 }
 
-/** A target's state on the platform, in words. */
-export function statusWords(status: TargetStatus | string): string {
+/** A target's state on the platform, in words; a TikTok draft is in the inbox, not published. */
+export function statusWords(status: TargetStatus | string, draft = false): string {
+	if (draft && status === 'published') return 'In the TikTok inbox as a draft';
 	switch (status) {
 		case 'pending':
 			return 'Waiting for the worker';
