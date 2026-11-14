@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-14T14:15:00+01:00', version: '0.23.2', line: 'Fixed: Worker > Late Posts' },
 	{ at: '2026-11-14T14:12:00+01:00', version: '0.23.1', line: 'Changed: Jestr > Local Only' },
 	{ at: '2026-11-14T13:52:00+01:00', version: '0.23.0', line: 'Added: TikTok > Drafts' },
 	{ at: '2026-11-14T13:32:00+01:00', version: '0.22.18', line: 'Fixed: YouTube > Stats Reads' },

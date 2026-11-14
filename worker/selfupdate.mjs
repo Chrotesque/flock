@@ -48,3 +48,16 @@ export function watchForUpdate({ file, everyMs = 10_000, onReady, look = stat })
 		clearInterval(timer);
 	};
 }
+
+/**
+ * Whether a post may still start while the worker drains for an update: only
+ * once its slot has come. A release going out late costs more than a restart
+ * waiting a few minutes longer (the user's order: uploads first, then
+ * updates), while a post not due yet is the new worker's — Instagram's
+ * ten-minute lead or Facebook's four weeks would otherwise keep a drain
+ * going indefinitely. A slot PocketBase cannot read counts as not due.
+ */
+export function dueWhileDraining(scheduledAt, now = Date.now()) {
+	const at = Date.parse(String(scheduledAt ?? '').replace(' ', 'T'));
+	return Number.isFinite(at) && at <= now;
+}

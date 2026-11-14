@@ -60,7 +60,13 @@ export function makeHeartbeat({
 	const warned = new Set();
 
 	function canPublish() {
-		if (draining) return false;
+		return !draining && mayPublish();
+	}
+
+	// Whether this worker's role and the handover let it publish, drain aside:
+	// a post whose slot has come still starts while draining (`dueWhileDraining`
+	// in selfupdate.mjs), since a release is worth more than a quick restart.
+	function mayPublish() {
 		if (!live) return ownsPublishing(role);
 		if (role === 'all') return true;
 		if (role === 'nas') return !waiting;
@@ -194,6 +200,10 @@ export function makeHeartbeat({
 	return {
 		role,
 		canPublish,
+		/** Publishing allowed for a post whose slot has come — true while draining too. */
+		canPublishDue: mayPublish,
+		/** A new worker file is waiting for the work in hand to finish. */
+		draining: () => draining,
 		canLocal: () => !draining && ownsLocal(role),
 
 		/** Starts nothing new from here on; see `draining` above. */

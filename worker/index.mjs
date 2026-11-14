@@ -92,7 +92,7 @@ import { randomBytes } from 'node:crypto';
 import { makeHeartbeat } from './heartbeat.mjs';
 import { coversNas, ownsLocal, ownsPublishing } from './roles.mjs';
 import { isRecordId, openStoredCopy } from './storedcopy.mjs';
-import { watchForUpdate } from './selfupdate.mjs';
+import { dueWhileDraining, watchForUpdate } from './selfupdate.mjs';
 import { askToStop, holdInstance } from './instance.mjs';
 import { sayOnScreen, startTray, wantsTray } from './tray.mjs';
 import { exeLogPath } from './filelog.mjs';
@@ -263,7 +263,7 @@ async function handleTarget(pb, config, platform, target) {
 
 	// A handover may have begun since this pass listed the row; leave it for
 	// the worker taking over.
-	if (!hb.canPublish()) return;
+	if (!hb.canPublishDue()) return;
 
 	// Read again just before the claim: the listing may be seconds old, and a
 	// move to another brand (moves.mjs) or a drag in the Calendar may have
@@ -271,6 +271,8 @@ async function handleTarget(pb, config, platform, target) {
 	const fresh = await pb.getTarget(target.id);
 	if (fresh.status !== 'pending' || fresh.move || fresh.request) return;
 	target = fresh;
+	// Draining for an update: only a post whose slot has come still starts.
+	if (!hb.canPublish() && !dueWhileDraining(target.scheduled_at)) return;
 
 	// Claim before starting, so a second pass cannot pick up the same row while
 	// its upload is in flight. The claim names this run, which is what lets
@@ -1205,7 +1207,7 @@ async function pass(pb, config) {
 	// regular minute: the watcher covers project folders meanwhile.
 	if (Date.now() - lastWatchPass >= config.pollSeconds * 1000 - 2000) await watchPass(pb);
 	await importPass(pb, config);
-	if (!hb.canPublish()) return;
+	if (!hb.canPublishDue()) return;
 
 	for (const [platform, adapter] of Object.entries(ADAPTERS)) {
 		if (!dry && !adapter.ready(config)) {
@@ -1213,7 +1215,9 @@ async function pass(pb, config) {
 			continue;
 		}
 		if (adapter.timing !== 'now') continue;
-		const targets = await pb.pendingTargets(platform);
+		let targets = await pb.pendingTargets(platform);
+		// Draining for an update: what is due goes now, the rest to the new worker.
+		if (!hb.canPublish()) targets = targets.filter((t) => dueWhileDraining(t.scheduled_at));
 		if (targets.length === 0) continue;
 		log(`${targets.length} pending for ${platform}`);
 		for (const target of targets) {
@@ -1223,7 +1227,7 @@ async function pass(pb, config) {
 
 	// After publishing, not before: filing a big video into its NAS folder
 	// would otherwise hold the YouTube upload, and its link, for the copy.
-	await copyPass(pb);
+	if (hb.canPublish()) await copyPass(pb);
 }
 
 /** Ends the main loop's wait early; set only while it waits. */
@@ -1273,7 +1277,10 @@ const listing = new Set();
  * first. A dry run lists every pending row, due or not.
  */
 async function slotPass(pb, config, { wait = false } = {}) {
-	if (!hb.canPublish()) return;
+	if (!hb.canPublishDue()) return;
+	// Draining for an update: rows whose slot has come still start (an upload
+	// outranks a restart); the lead's early pick-ups wait for the new worker.
+	const draining = !hb.canPublish();
 	const running = [];
 	for (const [platform, adapter] of Object.entries(ADAPTERS)) {
 		if (adapter.timing !== 'slot') continue;
@@ -1284,7 +1291,7 @@ async function slotPass(pb, config, { wait = false } = {}) {
 		const work = (async () => {
 			let targets = [];
 			try {
-				const dueBy = dry ? null : new Date(Date.now() + adapter.lead(config) * 1000);
+				const dueBy = dry ? null : new Date(Date.now() + (draining ? 0 : adapter.lead(config) * 1000));
 				targets = await pb.pendingTargets(platform, dueBy);
 			} catch (err) {
 				log(`${platform} pass failed: ${err instanceof Error ? err.message : err}`);
@@ -2015,10 +2022,10 @@ function shutdown() {
  * the way back up.
  */
 async function restartForUpdate() {
-	log('a new worker file has arrived — restarting once nothing is in hand');
+	log('a new worker file has arrived — restarting once nothing is in hand (posts whose slot comes meanwhile still go out first)');
 	hb.drain();
 	let said = false;
-	while (hb.inHand() > 0 || inHand.size > 0 || busy.size > 0) {
+	while (hb.inHand() > 0 || inHand.size > 0 || busy.size > 0 || listing.size > 0) {
 		if (!said) {
 			said = true;
 			log('  waiting for the work in hand to finish first');
