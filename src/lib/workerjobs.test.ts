@@ -15,6 +15,7 @@ function post(platform: DashTarget['platform'], status: string, extra: Partial<D
 		visibility: '',
 		jobTitle: 'THE MOUND',
 		jobCreated: '',
+		brand: 'b1',
 		importing: false,
 		jobError: '',
 		...extra
@@ -37,6 +38,7 @@ describe('workerJobs', () => {
 		expect(other).toEqual([]);
 		expect(jobs).toHaveLength(1);
 		expect(jobs[0].title).toBe('THE MOUND');
+		expect(jobs[0].brand).toBe('b1');
 		expect(jobs[0].done).toEqual(['facebook', 'tiktok']);
 		expect(jobs[0].rows.map((r) => [r.platform, r.state, r.progress])).toEqual([
 			['youtube', 'working', 82],

@@ -29,6 +29,8 @@ export interface JobRow {
 export interface WorkerJob {
 	job: string;
 	title: string;
+	/** The job's brand id; '' when its posts are not read yet. */
+	brand: string;
 	/** Platforms that are out or held by the platform, in the order they got there. */
 	done: PlatformId[];
 	rows: JobRow[];
@@ -87,7 +89,7 @@ export function workerJobs(tasks: WorkerTask[], targets: DashTarget[], now: numb
 		}
 
 		const title = posts[0]?.jobTitle || posts[0]?.title || mine[0].text.replace(/^Publishing to [^:]+: /, '').replace(/^"|"$/g, '');
-		return { job, title, done, rows };
+		return { job, title, brand: posts[0]?.brand ?? '', done, rows };
 	});
 	return { jobs, other };
 }
