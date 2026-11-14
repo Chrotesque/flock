@@ -15,6 +15,16 @@ import { fetchOrExplain } from './net.mjs';
 import { mimeFromName, pbDate } from './upload.mjs';
 import { currentJob } from './jobscope.mjs';
 
+/**
+ * A PocketBase filter matching any of these YouTube video ids, '' for none.
+ * Ids are YouTube's own (letters, digits, `-`, `_`); anything else is dropped
+ * so nothing read from an API can reach the filter as syntax.
+ */
+export function videoIdFilter(videoIds) {
+	const ids = [...new Set(videoIds.filter((id) => typeof id === 'string' && /^[A-Za-z0-9_-]+$/.test(id)))];
+	return ids.map((id) => `video_id="${id}"`).join(' || ');
+}
+
 export function makeClient(baseUrl) {
 	async function request(path, options = {}) {
 		const res = await fetchOrExplain(`${baseUrl}${path}`, {
@@ -354,10 +364,17 @@ export function makeClient(baseUrl) {
 			});
 		},
 
-		/** Every video the stats pass has ever seen, newest first. */
-		async listVideoStats() {
+		/**
+		 * The stored rows of these videos (the ids one poll read). Asked by id
+		 * rather than "the newest N": a capped list once left out rows of a
+		 * channel posting less often, whose videos then read as new and failed
+		 * the unique index on every pass.
+		 */
+		async videoStatsFor(videoIds) {
+			const filter = videoIdFilter(videoIds);
+			if (!filter) return [];
 			const res = await request(
-				'/api/collections/video_stats/records?perPage=200&sort=-published_at'
+				`/api/collections/video_stats/records?perPage=500&filter=${encodeURIComponent(filter)}`
 			);
 			return res.items ?? [];
 		},

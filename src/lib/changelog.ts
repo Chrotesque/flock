@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-14T13:32:00+01:00', version: '0.22.18', line: 'Fixed: YouTube > Stats Reads' },
 	{ at: '2026-11-09T19:30:00+01:00', version: '0.22.17', line: 'Fixed: Jestr > Graph Shadow' },
 	{ at: '2026-11-09T19:12:00+01:00', version: '0.22.16', line: 'Added: Jestr > Views Graph' },
 	{ at: '2026-11-09T19:11:00+01:00', version: '0.22.16', line: 'Changed: Jestr > Graph Stays' },

@@ -468,7 +468,7 @@ async function pollChannel({ pb, config, log, account }) {
 
 		const items = await fetchVideos(config, account, ids);
 		await refreshPlaylists(pb, config, log, account);
-		const existing = await pb.listVideoStats();
+		const existing = await pb.videoStatsFor(items.map((item) => item.id));
 		const byVideo = new Map(existing.map((row) => [row.video_id, row]));
 		const now = new Date().toISOString();
 
