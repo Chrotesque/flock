@@ -212,6 +212,26 @@ export function makeClient(baseUrl) {
 		},
 
 		/** Projects sent whose file has not been renamed yet (see archivePass). */
+		/** Open local projects, for copying their newest video to the NAS (staging.mjs). */
+		async stagingProjects() {
+			const filter = encodeURIComponent('local = true && missing = false && archived_at = "" && status != "uploaded" && status != "dismissed"');
+			const fields = 'id,name,path,local,missing,archived_at,status,videos,staged';
+			const res = await request(`/api/collections/projects/records?perPage=200&filter=${filter}&fields=${fields}`);
+			return res.items ?? [];
+		},
+
+		/** Local projects touched in the last month, for the copy a confirmed pick may already have. */
+		async recentLocalProjects() {
+			const since = new Date(Date.now() - 30 * 86_400_000).toISOString().replace('T', ' ');
+			const filter = encodeURIComponent(`local = true && updated > "${since}"`);
+			const res = await request(`/api/collections/projects/records?perPage=500&sort=-updated&filter=${filter}&fields=id,staged`);
+			return res.items ?? [];
+		},
+
+		async getProjectStaged(id) {
+			return request(`/api/collections/projects/records/${id}?fields=id,staged`);
+		},
+
 		async projectsToArchive() {
 			const filter = encodeURIComponent('status = "uploaded" && archived_at = ""');
 			const fields = 'id,key,path,name,local,manifest_name';

@@ -81,13 +81,14 @@ import {
 	refusedPrep
 } from './igprep.mjs';
 import { copyToDestination, copyInto } from './archive.mjs';
-import { scanFolders, published } from './watch.mjs';
+import { scanFolders, published, typedJoin } from './watch.mjs';
 import { readWatchConfig } from './folders.mjs';
+import { copyOf, readStaged, servable, splitTyped, stageFolder, stagedName, stagingNeed } from './staging.mjs';
 import { MANIFEST_NAME, archiveManifest, detachedKey, planProjectWrites, scanProjectRoots } from './projects.mjs';
 import { makeFolderWatcher } from './folderwatch.mjs';
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
-import { basename, dirname } from 'node:path';
+import { readdir, stat } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { resolveFolder } from './paths.mjs';
 import { pickFolder } from './folderpick.mjs';
 import { readLocalImage } from './localfile.mjs';
@@ -578,6 +579,29 @@ async function storedLookup(pb, id) {
 	return value;
 }
 
+/**
+ * A project's copy on the NAS for the Review step's player: `path` is
+ * `<project id>/<n>`, the nth copy on the row. Served only when the row's
+ * path lies under the import folder's staging folder (staging.mjs), since
+ * anyone on the tailnet can write the row.
+ */
+async function stagedLookup(pb, path) {
+	const [id, n] = String(path).split('/');
+	if (!isRecordId(id) || !/^\d+$/.test(n ?? '')) return { error: 'not-listed' };
+	let row;
+	try {
+		row = await pb.getProjectStaged(id);
+	} catch {
+		return { error: 'not-listed' };
+	}
+	const copy = readStaged(row?.staged).copies[Number(n)];
+	if (!copy) return { error: 'not-listed' };
+	const importTo = readWatchConfig((await pb.getSetting('general'))?.value).importTo;
+	if (!servable(copy.path, importTo)) return { error: 'not-listed' };
+	const { dir, name } = splitTyped(copy.path);
+	return { name, path: join(await resolveFolder(dir), name) };
+}
+
 function playable(index, roots) {
 	const map = new Map();
 	for (const file of index?.files ?? []) map.set(file.path, { ...file, path: file.opened });
@@ -819,9 +843,117 @@ async function importPass(pb, config) {
 	importing = true;
 	try {
 		await importPending(pb, config);
+		await stagePending(pb);
 	} finally {
 		importing = false;
 	}
+}
+
+/*
+ * Copies each open local project's newest video to the NAS before it is
+ * uploaded (staging.mjs): the Review step plays that copy from any browser,
+ * and the import at confirm uses it instead of copying again. Under the
+ * import lock, after the imports — a confirmed upload goes first — and one
+ * copy per pass, so a confirm never waits behind more than one.
+ */
+let stagingOff = false;
+const stageRetryAt = new Map();
+
+async function stagePending(pb) {
+	if (stagingOff || projectsOff || dry) return;
+	const importTo = readWatchConfig((await pb.getSetting('general'))?.value).importTo;
+	if (!importTo) return;
+	let rows;
+	try {
+		rows = await pb.stagingProjects();
+	} catch (err) {
+		if (/ -> (400|404)\b/.test(err.message)) return;
+		throw err;
+	}
+	for (const row of rows) {
+		const file = stagingNeed(row);
+		if (!file) continue;
+		if ((stageRetryAt.get(row.id) ?? 0) > Date.now()) continue;
+		await stageOne(pb, row, file, importTo);
+		return;
+	}
+}
+
+async function stageOne(pb, row, file, importTo) {
+	const staged = readStaged(row.staged);
+	const save = async (patch) => {
+		const res = await pb.updateProject(row.id, { staged: { ...staged, ...patch } });
+		// A PocketBase without the field takes the patch and drops it; copying
+		// again on every pass would follow, so the copies stop until setup-pb.
+		if (res && !('staged' in res)) {
+			stagingOff = true;
+			log('projects has no staged field — run pnpm setup-pb, then restart; project videos are not copied ahead until then');
+			return false;
+		}
+		return true;
+	};
+	try {
+		const from = await resolveFolder(file.path);
+		const info = await stat(from);
+		// Changed since the listing: the next scan lists it afresh.
+		if (info.size !== file.size || info.mtime.toISOString() !== file.modified) return;
+		const typedDir = stageFolder(importTo, row.name);
+		const dir = await resolveFolder(typedDir);
+		const taken = await readdir(dir).catch(() => []);
+		const name = stagedName(file.name, staged.copies.length, taken);
+		if (!(await save({ copying: { from: file.path, name, size: file.size, at: new Date().toISOString() }, error: '' }))) return;
+		const result = await hb.track(`Copying "${row.name}" to the NAS ahead`, () =>
+			copyInto({
+				source: { stream: createReadStream(from), size: info.size },
+				dir,
+				wanted: name,
+				log: (m) => log(`  ${m}`)
+			})
+		);
+		const copy = {
+			from: file.path,
+			name: basename(result.path),
+			size: file.size,
+			modified: file.modified,
+			path: typedJoin(typedDir, basename(result.path)),
+			at: new Date().toISOString()
+		};
+		staged.copies.push(copy);
+		await save({ copies: staged.copies, copying: null, error: '' });
+		stageRetryAt.delete(row.id);
+		log(`project ${row.name}: copied ${file.name} to the NAS ahead as ${copy.name}`);
+		pb.log('Copied a project video to the NAS', `${file.path} -> ${copy.path}`);
+	} catch (err) {
+		const message = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+		stageRetryAt.set(row.id, Date.now() + 5 * 60_000);
+		log(`project ${row.name}: copying ${file.name} to the NAS failed: ${message}`);
+		await save({ copying: null, error: message.slice(0, 500) }).catch(() => {});
+	}
+}
+
+/**
+ * The copy staging made of this very file — same path, size and time as it
+ * has on disk now — if it is still there whole; else null.
+ */
+async function stagedCopyFor(pb, sourcePath, info) {
+	let rows;
+	try {
+		rows = await pb.recentLocalProjects();
+	} catch {
+		return null;
+	}
+	const file = { path: sourcePath, size: info.size, modified: info.mtime.toISOString() };
+	for (const row of rows) {
+		const copy = copyOf(row.staged, file);
+		if (!copy) continue;
+		try {
+			const there = await stat(await resolveFolder(copy.path));
+			if (there.isFile() && there.size === copy.size) return copy;
+		} catch {
+			// Deleted by hand since: copy it again.
+		}
+	}
+	return null;
 }
 
 async function importPending(pb, config) {
@@ -854,6 +986,13 @@ async function importOne(pb, config, job, watch) {
 			info = await stat(from);
 		} catch (err) {
 			throw new Error(`Local video is gone: ${from} (${err.code || err.message})`);
+		}
+		const ahead = await stagedCopyFor(pb, from, info);
+		if (ahead) {
+			await pb.updateJob(job.id, { source_path: ahead.path, source_origin: from, source_local: false, error: '' });
+			log(`imported "${job.title}" -> ${ahead.path} (copied ahead with its project)`);
+			pb.log('Used the project video already on the NAS', `${from} -> ${ahead.path}`);
+			return;
 		}
 		const dir = await resolveFolder(watch);
 		const result = await hb.track(`Copying "${job.title || basename(from)}" to the NAS`, () =>
@@ -2497,6 +2636,7 @@ async function main() {
 			host: config.previewHost,
 			lookup: (source, path) => {
 				if (source === 'stored') return storedLookup(pb, path);
+				if (source === 'staged') return stagedLookup(pb, path);
 				return source === 'nas' || source === 'local' ? (listed[source].get(path) ?? null) : null;
 			},
 			log,

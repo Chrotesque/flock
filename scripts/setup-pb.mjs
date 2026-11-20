@@ -410,6 +410,7 @@ const collections = [
 			// what ('' when the file was already gone). The key is detached then.
 			{ type: 'date', name: 'archived_at' },
 			{ type: 'text', name: 'archived_as', max: 300 },
+			{ type: 'json', name: 'staged', maxSize: 200000 },
 			...stamps
 		],
 		indexes: ['CREATE UNIQUE INDEX `idx_projects_key` ON `projects` (`key`)']

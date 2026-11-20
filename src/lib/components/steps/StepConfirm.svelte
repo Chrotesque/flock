@@ -37,6 +37,7 @@
 	import { tiktokHandles } from '$lib/stores/tiktokhandles.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
 	import { projects } from '$lib/stores/projects.svelte';
+	import { readStaged, stagedIndex } from '$lib/staged';
 	import { mentionWords, otherBrandMentions, postTexts, type BrandMention } from '$lib/brandmention';
 	import { CAMPAIGN_OPTION } from '$lib/jestrcampaign';
 	import { playlistsOf } from '$lib/playlists';
@@ -218,15 +219,23 @@
 		streamUrl = '';
 		streamNote = '';
 		if (!picked) return;
-		const source: PreviewSource = picked.local ? 'local' : 'nas';
-		const path = picked.path;
+		// A local project's video the PC worker has copied to the NAS already
+		// plays from there, through the publishing worker's player — so it
+		// plays in any browser, not only on the PC that holds the file.
+		const project = picked.local ? projects.byId(draft.project) : undefined;
+		const index = project?.local ? stagedIndex(readStaged(project.staged), picked) : -1;
+		const ahead = index >= 0;
+		const source: PreviewSource = ahead ? 'staged' : picked.local ? 'local' : 'nas';
+		const path = ahead ? `${project!.id}/${index}` : picked.path;
 		const controller = new AbortController();
+		// Not copied yet: say it will play from the NAS once it is.
+		const say = (note: string) =>
+			(streamNote = project?.local && !ahead ? `${note} It plays here from the NAS once the worker has copied it there.` : note);
 		void (async () => {
-			const server = await loadPreviewServer();
+			const server = ahead ? await loadStoredPlayer() : await loadPreviewServer();
 			if (controller.signal.aborted) return;
 			if (!server) {
-				streamNote =
-					'The worker is not running, so there is nothing to play here. The file still goes out.';
+				say('The worker is not running, so there is nothing to play here. The file still goes out.');
 				return;
 			}
 			try {
@@ -237,10 +246,10 @@
 				const answer: { ok?: boolean; error?: string } = await res.json();
 				if (controller.signal.aborted) return;
 				if (answer.ok) streamUrl = previewVideoUrl(server.url, source, path);
-				else streamNote = previewProblem(answer.error);
+				else say(previewProblem(answer.error));
 			} catch {
 				if (controller.signal.aborted) return;
-				streamNote = `The worker is not answering at ${server.url}, so there is nothing to play here. The file still goes out.`;
+				say(`The worker is not answering at ${server.url}, so there is nothing to play here. The file still goes out.`);
 			}
 		})();
 		return () => controller.abort();

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { readStaged, stagedWords } from '$lib/staged';
 	import { base } from '$app/paths';
 	import VideoPicker from '../VideoPicker.svelte';
 	import VideoPreview from '../VideoPreview.svelte';
@@ -180,6 +181,12 @@
 	let project = $derived(projects.byId(draft.project));
 	let projectVideos = $derived(
 		readVideos(project?.videos).map((file) => (project?.local ? { ...file, local: true } : file))
+	);
+	/** Where the newest video stands on its way to the NAS (staged.ts). */
+	let stagedNote = $derived(
+		project?.local
+			? stagedWords(readStaged(project.staged), [...projectVideos].sort((a, b) => (b.modified ?? '').localeCompare(a.modified ?? ''))[0])
+			: ''
 	);
 	let fileChanged = $derived(
 		Boolean(project && draft.projectBase && project.manifest_modified && project.manifest_modified !== draft.projectBase)
@@ -401,6 +408,9 @@
 				{/if}
 				{#if project.error}
 					<p class="nasnote bad">{project.error}</p>
+				{/if}
+				{#if project.local && canImport && stagedNote}
+					<p class="nasnote faint">{stagedNote}</p>
 				{/if}
 				{#if project.local && projectVideos.length > 0 && !canImport}
 					<p class="nasnote bad">

@@ -387,6 +387,8 @@ export interface ProjectRow {
 	 */
 	archived_at: string;
 	archived_as: string;
+	/** A local project's videos copied to the NAS ahead (staged.ts); the worker's. */
+	staged?: unknown;
 	created: string;
 	updated: string;
 }
