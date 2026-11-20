@@ -232,6 +232,13 @@ export function makeClient(baseUrl) {
 			return request(`/api/collections/projects/records/${id}?fields=id,staged`);
 		},
 
+		/** The PC worker builds published for this kind of machine (exeupdate.mjs). */
+		async workerBuilds() {
+			const filter = encodeURIComponent('platform = "win32-x64"');
+			const res = await request(`/api/collections/worker_builds/records?perPage=20&sort=-created&filter=${filter}`);
+			return res.items ?? [];
+		},
+
 		async projectsToArchive() {
 			const filter = encodeURIComponent('status = "uploaded" && archived_at = ""');
 			const fields = 'id,key,path,name,local,manifest_name';

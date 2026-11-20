@@ -212,6 +212,7 @@ export function startTray({
 	runName = 'flock worker',
 	settings = {},
 	onStop,
+	onUpdate = () => {},
 	onDismiss = () => {},
 	onSettings = () => {},
 	log
@@ -234,6 +235,7 @@ export function startTray({
 			const { type, payload } = message;
 			if (type === 'ready') log('tray icon shown: right-click it for flock, the warning settings or to stop the worker');
 			else if (type === 'stop') onStop();
+			else if (type === 'update') onUpdate();
 			else if (type === 'dismiss' && Array.isArray(payload?.keys)) onDismiss(payload.keys);
 			else if (type === 'settings' && payload) onSettings(payload);
 			else if (type === 'log' && payload?.text) log(`tray: ${payload.text}`);

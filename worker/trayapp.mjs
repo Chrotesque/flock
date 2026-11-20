@@ -1052,6 +1052,9 @@ namespace FlockTray
 		readonly System.Windows.Forms.Timer watch = new System.Windows.Forms.Timer();
 		readonly string title, url, logPath, exePath, runName;
 		ToolStripMenuItem startItem;
+		ToolStripMenuItem updateItem;
+		ToolStripSeparator updateLine;
+		string updateVersion = "";
 		Process worker;
 		Icon appIcon;
 		AlertSettings settings;
@@ -1116,6 +1119,21 @@ namespace FlockTray
 
 		void BuildMenu()
 		{
+			// Offered by the worker once a newer signed build is on the NAS
+			// (exeupdate.mjs); hidden until then.
+			updateItem = new ToolStripMenuItem("Update");
+			updateItem.Font = new Font(updateItem.Font, FontStyle.Bold);
+			updateItem.Visible = false;
+			updateItem.Click += delegate
+			{
+				updateItem.Enabled = false;
+				updateItem.Text = "Updating to v" + updateVersion + " - downloading...";
+				Send("update", null);
+			};
+			menu.Items.Add(updateItem);
+			updateLine = new ToolStripSeparator();
+			updateLine.Visible = false;
+			menu.Items.Add(updateLine);
 			if (url.Length > 0)
 			{
 				ToolStripMenuItem open = new ToolStripMenuItem("Open flock");
@@ -1188,6 +1206,19 @@ namespace FlockTray
 				current.Clear();
 				if (card != null && !card.IsTest) card.Withdraw();
 				UpdateTip();
+			}
+			else if (type == "update")
+			{
+				object v, st;
+				updateVersion = d != null && d.TryGetValue("version", out v) && v != null ? v.ToString() : "";
+				string state = d != null && d.TryGetValue("state", out st) && st != null ? st.ToString() : "";
+				bool shown = updateVersion.Length > 0;
+				updateItem.Visible = shown;
+				updateLine.Visible = shown;
+				if (state == "downloading") { updateItem.Enabled = false; updateItem.Text = "Updating to v" + updateVersion + " - downloading..."; }
+				else if (state == "waiting") { updateItem.Enabled = false; updateItem.Text = "Updating to v" + updateVersion + " - finishing work..."; }
+				else if (state == "failed") { updateItem.Enabled = true; updateItem.Text = "Update to v" + updateVersion + " failed - try again"; }
+				else { updateItem.Enabled = true; updateItem.Text = "Update to v" + updateVersion; }
 			}
 			else if (type == "settings")
 			{

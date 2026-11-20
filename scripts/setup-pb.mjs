@@ -270,6 +270,23 @@ const collections = [
 		indexes: ['CREATE INDEX `idx_score_requests_status` ON `score_requests` (`status`)']
 	},
 	{
+		// PC worker builds for the workers to update themselves from
+		// (worker/exeupdate.mjs): uploaded by pnpm deploy:worker, signed, so a
+		// row anyone on the tailnet could add is refused by every worker.
+		name: 'worker_builds',
+		type: 'base',
+		...RULES,
+		fields: [
+			{ type: 'text', name: 'version', required: true, max: 40 },
+			{ type: 'text', name: 'platform', required: true, max: 40 },
+			{ type: 'number', name: 'size' },
+			{ type: 'text', name: 'sha256', max: 64 },
+			{ type: 'text', name: 'signature', max: 200 },
+			{ type: 'file', name: 'file', maxSelect: 1, maxSize: 268435456 },
+			...stamps
+		]
+	},
+	{
 		// Images on the worker's machine the SPA asks for by path — the thumbnail
 		// a pasted flock block names. A browser cannot open a path, so it writes
 		// the ask here, the worker attaches the file (images only, 8 MB, the

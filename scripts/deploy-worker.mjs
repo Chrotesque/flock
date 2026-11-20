@@ -16,6 +16,8 @@ import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync } fro
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bundleWorker } from './bundle-worker.mjs';
+import { publishWorker } from './publish-worker.mjs';
+import { spawnSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 try {
@@ -52,9 +54,18 @@ if (!existsSync(join(dest, '.worker-config.json'))) {
 }
 
 const out = join(root, 'dist', 'worker');
-mkdirSync(out, { recursive: true });
+// On Windows the PC worker's exe is built too, and published to PocketBase
+// below for PC workers to update themselves from (publish-worker.mjs);
+// build-worker.mjs leaves the same bundle beside it. --no-exe skips that.
+const withExe = process.platform === 'win32' && !dry && !process.argv.includes('--no-exe');
 const bundle = join(out, NAME);
-await bundleWorker(bundle);
+if (withExe) {
+	const built = spawnSync(process.execPath, [join(root, 'scripts', 'build-worker.mjs')], { stdio: 'inherit' });
+	if (built.status !== 0) fail('Building the worker failed; nothing was copied.');
+} else {
+	mkdirSync(out, { recursive: true });
+	await bundleWorker(bundle);
+}
 const size = statSync(bundle).size;
 console.log(`\nBundled ${bundle} (${(size / 1024).toFixed(0)} KB).`);
 
@@ -86,6 +97,15 @@ if (statSync(partial).size !== size) {
 }
 renameSync(partial, join(dest, NAME));
 console.log(`Copied to ${join(dest, NAME)}.`);
+
+if (withExe) {
+	try {
+		await publishWorker({ pbUrl });
+	} catch (err) {
+		console.log(`
+The PC worker was not published: ${err.message}`);
+	}
+}
 
 if (!before) {
 	console.log(

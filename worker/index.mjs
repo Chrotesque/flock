@@ -88,6 +88,7 @@ import { MANIFEST_NAME, archiveManifest, detachedKey, planProjectWrites, scanPro
 import { makeFolderWatcher } from './folderwatch.mjs';
 import { createReadStream } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import { basename, dirname, join } from 'node:path';
 import { resolveFolder } from './paths.mjs';
 import { pickFolder } from './folderpick.mjs';
@@ -112,6 +113,7 @@ import { askToStop, holdInstance } from './instance.mjs';
 import { sayOnScreen, startTray, wantsTray } from './tray.mjs';
 import { exeLogPath } from './filelog.mjs';
 import { WORKER_VERSION } from './version.mjs';
+import { UPDATE_KEY, cleanUp, downloadBuild, peSubsystem, pickBuild, relaunchScript, setPeSubsystem, swapIn } from './exeupdate.mjs';
 import { afterFailure, decide, mayBeAlive } from './orphans.mjs';
 import { moveStep, requeuePatch } from './moves.mjs';
 import { SYNC_PLATFORMS, movedHandle, refusedHandle, rescheduleStep } from './reschedule.mjs';
@@ -200,6 +202,8 @@ const checkYouTube = process.argv.includes('--youtube');
 const stopOnly = process.argv.includes('--stop');
 // Started by Windows at sign-in (Start with Windows, alerts.mjs autostartCommand).
 const autostart = process.argv.includes('--autostart');
+/** Takes a newer build from the NAS as soon as it is found, without the tray's button (exeupdate.mjs). */
+const autoUpdate = process.argv.includes('--update');
 
 function stamp() {
 	return new Date().toLocaleTimeString();
@@ -2334,8 +2338,8 @@ function shutdown() {
  * claimed in the instant before the drain is caught by the orphan check on
  * the way back up.
  */
-async function restartForUpdate() {
-	log('a new worker file has arrived — restarting once nothing is in hand (posts whose slot comes meanwhile still go out first)');
+async function restartForUpdate(note = 'a new worker file has arrived', beforeExit = async () => {}) {
+	log(`${note} — restarting once nothing is in hand (posts whose slot comes meanwhile still go out first)`);
 	hb.drain();
 	let said = false;
 	while (hb.inHand() > 0 || inHand.size > 0 || busy.size > 0 || listing.size > 0) {
@@ -2350,7 +2354,88 @@ async function restartForUpdate() {
 		hb.stop().then(() => remote.flush()),
 		new Promise((resolve) => setTimeout(resolve, 3000))
 	]);
+	await beforeExit();
 	process.exit(0);
+}
+
+/*
+ * The PC worker's own updates (exeupdate.mjs): an exe run with a tray icon
+ * looks in PocketBase — on the NAS — for a newer signed build at start and
+ * every half hour, offers it in the tray menu, and takes it on a press.
+ */
+let offeredBuild = null;
+let exeUpdating = false;
+
+function selfUpdates() {
+	return Boolean((tray || autoUpdate) && isSea() && process.platform === 'win32' && UPDATE_KEY);
+}
+
+async function checkForBuild(pb) {
+	if (!selfUpdates() || exeUpdating) return;
+	let rows;
+	try {
+		rows = await pb.workerBuilds();
+	} catch (err) {
+		if (/ -> (400|404)\b/.test(err.message)) return;
+		throw err;
+	}
+	const build = pickBuild(rows, WORKER_VERSION);
+	if (build?.id === offeredBuild?.id) return;
+	offeredBuild = build;
+	tray?.send('update', build ? { version: build.version } : { version: '' });
+	if (!build) return;
+	if (autoUpdate) {
+		log(`update: v${build.version} is on the NAS — taking it (--update)`);
+		void updateExe(pb, workerConfig);
+	} else {
+		log(`update: v${build.version} is on the NAS — choose "Update" in the tray menu to take it`);
+	}
+}
+
+/** The config, for an update started from the check rather than the tray. */
+let workerConfig = null;
+
+async function updateExe(pb, config) {
+	const build = offeredBuild;
+	if (!build || exeUpdating || !selfUpdates()) return;
+	exeUpdating = true;
+	const exe = process.execPath;
+	const incoming = `${exe}.new`;
+	const say = (state) => tray?.send('update', { version: build.version, state });
+	try {
+		say('downloading');
+		log(`update: downloading v${build.version} (${(build.size / 1048576).toFixed(0)} MB)`);
+		const url = `${config.pocketbaseUrl.replace(/\/+$/, '')}/api/files/worker_builds/${build.id}/${encodeURIComponent(build.file)}`;
+		await downloadBuild(url, incoming, build);
+		// The build is the windowless exe; a worker run from the console one keeps its console.
+		const mine = await peSubsystem(exe);
+		if (mine && mine !== (await peSubsystem(incoming))) await setPeSubsystem(incoming, mine);
+		log(`update: v${build.version} downloaded and its signature checked`);
+		say('waiting');
+		await restartForUpdate(`update: switching to v${build.version}`, async () => {
+			// Past the drain there is no going back to work: a swap that fails
+			// leaves the old exe in place (swapIn), and that is what starts again.
+			try {
+				await swapIn(exe, incoming);
+			} catch (err) {
+				log(`update FAILED to swap the program in (${err.code || err.message}) — starting v${WORKER_VERSION} again`);
+			}
+			await new Promise((resolve) => {
+				const starter = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', relaunchScript(exe)], {
+					windowsHide: true,
+					stdio: 'ignore'
+				});
+				starter.on('exit', resolve);
+				starter.on('error', resolve);
+				setTimeout(resolve, 10_000);
+			});
+		});
+	} catch (err) {
+		exeUpdating = false;
+		const message = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+		log(`update FAILED: ${message} — still running v${WORKER_VERSION}`);
+		say('failed');
+	}
 }
 
 /** Who the platforms' tokens post as — the check that a setup worked. */
@@ -2505,6 +2590,7 @@ async function main() {
 			settings: config.alerts,
 			log,
 			onStop: shutdown,
+			onUpdate: () => void updateExe(pb, config),
 			onDismiss: (keys) => {
 				config.alertSeen = addSeen(config.alertSeen, keys);
 				saveSection('alerts', { seen: config.alertSeen });
@@ -2664,6 +2750,16 @@ async function main() {
 				}
 			}
 		});
+	}
+
+	// A PC worker's own updates from the NAS — see exeupdate.mjs.
+	workerConfig = config;
+	// What an earlier update left beside the exe, whether or not this one updates.
+	if (isSea() && process.platform === 'win32') void cleanUp(process.execPath);
+	if (selfUpdates()) {
+		const look = () => void checkForBuild(pb).catch((err) => log(`update check failed: ${err.message.split('\n')[0]}`));
+		setTimeout(look, 20_000);
+		setInterval(look, 30 * 60_000);
 	}
 
 	// A worker in a container restarts on a new bundle — see selfupdate.mjs.

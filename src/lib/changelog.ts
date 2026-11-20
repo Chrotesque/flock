@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-20T17:30:00+01:00', version: '0.23.10', line: 'Added: Worker > Self Update' },
 	{ at: '2026-11-20T16:00:00+01:00', version: '0.23.9', line: 'Added: Project > NAS Copy' },
 	{ at: '2026-11-17T03:00:00+01:00', version: '0.23.8', line: 'Added: Dashboard > Swap Reel' },
 	{ at: '2026-11-14T17:05:00+01:00', version: '0.23.7', line: 'Changed: Upload > One Mark' },

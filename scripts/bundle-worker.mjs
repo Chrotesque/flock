@@ -7,6 +7,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { loadSigningKey } from './worker-key.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -60,7 +61,12 @@ export async function bundleWorker(outfile) {
 		format: 'cjs',
 		target: 'node22',
 		outfile,
-		define: { __FLOCK_VERSION__: JSON.stringify(appVersion()) },
+		define: {
+			__FLOCK_VERSION__: JSON.stringify(appVersion()),
+			// The key a PC worker checks updates against (worker/exeupdate.mjs);
+			// none built in means a worker that never updates itself.
+			__FLOCK_UPDATE_KEY__: JSON.stringify(loadSigningKey()?.publicKey ?? '')
+		},
 		logLevel: 'warning',
 		logOverride: { 'empty-import-meta': 'silent' },
 		plugins: [localExtensions]
