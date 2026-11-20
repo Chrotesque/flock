@@ -9,6 +9,8 @@
 	import DashFilter from './DashFilter.svelte';
 	import ViewsCurve from './ViewsCurve.svelte';
 	import RenameDialog from './RenameDialog.svelte';
+	import ReplaceDialog from './ReplaceDialog.svelte';
+	import { replacingPost } from '$lib/replacepost';
 	import BrandMonths from './BrandMonths.svelte';
 	import NasPlayer from './NasPlayer.svelte';
 	import { brands } from '$lib/stores/brands.svelte';
@@ -1028,6 +1030,16 @@
 		lastHidden = null;
 		// Offered only once it is saved: a refused hide puts the row back by itself.
 		if ((await hiddenVideos.set(posts, hide, release.title)) && hide) lastHidden = { posts, title: release.title };
+	}
+
+	/* A reel posted by hand that replaces a flock upload's (replacepost.ts). */
+	let replacing = $state<{ post: NonNullable<ReturnType<typeof replacingPost>>; title: string; group?: string } | null>(
+		null
+	);
+
+	function openReplace(r: Release) {
+		const post = replacingPost(r);
+		if (post) replacing = { post, title: r.title, group: r.group };
 	}
 
 	function undoHide() {
@@ -2445,7 +2457,7 @@
 				data-key={r.key}
 			>
 				<!-- The pencil and the eye sit over the row, not in it: a button cannot hold another. -->
-				<div class="line">
+				<div class="line" class:swappable={editing && replacingPost(r)}>
 					<button
 						class="row"
 						onclick={() => toggle(r)}
@@ -2480,6 +2492,18 @@
 								<path d="M10.6 2.6 13.4 5.4 5.6 13.2H2.8V10.4zM9.1 4.1 11.9 6.9" />
 							</svg>
 						</button>
+						{#if replacingPost(r)}
+							<button
+								class="swap"
+								onclick={() => openReplace(r)}
+								title="Replaces the reel of a flock upload — posted here by hand after the first was archived"
+								aria-label="“{r.title}” replaces a flock upload’s reel"
+							>
+								<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+									<path d="M3 5.5h9l-2.5-2.5M13 10.5H4l2.5 2.5" />
+								</svg>
+							</button>
+						{/if}
 						<button
 							class="eye"
 							class:shut={r.hidden}
@@ -2686,6 +2710,10 @@
 </div>
 
 <svelte:window onpointerdown={onWindowPointer} onkeydown={onWindowKey} />
+
+{#if replacing}
+	<ReplaceDialog post={replacing.post} title={replacing.title} releases={releases.filter((x) => x.group === replacing?.group)} onclose={() => (replacing = null)} />
+{/if}
 
 {#if renaming}
 	<RenameDialog
@@ -3591,6 +3619,42 @@
 	/* Room for the pencil and the eye before the title. */
 	.editing .line .vid {
 		padding-left: 60px;
+	}
+
+	.editing .line.swappable .vid {
+		padding-left: 88px;
+	}
+
+	.swap {
+		position: absolute;
+		top: 50%;
+		left: calc(var(--thumbcol) + 12px + 56px);
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		transform: translateY(-50%);
+		border: 1px solid var(--border-strong);
+		border-radius: 7px;
+		background: var(--surface);
+		color: var(--text-dim);
+	}
+
+	.nothumb .swap {
+		left: 56px;
+	}
+
+	.swap:hover {
+		border-color: var(--pink);
+		color: var(--text);
+	}
+
+	.swap svg path {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.4;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 
 	.rename {
@@ -4787,7 +4851,8 @@
 		.parts,
 		.delta,
 		.rename,
-		.eye {
+		.eye,
+		.swap {
 			display: none;
 		}
 		.mdate {

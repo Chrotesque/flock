@@ -71,3 +71,17 @@ test('moved views are a change and a history sample; a new caption is a change o
 	assert.equal(differs(edited, row), true);
 	assert.equal(counterMoved(edited, row), false);
 });
+
+test('saveRows never writes a post replaced on the Dashboard', async () => {
+	const { saveRows } = await import('./igstats.mjs');
+	const created = [];
+	const pb = {
+		getSetting: async () => ({ value: { instagram: { old: { by: 'new', at: '' } } } }),
+		createPostStats: async (row) => created.push(row.post_id),
+		updatePostStats: async () => {}
+	};
+	const row = (id) => ({ platform: 'instagram', post_id: id, views: 1, likes: 0, comments: 0 });
+	const added = await saveRows(pb, new Map(), [row('old'), row('new')], '2026-11-17T00:00:00Z');
+	assert.equal(added, 1);
+	assert.deepEqual(created, ['new']);
+});

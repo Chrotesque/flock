@@ -21,6 +21,7 @@ import { SIGNIN_KEY, type SigninRow } from './tiktoksignin';
 import { firstLine, formatSchedule } from './format';
 import { REEL_FIELDS, STATS_FIELDS, UPLOAD_FIELDS, type StatsRow, type TodoReelRow, type UploadRow } from './videotodo';
 import { canRetry, retryWhen } from './attention';
+import { REPLACED_KEY, readReplaced, replaceAction, replaceDetail, withReplaced } from './replacepost';
 import {
 	FIRST_BRAND_NAME,
 	brandKey,
@@ -2062,6 +2063,42 @@ export async function retryTarget(id: string): Promise<void> {
 			`It had failed with: ${firstLine(before.error || '') || 'no error given'}`,
 		{ job: before.job }
 	);
+}
+
+/**
+ * Puts a reel posted on the platform by hand in the place of the one flock
+ * uploaded (replacepost.ts): the upload's post takes the new reel's link,
+ * the new reel's id goes on the replaced list (so the stats passes never
+ * write the old one again), and the old reel's stats row is deleted —
+ * forgotten. Logged against the upload with both links.
+ */
+export async function replaceReel(o: {
+	job: string;
+	platform: ReelPlatform;
+	title: string;
+	oldUrl: string;
+	oldPostId: string;
+	oldRecord: string;
+	oldViews: number | null;
+	newPostId: string;
+	newUrl: string;
+	newAt: number;
+}): Promise<void> {
+	assertDeviceNamed();
+	const targets = await pb.collection('upload_targets').getFullList<UploadTarget>({
+		filter: pb.filter('job = {:job} && platform = {:platform}', { job: o.job, platform: o.platform })
+	});
+	const target = targets.find((t) => t.remote_url === o.oldUrl) ?? (targets.length === 1 ? targets[0] : undefined);
+	if (!target) throw new Error('The upload no longer has that post.');
+	if (target.remote_url !== o.oldUrl) throw new Error('The upload’s post changed since the Dashboard read it. Refresh and try again.');
+	const at = new Date().toISOString();
+	if (o.oldPostId) {
+		const stored = readReplaced((await findSetting(REPLACED_KEY))?.value);
+		await setSetting(REPLACED_KEY, withReplaced(stored, o.platform, o.oldPostId, o.newPostId, at));
+	}
+	await pb.collection('upload_targets').update(target.id, { remote_url: o.newUrl });
+	if (o.oldRecord) await pb.collection('post_stats').delete(o.oldRecord).catch(() => {});
+	logAction('upload', replaceAction(o.platform), replaceDetail(o), { job: o.job });
 }
 
 /**

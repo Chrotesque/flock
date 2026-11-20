@@ -87,6 +87,22 @@ export function counterMoved(prev, row) {
 }
 
 /**
+ * The posts replaced on the Dashboard by one posted on the platform by hand
+ * (src/lib/replacepost.ts, `app_settings` / `replaced_posts`): forgotten, so
+ * never written again even while the platform still lists them. A failed
+ * read replaces nothing.
+ */
+export async function replacedIds(pb, platform) {
+	if (!platform) return new Set();
+	try {
+		const side = (await pb.getSetting('replaced_posts'))?.value?.[platform];
+		return new Set(side && typeof side === 'object' ? Object.keys(side) : []);
+	} catch {
+		return new Set();
+	}
+}
+
+/**
  * Writes a pass's rows: a new post is created with its first sample, a known
  * one patched only when something differs, with a sample only when a counter
  * moved. `byPost` is the stored rows by post id. Returns how many were new.
@@ -94,7 +110,9 @@ export function counterMoved(prev, row) {
  */
 export async function saveRows(pb, byPost, rows, now) {
 	let added = 0;
+	const gone = await replacedIds(pb, rows[0]?.platform);
 	for (const row of rows) {
+		if (gone.has(row.post_id)) continue;
 		const prev = byPost.get(row.post_id);
 		const sample = [now, row.views, row.likes, row.comments];
 		if (!prev) {
