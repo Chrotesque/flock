@@ -17,6 +17,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bundleWorker } from './bundle-worker.mjs';
 import { publishWorker } from './publish-worker.mjs';
+import { workerOutDir } from './worker-out.mjs';
 import { spawnSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -53,7 +54,7 @@ if (!existsSync(join(dest, '.worker-config.json'))) {
 	);
 }
 
-const out = join(root, 'dist', 'worker');
+const out = workerOutDir(root);
 // On Windows the PC worker's exe is built too, and published to PocketBase
 // below for PC workers to update themselves from (publish-worker.mjs);
 // build-worker.mjs leaves the same bundle beside it. --no-exe skips that.

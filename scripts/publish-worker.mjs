@@ -10,6 +10,7 @@ import { existsSync, openAsBlob, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadSigningKey } from './worker-key.mjs';
+import { workerOutDir } from './worker-out.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PLATFORM = 'win32-x64';
@@ -36,7 +37,7 @@ export async function publishWorker({ pbUrl, log = console.log } = {}) {
 	if (!base) throw new Error('PUBLIC_POCKETBASE_URL is not set, so there is nowhere to publish to.');
 	const key = loadSigningKey();
 	if (!key) throw new Error('No signing key yet — run pnpm worker:key once, then build again.');
-	const exe = join(root, 'dist', 'worker', 'flock-worker-background.exe');
+	const exe = join(workerOutDir(root), 'flock-worker-background.exe');
 	if (!existsSync(exe)) throw new Error(`${exe} is not there — run pnpm build:worker first.`);
 
 	const version = appVersion();

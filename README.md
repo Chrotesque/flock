@@ -392,7 +392,8 @@ stopped, amber with a ring while the PC does the NAS worker's work as well.
 pnpm build:worker
 ```
 
-This writes `dist/worker/flock-worker.exe`. Copy it and your
+This writes `dist/worker/flock-worker.exe` (or `<FLOCK_BUILD_DIR>/worker/`
+when `.env` sets `FLOCK_BUILD_DIR`, see `.env.example`). Copy it and your
 `.worker-config.json` into one folder on the other machine.
 
 - It takes the same flags as `pnpm worker`, and `flock-worker auth --tiktok`
@@ -431,7 +432,7 @@ set them again in Settings.
 
 #### On a NAS, in a container
 
-`pnpm build:worker` also writes `dist/worker/flock-worker.cjs`, the whole
+`pnpm build:worker` also writes `flock-worker.cjs` beside it, the whole
 worker for plain Node. Put it and the config in one folder on the NAS, and
 create a container from `node:24-alpine` with:
 

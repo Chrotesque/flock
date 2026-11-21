@@ -2,7 +2,8 @@
 // a copy of this Node with the bundled worker baked in, Node's own
 // single-executable feature.
 //
-//   pnpm build:worker      -> dist/worker/flock-worker.exe (+ example config)
+//   pnpm build:worker      -> dist/worker/flock-worker.exe (+ example config),
+//                             or <FLOCK_BUILD_DIR>/worker (see worker-out.mjs)
 //                             and flock-worker.cjs, the bundle for plain Node,
 //                             and on Windows flock-worker-background.exe, no window
 //
@@ -26,10 +27,11 @@ import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bundleWorker } from './bundle-worker.mjs';
+import { workerOutDir } from './worker-out.mjs';
 import { inject } from 'postject';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const out = join(root, 'dist', 'worker');
+const out = workerOutDir(root);
 
 const WINDOWS_CONSOLE = 3;
 const WINDOWS_GUI = 2;
