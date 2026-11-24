@@ -118,6 +118,7 @@ import { afterFailure, decide, mayBeAlive } from './orphans.mjs';
 import { moveStep, requeuePatch } from './moves.mjs';
 import { SYNC_PLATFORMS, movedHandle, refusedHandle, rescheduleStep } from './reschedule.mjs';
 import { requestStep } from './requests.mjs';
+import { isPaused, pauseFor, pauseState, resume } from './pause.mjs';
 import { readTitleRequest } from './retitle.mjs';
 import { seedHandles, tiktokHandlePass } from './tiktokhandles.mjs';
 import { inJob } from './jobscope.mjs';
@@ -1775,7 +1776,7 @@ async function settleOrphan(pb, config, platform, row) {
 }
 
 let movesBusy = false;
-let movesOff = false;
+const movesPause = pauseState();
 /** Moves already said to be waiting, so that is said once. */
 const moveSaid = new Set();
 
@@ -1785,20 +1786,23 @@ const moveSaid = new Set();
  * is the one claiming rows. On the slot tick, so a move is done in seconds.
  */
 async function movePass(pb, config) {
-	if (movesBusy || movesOff || dry || !hb.canPublish()) return;
+	if (movesBusy || isPaused(movesPause) || dry || !hb.canPublish()) return;
 	movesBusy = true;
 	try {
 		let rows;
 		try {
 			rows = await pb.movingTargets();
 		} catch (err) {
-			// A PocketBase without the field (setup-pb not run since): nothing
-			// can have asked for a move, so this stops asking.
+			// A 400 is what a PocketBase without the field answers (setup-pb
+			// not run since), but also what a passing hiccup can answer: pause
+			// and ask again later (pause.mjs), never off for the whole run.
 			if (!/ -> 400\b/.test(err.message)) throw err;
-			movesOff = true;
-			log('moving posts to another brand is off: upload_targets has no `move` field — run pnpm setup-pb');
+			if (pauseFor(movesPause)) {
+				log(`moving posts to another brand paused: PocketBase answered 400 (${err.message.split('\n')[0]}) — asking again every 10 min; if it keeps on, run pnpm setup-pb`);
+			}
 			return;
 		}
+		if (resume(movesPause)) log('moving posts to another brand is back on');
 		for (const row of rows) {
 			if (!hb.canPublish()) break;
 			await inJob(row.job, () =>
@@ -1974,24 +1978,27 @@ async function rescheduleOne(pb, config, adapter, row, step) {
 /* ---- releases and deletes asked for in the Calendar (requests.mjs) ---- */
 
 let requestsBusy = false;
-let requestsOff = false;
+const requestsPause = pauseState();
 const requestSaid = new Set();
 
 async function requestPass(pb, config) {
-	if (requestsBusy || requestsOff || dry || !hb.canPublish()) return;
+	if (requestsBusy || isPaused(requestsPause) || dry || !hb.canPublish()) return;
 	requestsBusy = true;
 	try {
 		let rows;
 		try {
 			rows = await pb.requestedTargets();
 		} catch (err) {
-			// A PocketBase without the field (setup-pb not run since): nothing
-			// can have asked, so this stops asking.
+			// As for moves: a missing field or a passing hiccup — pause and ask
+			// again (pause.mjs). Turned off for the run, one 400 on 23 Nov 2026
+			// left the Calendar's deletes unanswered for a day and a half.
 			if (!/ -> 400\b/.test(err.message)) throw err;
-			requestsOff = true;
-			log('releases and deletes from the Calendar are off: upload_targets has no `request` field — run pnpm setup-pb');
+			if (pauseFor(requestsPause)) {
+				log(`releases, deletes and edits from the Calendar paused: PocketBase answered 400 (${err.message.split('\n')[0]}) — asking again every 10 min; if it keeps on, run pnpm setup-pb`);
+			}
 			return;
 		}
+		if (resume(requestsPause)) log('releases, deletes and edits from the Calendar are back on');
 		for (const row of rows) {
 			if (!hb.canPublish()) break;
 			await inJob(row.job, () =>
