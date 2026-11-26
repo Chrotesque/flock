@@ -184,6 +184,26 @@ async function refreshAccessToken(config, account) {
 	return body.access_token;
 }
 
+/**
+ * Takes up a new grant from a sign-in's token exchange (`body` = TikTok's
+ * answer: access_token, expires_in, scope). Without it a running worker kept
+ * the account's old access token and scopes, cached by open id, until it
+ * restarted — so a sign-in that added the reading scopes read as lacking them
+ * (found on 26 Nov 2026 with the first page sign-in on the live key).
+ */
+export function rememberGrant(account, body) {
+	const key = keyOf(account);
+	scopes.delete(key);
+	cache.delete(key);
+	if (typeof body?.scope === 'string' && body.scope) scopes.set(key, body.scope);
+	if (body?.access_token) {
+		cache.set(key, {
+			token: body.access_token,
+			expiresAt: Date.now() + Math.max(0, (body.expires_in ?? 86400) - 60) * 1000
+		});
+	}
+}
+
 /** Drops an account's cached token, so the next call re-refreshes. Used after a rejected token. */
 export function forgetToken(account) {
 	cache.delete(keyOf(account));

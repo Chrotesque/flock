@@ -20,7 +20,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { mergeAccounts } from './accounts.mjs';
 import { saveTikTokAccounts } from './config.mjs';
-import { TIKTOK_STATS_SCOPES, creatorInfo, hasScope, tiktokScopes } from './tiktok.mjs';
+import { TIKTOK_STATS_SCOPES, creatorInfo, hasScope, rememberGrant, tiktokScopes } from './tiktok.mjs';
 import { fetchOrExplain } from './net.mjs';
 
 export const TIKTOK_AUTH = 'https://www.tiktok.com/v2/auth/authorize/';
@@ -149,6 +149,9 @@ export async function connectAccount(config, body) {
 		refreshToken: body.refresh_token,
 		scope: body.scope ?? ''
 	};
+	// The new grant's token and scopes replace whatever this process cached
+	// for the account, before anything reads with them.
+	rememberGrant(added, body);
 	let creator = null;
 	let creatorError = '';
 	try {

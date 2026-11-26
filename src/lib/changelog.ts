@@ -21,6 +21,7 @@ export interface Change {
 }
 
 export const CHANGES: Change[] = [
+	{ at: '2026-11-26T16:10:00+01:00', version: '0.23.12', line: 'Fixed: TikTok > Sign-in' },
 	{ at: '2026-11-24T16:00:00+01:00', version: '0.23.11', line: 'Fixed: Calendar > Deletes' },
 	{ at: '2026-11-20T17:30:00+01:00', version: '0.23.10', line: 'Added: Worker > Self Update' },
 	{ at: '2026-11-20T16:00:00+01:00', version: '0.23.9', line: 'Added: Project > NAS Copy' },

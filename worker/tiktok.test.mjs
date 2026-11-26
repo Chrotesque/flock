@@ -1,7 +1,7 @@
 import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
-import { TIKTOK_SCOPES, accessToken, forgetToken, isDraft, probeTikTok, publishToTikTok, resolvePrivacy } from './tiktok.mjs';
+import { TIKTOK_SCOPES, accessToken, forgetToken, grantedTikTokScope, isDraft, rememberGrant, probeTikTok, publishToTikTok, resolvePrivacy } from './tiktok.mjs';
 
 const creator = (levels) => ({ username: 'someone', privacyOptions: levels });
 
@@ -58,6 +58,34 @@ describe('accessToken', () => {
 		assert.equal(await accessToken(config, account), 'access-2');
 		assert.equal(calls, 2);
 		forgetToken(account);
+	});
+
+	it('takes up a new sign-in grant over the old one cached for the account', async () => {
+		let calls = 0;
+		globalThis.fetch = async () => {
+			calls++;
+			return new Response(
+				JSON.stringify({ access_token: 'old-access', expires_in: 86400, scope: 'user.info.basic,video.publish' }),
+				{ status: 200, headers: { 'Content-Type': 'application/json' } }
+			);
+		};
+		const config = { tiktok: { clientKey: 'k', clientSecret: 's' } };
+		const old = { openId: 'grant-open-id', refreshToken: 'old', scope: 'user.info.basic,video.publish' };
+		forgetToken(old);
+		assert.equal(await accessToken(config, old), 'old-access');
+		assert.equal(grantedTikTokScope(old), 'user.info.basic,video.publish');
+
+		// The sign-in's exchange answered with a new token and more scopes.
+		const added = { openId: 'grant-open-id', refreshToken: 'new', scope: 'user.info.basic,video.list' };
+		rememberGrant(added, { access_token: 'new-access', expires_in: 86400, scope: 'user.info.basic,video.list' });
+		assert.equal(await accessToken(config, added), 'new-access');
+		assert.equal(grantedTikTokScope(added), 'user.info.basic,video.list');
+		assert.equal(calls, 1);
+
+		// An exchange without a scope falls back to what the account records.
+		rememberGrant(added, { access_token: 'newer' });
+		assert.equal(grantedTikTokScope(added), 'user.info.basic,video.list');
+		forgetToken(added);
 	});
 });
 
